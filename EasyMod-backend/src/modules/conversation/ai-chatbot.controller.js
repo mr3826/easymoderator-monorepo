@@ -234,7 +234,8 @@ class AIChatbotController {
                     detectedLanguage,
                     aiSettings,
                     ingestionResult,
-                    imageUrls
+                    imageUrls,
+                    ingestionResult.reply_context || null,
                 );
                 // Same gate as the Messenger worker — this HTTP entry point must
                 // not be a way around the trust boundary.
@@ -338,7 +339,7 @@ class AIChatbotController {
      * Falls back to keyword matching if all LLM providers are unavailable.
      * Returns { response: string, confidence: number (0.0–1.0) }.
      */
-    static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult, imageUrls = []) {
+    static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult, imageUrls = [], replyContext = null) {
         const { shop_id, customer_channel_id, platform } = ingestionResult;
         const { conversation_id } = ingestionResult;
 
@@ -399,7 +400,8 @@ class AIChatbotController {
                 preferredProvider,  // ✅ NEW: Pass model preset as provider hint
                 // Bug #11: pass per-shop confidence threshold so FAQ matching
                 // uses the value the shop owner configured, not the global env default
-                confidenceThreshold: aiSettings.confidence_threshold
+                confidenceThreshold: aiSettings.confidence_threshold,
+                replyContext,
             });
 
             const evidence = routerResult.grounding || grounding.emptyEvidence(shop_id);
@@ -446,6 +448,8 @@ class AIChatbotController {
                 shop_id,
                 customer_channel_id,
                 platform,
+                meta_channel_id,
+                customer_id: ingestionResult.customer_id,
                 initial_message: message,
                 entities,
                 product_info: productInfo
@@ -753,7 +757,12 @@ class AIChatbotController {
             const { transaction_id, customer_message, screenshot_url } = req.body;
 
             // Get active order session
-            const session = await OrderSessionService.getActiveSession(req.body.shop_id, req.body.customer_channel_id);
+            const session = await OrderSessionService.getActiveSession(
+                req.user?.shopId,
+                req.body.customer_channel_id,
+                req.body.meta_channel_id || null,
+                req.body.customer_id || null,
+            );
             
             if (!session || session.status !== 'ACTIVE') {
                 return res.status(404).json({

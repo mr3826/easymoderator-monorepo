@@ -78,20 +78,34 @@ const isMigrationExecuted = async (name) => {
   return results.length > 0;
 };
 
-const recordMigration = async (name) => {
+const recordMigration = async (name, transaction = null) => {
   const dialect = sequelize.getDialect();
+  const options = transaction ? { transaction } : {};
   if (dialect === 'postgres') {
     await sequelize.query(
       `INSERT INTO migrations (name, executed_at) VALUES (?, NOW())`,
-      { replacements: [name] }
+      { replacements: [name], ...options }
     );
   } else {
     await sequelize.query(
       `INSERT INTO migrations (name, executed_at) VALUES (?, DATETIME('now'))`,
-      { replacements: [name] }
+      { replacements: [name], ...options }
     );
   }
 };
+
+const transactionSequelize = (transaction) => new Proxy(sequelize, {
+  get(target, property) {
+    if (property === 'query') {
+      return (sql, options = {}) => target.query(sql, {
+        ...options,
+        transaction: options.transaction || transaction,
+      });
+    }
+    const value = target[property];
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+});
 
 const removeMigrationRecord = async (name) => {
   await sequelize.query(
@@ -115,11 +129,17 @@ const runMigrations = async () => {
     
     console.log(`▶️  Running migration: ${name}`);
     
+    let transaction = null;
     try {
-      await up(sequelize);
-      await recordMigration(name);
+      transaction = typeof sequelize.transaction === 'function'
+        ? await sequelize.transaction()
+        : null;
+      await up(transaction ? transactionSequelize(transaction) : sequelize);
+      await recordMigration(name, transaction);
+      if (transaction) await transaction.commit();
       console.log(`✅ Migration ${name} completed successfully`);
     } catch (error) {
+      if (transaction && !transaction.finished) await transaction.rollback().catch(() => {});
       console.error(`❌ Migration ${name} failed:`, error.message);
       throw error;
     }

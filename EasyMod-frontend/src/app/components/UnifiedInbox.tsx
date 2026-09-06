@@ -31,6 +31,90 @@ import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 type AiReplyStatus = "processing" | "sent" | "failed";
 
+const getDeliveryState = (message: Message): string | null => {
+  const explicit = message.delivery_state || message.metadata?.delivery_state;
+  const providerMessageId = message.provider_message_id || message.metadata?.provider_message_id;
+  if (explicit) {
+    if ((explicit === "SENT" || explicit === "DELIVERED") && !providerMessageId) return "HELD";
+    return explicit;
+  }
+  if (message.metadata?.delivered === true
+    && providerMessageId) {
+    return "SENT";
+  }
+  return null;
+};
+
+const isProviderConfirmed = (message: Message): boolean => {
+  const state = getDeliveryState(message);
+  return (state === "SENT" || state === "DELIVERED")
+    && Boolean(
+      message.provider_message_id
+      || message.metadata?.provider_message_id,
+    );
+};
+
+const deliveryStateRank: Record<string, number> = {
+  DRAFT_READY: 10,
+  HELD: 10,
+  SEND_PENDING: 20,
+  FAILED: 30,
+  DISMISSED: 30,
+  SENT: 40,
+  DELIVERED: 50,
+};
+
+const timestampMs = (value?: string | null): number => {
+  if (!value) return NaN;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
+const mergeReadProjection = (
+  conversation: Conversation,
+  incoming: Pick<Conversation, "unreadCount" | "lastReadMessageId" | "lastReadMessageAt">,
+): Conversation => {
+  const currentReadAt = timestampMs(conversation.lastReadMessageAt);
+  const incomingReadAt = timestampMs(incoming.lastReadMessageAt);
+  if (Number.isFinite(currentReadAt)
+    && (!Number.isFinite(incomingReadAt) || incomingReadAt < currentReadAt)) {
+    return conversation;
+  }
+  return {
+    ...conversation,
+    unreadCount: incoming.unreadCount ?? conversation.unreadCount ?? 0,
+    lastReadMessageId: incoming.lastReadMessageId ?? conversation.lastReadMessageId ?? null,
+    lastReadMessageAt: incoming.lastReadMessageAt || conversation.lastReadMessageAt || null,
+  };
+};
+
+const mergeMessageLifecycle = (current: Message, incoming: Message): Message => {
+  const currentState = getDeliveryState(current);
+  const incomingState = getDeliveryState(incoming);
+  const currentRank = deliveryStateRank[currentState || ""] || 0;
+  const incomingRank = deliveryStateRank[incomingState || ""] || 0;
+  const keepCurrentLifecycle = isProviderConfirmed(current)
+    && (!isProviderConfirmed(incoming) || incomingRank < currentRank)
+    || currentState === "DISMISSED" && incomingState !== "SENT" && incomingState !== "DELIVERED"
+    || incomingRank < currentRank;
+
+  if (keepCurrentLifecycle) {
+    return {
+      ...current,
+      ...incoming,
+      delivery_state: current.delivery_state,
+      provider_message_id: current.provider_message_id,
+      delivery_source: current.delivery_source,
+      metadata: { ...(incoming.metadata || {}), ...(current.metadata || {}) },
+    };
+  }
+  return {
+    ...current,
+    ...incoming,
+    metadata: { ...(current.metadata || {}), ...(incoming.metadata || {}) },
+  };
+};
+
 const AI_REPLY_MODE_LABEL_KEYS: Record<AiReplyMode, string> = {
   AUTO: "inbox.mode.auto",
   DRAFT: "inbox.mode.draft",
@@ -41,6 +125,7 @@ const getAiReplyStatus = (messages: Message[], mode: AiReplyMode): AiReplyStatus
   if (mode !== "AUTO") return null;
 
   const lastCustomerMessage = [...messages].reverse().find((message) => message.sender === "customer");
+  if (!lastCustomerMessage) return null;
   const lastAgentMessage = [...messages].reverse().find((message) => message.sender === "agent");
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === "ai");
 
@@ -63,10 +148,11 @@ const getAiReplyStatus = (messages: Message[], mode: AiReplyMode): AiReplyStatus
 
   if (customerAfterAi) return agentAfterCustomer ? null : "processing";
 
+  const deliveryState = getDeliveryState(lastAiMessage);
   const deliveryStatus = lastAiMessage.metadata?.delivery_status;
-  if (deliveryStatus === "pending") return "processing";
-  if (deliveryStatus === "failed") return "failed";
-  if (deliveryStatus === "sent" || lastAiMessage.metadata?.delivered === true) return "sent";
+  if (deliveryState === "GENERATING" || deliveryState === "SEND_PENDING" || deliveryStatus === "pending") return "processing";
+  if (deliveryState === "FAILED" || deliveryStatus === "failed") return "failed";
+  if (isProviderConfirmed(lastAiMessage)) return "sent";
   return null;
 };
 
@@ -113,9 +199,17 @@ export default function UnifiedInbox() {
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
   const [sseConnected, setSseConnected] = useState(true);
+  const sseEverConnectedRef = useRef(false);
   const [aiReplyMode, setAiReplyMode] = useState<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
   const [aiReplyStatuses, setAiReplyStatuses] = useState<Record<string, AiReplyStatus>>({});
   const aiReplyModeRef = useRef<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
+  const aiReplyModeRevisionRef = useRef(0);
+  const selectedConversationRef = useRef<Conversation | null>(null);
+  const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const readWatermarkRef = useRef<Record<string, string>>({});
+  const readRequestRef = useRef<Record<string, number>>({});
+  const latestInboundAtRef = useRef<Record<string, number>>({});
+  const messageRequestRef = useRef(0);
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -125,27 +219,36 @@ export default function UnifiedInbox() {
 
   const quickReplyTemplates = templates.length > 0 ? templates : buildFallbackTemplates(t);
 
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
   // ─── Data loading ──────────────────────────────────────────────────────────
 
   const loadConversations = useCallback(async () => {
+    const modeRevision = aiReplyModeRevisionRef.current;
     try {
       setLoadingConversations(true);
       setError(null);
       const result = await apiClient.getConversations({ limit: 50 });
       const normalizedMode = normalizeAiReplyMode(result.ai_reply_mode);
-      aiReplyModeRef.current = normalizedMode;
-      setAiReplyMode(normalizedMode);
-      setConversations(result.data);
-      if (result.data.length > 0 && !selectedConversation) {
-        setSelectedConversation(result.data[0]);
+      if (modeRevision === aiReplyModeRevisionRef.current) {
+        aiReplyModeRef.current = normalizedMode;
+        setAiReplyMode(normalizedMode);
       }
+      setConversations(result.data);
+      setSelectedConversation((previous) => {
+        if (!result.data.length) return null;
+        if (!previous) return result.data[0];
+        return result.data.find((conversation) => conversation.id === previous.id) || previous;
+      });
     } catch {
       setError(t("inbox.errors.loadConversations"));
       toast.error(t("inbox.errors.loadConversations"));
     } finally {
       setLoadingConversations(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [t]);
 
   const loadConversationsRef = useRef(loadConversations);
   useEffect(() => { loadConversationsRef.current = loadConversations; });
@@ -162,13 +265,28 @@ export default function UnifiedInbox() {
     }
   }, []);
 
-  const loadMessages = async (conversationId: string, page: number) => {
+  const loadMessages = async (conversationId: string, page: number, signal?: AbortSignal) => {
+    const requestId = ++messageRequestRef.current;
     try {
       if (page === 1) setLoadingMessages(true);
-      const result = await apiClient.getMessages(conversationId, { page, limit: PAGE_SIZE });
+      const result = await apiClient.getMessages(conversationId, { page, limit: PAGE_SIZE, signal });
+      if (signal?.aborted
+        || requestId !== messageRequestRef.current
+        || (selectedConversationRef.current && selectedConversationRef.current.id !== conversationId)) return;
+      const projectedMessages = [...result.messages, ...(result.suggestions || [])]
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      projectedMessages.forEach((message) => seenMessageIdsRef.current.add(message.id));
+      const latestInbound = [...projectedMessages].reverse().find((message) => message.sender === "customer");
+      const latestInboundAt = timestampMs(latestInbound?.created_at);
+      if (Number.isFinite(latestInboundAt)) {
+        latestInboundAtRef.current[conversationId] = Math.max(
+          latestInboundAtRef.current[conversationId] || 0,
+          latestInboundAt,
+        );
+      }
       if (page === 1) {
-        setMessages(result.messages);
-        const status = getAiReplyStatus(result.messages, aiReplyModeRef.current);
+        setMessages(projectedMessages);
+        const status = getAiReplyStatus(projectedMessages, aiReplyModeRef.current);
         setAiReplyStatuses((prev) => {
           const next = { ...prev };
           if (status) next[conversationId] = status;
@@ -176,16 +294,20 @@ export default function UnifiedInbox() {
           return next;
         });
       } else {
-        setMessages((prev) => [...result.messages, ...prev]);
+        setMessages((prev) => [...projectedMessages, ...prev.filter((message) => !projectedMessages.some((item) => item.id === message.id))]);
       }
       setHasMoreMessages(result.pagination.page < result.pagination.totalPages);
-    } catch {
+    } catch (error) {
+      if ((error as { name?: string })?.name === "CanceledError" || (error as { name?: string })?.name === "AbortError") return;
       toast.error(t("inbox.errors.loadMessages"));
     } finally {
       setLoadingMessages(false);
       setLoadingMoreMessages(false);
     }
   };
+
+  const loadMessagesRef = useRef(loadMessages);
+  useEffect(() => { loadMessagesRef.current = loadMessages; });
 
   const loadOlderMessages = async () => {
     const conversationId = selectedConversation?.id;
@@ -213,14 +335,56 @@ export default function UnifiedInbox() {
   useEffect(() => {
     if (selectedConversation) {
       loadMessagesAbortRef.current?.abort();
-      loadMessagesAbortRef.current = new AbortController();
+      const controller = new AbortController();
+      loadMessagesAbortRef.current = controller;
       setMessagesPage(1);
       setHasMoreMessages(false);
-      loadMessages(selectedConversation.id, 1);
+      void loadMessages(selectedConversation.id, 1, controller.signal);
       setDismissedSuggestionId(null);
+      return () => {
+        controller.abort();
+        if (loadMessagesAbortRef.current === controller) loadMessagesAbortRef.current = null;
+      };
     }
-    return () => { loadMessagesAbortRef.current?.abort(); };
+    return undefined;
   }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    const conversationId = selectedConversation?.id;
+    if (!conversationId || !messages.length || typeof apiClient.markConversationRead !== "function") return;
+
+    const markVisibleInboundRead = () => {
+      if (document.visibilityState !== "visible") return;
+      if (typeof window !== "undefined" && window.innerWidth < 768 && !mobilePanelOpen) return;
+      const latestInbound = [...messages].reverse().find((message) => message.sender === "customer");
+      if (!latestInbound || readWatermarkRef.current[conversationId] === latestInbound.id) return;
+      readWatermarkRef.current[conversationId] = latestInbound.id;
+      const requestId = (readRequestRef.current[conversationId] || 0) + 1;
+      readRequestRef.current[conversationId] = requestId;
+      Promise.resolve(apiClient.markConversationRead(conversationId, latestInbound.id))
+        .then((updated) => {
+          if (readRequestRef.current[conversationId] !== requestId) return;
+          const responseReadAt = timestampMs(updated.lastReadMessageAt);
+          const latestInboundAt = latestInboundAtRef.current[conversationId];
+          if (Number.isFinite(responseReadAt)
+            && Number.isFinite(latestInboundAt)
+            && latestInboundAt > responseReadAt) return;
+          setConversations((previous) => previous.map((conversation) => (
+            conversation.id === conversationId ? mergeReadProjection(conversation, updated) : conversation
+          )));
+          setSelectedConversation((previous) => previous?.id === conversationId
+            ? mergeReadProjection(previous, updated)
+            : previous);
+        })
+        .catch(() => {
+          delete readWatermarkRef.current[conversationId];
+        });
+    };
+
+    markVisibleInboundRead();
+    document.addEventListener("visibilitychange", markVisibleInboundRead);
+    return () => document.removeEventListener("visibilitychange", markVisibleInboundRead);
+  }, [selectedConversation?.id, messages, mobilePanelOpen]);
 
   useEffect(() => {
     if (!loadingMoreMessages) {
@@ -231,20 +395,38 @@ export default function UnifiedInbox() {
   // ─── SSE ───────────────────────────────────────────────────────────────────
 
   useInboxSSE({
-    onNewMessage: useCallback(({ conversation_id, message }) => {
+    onNewMessage: useCallback(({ conversation_id, message, unread_count }) => {
+      if (!message?.id || seenMessageIdsRef.current.has(message.id)) return;
+      seenMessageIdsRef.current.add(message.id);
+      const selectedId = selectedConversationRef.current?.id;
+      const isSelected = selectedId === conversation_id;
+      const isCustomerMessage = message.sender === "customer";
+      const inboundAt = timestampMs(message.created_at);
+      if (isCustomerMessage && Number.isFinite(inboundAt)) {
+        latestInboundAtRef.current[conversation_id] = Math.max(
+          latestInboundAtRef.current[conversation_id] || 0,
+          inboundAt,
+        );
+      }
+      const providerConfirmed = message.sender === "customer" || isProviderConfirmed(message);
       setMessages((prev) => {
-        if (selectedConversation?.id !== conversation_id) return prev;
-        const alreadyExists = prev.some((m) => m.id === message.id);
-        return alreadyExists ? prev : [...prev, message];
+        if (!isSelected) return prev;
+        const existing = prev.some((item) => item.id === message.id);
+        const next = existing
+          ? prev.map((item) => item.id === message.id ? mergeMessageLifecycle(item, message) : item)
+          : [...prev, message];
+        return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       });
       setAiReplyStatuses((prev) => {
         const next = { ...prev };
-        if (message.sender === "customer" && aiReplyMode === "AUTO") {
+        if (isCustomerMessage && aiReplyMode === "AUTO" && selectedConversationRef.current?.hitl !== true) {
           next[conversation_id] = "processing";
         } else if (message.sender === "agent") {
           delete next[conversation_id];
         } else if (message.sender === "ai") {
-          const status = getAiReplyStatus([message], aiReplyMode);
+          const status = getDeliveryState(message) === "FAILED" || message.metadata?.delivery_status === "failed"
+            ? "failed"
+            : getAiReplyStatus([message], aiReplyMode);
           if (status) next[conversation_id] = status;
           else delete next[conversation_id];
         }
@@ -258,20 +440,33 @@ export default function UnifiedInbox() {
           })();
           return prev;
         }
-        return prev.map((conv) =>
+        const next = prev.map((conv) =>
           conv.id === conversation_id
             ? {
                 ...conv,
-                updated_at: message.created_at,
-                lastMessage: message.content,
-                unreadCount: selectedConversation?.id === conversation_id
-                  ? conv.unreadCount ?? 0
-                  : (conv.unreadCount ?? 0) + 1,
+                ...(providerConfirmed ? { updated_at: message.created_at } : {}),
+                ...(message.is_transcript_message === false || !providerConfirmed ? {} : { lastMessage: message.content }),
+                ...(message.sender === "ai" && message.is_transcript_message === false
+                  ? { hasAiSuggestion: true, suggestionCount: Math.max(1, conv.suggestionCount || 0) }
+                  : {}),
+                unreadCount: (() => {
+                  const currentUnread = conv.unreadCount ?? 0;
+                  if (!isCustomerMessage) return currentUnread;
+                  const eventAt = timestampMs(message.created_at);
+                  const readAt = timestampMs(conv.lastReadMessageAt);
+                  if (Number.isFinite(eventAt) && Number.isFinite(readAt) && eventAt <= readAt) {
+                    return currentUnread;
+                  }
+                  const reportedUnread = typeof unread_count === "number" ? unread_count : null;
+                  if (reportedUnread !== null) return Math.max(currentUnread, reportedUnread);
+                  return isSelected ? currentUnread : currentUnread + 1;
+                })(),
               }
             : conv
         );
+        return next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
       });
-    }, [aiReplyMode, selectedConversation?.id]),
+    }, [aiReplyMode]),
 
     onHitlChanged: useCallback(({ conversation_id, hitl }) => {
       setConversations((prev) =>
@@ -282,59 +477,105 @@ export default function UnifiedInbox() {
       );
       setAiReplyStatuses((prev) => {
         const next = { ...prev };
-        if (hitl || aiReplyMode !== "AUTO") delete next[conversation_id];
-        else next[conversation_id] = "processing";
+        delete next[conversation_id];
         return next;
       });
-    }, [aiReplyMode]),
+    }, []),
 
-    onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata }: {
+    onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata, delivery_state, provider_message_id, delivery_source, content, created_at }: {
       conversation_id: string;
       message_id: string;
       metadata: Message["metadata"];
+      delivery_state?: Message["delivery_state"];
+      provider_message_id?: string | null;
+      delivery_source?: string | null;
+      content?: string | null;
+      created_at?: string | null;
     }) => {
       const currentMessage = messages.find((message) => message.id === message_id);
+      if (!currentMessage && selectedConversationRef.current?.id === conversation_id) {
+        void loadMessagesRef.current(conversation_id, 1);
+      }
+      const incomingMessage = {
+        id: message_id,
+        sender: currentMessage?.sender || "ai",
+        content: content ?? currentMessage?.content,
+        created_at: created_at || currentMessage?.created_at || new Date().toISOString(),
+        ...(delivery_state !== undefined ? { delivery_state } : {}),
+        ...(provider_message_id !== undefined ? { provider_message_id } : {}),
+        ...(delivery_source !== undefined ? { delivery_source } : {}),
+        metadata: metadata || {},
+      } as Message;
+      const mergedMessage = currentMessage
+        ? mergeMessageLifecycle(currentMessage, incomingMessage)
+        : null;
       setMessages((prev) => {
-        if (selectedConversation?.id !== conversation_id) return prev;
-        return prev.map((message) =>
-          message.id === message_id
-            ? { ...message, metadata: { ...(message.metadata || {}), ...(metadata || {}) } }
-            : message
-        );
+        if (selectedConversationRef.current?.id !== conversation_id) return prev;
+        return prev.map((message) => message.id === message_id
+          ? mergeMessageLifecycle(message, incomingMessage)
+          : message);
       });
       setAiReplyStatuses((prev) => {
         const next = { ...prev };
-        if (currentMessage?.sender === "agent") {
+        if (mergedMessage?.sender === "agent") {
           delete next[conversation_id];
           return next;
         }
-        if (currentMessage?.sender !== "ai" || aiReplyMode !== "AUTO") return next;
-        const status = getAiReplyStatus(
-          [{ ...currentMessage, metadata: { ...(currentMessage.metadata || {}), ...(metadata || {}) } }],
-          aiReplyMode
-        );
+        if (mergedMessage?.sender !== "ai" || aiReplyMode !== "AUTO") return next;
+        const status = getDeliveryState(mergedMessage) === "FAILED" || mergedMessage.metadata?.delivery_status === "failed"
+          ? "failed"
+          : getAiReplyStatus([mergedMessage], aiReplyMode);
         if (status) next[conversation_id] = status;
         else delete next[conversation_id];
         return next;
       });
-    }, [aiReplyMode, messages, selectedConversation?.id]),
+      if (delivery_state === "SENT" && (currentMessage?.content || content)) {
+        const confirmed = mergedMessage ? isProviderConfirmed(mergedMessage) : Boolean(provider_message_id);
+        setConversations((prev) => prev.map((conversation) => conversation.id === conversation_id
+          ? {
+              ...conversation,
+              lastMessage: currentMessage?.content || content || conversation.lastMessage,
+              ...(created_at ? { updated_at: created_at } : {}),
+              ...(confirmed
+                ? {
+                    suggestionCount: Math.max(0, (conversation.suggestionCount || 1) - 1),
+                    hasAiSuggestion: false,
+                  }
+                : {}),
+            }
+          : conversation));
+        if (confirmed) {
+          setSelectedConversation((conversation) => conversation?.id === conversation_id
+            ? {
+                ...conversation,
+                suggestionCount: Math.max(0, (conversation.suggestionCount || 1) - 1),
+                hasAiSuggestion: false,
+              }
+            : conversation);
+        }
+      }
+    }, [aiReplyMode, messages]),
 
-    onDeliveryFailed: useCallback(({ conversation_id, reason }: { conversation_id?: string; reason: string }) => {
+    onDeliveryFailed: useCallback(({ conversation_id, message_id, reason }: { conversation_id?: string; message_id?: string; reason: string }) => {
       const failedConversationId = conversation_id || selectedConversation?.id;
-      if (aiReplyMode === "AUTO") {
+      const failedMessage = message_id ? messages.find((message) => message.id === message_id) : null;
+      if (aiReplyMode === "AUTO" && failedMessage?.sender === "ai") {
         setAiReplyStatuses((prev) =>
           failedConversationId ? { ...prev, [failedConversationId]: "failed" } : prev
         );
       }
       toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
-    }, [aiReplyMode, selectedConversation?.id]),
+    }, [aiReplyMode, messages, selectedConversation?.id]),
 
     onAiReplyModeChanged: useCallback(({ mode }: { mode: AiReplyMode }) => {
       const normalizedMode = normalizeAiReplyMode(mode);
+      aiReplyModeRevisionRef.current += 1;
       aiReplyModeRef.current = normalizedMode;
       setAiReplyMode(normalizedMode);
       setAiReplyStatuses({});
       setDismissedSuggestionId(null);
+      const selectedId = selectedConversationRef.current?.id;
+      if (selectedId) void loadMessagesRef.current(selectedId, 1);
     }, []),
 
     onChannelError: useCallback(({ display_name, message: errMsg }: { display_name: string; message: string }) => {
@@ -347,6 +588,49 @@ export default function UnifiedInbox() {
 
     onSSEOnline: useCallback(() => {
       setSseConnected(true);
+      if (sseEverConnectedRef.current) {
+        void loadConversationsRef.current();
+        const selectedId = selectedConversationRef.current?.id;
+        if (selectedId) void loadMessagesRef.current(selectedId, 1);
+      }
+      sseEverConnectedRef.current = true;
+    }, []),
+    onConversationRead: useCallback(({ conversation_id, unread_count, last_read_message_id, last_read_message_at }: {
+      conversation_id: string;
+      unread_count: number;
+      last_read_message_id?: string | null;
+      last_read_message_at?: string | null;
+    }) => {
+      setConversations((prev) => prev.map((conversation) => {
+        if (conversation.id !== conversation_id) return conversation;
+        return mergeReadProjection(conversation, {
+          unreadCount: unread_count,
+          lastReadMessageId: last_read_message_id,
+          lastReadMessageAt: last_read_message_at,
+        });
+      }));
+      setSelectedConversation((prev) => {
+        if (!prev || prev.id !== conversation_id) return prev;
+        return mergeReadProjection(prev, {
+          unreadCount: unread_count,
+          lastReadMessageId: last_read_message_id,
+          lastReadMessageAt: last_read_message_at,
+        });
+      });
+    }, []),
+    onCustomerUpdated: useCallback(({ customer_id, name, meta_channel_id }: { customer_id: string; name?: string; meta_channel_id?: string | null }) => {
+      if (!name) return;
+      setConversations((prev) => prev.map((conversation) => (
+        conversation.customer_id === customer_id
+        && (!meta_channel_id || conversation.meta_channel_id === meta_channel_id)
+          ? { ...conversation, customer: conversation.customer ? { ...conversation.customer, name } : { id: customer_id, name } }
+          : conversation
+      )));
+      setSelectedConversation((prev) => {
+        if (!prev || prev.customer_id !== customer_id || !prev.customer || !name
+          || (meta_channel_id && prev.meta_channel_id !== meta_channel_id)) return prev;
+        return { ...prev, customer: { ...prev.customer, name } };
+      });
     }, []),
   });
 
@@ -363,8 +647,7 @@ export default function UnifiedInbox() {
       setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       setAiReplyStatuses((prev) => {
         const next = { ...prev };
-        if (newHITL || aiReplyMode !== "AUTO") delete next[selectedConversation.id];
-        else next[selectedConversation.id] = "processing";
+        delete next[selectedConversation.id];
         return next;
       });
       apiClient.createAuditLog({
@@ -419,20 +702,50 @@ export default function UnifiedInbox() {
   };
 
   const handleMessageSent = (message: Message) => {
-    setMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
+    seenMessageIdsRef.current.add(message.id);
+    setMessages((prev) => {
+      const exists = prev.some((item) => item.id === message.id);
+      const next = exists
+        ? prev.map((item) => item.id === message.id ? { ...item, ...message, metadata: { ...(item.metadata || {}), ...(message.metadata || {}) } } : item)
+        : [...prev, message];
+      return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    });
     setAiReplyStatuses((prev) => {
       const next = { ...prev };
       const conversationId = message.conversation_id || selectedConversation?.id;
       if (conversationId) delete next[conversationId];
       return next;
     });
-    setConversations((prev) =>
-      prev.map((conv) =>
+    const confirmed = message.sender === "customer" || isProviderConfirmed(message);
+    const clearsSuggestionProjection = message.sender === "agent"
+      || (message.sender === "ai" && isProviderConfirmed(message));
+    if (confirmed) {
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === selectedConversation?.id
+            ? {
+                ...conv,
+                updated_at: message.created_at || conv.updated_at,
+                lastMessage: message.content,
+                ...(clearsSuggestionProjection ? { hasAiSuggestion: false, suggestionCount: 0 } : {}),
+              }
+            : conv
+        )
+      );
+    } else if (clearsSuggestionProjection) {
+      setConversations((prev) => prev.map((conv) => (
         conv.id === selectedConversation?.id
-          ? { ...conv, updated_at: message.created_at || conv.updated_at, lastMessage: message.content }
+          ? { ...conv, hasAiSuggestion: false, suggestionCount: 0 }
           : conv
-      )
-    );
+      )));
+    }
+    if (clearsSuggestionProjection && selectedConversation) {
+      setSelectedConversation({
+        ...selectedConversation,
+        hasAiSuggestion: false,
+        suggestionCount: 0,
+      });
+    }
   };
 
   const handleMessageSendFailed = () => {
@@ -444,14 +757,25 @@ export default function UnifiedInbox() {
     });
   };
 
-  const handleDismissSuggestion = (messageId: string) => {
-    setDismissedSuggestionId(messageId);
+  const handleDismissSuggestion = async (messageId: string) => {
     if (!selectedConversation) return;
-    setAiReplyStatuses((prev) => {
-      const next = { ...prev };
-      delete next[selectedConversation.id];
-      return next;
-    });
+    try {
+      const dismissed = await apiClient.dismissAiDraft(selectedConversation.id, messageId);
+      setMessages((prev) => prev.map((message) => message.id === messageId ? dismissed : message));
+      setConversations((prev) => prev.map((conversation) => {
+        if (conversation.id !== selectedConversation.id) return conversation;
+        const remaining = Math.max(0, (conversation.suggestionCount || 1) - 1);
+        return { ...conversation, suggestionCount: remaining, hasAiSuggestion: remaining > 0 };
+      }));
+      setDismissedSuggestionId(messageId);
+      setAiReplyStatuses((prev) => {
+        const next = { ...prev };
+        delete next[selectedConversation.id];
+        return next;
+      });
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || t("inbox.errors.dismissSuggestion"));
+    }
   };
 
   // ─── Derived values ────────────────────────────────────────────────────────
@@ -462,16 +786,20 @@ export default function UnifiedInbox() {
       conv.customer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       conv.title?.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
-    if (filterTab === "needs_review") return conv.hitl === true;
+    if (filterTab === "needs_review") return conv.hitl === true || conv.hasAiSuggestion === true;
     if (filterTab === "closed") return conv.status === "closed";
     return conv.status !== "closed";
   });
 
-  const needsReviewCount = conversations.filter((c) => c.hitl).length;
+  const needsReviewCount = conversations.filter((c) => c.hitl || c.hasAiSuggestion).length;
   const closedCount = conversations.filter((c) => c.status === "closed").length;
+  const unreadTotal = conversations.reduce((total, conversation) => total + (conversation.unreadCount || 0), 0);
 
+  const latestInboundAt = messages.length
+    ? [...messages].reverse().find((message) => message.sender === "customer")?.created_at
+    : undefined;
   const hoursElapsed = selectedConversation
-    ? (Date.now() - new Date(selectedConversation.updated_at).getTime()) / 3600000
+    ? (Date.now() - new Date(latestInboundAt || selectedConversation.updated_at).getTime()) / 3600000
     : 0;
   const is24hChannel = selectedConversation
     ? META_CHANNELS.includes(selectedConversation.channel)
@@ -491,6 +819,11 @@ export default function UnifiedInbox() {
         <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm whitespace-nowrap">
           {t("inbox.active", { count: conversations.filter((c) => c.status === "active").length })}
         </span>
+        {unreadTotal > 0 && (
+          <span data-testid="inbox-unread-total" className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm whitespace-nowrap">
+            {t("inbox.unread", { count: unreadTotal })}
+          </span>
+        )}
         <span
           data-testid="inbox-ai-reply-mode"
           className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm whitespace-nowrap"
@@ -513,7 +846,6 @@ export default function UnifiedInbox() {
       <div className="flex-1 flex overflow-hidden">
         <InboxThreadList
           conversations={conversations}
-          aiReplyMode={aiReplyMode}
           selectedConversationId={selectedConversation?.id ?? null}
           filteredConversations={filteredConversations}
           loading={loadingConversations}
@@ -557,8 +889,6 @@ export default function UnifiedInbox() {
             onResolve={handleResolveConversation}
             onLoadOlderMessages={loadOlderMessages}
             onDismissSuggestion={handleDismissSuggestion}
-            onUseAiSuggestion={() => {}}
-            onSetEditingMessage={() => {}}
             onSetShowResolveDialog={setShowResolveDialog}
             onSetResolveNote={setResolveNote}
             onMessageSent={handleMessageSent}

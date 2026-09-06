@@ -19,10 +19,19 @@ const sseManager = require('../../utils/sse-manager');
 const { getProvider } = require('../channel-providers/provider.registry');
 const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const policyEngine = require('../policy/policy.engine');
-const { Customer, MetaChannelSettings } = require('../entities');
+const { Customer, MetaChannelSettings, Message } = require('../entities');
+const { Op, literal } = require('sequelize');
 const { selectChannelRuntimeSettings } = require('../channel-providers/meta-channel-settings.runtime');
 const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
 const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
+const {
+    MESSAGE_DELIVERY_STATES,
+    SUGGESTION_VISIBILITY,
+    isProviderConfirmed,
+    providerMessageIdFor,
+    providerAcknowledgementId,
+    hasProviderAcknowledgement,
+} = require('./message-lifecycle');
 const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
 const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
 const SUPPORTED_HANDOFF_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
@@ -37,6 +46,76 @@ function isContextRecord(value) {
 
 function normalizeHandoffPlatform(platform) {
     return platform === 'messenger' ? 'facebook' : platform;
+}
+
+const providerSendSucceeded = hasProviderAcknowledgement;
+
+async function stampHoldingMessage(holdingMsg, convId, state, sendResult = null, extra = {}) {
+    if (!holdingMsg?.id || !Message || typeof Message.update !== 'function') return;
+    const providerMessageId = providerAcknowledgementId(sendResult)
+        || providerMessageIdFor(holdingMsg)
+        || null;
+    if (state === MESSAGE_DELIVERY_STATES.SENT && !providerMessageId) return;
+    const metadata = {
+        ...(holdingMsg.metadata && typeof holdingMsg.metadata === 'object' ? holdingMsg.metadata : {}),
+        delivered: state === MESSAGE_DELIVERY_STATES.SENT,
+        delivery_status: state === MESSAGE_DELIVERY_STATES.SENT ? 'sent' : state === MESSAGE_DELIVERY_STATES.FAILED ? 'failed' : 'held',
+        delivery_state: state,
+        delivery_source: 'HITL_ESCALATION',
+        provider_message_id: providerMessageId,
+        provider_send_confirmed: state === MESSAGE_DELIVERY_STATES.SENT && Boolean(providerMessageId),
+        ...extra,
+    };
+    await Message.update({
+        ...(providerMessageId ? { external_id: providerMessageId } : {}),
+        delivery_state: state,
+        delivery_source: 'HITL_ESCALATION',
+        provider_message_id: providerMessageId,
+        metadata,
+    }, {
+        where: {
+            id: holdingMsg.id,
+            conversation_id: convId,
+            delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+        },
+    });
+}
+
+function emitHoldingDelivery(shopId, convId, holdingMsg, state, sendResult = null, metadata = null) {
+    sseManager.emit(shopId, 'message_delivery_updated', {
+        conversation_id: convId,
+        message_id: holdingMsg?.id || null,
+        delivery_state: state,
+        provider_message_id: providerAcknowledgementId(sendResult) || holdingMsg?.provider_message_id || null,
+        metadata: metadata || holdingMsg?.metadata || {},
+    });
+}
+
+async function claimHoldingMessage(holdingMsg, convId) {
+    if (!holdingMsg?.id || !Message || typeof Message.update !== 'function') return true;
+    const metadata = holdingMsg.metadata && typeof holdingMsg.metadata === 'object'
+        ? holdingMsg.metadata
+        : {};
+    const claimResult = await Message.update({
+        metadata: {
+            ...metadata,
+            provider_send_attempted: true,
+            delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            delivery_status: 'pending',
+            delivered: false,
+        },
+        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+    }, {
+        where: {
+            id: holdingMsg.id,
+            conversation_id: convId,
+            delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            provider_message_id: null,
+            [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+        },
+    });
+    const updatedCount = Array.isArray(claimResult) ? claimResult[0] : 1;
+    return updatedCount === 1;
 }
 
 async function getHandoffCooldownMinutes(shopId) {
@@ -118,6 +197,13 @@ async function escalateToHuman({
     const holdingMsg = await sendEscalationAutoReply(convId, shopId).catch(() => null);
     if (!holdingMsg) return null;
 
+    const holdingMetadata = holdingMsg.metadata && typeof holdingMsg.metadata === 'object'
+        ? holdingMsg.metadata
+        : {};
+    if (isProviderConfirmed(holdingMsg) || holdingMetadata.provider_send_attempted === true) {
+        return holdingMsg;
+    }
+
     sseManager.emit(shopId, 'new_message', { conversation_id: convId, message: holdingMsg });
 
     // 3. Deliver it on the same channel the inbound arrived on
@@ -140,6 +226,7 @@ async function escalateToHuman({
                         shop_id: shopId,
                         channel_type: customerChannelType,
                         channel_user_id: String(recipientId),
+                        ...(channel.id ? { meta_channel_id: channel.id } : {}),
                     },
                 }),
                 MetaChannelSettings.findOne({ where: { channel_id: channel.id } }),
@@ -179,18 +266,42 @@ async function escalateToHuman({
                 platform: pf,
             });
             if (!decision.allow) {
+                await stampHoldingMessage(holdingMsg, convId, MESSAGE_DELIVERY_STATES.HELD, null, {
+                    held_reason: 'policy_blocked',
+                    suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                }).catch(() => {});
+                emitHoldingDelivery(shopId, convId, holdingMsg, MESSAGE_DELIVERY_STATES.HELD);
                 console.warn(`[handoff] Holding message blocked by policy for conv ${convId}: ${decision.reason}`);
                 return holdingMsg;
             }
 
+            if (!(await claimHoldingMessage(holdingMsg, convId))) return holdingMsg;
+
             const provider = getProvider(pf);
-            await provider.sendMessage({
+            await stampHoldingMessage(holdingMsg, convId, MESSAGE_DELIVERY_STATES.SEND_PENDING, null, {
+                provider_send_attempted: true,
+                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_AUTO_PROCESSING,
+            }).catch(() => {});
+            const sendResult = await provider.sendMessage({
                 channel,
                 recipientId: String(recipientId),
                 normalizedMessage: decision.transform || normalizedMessage,
                 decision,
             });
+            if (!providerSendSucceeded(sendResult)) {
+                throw new Error('Provider did not confirm the holding message send');
+            }
+            await stampHoldingMessage(holdingMsg, convId, MESSAGE_DELIVERY_STATES.SENT, sendResult, {
+                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_SENT,
+            }).catch(() => {});
+            emitHoldingDelivery(shopId, convId, holdingMsg, MESSAGE_DELIVERY_STATES.SENT, sendResult);
         } catch (err) {
+            await stampHoldingMessage(holdingMsg, convId, MESSAGE_DELIVERY_STATES.FAILED, null, {
+                provider_send_attempted: true,
+                held_reason: 'provider_send_failed',
+                suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+            }).catch(() => {});
+            emitHoldingDelivery(shopId, convId, holdingMsg, MESSAGE_DELIVERY_STATES.FAILED);
             console.warn(`[handoff] Holding message delivery failed for conv ${convId}: ${err.message}`);
         }
     }

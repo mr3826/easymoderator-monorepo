@@ -14,6 +14,7 @@ const OrderReturn = require('./order/order-return.entity');
 const PartnerBillingAdjustment = require('./subscription/partner-billing-adjustment.entity');
 const OrderItem = require('./order/order-item.entity');
 const { Conversation, Message } = require('./conversation/conversation.entity');
+const InboxDeliveryOutbox = require('./conversation/inbox-delivery-outbox.entity');
 const ConversationTurn = require('./conversation/conversation-turn.entity');
 const AuditLog = require('./audit/audit-log.entity');
 const IdempotencyKey = require('./audit/idempotency-key.entity');
@@ -551,6 +552,7 @@ module.exports = {
     OrderItem,
     Conversation,
     Message,
+    InboxDeliveryOutbox,
     ConversationTurn,
     AuditLog,
     IdempotencyKey,

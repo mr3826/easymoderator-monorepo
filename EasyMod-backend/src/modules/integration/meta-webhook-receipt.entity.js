@@ -43,8 +43,7 @@ const MetaWebhookReceipt = sequelize.define('MetaWebhookReceipt', {
     dedupe_key: {
         type: DataTypes.STRING(191),
         allowNull: false,
-        unique: true,
-        comment: 'event_id when present, else sha256(page_id|payload_hash)',
+        comment: 'sha256(page_id|event_id) when present, else sha256(page_id|payload_hash)',
     },
     event_type: {
         type: DataTypes.STRING(32),
@@ -126,6 +125,11 @@ const MetaWebhookReceipt = sequelize.define('MetaWebhookReceipt', {
         { fields: ['status', 'next_retry_at'], name: 'idx_meta_webhook_receipts_status_retry' },
         { fields: ['page_id', 'received_at'], name: 'idx_meta_webhook_receipts_page_received' },
         { fields: ['shop_id'], name: 'idx_meta_webhook_receipts_shop' },
+        {
+            unique: true,
+            fields: ['page_id', 'dedupe_key'],
+            name: 'idx_meta_webhook_receipts_page_dedupe',
+        },
     ],
 });
 

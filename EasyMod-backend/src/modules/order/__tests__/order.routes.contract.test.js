@@ -8,6 +8,10 @@ jest.mock('../../../middleware/auth.middleware', () => ({
     }
 }));
 
+jest.mock('../../../middleware/shop-access.middleware', () => ({
+    verifyShopAccess: (_req, _res, next) => next(),
+}));
+
 jest.mock('../../helpers', () => ({
     validate: () => (_req, _res, next) => next()
 }));

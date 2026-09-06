@@ -78,6 +78,7 @@ module.exports = {
                 created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 customer_channel_id     VARCHAR(255),
+                meta_channel_id         UUID,
                 channel                 VARCHAR(20) DEFAULT 'messenger',
                 current_step            VARCHAR(50) DEFAULT 'INITIAL',
                 step_data               JSONB DEFAULT '{}',

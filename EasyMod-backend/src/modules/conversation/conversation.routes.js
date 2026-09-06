@@ -4,11 +4,14 @@ const conversationController = require('./conversation.controller');
 const conversationValidator = require('./conversation.validator');
 const { validate } = require('../helpers');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { idempotencyMiddleware } = require('../audit/idempotency.middleware');
 
 // All conversation routes require authentication. Billing suspension pauses
 // automated AI replies in the worker; the manual inbox must stay usable so
 // merchants can read and respond to customers while resolving billing.
 router.use(authenticate);
+router.use(verifyShopAccess);
 
 // Routes for conversations
 router.get(
@@ -66,6 +69,27 @@ router.put(
 );
 
 // Routes for messages within a conversation
+router.post(
+    '/:conversationId/messages/:messageId/approve',
+    verifyShopAccess,
+    validate(conversationValidator.approveAiDraft),
+    conversationController.approveAiDraft
+);
+
+router.post(
+    '/:conversationId/messages/:messageId/dismiss',
+    verifyShopAccess,
+    validate(conversationValidator.conversationMessageAction),
+    conversationController.dismissAiDraft
+);
+
+router.post(
+    '/:conversationId/read',
+    verifyShopAccess,
+    validate(conversationValidator.markConversationRead),
+    conversationController.markConversationRead
+);
+
 router.get(
     '/:conversationId/messages',
     validate(conversationValidator.getMessages),
@@ -74,6 +98,7 @@ router.get(
 
 router.post(
     '/:conversationId/messages',
+    idempotencyMiddleware,
     validate(conversationValidator.createMessage),
     conversationController.createMessage
 );

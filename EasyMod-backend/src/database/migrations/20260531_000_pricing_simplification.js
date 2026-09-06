@@ -20,6 +20,24 @@ module.exports = {
     up: async (sequelize) => {
         const dialect = sequelize.getDialect();
 
+        const optionalQuery = async (sql, savepointName) => {
+            if (dialect !== 'postgres' || typeof sequelize.query !== 'function') {
+                return;
+            }
+
+            // The migration runner executes each migration in a transaction. A
+            // caught PostgreSQL error would otherwise poison that transaction,
+            // making the later backfill fail with 25P02 as well.
+            await sequelize.query(`SAVEPOINT ${savepointName}`);
+            try {
+                await sequelize.query(sql);
+                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`);
+            } catch (_) {
+                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`);
+            }
+        };
+
         // 1. Column defaults → GROWTH (Postgres only; the app always sets these
         //    explicitly on create, but keep fresh-install defaults correct).
         if (dialect === 'postgres') {
@@ -27,11 +45,10 @@ module.exports = {
                 `ALTER TABLE subscriptions ALTER COLUMN plan_name SET DEFAULT 'Growth'`,
                 `ALTER TABLE subscriptions ALTER COLUMN plan_code SET DEFAULT 'GROWTH'`,
                 `ALTER TABLE subscriptions ALTER COLUMN plan_price SET DEFAULT 999`,
-                `ALTER TABLE subscriptions ALTER COLUMN conversations_limit SET DEFAULT 300`,
-                `ALTER TABLE subscriptions ALTER COLUMN status SET DEFAULT 'trialing'`
+                `ALTER TABLE subscriptions ALTER COLUMN conversations_limit SET DEFAULT 300`
             ];
-            for (const sql of alters) {
-                try { await sequelize.query(sql); } catch (_) { /* column absent on minimal schema */ }
+            for (const [index, sql] of alters.entries()) {
+                await optionalQuery(sql, `pricing_optional_${index}`);
             }
         }
 

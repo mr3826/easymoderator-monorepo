@@ -3,11 +3,13 @@ const orderController = require('./order.controller');
 const orderValidator = require('./order.validator');
 const { validate } = require('../helpers');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 
 const router = express.Router();
 
 // All order routes require authentication
 router.use(authenticate);
+router.use(verifyShopAccess);
 
 // Legacy routes (for backward compatibility)
 // Keep static legacy paths before parameterized routes to avoid route shadowing.

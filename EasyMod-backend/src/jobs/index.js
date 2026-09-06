@@ -17,6 +17,7 @@ const CourierReconciliationJob = require('./courier-reconciliation.job');
 const PipelineCanaryJob = require('./pipeline-canary.job');
 // Reliability — replay inbound Meta events held as durable webhook receipts
 const WebhookReceiptReconcilerJob = require('./webhook-receipt-reconciler.job');
+const InboxDeliveryReconcilerJob = require('./inbox-delivery-reconciler.job');
 
 module.exports = {
     MonthlyUsageReset,
@@ -28,4 +29,5 @@ module.exports = {
     CourierReconciliationJob,
     PipelineCanaryJob,
     WebhookReceiptReconcilerJob,
+    InboxDeliveryReconcilerJob,
 };

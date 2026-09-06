@@ -179,8 +179,8 @@ beforeEach(() => {
     mockConversationFindOne.mockResolvedValue({ id: 'conv-1', hitl: false, status: 'open', metadata: {} });
     mockMessageFindAll.mockResolvedValue([]);
     mockMessageCount.mockResolvedValue(0);
-    mockGetShopAiSettings.mockResolvedValue(shopSettings());
-    mockGetChannelSettings.mockResolvedValue({ ...channelSettings });
+    mockGetShopAiSettings.mockReset().mockResolvedValue(shopSettings());
+    mockGetChannelSettings.mockReset().mockResolvedValue({ ...channelSettings });
     mockSubscriptionFindOne.mockResolvedValue({ status: 'active' });
     mockRecoveryStartTurn.mockImplementation(async ({ traceId }) => ({
         turn: {
@@ -205,8 +205,8 @@ beforeEach(() => {
         },
         attachments: [],
     });
-    mockEvaluateOutbound.mockResolvedValue({ allow: true, decisionId: 'policy-1', transform: null });
-    mockSendMessage.mockResolvedValue({ providerMessageId: 'provider-1' });
+    mockEvaluateOutbound.mockReset().mockResolvedValue({ allow: true, decisionId: 'policy-1', transform: null });
+    mockSendMessage.mockReset().mockResolvedValue({ providerMessageId: 'provider-1' });
     mockStoreAIResponse.mockImplementation(async (_conversationId, content) => ({
         message: {
             id: 'ai-1',
@@ -239,6 +239,33 @@ test('an unknown business mode fails closed as MANUAL before the LLM', async () 
     expect(mockSendMessage).not.toHaveBeenCalled();
 });
 
+test('DRAFT stores a reviewable candidate and never calls the provider', async () => {
+    mockGetShopAiSettings.mockResolvedValue(shopSettings('DRAFT'));
+    mockEvaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'DRAFT_MODE' });
+
+    const result = await processMessageJob(makeJob());
+
+    expect(result).toEqual(expect.objectContaining({ sent: false }));
+    expect(mockProcessNewIntent).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockStoreAIResponse).toHaveBeenCalledWith(
+        'conv-1',
+        'candidate response',
+        expect.objectContaining({
+            delivery_state: 'DRAFT_READY',
+            suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+        }),
+    );
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        delivery_state: 'DRAFT_READY',
+        metadata: expect.objectContaining({
+            delivered: false,
+            delivery_state: 'DRAFT_READY',
+            suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+        }),
+    }));
+});
+
 test('Page automation_mode and ai_auto_reply cannot override an AUTO business', async () => {
     mockGetChannelSettings.mockResolvedValue({
         ...channelSettings,
@@ -257,6 +284,27 @@ test('Page automation_mode and ai_auto_reply cannot override an AUTO business', 
             automation_mode: 'AUTO',
             purpose_label: 'legacy page value',
         }),
+    }));
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        delivery_state: 'SENT',
+        provider_message_id: 'provider-1',
+        metadata: expect.objectContaining({
+            delivered: true,
+            delivery_state: 'SENT',
+            suggestion_visibility: 'HIDDEN_SENT',
+            provider_message_id: 'provider-1',
+        }),
+    }));
+});
+
+test('AUTO fails closed when the provider returns no message ID', async () => {
+    mockSendMessage.mockResolvedValueOnce({ sent: true, providerMessageId: null });
+
+    await expect(processMessageJob(makeJob())).rejects.toMatchObject({ code: 'PROVIDER_NO_SEND' });
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        delivery_state: 'FAILED',
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'provider_send_failed' }),
     }));
 });
 
@@ -288,9 +336,10 @@ test('an AUTO to MANUAL flip after Guard 4 holds the generated text and sends no
         'candidate response',
         expect.objectContaining({ automation_mode: 'AUTO' }),
     );
-    expect(mockStoredMessageUpdate).toHaveBeenCalledWith({
-        metadata: expect.objectContaining({ delivered: false, held_reason: 'mode_changed' }),
-    });
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'mode_changed', delivery_state: 'HELD' }),
+        delivery_state: 'HELD',
+    }));
     expect(mockEvaluateOutbound).not.toHaveBeenCalled();
     expect(mockSendMessage).not.toHaveBeenCalled();
 });
@@ -309,9 +358,10 @@ test('a late human pause suppresses an in-flight AUTO send', async () => {
     expect(mockProcessNewIntent).toHaveBeenCalledTimes(1);
     expect(mockEvaluateOutbound).toHaveBeenCalledTimes(1);
     expect(mockSendMessage).not.toHaveBeenCalled();
-    expect(mockStoredMessageUpdate).toHaveBeenCalledWith({
-        metadata: expect.objectContaining({ delivered: false, held_reason: 'ai_paused' }),
-    });
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'ai_paused', delivery_state: 'HELD' }),
+        delivery_state: 'HELD',
+    }));
 });
 
 test('a mode change during policy evaluation is rechecked before provider delivery', async () => {
@@ -325,7 +375,8 @@ test('a mode change during policy evaluation is rechecked before provider delive
     expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'mode_changed' }));
     expect(mockEvaluateOutbound).toHaveBeenCalledTimes(1);
     expect(mockSendMessage).not.toHaveBeenCalled();
-    expect(mockStoredMessageUpdate).toHaveBeenCalledWith({
-        metadata: expect.objectContaining({ delivered: false, held_reason: 'mode_changed' }),
-    });
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'mode_changed', delivery_state: 'HELD' }),
+        delivery_state: 'HELD',
+    }));
 });

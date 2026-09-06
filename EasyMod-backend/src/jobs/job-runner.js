@@ -22,6 +22,7 @@ const JOB_MAP = {
     'invoice_generator': jobs.InvoiceGenerator,
     'failed_payment_reconciler': jobs.FailedPaymentReconciler,
     'courier_reconciliation': jobs.CourierReconciliationJob,  // Schedule: cron '0 3 * * 0' (Sunday 03:00 UTC)
+    'inbox_delivery_reconciler': jobs.InboxDeliveryReconcilerJob,
 };
 
 async function runJob() {

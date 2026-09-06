@@ -99,7 +99,10 @@ function metaError(err, context) {
         metaMsg: safeMsg,
     });
     const appError = new AppError(`${context}: ${safeMsg}`, err.response?.status || 500);
-    appError.code = 'META_API_ERROR';
+    // Preserve an explicit application-level safety failure. A successful HTTP
+    // response without Meta's message_id is not a transport/API error: it is an
+    // unconfirmed delivery and must remain retry-visible to the caller.
+    appError.code = err.code === 'PROVIDER_NO_ACK' ? err.code : 'META_API_ERROR';
     appError.details = {
         metaCode: meta.code || null,
         metaSubcode: meta.error_subcode || null,
@@ -589,6 +592,8 @@ class MetaMessengerProvider extends ChannelProvider {
                     senderExternalId: evt.sender?.id || null,
                     pageOrAccountId: pageId,
                     text: msg.text || null,
+                    inReplyToExternalId: msg.reply_to?.mid || null,
+                    replyToIsSelfReply: msg.reply_to?.is_self_reply === true,
                     attachments: (msg.attachments || []).map(a => ({
                         type: a.type || 'file',
                         url: a.payload?.url,
@@ -668,7 +673,13 @@ class MetaMessengerProvider extends ChannelProvider {
                         body,
                         { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
                     );
-                    providerMessageIds.push(resp.data.message_id || null);
+                    const providerMessageId = resp.data?.message_id;
+                    if (!providerMessageId) {
+                        const error = new Error('Meta did not return a provider message ID');
+                        error.code = 'PROVIDER_NO_ACK';
+                        throw error;
+                    }
+                    providerMessageIds.push(String(providerMessageId));
                 } catch (sendErr) {
                     await releaseSendSlot(channel.meta_asset_id, reservation.member);
                     throw sendErr;

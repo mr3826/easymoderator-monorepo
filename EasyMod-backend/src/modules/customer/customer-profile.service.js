@@ -30,6 +30,7 @@ const config = require('../../config/config');
 const { createLogger } = require('../../utils/structured-logger');
 const Customer = require('./customer.entity');
 const metaChannelService = require('../channel-providers/meta-channel.service');
+const sseManager = require('../../utils/sse-manager');
 
 const logger = createLogger('CustomerProfile');
 
@@ -48,6 +49,7 @@ const isPlaceholderName = (name) => {
     return normalized === 'customer'
         || normalized.startsWith('customer ')
         || normalized === 'facebook user'
+        || normalized.startsWith('facebook customer ·')
         || normalized === 'messenger user'
         || normalized === 'instagram user';
 };
@@ -86,8 +88,22 @@ async function enrichCustomerNameFromMeta({ customerId, metaChannelId, shopId, p
         if (process.env.META_USER_PROFILE_ENABLED !== 'true') return false;
         if (!customerId || !psid) return false;
 
-        const customer = await Customer.findByPk(customerId);
+        const customer = typeof Customer.findOne === 'function'
+            ? await Customer.findOne({
+                where: {
+                    id: customerId,
+                    ...(shopId ? { shop_id: shopId } : {}),
+                    ...(metaChannelId ? { meta_channel_id: metaChannelId } : {}),
+                },
+            })
+            : await Customer.findByPk(customerId);
         if (!customer) return false;
+        const normalizedPlatform = platform === 'facebook' ? 'messenger' : platform;
+        if (shopId && customer.shop_id != null && String(customer.shop_id) !== String(shopId)) return false;
+        if (normalizedPlatform && customer.channel_type && customer.channel_type !== normalizedPlatform) return false;
+        if (customer.channel_user_id && String(customer.channel_user_id) !== String(psid)) return false;
+        if (metaChannelId && customer.meta_channel_id != null
+            && String(customer.meta_channel_id) !== String(metaChannelId)) return false;
 
         const hadPlaceholderName = isPlaceholderName(customer.name);
         if (!hadPlaceholderName && !hasMissingProfileFields(customer.metadata || {})) return false;
@@ -126,6 +142,14 @@ async function enrichCustomerNameFromMeta({ customerId, metaChannelId, shopId, p
         if (shouldUpdateName) update.name = fullName;
 
         await customer.update(update);
+        if (shopId) {
+            sseManager.emit(shopId, 'customer_updated', {
+                customer_id: customer.id,
+                name: update.name || customer.name,
+                profile_pic: meta.profile_pic || null,
+                meta_channel_id: metaChannelId || null,
+            });
+        }
         logger.info('Enriched customer profile from Meta', {
             customerId,
             updatedName: !!shouldUpdateName,

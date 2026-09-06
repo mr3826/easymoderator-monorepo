@@ -5,6 +5,7 @@ const mockAuthenticate = jest.fn((req, _res, next) => {
     req.user = { userId: 'user-1', shopId: 'shop-1' };
     next();
 });
+const mockVerifyShopAccess = jest.fn((_req, _res, next) => next());
 const mockCheckSubscriptionStatus = jest.fn((_req, _res, next) => {
     next(new Error('subscription gate should not run for manual inbox routes'));
 });
@@ -22,11 +23,17 @@ const mockController = {
     updateConversationStatus: jest.fn((_req, res) => res.status(200).json({ success: true })),
     getMessages: jest.fn((_req, res) => res.status(200).json({ success: true, data: { messages: [], pagination: { page: 1, totalPages: 0 } } })),
     createMessage: jest.fn((_req, res) => res.status(201).json({ success: true })),
+    approveAiDraft: jest.fn((_req, res) => res.status(200).json({ success: true })),
+    dismissAiDraft: jest.fn((_req, res) => res.status(200).json({ success: true })),
+    markConversationRead: jest.fn((_req, res) => res.status(200).json({ success: true })),
 };
 
 jest.mock('../../../middleware/auth.middleware', () => ({
     authenticate: mockAuthenticate,
     checkSubscriptionStatus: mockCheckSubscriptionStatus,
+}));
+jest.mock('../../../middleware/shop-access.middleware', () => ({
+    verifyShopAccess: mockVerifyShopAccess,
 }));
 
 jest.mock('../conversation.controller', () => mockController);
@@ -42,6 +49,9 @@ jest.mock('../conversation.validator', () => ({
     updateConversationStatus: {},
     getMessages: {},
     createMessage: {},
+    approveAiDraft: {},
+    conversationMessageAction: {},
+    markConversationRead: {},
 }));
 
 describe('conversation.routes', () => {
@@ -62,6 +72,7 @@ describe('conversation.routes', () => {
 
         expect(res.status).toBe(200);
         expect(mockAuthenticate).toHaveBeenCalledTimes(1);
+        expect(mockVerifyShopAccess).toHaveBeenCalledTimes(1);
         expect(mockCheckSubscriptionStatus).not.toHaveBeenCalled();
         expect(mockController.getConversations).toHaveBeenCalledTimes(1);
     });
