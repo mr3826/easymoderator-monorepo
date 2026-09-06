@@ -182,6 +182,12 @@ describe('draft approval controller boundary', () => {
             ...conversation,
             customer: { channel_user_id: null },
         });
+        mockMessageFindOne.mockResolvedValue({
+            ...candidate,
+            delivery_state: 'SEND_PENDING',
+            provider_message_id: null,
+            metadata: { delivery_state: 'SEND_PENDING', provider_send_attempted: false, provider_send_claimed: false },
+        });
 
         await controller._deliverViaMetaIfApplicable('conversation-1', 'shop-1', candidate);
 

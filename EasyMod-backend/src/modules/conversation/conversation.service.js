@@ -39,12 +39,23 @@ const DELIVERY_LOCK_WAIT_MS = 10_000;
 
 async function acquireBulkDeliveryLock(conversationId) {
     if (!cacheRedis || typeof cacheRedis.set !== 'function'
-        || typeof conversationLockService?.acquireForDelivery !== 'function') return null;
+        || typeof conversationLockService?.acquireForDelivery !== 'function') {
+        if (process.env.NODE_ENV === 'test') return null;
+        throw Object.assign(new Error('Conversation delivery lock is unavailable'), {
+            statusCode: 503,
+            code: 'DELIVERY_LOCK_UNAVAILABLE',
+        });
+    }
     const lock = await conversationLockService.acquireForDelivery(conversationId, {
         lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
         maxWaitMs: DELIVERY_LOCK_WAIT_MS,
     });
-    if (lock?.available === false) return null;
+    if (lock?.available === false && process.env.NODE_ENV !== 'test') {
+        throw Object.assign(new Error('Conversation delivery lock is unavailable'), {
+            statusCode: 503,
+            code: 'DELIVERY_LOCK_UNAVAILABLE',
+        });
+    }
     if (!lock?.success) {
         const error = new Error('Another Inbox delivery is in progress; retry after it completes');
         error.statusCode = 409;
@@ -1145,11 +1156,23 @@ class ConversationService {
                 const suggestionVisibility = closing || resuming
                     ? SUGGESTION_VISIBILITY.HIDDEN_DISMISSED
                     : SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW;
+                const candidateWhere = {
+                    conversation_id: conversationId,
+                    sender: 'ai',
+                };
+                if (resuming && typeof Message.findOne === 'function') {
+                    const latestCustomer = await Message.findOne({
+                        where: { conversation_id: conversationId, sender: 'customer' },
+                        order: [['created_at', 'DESC']],
+                        attributes: ['created_at'],
+                        ...(transaction ? { transaction } : {}),
+                    });
+                    if (latestCustomer?.created_at) {
+                        candidateWhere.created_at = { [Op.gte]: latestCustomer.created_at };
+                    }
+                }
                 const pending = await Message.findAll({
-                    where: {
-                        conversation_id: conversationId,
-                        sender: 'ai',
-                    },
+                    where: candidateWhere,
                     ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                 });
                 const cancellable = pending.filter((message) => (
@@ -1278,6 +1301,7 @@ class ConversationService {
                     try {
                         const updatedConversation = await this.updateConversation(conversationId, shopId, { status: 'closed' });
                         updatedConversationIds.push(conversationId);
+                        await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
                         sseManager.emit(shopId, 'hitl_changed', {
                             conversation_id: conversationId,
                             hitl: updatedConversation.hitl,

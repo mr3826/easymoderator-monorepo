@@ -118,7 +118,12 @@ class ConversationLockService {
         maxWaitMs = 10_000,
     } = {}) {
         if (!cacheRedis || typeof cacheRedis.set !== 'function') {
-            return { success: false, available: false, conversationId };
+            return {
+                success: false,
+                available: true,
+                conversationId,
+                error: 'DELIVERY_LOCK_UNAVAILABLE',
+            };
         }
 
         try {

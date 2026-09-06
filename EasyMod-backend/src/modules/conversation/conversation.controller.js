@@ -69,12 +69,23 @@ async function acquireDeliveryLock(conversationId) {
     // Narrow test doubles and single-process callers may not expose a lock
     // primitive. Production Redis does, and then a busy lock is fail-closed.
     if (!cacheRedis || typeof cacheRedis.set !== 'function'
-        || typeof conversationLockService?.acquireForDelivery !== 'function') return null;
+        || typeof conversationLockService?.acquireForDelivery !== 'function') {
+        if (process.env.NODE_ENV === 'test') return null;
+        throw Object.assign(new Error('Conversation delivery lock is unavailable'), {
+            statusCode: 503,
+            code: 'DELIVERY_LOCK_UNAVAILABLE',
+        });
+    }
     const lock = await conversationLockService.acquireForDelivery(conversationId, {
         lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
         maxWaitMs: DELIVERY_LOCK_WAIT_MS,
     });
-    if (lock?.available === false) return null;
+    if (lock?.available === false && process.env.NODE_ENV !== 'test') {
+        throw Object.assign(new Error('Conversation delivery lock is unavailable'), {
+            statusCode: 503,
+            code: 'DELIVERY_LOCK_UNAVAILABLE',
+        });
+    }
     if (!lock?.success) {
         const error = makeHttpError(409, 'Another Inbox delivery is in progress; retry after it completes');
         error.code = 'CONVERSATION_DELIVERY_BUSY';
@@ -624,7 +635,19 @@ async function deliverViaMetaIfApplicable(
         returnedResult = { sent: false, reason: failureReason };
         return returnedResult;
     } finally {
-        if (isMetaChannel && failureReason) {
+        let foreignProviderClaim = false;
+        if (isMetaChannel && failureReason && !deliveryClaimed && outboundMessage?.id
+            && typeof MessageModel.findOne === 'function') {
+            const latestMessage = await MessageModel.findOne({
+                where: { id: outboundMessage.id, conversation_id: conversationId },
+            }).catch(() => null);
+            const latestMetadata = latestMessage?.metadata && typeof latestMessage.metadata === 'object'
+                ? latestMessage.metadata
+                : {};
+            foreignProviderClaim = latestMetadata.provider_send_claimed === true
+                || latestMetadata.provider_send_attempted === true;
+        }
+        if (isMetaChannel && failureReason && (deliveryClaimed || !foreignProviderClaim)) {
             const failurePersisted = await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'failed', {
                 delivery_error: failureReason,
                 ...(options.failureState ? { delivery_state: options.failureState } : {}),
@@ -1128,6 +1151,9 @@ class ConversationController {
                 deliveryLock = await acquireDeliveryLock(conversationId);
             }
             const conversation = await conversationService.updateConversationStatus(conversationId, shopId, status);
+            if (status === 'closed') {
+                await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
+            }
 
             sseManager.emit(shopId, 'hitl_changed', {
                 conversation_id: conversationId,

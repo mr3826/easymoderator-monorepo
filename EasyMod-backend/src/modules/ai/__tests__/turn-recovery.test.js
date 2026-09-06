@@ -33,6 +33,7 @@ const { HOLDING_TEMPLATES, getHoldingTemplate } = require('../recovery/holding-t
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockFindOrCreate.mockResolvedValue([mockTurn, true]);
     mockTurn.state = 'RECEIVED';
     mockTurn.state_transitions = [];
     mockTurn.handoff_created_at = null;
@@ -104,6 +105,7 @@ test('a recovery write failure does not call handoff after the transaction abort
 });
 
 test('requireHuman skips a conversation that was resolved while recovery was in flight', async () => {
+    mockConversationFindOne.mockResolvedValueOnce({ id: 'conv-1', status: 'closed' });
     const result = await recovery.requireHuman({
         turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
         reason: 'ACTION_DENIED', conversation: { id: 'conv-1', status: 'closed' },
@@ -115,21 +117,24 @@ test('requireHuman skips a conversation that was resolved while recovery was in 
 });
 
 test('requireHuman does not re-enable HITL while a delivery lock is held', async () => {
-    mockAcquireForDelivery.mockResolvedValueOnce({ available: true, success: false, error: 'LOCK_ALREADY_HELD' });
+    mockAcquireForDelivery.mockImplementationOnce(async () => ({
+        available: true,
+        success: false,
+        error: 'LOCK_ALREADY_HELD',
+    }));
 
-    const result = await recovery.requireHuman({
+    await expect(recovery.requireHuman({
         turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
         reason: 'ACTION_DENIED', conversation: { id: 'conv-1', status: 'active' },
-    });
+    })).rejects.toMatchObject({ code: 'LOCK_ALREADY_HELD', retryable: true });
 
-    expect(result).toEqual({ turn: null, handoff: null, skipped: 'LOCK_ALREADY_HELD' });
     expect(mockConversationUpdate).not.toHaveBeenCalled();
     expect(mockHandoff).not.toHaveBeenCalled();
 });
 
 test('requireHuman releases the delivery lock after handing off', async () => {
     mockFindOrCreate.mockResolvedValue([mockTurn, true]);
-    mockAcquireForDelivery.mockResolvedValueOnce({ available: true, success: true, lockId: 'lock-1' });
+    mockAcquireForDelivery.mockImplementationOnce(async () => ({ available: true, success: true, lockId: 'lock-1' }));
 
     await recovery.requireHuman({
         turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
@@ -137,6 +142,9 @@ test('requireHuman releases the delivery lock after handing off', async () => {
     });
 
     expect(mockReleaseLock).toHaveBeenCalledWith('conv-1', 'lock-1');
+    expect(mockHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        deliveryLock: expect.objectContaining({ lockId: 'lock-1' }),
+    }));
 });
 
 test('holding templates remain free of unsupported commercial promises', () => {

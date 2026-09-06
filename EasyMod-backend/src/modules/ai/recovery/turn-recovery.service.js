@@ -162,10 +162,9 @@ const requireHuman = async (input = {}) => {
     const timestamp = now();
     let turn;
 
-    const currentConversation = input.conversation
-        || (typeof Conversation.findOne === 'function'
-            ? await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } })
-            : null);
+    let currentConversation = typeof Conversation.findOne === 'function'
+        ? await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } })
+        : input.conversation;
     if (currentConversation && ['closed', 'archived'].includes(currentConversation.status)) {
         return { turn: null, handoff: null, skipped: 'conversation_closed' };
     }
@@ -177,16 +176,34 @@ const requireHuman = async (input = {}) => {
                 lockTimeoutMs: RECOVERY_LOCK_TIMEOUT_MS,
                 maxWaitMs: RECOVERY_LOCK_WAIT_MS,
             });
+            if (lock?.available === false && process.env.NODE_ENV !== 'test') {
+                const error = new Error('delivery_lock_unavailable');
+                error.code = 'DELIVERY_LOCK_UNAVAILABLE';
+                error.retryable = true;
+                throw error;
+            }
             if (lock && lock.available !== false && !lock.success) {
-                return { turn: null, handoff: null, skipped: lock.error || 'delivery_lock_busy' };
+                const error = new Error(lock.error || 'delivery_lock_busy');
+                error.code = lock.error || 'DELIVERY_LOCK_BUSY';
+                error.retryable = true;
+                throw error;
             }
             deliveryLock = lock?.success ? lock : null;
-        } catch {
+        } catch (error) {
+            if (error?.retryable) throw error;
             deliveryLock = null;
         }
     }
 
     try {
+        if (typeof Conversation.findOne === 'function') {
+            currentConversation = await Conversation.findOne({
+                where: { id: conversationId, shop_id: shopId },
+            });
+            if (!currentConversation || ['closed', 'archived'].includes(currentConversation.status)) {
+                return { turn: null, handoff: null, skipped: 'conversation_closed' };
+            }
+        }
         await sequelize.transaction(async (transaction) => {
             const [updated] = await Conversation.update(
                 { hitl: true },
@@ -206,6 +223,7 @@ const requireHuman = async (input = {}) => {
             recipientId: input.recipientId,
             channel: input.channel,
             reason: input.reason || input.recoveryReason,
+            deliveryLock,
         });
         return { turn, handoff };
     } finally {

@@ -37,7 +37,7 @@ const mockDeliveryLock = {
     releaseLock: jest.fn(async () => {}),
 };
 jest.mock('../conversation-lock.service', () => mockDeliveryLock);
-jest.mock('../../../config/redis', () => ({ cacheRedis: { set: jest.fn() } }));
+jest.mock('../../../config/redis', () => ({ cacheRedis: { set: jest.fn(), del: jest.fn(async () => 1) } }));
 jest.mock('../../../utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ error: jest.fn(), info: jest.fn(), warn: jest.fn() })),
 }));

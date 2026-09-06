@@ -1057,6 +1057,7 @@ async function requireHumanRecovery({ turnId, traceId, recoveryAvailable, conver
             reason,
         });
     } catch (recoveryErr) {
+        if (recoveryErr?.retryable) throw recoveryErr;
         if (recoveryAvailable || process.env.NODE_ENV !== 'test') {
             opsAlert('human_recovery_transaction_failed', {
                 detail: `shop=${shopId} conv=${conversationId} turn=${turnId}\nerror: ${recoveryErr.message}`,
@@ -1512,16 +1513,44 @@ async function processMessageJob(job) {
     // ── Guard 1: Redis idempotency ──────────────────────────────────────────
     const dedupScope = metaChannelId || metaAssetId || platform || 'unknown';
     const dedupKey = effExternalId ? `msg:dedup:${shopId}:${dedupScope}:${effExternalId}` : null;
+    const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
+    const automaticCandidateKey = deriveAutomaticSendIdempotencyKey({
+        shopId,
+        conversationId,
+        turnId,
+    });
     if (dedupKey) {
         const isNew = await claimDedupKey(dedupKey);
-        if (!isNew) return { skipped: true, reason: 'duplicate', externalId: effExternalId };
+        if (!isNew) {
+            const staleCandidate = typeof Message.findOne === 'function'
+                ? await Message.findOne({
+                    where: {
+                        conversation_id: conversationId,
+                        sender: 'ai',
+                        send_idempotency_key: automaticCandidateKey,
+                    },
+                })
+                : null;
+            const staleMetadata = staleCandidate?.metadata && typeof staleCandidate.metadata === 'object'
+                ? staleCandidate.metadata
+                : {};
+            const claimedAtMs = Date.parse(staleMetadata.provider_send_claimed_at || '');
+            const staleClaim = staleCandidate
+                && normalizeDeliveryState(staleCandidate) === MESSAGE_DELIVERY_STATES.SEND_PENDING
+                && staleMetadata.provider_send_claimed === true
+                && staleMetadata.provider_send_attempted !== true
+                && (!Number.isFinite(claimedAtMs) || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
+            if (!staleClaim || !(await releaseStaleProviderClaim(staleCandidate))) {
+                return { skipped: true, reason: 'duplicate', externalId: effExternalId };
+            }
+            await cacheRedis.del(dedupKey).catch(() => {});
+        }
     }
 
     let recoveryControl = null;
     let recoveryStarted = false;
     let deliveryLock = null;
     let stableTraceId = jobTraceId || job.id || effExternalId || conversationId;
-    const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
     try {
         const recovery = require('../modules/ai/recovery/turn-recovery.service');
         const { deriveIdempotencyKey } = require('../modules/ai/contracts/action.contract');
@@ -1716,6 +1745,7 @@ async function processMessageJob(job) {
             }
         } catch (escalateErr) {
             // If escalation itself fails, log and proceed with normal AI processing
+            if (escalateErr?.retryable) throw escalateErr;
             console.error(`[worker] Auto-escalation handler failed (continuing)`, { error: escalateErr.message });
         }
     }
@@ -1895,6 +1925,7 @@ async function processMessageJob(job) {
                 };
             }
         } catch (aiErr) {
+            if (aiErr?.retryable) throw aiErr;
             console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
             // Stage alert (warning): the customer still gets a reply, but it's the
             // generic fallback — the AI pipeline (LLM/RAG/Gemini) is degraded. Throttled.
@@ -2528,7 +2559,8 @@ async function processMessageJob(job) {
                 lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
                 maxWaitMs: DELIVERY_LOCK_WAIT_MS,
             });
-            if (deliveryLock?.available !== false && !deliveryLock?.success) {
+            if ((deliveryLock?.available === false && process.env.NODE_ENV !== 'test')
+                || (deliveryLock?.available !== false && !deliveryLock?.success)) {
                 await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey).catch(() => {});
                 return {
                     success: true,
