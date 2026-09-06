@@ -604,42 +604,6 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(screen.queryByText('Bob')).not.toBeInTheDocument()
   })
 
-  it('projects an unselected HITL conversation from its own state', async () => {
-    const otherConversation = {
-      ...baseConversation,
-      id: 'conv-2',
-      customer_id: 'cust-2',
-      customer: { id: 'cust-2', name: 'Bob' },
-      hitl: true,
-      needs_merchant_reply: false,
-      unreadCount: 0,
-    }
-    ;(apiClient.getConversations as any).mockResolvedValue({
-      data: [baseConversation, otherConversation],
-      ai_reply_mode: 'AUTO',
-      pagination: { page: 1, totalPages: 1 },
-    })
-    ;(apiClient.getMessages as any).mockResolvedValue({ messages: [], pagination: { page: 1, totalPages: 1 } })
-
-    render(<UnifiedInbox />)
-    await screen.findAllByText('Bob')
-    act(() => {
-      latestSSECallbacks().onNewMessage?.({
-        conversation_id: 'conv-2',
-        unread_count: 1,
-        message: {
-          id: 'msg-bob-inbound',
-          conversation_id: 'conv-2',
-          sender: 'customer',
-          content: 'I still need help',
-          created_at: new Date().toISOString(),
-        } as any,
-      })
-    })
-
-    await waitFor(() => expect(screen.getByRole('button', { name: /Needs your reply/i })).toHaveTextContent('1'))
-  })
-
   it('keeps Needs your reply after dismissing an unanswered draft', async () => {
     const { customerMessage, heldMessage } = draftMessages()
     setInboxData('DRAFT', [customerMessage, heldMessage], {

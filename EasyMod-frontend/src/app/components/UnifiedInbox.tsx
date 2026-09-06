@@ -320,10 +320,7 @@ export default function UnifiedInbox() {
         );
       }
       if (page === 1) {
-        setMessages((prev) => [
-          ...projectedMessages,
-          ...prev.filter((message) => !projectedMessages.some((item) => item.id === message.id)),
-        ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+        setMessages(projectedMessages);
         const status = getAiReplyStatus(
           projectedMessages,
           aiReplyModeRef.current,
