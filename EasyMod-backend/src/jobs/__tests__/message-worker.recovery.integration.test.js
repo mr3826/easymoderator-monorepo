@@ -161,7 +161,7 @@ test('recovery holding delivery rechecks business mode before provider delivery'
 
 test('HUMAN_REQUIRED and hitl are committed together and a missing conversation creates neither', async () => {
     await recovery.requireHuman({
-        turnId: 'human-turn', traceId: 'trace-human', shopId: IDS.shopA, conversationId: CONVERSATION_ID,
+        turnId: 'human-turn', traceId: 'trace-human', turnStartedAt: new Date().toISOString(), shopId: IDS.shopA, conversationId: CONVERSATION_ID,
         reason: 'ACTION_DENIED', conversation: { id: CONVERSATION_ID },
     });
     expect((await Conversation.findByPk(CONVERSATION_ID)).hitl).toBe(true);
