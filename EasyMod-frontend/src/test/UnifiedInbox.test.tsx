@@ -1202,6 +1202,55 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     })
   })
 
+  it('renders each native attachment type from metadata', async () => {
+    const nativeAttachments = {
+      id: 'msg-native-attachments',
+      conversation_id: 'conv-1',
+      content: '[Attachments]',
+      sender: 'customer' as const,
+      message_type: 'file' as const,
+      metadata: {
+        attachments: [
+          { type: 'image', url: 'https://cdn.example.com/inline.png' },
+          { type: 'video', url: 'https://cdn.example.com/demo.mp4' },
+          { type: 'audio', url: 'https://cdn.example.com/voice.ogg' },
+          { type: 'file', url: 'https://cdn.example.com/guide.pdf', name: 'guide.pdf' },
+          { type: 'sticker', url: 'https://cdn.example.com/sticker.webp' },
+        ],
+      },
+      created_at: olderTs,
+      updated_at: olderTs,
+    }
+
+    renderWith(baseConversation, [nativeAttachments])
+
+    expect(await screen.findByAltText('Inline image')).toHaveAttribute('src', 'https://cdn.example.com/inline.png')
+    expect(screen.getByText('Video')).toBeInTheDocument()
+    expect(screen.getByText('Voice message')).toBeInTheDocument()
+    expect(screen.getByText('guide.pdf')).toBeInTheDocument()
+    expect(screen.getByText('Sticker')).toBeInTheDocument()
+  })
+
+  it('explains AUTO resume after resolve and sends the last seen message id', async () => {
+    ;(apiClient.updateConversation as any).mockResolvedValue({
+      ...baseConversation,
+      status: 'closed',
+      hitl: false,
+    })
+    renderWith({ ...baseConversation, ai_reply_mode: 'AUTO' }, [customerMsg])
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Resolve$/i }))
+    expect(screen.getByText('AI will resume for the next eligible customer message.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Mark Resolved/i }))
+    await waitFor(() => {
+      expect(apiClient.updateConversation).toHaveBeenCalledWith('conv-1', expect.objectContaining({
+        status: 'closed',
+        last_seen_message_id: 'msg-customer-1',
+      }))
+    })
+  })
+
   it('does not offer a blind retry after a provider call has started', async () => {
     const providerAttemptedFile = {
       id: 'msg-file-unknown',

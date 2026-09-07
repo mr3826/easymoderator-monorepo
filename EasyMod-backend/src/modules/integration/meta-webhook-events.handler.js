@@ -1053,6 +1053,11 @@ async function storeIncomingMessage(event) {
                 transaction: t,
             });
             const replyMetadata = buildReplyMetadata(replyTo, resolvedReply);
+            const quickReply = event.raw_event?.message?.quick_reply;
+            const quickReplyMetadata = quickReply
+                && Object.prototype.hasOwnProperty.call(quickReply, 'payload')
+                ? { quick_reply: { payload: quickReply.payload } }
+                : {};
             if (replyTo?.mid) {
                 logger.info(resolvedReply ? 'reply_context_resolved' : 'reply_context_unresolved', {
                     shopId: shop_id,
@@ -1089,7 +1094,7 @@ async function storeIncomingMessage(event) {
                 }
             }
             const unreadCount = Math.max(0, Number(currentConversationMetadata.unreadCount) || 0) + 1;
-            const inboundMetadata = { ...msgMeta, ...replyMetadata };
+            const inboundMetadata = { ...msgMeta, ...replyMetadata, ...quickReplyMetadata };
             const msgRecord = await Message.create({
                 conversation_id: conversation.id,
                 content: msgContent,

@@ -61,6 +61,12 @@ const TYPE_FAMILY = {
 
 const TARGETED_CONTRACTS = [
     {
+        key: 'messages.updated_at',
+        table: 'messages',
+        column: 'updated_at',
+        absent: true,
+    },
+    {
         key: 'orders.metadata',
         table: 'orders',
         column: 'metadata',
@@ -134,6 +140,16 @@ async function main() {
 
     for (const contract of TARGETED_CONTRACTS) {
         const col = dbTables[contract.table] && dbTables[contract.table][contract.column];
+        if (contract.absent) {
+            if (col) {
+                findings.push({
+                    kind: 'FORBIDDEN_COLUMN',
+                    table: contract.table,
+                    detail: `${contract.column} must be absent`,
+                });
+            }
+            continue;
+        }
         if (!col) {
             findings.push({ kind: 'P0_P1_RUNTIME_SCHEMA_DRIFT', table: contract.table, detail: `${contract.column} is missing` });
             continue;

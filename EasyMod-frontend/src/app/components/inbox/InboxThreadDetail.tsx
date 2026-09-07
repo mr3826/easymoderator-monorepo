@@ -14,6 +14,7 @@ import type {
   AiReplyMode,
   Conversation,
   Message,
+  MessageAttachment,
   MessageDeliveryState,
   MessageMetadata,
   ResponseTemplate,
@@ -137,6 +138,9 @@ const MessageItem = memo(function MessageItem({
     && !message.provider_message_id
     && !message.metadata?.provider_message_id;
   const replyTo = message.reply_to || message.metadata?.reply_to;
+  const attachments = Array.isArray(message.metadata?.attachments)
+    ? message.metadata.attachments
+    : [];
 
   return (
     <div className={`flex ${message.sender === "customer" ? "justify-start" : "justify-end"}`}>
@@ -175,7 +179,67 @@ const MessageItem = memo(function MessageItem({
               : "a previous Messenger message"}
           </div>
         )}
-        {message.message_type === "image" ? (
+        {attachments.length > 0 ? (
+          <div className="space-y-2">
+            {attachments.map((attachment: MessageAttachment, index: number) => {
+              const type = String(attachment?.type || "").toLowerCase();
+              const url = attachment?.url;
+              const label = type === "image"
+                ? "Inline image"
+                : type === "video"
+                ? "Video"
+                : type === "audio"
+                ? "Voice message"
+                : type === "sticker"
+                ? "Sticker"
+                : type === "file"
+                ? attachment?.name || "Attachment"
+                : "Attachment";
+
+              if (type === "image") {
+                return (
+                  <div key={`${type}-${index}`}>
+                    {isValidMediaUrl(url) ? (
+                      <img
+                        src={url}
+                        alt={attachment?.name || "Inline image"}
+                        className="max-w-xs rounded-xl border border-black/5"
+                      />
+                    ) : (
+                      <span className="text-sm italic text-gray-500">Inline image</span>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={`${type}-${index}`}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
+                    message.sender === "agent" ? "bg-blue-500/60" : "bg-gray-100"
+                  }`}
+                >
+                  <FileText
+                    className={`w-4 h-4 ${message.sender === "agent" ? "text-white" : "text-gray-600"}`}
+                  />
+                  <span className={`text-sm ${message.sender === "agent" ? "text-white" : "text-gray-700"}`}>
+                    {label}
+                  </span>
+                  {isValidMediaUrl(url) && (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`text-xs underline ${message.sender === "agent" ? "text-blue-100" : "text-blue-700"}`}
+                    >
+                      Open
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : message.message_type === "image" ? (
           <div>
             {isValidMediaUrl(message.metadata?.image_url) ? (
               <img
@@ -697,6 +761,9 @@ export function InboxThreadDetail({
               </h2>
             </div>
             <p className="text-sm text-gray-600 font-bn">{t("inbox.resolveDialogDescription")}</p>
+            {aiReplyMode === "AUTO" && (
+              <p className="text-sm text-gray-600 font-bn">{t("inbox.resolveDialogResumeDescription")}</p>
+            )}
             <textarea
               value={resolveNote}
               onChange={(e) => onSetResolveNote(e.target.value)}

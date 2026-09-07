@@ -89,7 +89,8 @@ class ConversationValidator {
             hitl: Joi.boolean(),
             status: Joi.string().valid('active', 'closed', 'archived'),
             assignee_id: Joi.string().uuid().allow(null),
-            resolution_note: Joi.string().max(1000).allow('', null)
+            resolution_note: Joi.string().max(1000).allow('', null),
+            last_seen_message_id: Joi.string().uuid().allow(null)
         }).min(1)
     };
 

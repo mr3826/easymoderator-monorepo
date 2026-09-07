@@ -1,5 +1,6 @@
 const express = require('express');
 const request = require('supertest');
+const { AppError, globalErrorHandler } = require('../../../utils/AppError');
 
 const mockAuthenticate = jest.fn((req, _res, next) => {
     req.user = { userId: 'user-1', shopId: 'shop-1' };
@@ -18,7 +19,12 @@ const mockController = {
     bulkUpdateStatus: jest.fn((_req, res) => res.status(200).json({ success: true })),
     checkDuplicate: jest.fn((_req, res) => res.status(200).json({ success: true })),
     createConversation: jest.fn((_req, res) => res.status(201).json({ success: true })),
-    getConversationById: jest.fn((_req, res) => res.status(200).json({ success: true })),
+    getConversationById: jest.fn((req, res, next) => {
+        if (['missing-conversation', 'shop-b-conversation'].includes(req.params.conversationId)) {
+            return next(new AppError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND'));
+        }
+        return res.status(200).json({ success: true });
+    }),
     updateConversation: jest.fn((_req, res) => res.status(200).json({ success: true })),
     updateConversationStatus: jest.fn((_req, res) => res.status(200).json({ success: true })),
     getMessages: jest.fn((_req, res) => res.status(200).json({ success: true, data: { messages: [], pagination: { page: 1, totalPages: 0 } } })),
@@ -34,6 +40,9 @@ jest.mock('../../../middleware/auth.middleware', () => ({
 }));
 jest.mock('../../../middleware/shop-access.middleware', () => ({
     verifyShopAccess: mockVerifyShopAccess,
+}));
+jest.mock('../../audit/idempotency.middleware', () => ({
+    idempotencyMiddleware: (_req, _res, next) => next(),
 }));
 
 jest.mock('../conversation.controller', () => mockController);
@@ -62,9 +71,7 @@ describe('conversation.routes', () => {
         app = express();
         app.use(express.json());
         app.use('/api/conversation', require('../conversation.routes'));
-        app.use((err, _req, res, _next) => {
-            res.status(500).json({ message: err.message });
-        });
+        app.use(globalErrorHandler);
     });
 
     it('keeps the manual inbox accessible when billing suspension only pauses AI', async () => {
@@ -76,4 +83,24 @@ describe('conversation.routes', () => {
         expect(mockCheckSubscriptionStatus).not.toHaveBeenCalled();
         expect(mockController.getConversations).toHaveBeenCalledTimes(1);
     });
+
+    it('returns 200 for the authenticated shop own conversation', async () => {
+        const res = await request(app).get('/api/conversation/own-conversation');
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual(expect.objectContaining({ success: true }));
+    });
+
+    it.each(['missing-conversation', 'shop-b-conversation'])(
+        'returns 404 CONVERSATION_NOT_FOUND for %s without becoming a 500',
+        async (conversationId) => {
+            const res = await request(app).get(`/api/conversation/${conversationId}`);
+
+            expect(res.status).toBe(404);
+            expect(res.body).toEqual(expect.objectContaining({
+                success: false,
+                code: 'CONVERSATION_NOT_FOUND',
+            }));
+        },
+    );
 });

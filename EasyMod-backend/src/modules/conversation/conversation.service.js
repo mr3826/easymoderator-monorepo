@@ -643,7 +643,7 @@ class ConversationService {
             });
 
             if (!conversation) {
-                throw new Error('Conversation not found');
+                throw new AppError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND');
             }
 
             const [aiReplyMode, messages] = await Promise.all([
@@ -669,6 +669,7 @@ class ConversationService {
                 ...deriveWorkflowProjection(conversation, messages || [], aiReplyMode),
             };
         } catch (error) {
+            if (error instanceof AppError) throw error;
             throw new Error(`Failed to fetch conversation: ${error.message}`);
         }
     }
@@ -686,7 +687,7 @@ class ConversationService {
             });
 
             if (!conversation) {
-                throw new Error('Conversation not found');
+                throw new AppError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND');
             }
 
             const results = await Message.findAndCountAll({
@@ -716,7 +717,6 @@ class ConversationService {
                         'source_references',
                         'message_tag',
                         'created_at',
-                        'updated_at',
                         'delivery_state',
                         'delivery_source',
                         'provider_message_id',
@@ -743,6 +743,7 @@ class ConversationService {
                 }
             };
         } catch (error) {
+            if (error instanceof AppError) throw error;
             throw new Error(`Failed to fetch messages: ${error.message}`);
         }
     }
@@ -1270,7 +1271,38 @@ class ConversationService {
             }
 
             const currentConversationMetadata = normalizeObject(conversation.metadata);
-            const closing = updates.status === 'closed';
+            const requestedClosing = updates.status === 'closed';
+            let closing = requestedClosing;
+            let resolutionOutcome = null;
+            if (requestedClosing && updates.last_seen_message_id && typeof Message.findOne === 'function') {
+                const lastSeenMessage = await Message.findOne({
+                    where: {
+                        id: updates.last_seen_message_id,
+                        conversation_id: conversationId,
+                    },
+                    attributes: ['id', 'created_at'],
+                    ...(transaction ? { transaction } : {}),
+                });
+                const lastSeenAt = lastSeenMessage?.created_at
+                    ? new Date(lastSeenMessage.created_at).getTime()
+                    : NaN;
+                if (Number.isFinite(lastSeenAt)) {
+                    const newerCustomerMessage = await Message.findOne({
+                        where: {
+                            conversation_id: conversationId,
+                            sender: 'customer',
+                            created_at: { [Op.gt]: lastSeenMessage.created_at },
+                        },
+                        attributes: ['id'],
+                        order: [['created_at', 'ASC']],
+                        ...(transaction ? { transaction } : {}),
+                    });
+                    if (newerCustomerMessage) {
+                        closing = false;
+                        resolutionOutcome = 'kept_open_newer_customer_message';
+                    }
+                }
+            }
             const resuming = updates.hitl === false && !closing;
             const existingResumeBoundaryState = resumeBoundaryStateFor(conversation);
             if (resuming
@@ -1291,17 +1323,18 @@ class ConversationService {
             const fields = {};
             if (updates.hitl !== undefined) fields.hitl = updates.hitl;
             if (updates.status !== undefined) {
-                fields.status = updates.status;
-                fields.metadata = { ...currentConversationMetadata, status: updates.status };
-                if (updates.status === 'closed') {
+                const nextStatus = closing ? updates.status : 'active';
+                fields.status = nextStatus;
+                fields.metadata = { ...currentConversationMetadata, status: nextStatus };
+                if (closing && updates.status === 'closed') {
                     // Fence any in-flight pre-close AI turn. A later customer
                     // inbound is newer than this boundary and still reopens normally.
                     fields.metadata[RESUME_BOUNDARY_METADATA_KEY] = new Date().toISOString();
                 }
-                if (updates.status === 'closed' && !conversation.resolved_at) {
+                if (closing && updates.status === 'closed' && !conversation.resolved_at) {
                     fields.resolved_at = new Date();
                 }
-                if (updates.status === 'closed') {
+                if (closing && updates.status === 'closed') {
                     // Resolution ends the transient human session. The shop's
                     // global automation mode is intentionally unchanged.
                     fields.hitl = false;
@@ -1326,11 +1359,18 @@ class ConversationService {
             // persisted pending candidate from appearing sendable elsewhere.
             if ((updates.hitl === true || updates.hitl === false || updates.status === 'closed')
                 && typeof Message.findAll === 'function') {
-                const heldReason = closing ? 'conversation_closed' : 'human_active';
-                const nextState = resuming
+                const heldReason = resuming
+                    ? 'resume_obsolete'
+                    : resolutionOutcome
+                        ? 'newer_customer_message'
+                        : closing
+                            ? 'conversation_closed'
+                            : 'human_active';
+                const nextState = resuming || resolutionOutcome
                     ? MESSAGE_DELIVERY_STATES.DISMISSED
                     : MESSAGE_DELIVERY_STATES.HELD;
-                const suggestionVisibility = closing || resuming
+                const dismissed = resuming || resolutionOutcome;
+                const suggestionVisibility = closing || resuming || resolutionOutcome
                     ? SUGGESTION_VISIBILITY.HIDDEN_DISMISSED
                     : SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW;
                 const candidateWhere = {
@@ -1352,13 +1392,14 @@ class ConversationService {
                     const metadata = {
                         ...messageMetadata,
                         delivered: false,
-                        delivery_status: resuming ? 'dismissed' : 'held',
+                        delivery_status: dismissed ? 'dismissed' : 'held',
                         delivery_state: nextState,
                         held_reason: resuming ? 'resume_obsolete' : heldReason,
                         suggestion_visibility: suggestionVisibility,
-                        ...(resuming ? {
+                        ...(dismissed ? {
                             dismissed_at: new Date().toISOString(),
-                            dismissed_by_resume: true,
+                            ...(resuming ? { dismissed_by_resume: true } : {}),
+                            ...(resolutionOutcome ? { dismissed_by_newer_customer_message: true } : {}),
                         } : {}),
                     };
                     await message.update({
@@ -1369,7 +1410,7 @@ class ConversationService {
                 }));
             }
 
-            return { conversation, heldEvents };
+            return { conversation, heldEvents, resolutionOutcome };
         };
 
         try {
@@ -1408,6 +1449,7 @@ class ConversationService {
                 ...this.mapConversation(result.conversation),
                 hitl: result.conversation.hitl,
                 ...deriveWorkflowProjection(result.conversation, messages || [], aiReplyMode),
+                ...(result.resolutionOutcome ? { resolution_outcome: result.resolutionOutcome } : {}),
             };
         } catch (error) {
             const wrapped = new Error(`Failed to update conversation: ${error.message}`);

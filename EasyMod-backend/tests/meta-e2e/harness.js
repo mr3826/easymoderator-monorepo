@@ -60,7 +60,7 @@ const webhookApp = () => (app || (app = buildWebhookApp()));
 let midSeq = 0;
 
 /** A Meta `page` webhook envelope carrying one inbound Messenger text message. */
-const messagePayload = ({ pageId, psid, text, mid, attachments }) => ({
+const messagePayload = ({ pageId, psid, text, mid, attachments, quickReply, replyTo }) => ({
     object: 'page',
     entry: [{
         id: String(pageId),
@@ -73,6 +73,8 @@ const messagePayload = ({ pageId, psid, text, mid, attachments }) => ({
                 mid: mid || `m_e2e_${++midSeq}_${Date.now()}`,
                 ...(text === undefined ? {} : { text }),
                 ...(attachments ? { attachments } : {}),
+                ...(quickReply ? { quick_reply: quickReply } : {}),
+                ...(replyTo ? { reply_to: replyTo } : {}),
             },
         }],
     }],
@@ -255,6 +257,17 @@ const setBusinessReplyMode = async (shopId, mode) => {
     });
 };
 
+/** Resolve through the same service boundary used by the Inbox controller. */
+const resolveConversation = async ({ shopId, lastSeenMessageId } = {}) => {
+    const conversation = await conversationFor(shopId);
+    if (!conversation) throw new Error(`meta-e2e: no conversation for shop ${shopId}`);
+    const conversationService = require('../../src/modules/conversation/conversation.service');
+    return conversationService.updateConversation(conversation.id, shopId, {
+        status: 'closed',
+        last_seen_message_id: lastSeenMessageId,
+    });
+};
+
 /**
  * Send one explicit merchant reply through the real Shared Inbox delivery
  * helper. The provider transport remains captured by transport.js.
@@ -298,6 +311,8 @@ const sendAgentReply = async ({ shopId, content }) => {
  * @param {string} [params.pageId]     - defaults to the Shop A tester Page
  * @param {string} [params.psid]       - defaults to the E2E customer PSID
  * @param {string} [params.mid]        - Meta message id, for redelivery tests
+ * @param {object} [params.quickReply] - Meta Messenger quick-reply payload
+ * @param {object} [params.replyTo]    - Meta Messenger reply_to payload
  * @returns {Promise<{status:number, eventId:string, receipt:object|null,
  *                    jobResults:object[], sends:object[], decision:object|null}>}
  */
@@ -308,13 +323,15 @@ const deliver = async ({
     psid = fixtures.CUSTOMER_PSID,
     mid,
     attachments,
+    quickReply,
+    replyTo,
 } = {}) => {
     if (candidate !== undefined) transport.setCandidate(candidate);
 
     const sendsBefore = transport.capturedSends().length;
     const decisionsBefore = groundingDecisions.length;
 
-    const payload = messagePayload({ pageId, psid, text, mid, attachments });
+    const payload = messagePayload({ pageId, psid, text, mid, attachments, quickReply, replyTo });
     const eventId = payload.entry[0].messaging[0].message.mid;
     const response = await postWebhook(payload);
     const jobResults = await drainQueue();
@@ -442,6 +459,7 @@ module.exports = {
     messagesFor,
     injectAssistantMessage,
     setBusinessReplyMode,
+    resolveConversation,
     sendAgentReply,
     // captured outbound
     sentTexts,

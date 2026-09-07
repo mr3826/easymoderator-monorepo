@@ -898,18 +898,20 @@ export default function UnifiedInbox() {
     if (!selectedConversation) return;
     try {
       setResolvingConversation(true);
+      const lastSeenMessageId = messages[messages.length - 1]?.id;
       const response = await apiClient.updateConversation(selectedConversation.id, {
         status: "closed",
         resolution_note: resolveNote || undefined,
+        ...(lastSeenMessageId ? { last_seen_message_id: lastSeenMessageId } : {}),
       });
       const updated = {
         ...selectedConversation,
         ...response,
-        status: "closed" as const,
-        hitl: false,
-        needs_merchant_reply: false,
-        needs_merchant_reply_reason: null,
-        ai_is_replying: false,
+        status: response.status,
+        hitl: response.status === "closed" ? false : response.hitl,
+        needs_merchant_reply: response.needs_merchant_reply,
+        needs_merchant_reply_reason: response.needs_merchant_reply_reason,
+        ai_is_replying: response.ai_is_replying,
       };
       setSelectedConversation(updated);
       setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
@@ -918,10 +920,12 @@ export default function UnifiedInbox() {
         resource_type: "CONVERSATION",
         resource_id: selectedConversation.id,
         old_values: { status: selectedConversation.status },
-        new_values: { status: "closed", resolution_note: resolveNote },
+        new_values: { status: response.status, resolution_note: resolveNote },
         metadata: { channel: selectedConversation.channel },
       }).catch(() => {});
-      toast.success(t("inbox.conversationResolved"));
+      toast.success(response.status === "closed"
+        ? t("inbox.conversationResolved")
+        : t("inbox.conversationKeptOpen"));
       setShowResolveDialog(false);
       setResolveNote("");
     } catch {
