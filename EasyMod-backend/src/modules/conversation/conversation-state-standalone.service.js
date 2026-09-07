@@ -9,6 +9,7 @@ const {
     MESSAGE_DELIVERY_STATES,
     SUGGESTION_VISIBILITY,
     isProviderConfirmed,
+    resumeBoundaryStateFor,
     resumeBoundaryAtFor,
     candidateStartedAtFor,
     isBeforeResumeBoundary,
@@ -253,6 +254,12 @@ class ConversationStateService {
                     delivery_source,
                     send_idempotency_key,
                 };
+                const resumeBoundaryState = resumeBoundaryStateFor(conversation);
+                if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+                    const error = new Error('AI candidate Resume boundary is invalid');
+                    error.code = 'RESUME_BOUNDARY_INVALID';
+                    throw error;
+                }
                 const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
                 const candidateStartedAt = candidateStartedAtFor({
                     metadata: candidateMetadata,

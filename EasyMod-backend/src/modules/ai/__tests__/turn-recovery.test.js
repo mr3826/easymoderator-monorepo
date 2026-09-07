@@ -80,7 +80,7 @@ test('transition appends a state transition and rejects unknown states', async (
 test('requireHuman commits hitl and the recovery row before calling handoff', async () => {
     mockFindOrCreate.mockResolvedValue([mockTurn, true]);
     const result = await recovery.requireHuman({
-        turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
+        turnId: 'turn-1', traceId: 'trace-1', turnStartedAt: new Date().toISOString(), shopId: 'shop-1', conversationId: 'conv-1',
         reason: 'ACTION_DENIED', conversation: { id: 'conv-1', hitl: false },
         platform: 'facebook', recipientId: 'recipient-1', channel: null,
     });
@@ -99,7 +99,7 @@ test('a recovery write failure does not call handoff after the transaction abort
     mockFindOrCreate.mockRejectedValue(new Error('turn write failed'));
 
     await expect(recovery.requireHuman({
-        turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
+        turnId: 'turn-1', traceId: 'trace-1', turnStartedAt: new Date().toISOString(), shopId: 'shop-1', conversationId: 'conv-1',
         reason: 'RETRIEVAL_FAILURE', conversation: { id: 'conv-1' },
     })).rejects.toThrow('turn write failed');
     expect(mockHandoff).not.toHaveBeenCalled();
@@ -125,7 +125,7 @@ test('requireHuman does not re-enable HITL while a delivery lock is held', async
     }));
 
     await expect(recovery.requireHuman({
-        turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
+        turnId: 'turn-1', traceId: 'trace-1', turnStartedAt: new Date().toISOString(), shopId: 'shop-1', conversationId: 'conv-1',
         reason: 'ACTION_DENIED', conversation: { id: 'conv-1', status: 'active' },
     })).rejects.toMatchObject({ code: 'LOCK_ALREADY_HELD', retryable: true });
 
@@ -156,12 +156,43 @@ test('requireHuman skips a pre-Resume turn inside the locked transaction', async
     expect(mockHandoff).not.toHaveBeenCalled();
 });
 
+test('requireHuman fails closed for malformed turn or Resume timestamps', async () => {
+    const invalidTurn = await recovery.requireHuman({
+        turnId: 'turn-1',
+        traceId: 'trace-1',
+        turnStartedAt: 'not-a-timestamp',
+        shopId: 'shop-1',
+        conversationId: 'conv-1',
+        reason: 'ACTION_DENIED',
+        conversation: { id: 'conv-1', status: 'active' },
+    });
+    expect(invalidTurn.skipped).toBe('turn_start_unavailable');
+
+    mockConversationFindOne.mockResolvedValue({
+        id: 'conv-1',
+        status: 'active',
+        metadata: { ai_resume_boundary_at: 'not-a-timestamp' },
+    });
+    const invalidBoundary = await recovery.requireHuman({
+        turnId: 'turn-1',
+        traceId: 'trace-1',
+        turnStartedAt: new Date().toISOString(),
+        shopId: 'shop-1',
+        conversationId: 'conv-1',
+        reason: 'ACTION_DENIED',
+        conversation: { id: 'conv-1', status: 'active' },
+    });
+    expect(invalidBoundary.skipped).toBe('resume_boundary_invalid');
+    expect(mockConversationUpdate).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
+});
+
 test('requireHuman releases the delivery lock after handing off', async () => {
     mockFindOrCreate.mockResolvedValue([mockTurn, true]);
     mockAcquireForDelivery.mockImplementationOnce(async () => ({ available: true, success: true, lockId: 'lock-1' }));
 
     await recovery.requireHuman({
-        turnId: 'turn-1', traceId: 'trace-1', shopId: 'shop-1', conversationId: 'conv-1',
+        turnId: 'turn-1', traceId: 'trace-1', turnStartedAt: new Date().toISOString(), shopId: 'shop-1', conversationId: 'conv-1',
         reason: 'ACTION_DENIED', conversation: { id: 'conv-1', status: 'active' },
     });
 

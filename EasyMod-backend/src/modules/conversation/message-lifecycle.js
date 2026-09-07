@@ -39,20 +39,40 @@ function metadataFor(message) {
         : {};
 }
 
-function resumeBoundaryAtFor(conversation) {
+function timestampStateFor(value) {
+    if (value === undefined) return { present: false, valid: false, timestamp: null };
+    const timestamp = value instanceof Date
+        ? value.getTime()
+        : typeof value === 'number'
+            ? value
+            : Date.parse(String(value));
+    return {
+        present: true,
+        valid: Number.isFinite(timestamp) && timestamp > 0,
+        timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
+    };
+}
+
+function resumeBoundaryStateFor(conversation) {
     const metadata = metadataFor(conversation);
-    const value = metadata[RESUME_BOUNDARY_METADATA_KEY];
-    const timestamp = value instanceof Date ? value.getTime() : Date.parse(String(value || ''));
-    return Number.isFinite(timestamp) ? timestamp : null;
+    const state = timestampStateFor(metadata[RESUME_BOUNDARY_METADATA_KEY]);
+    return {
+        ...state,
+        present: Object.prototype.hasOwnProperty.call(metadata, RESUME_BOUNDARY_METADATA_KEY),
+    };
+}
+
+function resumeBoundaryAtFor(conversation) {
+    const state = resumeBoundaryStateFor(conversation);
+    return state.valid ? state.timestamp : null;
 }
 
 function candidateStartedAtFor(message) {
     const metadata = metadataFor(message);
-    const turnStartedAt = Date.parse(String(metadata.turn_started_at || ''));
-    if (Number.isFinite(turnStartedAt)) return turnStartedAt;
+    const turnState = timestampStateFor(metadata.turn_started_at);
+    if (turnState.present) return turnState.timestamp;
     const createdAt = message?.created_at ?? message?.createdAt;
-    const messageTimestamp = createdAt instanceof Date ? createdAt.getTime() : Date.parse(String(createdAt || ''));
-    return Number.isFinite(messageTimestamp) ? messageTimestamp : null;
+    return timestampStateFor(createdAt).timestamp;
 }
 
 function isBeforeResumeBoundary(message, boundaryAt) {
@@ -179,6 +199,8 @@ module.exports = {
     MESSAGE_DELIVERY_STATES,
     SUGGESTION_VISIBILITY,
     RESUME_BOUNDARY_METADATA_KEY,
+    timestampStateFor,
+    resumeBoundaryStateFor,
     normalizeDeliveryState,
     resumeBoundaryAtFor,
     candidateStartedAtFor,

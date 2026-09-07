@@ -24,7 +24,7 @@ const {
     isReviewableSuggestion,
     deriveMessageSendIdempotencyKey,
     RESUME_BOUNDARY_METADATA_KEY,
-    resumeBoundaryAtFor,
+    resumeBoundaryStateFor,
     isBeforeResumeBoundary,
 } = require('./message-lifecycle');
 
@@ -1200,7 +1200,18 @@ class ConversationService {
             const currentConversationMetadata = normalizeObject(conversation.metadata);
             const closing = updates.status === 'closed';
             const resuming = updates.hitl === false && !closing;
-            const existingResumeBoundary = resumeBoundaryAtFor(conversation);
+            const existingResumeBoundaryState = resumeBoundaryStateFor(conversation);
+            if (resuming
+                && conversation.hitl !== true
+                && existingResumeBoundaryState.present
+                && !existingResumeBoundaryState.valid) {
+                const error = new Error('Resume AI boundary is invalid');
+                error.code = 'RESUME_BOUNDARY_INVALID';
+                throw error;
+            }
+            const existingResumeBoundary = existingResumeBoundaryState.valid
+                ? existingResumeBoundaryState.timestamp
+                : null;
             const resumeBoundary = resuming
                 ? (conversation.hitl === true || !existingResumeBoundary
                     ? new Date().toISOString()

@@ -6,6 +6,8 @@ const { Conversation } = require('../../conversation/conversation.entity');
 const { escalateToHuman } = require('../../conversation/human-handoff.service');
 const conversationLockService = require('../../conversation/conversation-lock.service');
 const {
+    timestampStateFor,
+    resumeBoundaryStateFor,
     resumeBoundaryAtFor,
     isBeforeResumeBoundary,
 } = require('../../conversation/message-lifecycle');
@@ -165,6 +167,7 @@ const requireHuman = async (input = {}) => {
     const shopId = requiredText(input.shopId, 'shopId');
     const timestamp = now();
     let turn;
+    let skipReason = null;
 
     let currentConversation = typeof Conversation.findOne === 'function'
         ? await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } })
@@ -215,20 +218,29 @@ const requireHuman = async (input = {}) => {
                     attributes: ['id', 'status', 'metadata'],
                     transaction,
                     lock: transaction.LOCK?.UPDATE,
-                })
+            })
                 : currentConversation;
             if (!lockedConversation) throw new Error('Conversation not found for human recovery');
+            const turnStartedState = timestampStateFor(input.turnStartedAt);
+            if (!turnStartedState.valid) {
+                turn = null;
+                skipReason = 'turn_start_unavailable';
+                return;
+            }
+            const resumeBoundaryState = resumeBoundaryStateFor(lockedConversation);
+            if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+                turn = null;
+                skipReason = 'resume_boundary_invalid';
+                return;
+            }
             const resumeBoundaryAt = resumeBoundaryAtFor(lockedConversation);
             if (resumeBoundaryAt) {
-                if (!input.turnStartedAt) {
-                    turn = null;
-                    return;
-                }
                 if (isBeforeResumeBoundary({
-                    metadata: { turn_started_at: input.turnStartedAt },
-                    created_at: input.turnStartedAt,
+                    metadata: { turn_started_at: turnStartedState.timestamp },
+                    created_at: turnStartedState.timestamp,
                 }, resumeBoundaryAt)) {
                     turn = null;
+                    skipReason = 'resume_obsolete';
                     return;
                 }
             }
@@ -240,7 +252,7 @@ const requireHuman = async (input = {}) => {
             turn = await createOrUpdateHumanTurn({ ...input, turnId, conversationId, shopId }, transaction, timestamp);
         });
 
-        if (!turn) return { turn: null, handoff: null, skipped: 'resume_obsolete' };
+        if (!turn) return { turn: null, handoff: null, skipped: skipReason || 'resume_obsolete' };
 
         const conversation = currentConversation
             || await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } });

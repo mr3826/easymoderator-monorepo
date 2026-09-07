@@ -156,4 +156,24 @@ describe('ConversationStateService Resume boundary', () => {
             { transaction: mockTransaction },
         );
     });
+
+    it('fails closed when the persisted Resume boundary is malformed', async () => {
+        mockConversation.findOne.mockResolvedValue({
+            id: 'conversation-1',
+            metadata: { ai_resume_boundary_at: 'not-a-timestamp' },
+            update: jest.fn(),
+        });
+
+        await expect(ConversationStateService.storeAIResponse(
+            'conversation-1',
+            'uncertain reply',
+            {
+                logical_turn_id: 'turn-1',
+                turn_started_at: new Date().toISOString(),
+                delivery_state: 'HELD',
+                delivery_source: 'AUTO',
+            },
+        )).rejects.toMatchObject({ code: 'RESUME_BOUNDARY_INVALID' });
+        expect(mockMessage.create).not.toHaveBeenCalled();
+    });
 });

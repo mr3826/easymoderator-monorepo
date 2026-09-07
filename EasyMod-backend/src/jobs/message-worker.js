@@ -50,7 +50,9 @@ const {
     providerAcknowledgementId,
     hasProviderAcknowledgement,
     deriveAutomaticSendIdempotencyKey,
-    resumeBoundaryAtFor,
+    timestampStateFor,
+    resumeBoundaryStateFor,
+    candidateStartedAtFor,
     isBeforeResumeBoundary,
 } = require('../modules/conversation/message-lifecycle');
 const lifecycleLogger = createLogger('InboxLifecycle');
@@ -475,9 +477,13 @@ async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
                 if (!conversation || conversation.hitl === true || ['closed', 'archived'].includes(conversation.status)) {
                     return false;
                 }
-                if (resumeBoundaryAtFor(conversation)
+                const resumeBoundaryState = resumeBoundaryStateFor(conversation);
+                if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+                    return false;
+                }
+                if (resumeBoundaryState.valid
                     && messageMetadata(message).provider_send_attempted !== true
-                    && isBeforeResumeBoundary(message, resumeBoundaryAtFor(conversation))) {
+                    && isBeforeResumeBoundary(message, resumeBoundaryState.timestamp)) {
                     return false;
                 }
                 if (typeof cacheRedis.get === 'function' && await cacheRedis.get(`ai:pause:${message.conversation_id}`)) {
@@ -577,9 +583,13 @@ async function claimProviderSendBoundary(message, idempotencyKey, shopId) {
         if (['closed', 'archived'].includes(conversation.status)) {
             return { allowed: false, reason: 'conversation_closed' };
         }
-        if (resumeBoundaryAtFor(conversation)
+        const resumeBoundaryState = resumeBoundaryStateFor(conversation);
+        if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+            return { allowed: false, reason: 'resume_boundary_invalid' };
+        }
+        if (resumeBoundaryState.valid
             && messageMetadata(message).provider_send_attempted !== true
-            && isBeforeResumeBoundary(message, resumeBoundaryAtFor(conversation))) {
+            && isBeforeResumeBoundary(message, resumeBoundaryState.timestamp)) {
             return { allowed: false, reason: 'resume_obsolete' };
         }
         const currentBusinessMode = await getEffectiveAiReplyMode(shopId);
@@ -749,11 +759,14 @@ function createRecoveryControl({
                     attributes: ['id', 'metadata'],
                 })
                 : null;
-            const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
-            const turnIsObsolete = resumeBoundaryAt && (!turnStartedAt || isBeforeResumeBoundary({
-                metadata: { turn_started_at: turnStartedAt },
-                created_at: turnStartedAt,
-            }, resumeBoundaryAt));
+            const resumeBoundaryState = resumeBoundaryStateFor(conversation);
+            const turnStartedState = timestampStateFor(turnStartedAt);
+            const turnIsObsolete = !turnStartedState.valid
+                || (resumeBoundaryState.present && (!resumeBoundaryState.valid
+                    || isBeforeResumeBoundary({
+                        metadata: { turn_started_at: turnStartedState.timestamp },
+                        created_at: turnStartedState.timestamp,
+                    }, resumeBoundaryState.timestamp)));
             if (turnIsObsolete) {
                 if (holdingMessage?.id && typeof Message.update === 'function') {
                     const metadata = {
@@ -947,11 +960,14 @@ function createRecoveryControl({
                     attributes: ['id', 'status', 'metadata'],
                 })
                 : null;
-            const latestResumeBoundary = resumeBoundaryAtFor(latestConversation);
-            if (latestResumeBoundary && (!turnStartedAt || isBeforeResumeBoundary({
-                metadata: { turn_started_at: turnStartedAt },
-                created_at: turnStartedAt,
-            }, latestResumeBoundary))) {
+            const latestResumeBoundaryState = resumeBoundaryStateFor(latestConversation);
+            const latestTurnStartedState = timestampStateFor(turnStartedAt);
+            if (!latestTurnStartedState.valid
+                || (latestResumeBoundaryState.present && (!latestResumeBoundaryState.valid
+                    || isBeforeResumeBoundary({
+                        metadata: { turn_started_at: latestTurnStartedState.timestamp },
+                        created_at: latestTurnStartedState.timestamp,
+                    }, latestResumeBoundaryState.timestamp)))) {
                 await transitionTo('RETRY_PENDING', {
                     retryState: 'HOLDING_SEND_FAILED',
                     recoveryKind,
@@ -1293,8 +1309,15 @@ async function finalizeAiMessage(
             if (!conversation && process.env.NODE_ENV !== 'test') {
                 return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
             }
-            const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
-            if (resumeBoundaryAt && isBeforeResumeBoundary(currentMessage, resumeBoundaryAt)) {
+            const resumeBoundaryState = resumeBoundaryStateFor(conversation);
+            const candidateStartedAt = candidateStartedAtFor(currentMessage);
+            if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+                return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
+            }
+            if (resumeBoundaryState.valid && candidateStartedAt === null) {
+                return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
+            }
+            if (resumeBoundaryState.valid && isBeforeResumeBoundary(currentMessage, resumeBoundaryState.timestamp)) {
                 const resumeMetadata = {
                     ...messageMetadata(currentMessage),
                     delivered: false,
@@ -1801,8 +1824,15 @@ async function processMessageJob(job) {
             conversationId,
             idempotencyKey: jobIdempotencyKey || deriveIdempotencyKey(['turn', shopId, conversationId, turnId]),
         });
+        const startedAtState = timestampStateFor(started?.turn?.turn_started_at);
+        if (!startedAtState.valid) {
+            const error = new Error(`Recovery returned an invalid durable turn start for ${turnId}`);
+            error.code = 'TURN_START_UNAVAILABLE';
+            error.retryable = true;
+            throw error;
+        }
         recoveryStarted = true;
-        turnStartedAt = started.turn.turn_started_at || null;
+        turnStartedAt = new Date(startedAtState.timestamp).toISOString();
         stableTraceId = started.turn.trace_id || stableTraceId;
         recoveryControl = createRecoveryControl({
             turnId,
@@ -1819,6 +1849,7 @@ async function processMessageJob(job) {
         console.warn(`[worker] Recovery state unavailable for turn ${turnId}: ${recoveryErr.message}`);
     }
     if (!turnStartedAt) {
+        if (recoveryControl) await recoveryControl.close().catch(() => {});
         if (dedupKey) await cacheRedis.del(dedupKey).catch(() => {});
         const error = new Error(`Durable turn start is unavailable for ${turnId}`);
         error.code = 'TURN_START_UNAVAILABLE';
