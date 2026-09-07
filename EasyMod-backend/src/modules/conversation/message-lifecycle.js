@@ -41,11 +41,16 @@ function metadataFor(message) {
 
 function timestampStateFor(value) {
     if (value === undefined) return { present: false, valid: false, timestamp: null };
-    const timestamp = value instanceof Date
-        ? value.getTime()
-        : typeof value === 'number'
-            ? value
-            : Date.parse(String(value));
+    let timestamp = null;
+    if (value instanceof Date) {
+        timestamp = value.getTime();
+    } else if (typeof value === 'number') {
+        timestamp = value;
+    } else if (typeof value === 'string') {
+        const normalized = value.trim();
+        const isIsoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(normalized);
+        if (isIsoTimestamp) timestamp = Date.parse(normalized);
+    }
     return {
         present: true,
         valid: Number.isFinite(timestamp) && timestamp > 0,
@@ -67,12 +72,16 @@ function resumeBoundaryAtFor(conversation) {
     return state.valid ? state.timestamp : null;
 }
 
-function candidateStartedAtFor(message) {
+function candidateStartedAtStateFor(message) {
     const metadata = metadataFor(message);
     const turnState = timestampStateFor(metadata.turn_started_at);
-    if (turnState.present) return turnState.timestamp;
+    if (turnState.present) return turnState;
     const createdAt = message?.created_at ?? message?.createdAt;
-    return timestampStateFor(createdAt).timestamp;
+    return timestampStateFor(createdAt);
+}
+
+function candidateStartedAtFor(message) {
+    return candidateStartedAtStateFor(message).timestamp;
 }
 
 function isBeforeResumeBoundary(message, boundaryAt) {
@@ -201,6 +210,7 @@ module.exports = {
     RESUME_BOUNDARY_METADATA_KEY,
     timestampStateFor,
     resumeBoundaryStateFor,
+    candidateStartedAtStateFor,
     normalizeDeliveryState,
     resumeBoundaryAtFor,
     candidateStartedAtFor,

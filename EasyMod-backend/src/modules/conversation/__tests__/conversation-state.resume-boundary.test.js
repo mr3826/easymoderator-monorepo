@@ -160,7 +160,7 @@ describe('ConversationStateService Resume boundary', () => {
     it('fails closed when the persisted Resume boundary is malformed', async () => {
         mockConversation.findOne.mockResolvedValue({
             id: 'conversation-1',
-            metadata: { ai_resume_boundary_at: 'not-a-timestamp' },
+            metadata: { ai_resume_boundary_at: '0' },
             update: jest.fn(),
         });
 

@@ -52,6 +52,7 @@ const {
     deriveAutomaticSendIdempotencyKey,
     timestampStateFor,
     resumeBoundaryStateFor,
+    candidateStartedAtStateFor,
     candidateStartedAtFor,
     isBeforeResumeBoundary,
 } = require('../modules/conversation/message-lifecycle');
@@ -481,6 +482,9 @@ async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
                 if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
                     return false;
                 }
+                if (resumeBoundaryState.valid && !candidateStartedAtStateFor(message).valid) {
+                    return false;
+                }
                 if (resumeBoundaryState.valid
                     && messageMetadata(message).provider_send_attempted !== true
                     && isBeforeResumeBoundary(message, resumeBoundaryState.timestamp)) {
@@ -586,6 +590,9 @@ async function claimProviderSendBoundary(message, idempotencyKey, shopId) {
         const resumeBoundaryState = resumeBoundaryStateFor(conversation);
         if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
             return { allowed: false, reason: 'resume_boundary_invalid' };
+        }
+        if (resumeBoundaryState.valid && !candidateStartedAtStateFor(message).valid) {
+            return { allowed: false, reason: 'resume_candidate_timestamp_invalid' };
         }
         if (resumeBoundaryState.valid
             && messageMetadata(message).provider_send_attempted !== true
