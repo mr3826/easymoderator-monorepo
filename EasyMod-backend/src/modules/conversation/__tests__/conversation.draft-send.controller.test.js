@@ -2,6 +2,7 @@
 
 const mockApproveAiDraft = jest.fn();
 const mockUpdateConversation = jest.fn();
+const mockDismissAiDraft = jest.fn();
 const mockMapMessage = jest.fn((message) => message);
 const mockConversationFindOne = jest.fn();
 const mockMessageFindOne = jest.fn();
@@ -11,7 +12,7 @@ const mockProviderSend = jest.fn();
 jest.mock('../conversation.service', () => ({
     approveAiDraft: mockApproveAiDraft,
     updateConversation: mockUpdateConversation,
-    dismissAiDraft: jest.fn(),
+    dismissAiDraft: mockDismissAiDraft,
     markConversationRead: jest.fn(),
     mapMessage: mockMapMessage,
 }));
@@ -68,6 +69,7 @@ const response = () => ({
 beforeEach(() => {
     jest.clearAllMocks();
     mockApproveAiDraft.mockResolvedValue({ message: candidate, alreadySent: false });
+    mockDismissAiDraft.mockResolvedValue({ message: { id: 'draft-1', metadata: {} }, dismissedSiblingMessageIds: [] });
     mockUpdateConversation.mockResolvedValue({ id: 'conversation-1', hitl: true, status: 'active' });
     mockMessageFindOne.mockResolvedValue({ ...candidate, delivery_state: 'SENT', provider_message_id: 'mid-1' });
     mockMessageUpdate.mockResolvedValue([1]);
@@ -175,6 +177,25 @@ describe('draft approval controller boundary', () => {
         }, res, jest.fn());
 
         expect(mockProviderSend).not.toHaveBeenCalled();
+    });
+
+    it('emits dismissal lifecycle updates for duplicate sibling candidates', async () => {
+        mockDismissAiDraft.mockResolvedValue({
+            message: { id: 'draft-1', metadata: { delivery_state: 'DISMISSED' } },
+            dismissedSiblingMessageIds: ['draft-older'],
+        });
+        const res = response();
+
+        await controller.dismissAiDraft({
+            params: { conversationId: 'conversation-1', messageId: 'draft-1' },
+            user: { shopId: 'shop-1', userId: 'merchant-1' },
+        }, res, jest.fn());
+
+        expect(sseManager.emit).toHaveBeenCalledWith('shop-1', 'message_delivery_updated', expect.objectContaining({
+            conversation_id: 'conversation-1',
+            message_id: 'draft-older',
+            delivery_state: 'DISMISSED',
+        }));
     });
 
     it('does not project a pre-provider failure as SENT', async () => {

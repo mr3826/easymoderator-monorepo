@@ -239,7 +239,7 @@ describe('ConversationService delivery projection', () => {
         };
         mockConversationModel.findOne.mockResolvedValue(conversation);
         mockMessageModel.findOne.mockResolvedValue(candidate);
-        mockMessageModel.findAll.mockResolvedValue([candidate, duplicateDraft]);
+        mockMessageModel.findAll.mockResolvedValue([candidate, duplicateDraft, customerMessage]);
 
         await expect(conversationService.dismissAiDraft(
             'conversation-1',
@@ -287,7 +287,7 @@ describe('ConversationService delivery projection', () => {
         };
         mockConversationModel.findOne.mockResolvedValue({ id: 'conversation-1', shop_id: 'shop-a' });
         mockMessageModel.findOne.mockResolvedValue(legacyCandidate);
-        mockMessageModel.findAll.mockResolvedValue([legacyCandidate, newerDraft]);
+        mockMessageModel.findAll.mockResolvedValue([legacyCandidate, newerDraft, customerMessage]);
 
         expect(legacyCandidate.metadata.logical_turn_id).toBeUndefined();
         expect(newerDraft.metadata.logical_turn_id).toBe('burst:customer-2');
@@ -329,7 +329,7 @@ describe('ConversationService delivery projection', () => {
         };
         mockConversationModel.findOne.mockResolvedValue({ id: 'conversation-1', shop_id: 'shop-a' });
         mockMessageModel.findOne.mockResolvedValue(dismissed);
-        mockMessageModel.findAll.mockResolvedValue([dismissed, legacySibling]);
+        mockMessageModel.findAll.mockResolvedValue([dismissed, legacySibling, customerMessage]);
 
         const result = await conversationService.dismissAiDraft(
             'conversation-1',
@@ -585,6 +585,27 @@ describe('ConversationService delivery projection', () => {
                 },
             ],
             expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'AI_FAILED', ai_is_replying: false },
+        },
+        {
+            name: 'AUTO dismissed draft',
+            mode: 'AUTO',
+            messages: [
+                customerMessage,
+                {
+                    id: 'dismissed-ai',
+                    conversation_id: 'conversation-1',
+                    sender: 'ai',
+                    created_at: new Date('2026-09-04T10:01:00Z'),
+                    delivery_state: 'DISMISSED',
+                    metadata: {
+                        delivery_state: 'DISMISSED',
+                        delivery_status: 'dismissed',
+                        suggestion_visibility: 'HIDDEN_DISMISSED',
+                        held_reason: 'dismissed',
+                    },
+                },
+            ],
+            expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED', ai_is_replying: false },
         },
         {
             name: 'AUTO provider outcome unknown',

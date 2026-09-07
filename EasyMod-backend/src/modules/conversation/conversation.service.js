@@ -155,22 +155,38 @@ const logicalTurnIdFor = (message) => {
     return logicalTurnId ? String(logicalTurnId) : null;
 };
 
-const isDismissableDuplicateSibling = (candidate, sibling) => {
+const legacyLogicalTurnIdFor = (message, rows) => {
+    const candidateAt = workflowTimestamp(message);
+    if (!Number.isFinite(candidateAt)) return null;
+    const ordered = (Array.isArray(rows) ? rows : [])
+        .filter((row) => Number.isFinite(workflowTimestamp(row))
+            && workflowTimestamp(row) <= candidateAt)
+        .sort((left, right) => workflowTimestamp(left) - workflowTimestamp(right));
+    const answerTimes = ordered
+        .filter(isAnsweringOutbound)
+        .map(workflowTimestamp)
+        .filter(Number.isFinite);
+    const latestAnswerAt = answerTimes.length ? Math.max(...answerTimes) : NaN;
+    const firstPendingCustomer = ordered.find((row) => (
+        row?.sender === 'customer'
+        && (!Number.isFinite(latestAnswerAt) || workflowTimestamp(row) > latestAnswerAt)
+    ));
+    return firstPendingCustomer?.id ? `burst:${firstPendingCustomer.id}` : null;
+};
+
+const dismissalLogicalTurnIdFor = (message, rows) => {
+    const persisted = logicalTurnIdFor(message);
+    if (persisted) return persisted;
+    return legacyLogicalTurnIdFor(message, rows);
+};
+
+const isDismissableDuplicateSibling = (candidate, sibling, rows) => {
     if (!candidate?.id || !sibling?.id || candidate.id === sibling.id) return false;
     if (!isReviewableSuggestion(sibling)) return false;
 
-    const candidateTurnId = logicalTurnIdFor(candidate);
-    const siblingTurnId = logicalTurnIdFor(sibling);
-    if (candidateTurnId && siblingTurnId) return candidateTurnId === siblingTurnId;
-
-    // Rows created before logical_turn_id was persisted cannot be joined to a
-    // newer candidate safely. For that legacy shape, only terminalize older
-    // siblings in the same unanswered suffix; never remove a newer draft.
-    if (candidateTurnId || siblingTurnId) {
-        return Boolean(candidateTurnId && !siblingTurnId)
-            && workflowTimestamp(sibling) <= workflowTimestamp(candidate);
-    }
-    return workflowTimestamp(sibling) <= workflowTimestamp(candidate);
+    const candidateTurnId = dismissalLogicalTurnIdFor(candidate, rows);
+    const siblingTurnId = dismissalLogicalTurnIdFor(sibling, rows);
+    return Boolean(candidateTurnId && siblingTurnId && candidateTurnId === siblingTurnId);
 };
 
 const dismissedMetadata = (message, actorId, dismissedAt, duplicateOf = null) => ({
@@ -191,7 +207,7 @@ const dismissedMetadata = (message, actorId, dismissedAt, duplicateOf = null) =>
 const loadDismissalCandidates = async (conversationId, transaction, candidate) => {
     if (typeof Message.findAll !== 'function') return [candidate];
     const rows = await Message.findAll({
-        where: { conversation_id: conversationId, sender: 'ai' },
+        where: { conversation_id: conversationId },
         transaction,
         lock: transaction.LOCK?.UPDATE,
     });
@@ -203,14 +219,17 @@ const loadDismissalCandidates = async (conversationId, transaction, candidate) =
 };
 
 const terminalizeDuplicateSiblings = async (candidate, rows, transaction, actorId, dismissedAt) => {
+    const dismissedSiblingMessageIds = [];
     for (const sibling of rows) {
-        if (!isDismissableDuplicateSibling(candidate, sibling)) continue;
+        if (!isDismissableDuplicateSibling(candidate, sibling, rows)) continue;
         await sibling.update({
             metadata: dismissedMetadata(sibling, actorId, dismissedAt, candidate.id),
             delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
             delivery_source: sibling.delivery_source || 'AI_DRAFT',
         }, { transaction });
+        dismissedSiblingMessageIds.push(sibling.id);
     }
+    return dismissedSiblingMessageIds;
 };
 
 const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
@@ -260,11 +279,9 @@ const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
         if (reviewable.length > 0 || failed.length > 0) {
             needsMerchantReply = true;
         } else if (unanswered) {
-            // AUTO owns a turn while its candidate is processing. MANUAL and
-            // DRAFT always leave the unanswered customer visible to the merchant.
-            needsMerchantReply = aiReplyMode !== 'AUTO' || conversation?.hitl === true
-                ? activeAttempts.length === 0
-                : false;
+            // Dismissal is not an answer. AUTO suppresses this flag only
+            // while a provider attempt is genuinely active.
+            needsMerchantReply = conversation?.hitl === true || activeAttempts.length === 0;
         }
     }
 
@@ -991,7 +1008,7 @@ class ConversationService {
             const dismissalCandidates = await loadDismissalCandidates(conversationId, transaction, candidate);
             const dismissedAt = new Date().toISOString();
             if (state === MESSAGE_DELIVERY_STATES.DISMISSED) {
-                await terminalizeDuplicateSiblings(
+                const dismissedSiblingMessageIds = await terminalizeDuplicateSiblings(
                     candidate,
                     dismissalCandidates,
                     transaction,
@@ -999,7 +1016,7 @@ class ConversationService {
                     dismissedAt,
                 );
                 await transaction.commit();
-                return { message: mapMessage(candidate), alreadyDismissed: true };
+                return { message: mapMessage(candidate), alreadyDismissed: true, dismissedSiblingMessageIds };
             }
             if (state === MESSAGE_DELIVERY_STATES.SENT || state === MESSAGE_DELIVERY_STATES.DELIVERED) {
                 const error = new Error('A sent AI message cannot be dismissed');
@@ -1032,7 +1049,7 @@ class ConversationService {
                 delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
                 delivery_source: candidate.delivery_source || 'AI_DRAFT',
             }, { transaction });
-            await terminalizeDuplicateSiblings(
+            const dismissedSiblingMessageIds = await terminalizeDuplicateSiblings(
                 candidate,
                 dismissalCandidates,
                 transaction,
@@ -1040,7 +1057,7 @@ class ConversationService {
                 dismissedAt,
             );
             await transaction.commit();
-            return { message: candidate, alreadyDismissed: false };
+            return { message: candidate, alreadyDismissed: false, dismissedSiblingMessageIds };
         } catch (error) {
             if (!transaction.finished) await transaction.rollback();
             throw error;

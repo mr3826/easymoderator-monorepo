@@ -1520,7 +1520,7 @@ async function processMessageJob(job) {
     const automaticCandidateKey = deriveAutomaticSendIdempotencyKey({
         shopId,
         conversationId,
-        turnId,
+        turnId: logicalTurnId,
     });
     if (dedupKey) {
         const isNew = await claimDedupKey(dedupKey);
@@ -1622,7 +1622,7 @@ async function processMessageJob(job) {
     const automaticSendIdempotencyKey = deriveAutomaticSendIdempotencyKey({
         shopId,
         conversationId,
-        turnId,
+        turnId: logicalTurnId,
     });
     let existingAutomaticCandidate = null;
     if (typeof Message.findOne === 'function') {
@@ -2041,7 +2041,7 @@ async function processMessageJob(job) {
             send_idempotency_key: lifecycle.sendIdempotencyKey || deriveAutomaticSendIdempotencyKey({
                 shopId,
                 conversationId,
-                turnId,
+                turnId: logicalTurnId,
             }),
         });
     };
