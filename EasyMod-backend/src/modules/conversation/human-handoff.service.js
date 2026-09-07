@@ -35,7 +35,7 @@ const {
 } = require('./message-lifecycle');
 const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
 const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
-const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
 const SUPPORTED_HANDOFF_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
 

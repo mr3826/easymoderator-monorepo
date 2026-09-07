@@ -6,7 +6,7 @@ const { Conversation } = require('../../conversation/conversation.entity');
 const { escalateToHuman } = require('../../conversation/human-handoff.service');
 const conversationLockService = require('../../conversation/conversation-lock.service');
 
-const RECOVERY_LOCK_TIMEOUT_MS = 60_000;
+const RECOVERY_LOCK_TIMEOUT_MS = 300_000;
 const RECOVERY_LOCK_WAIT_MS = 10_000;
 
 const CUSTOMER_STATES = Object.freeze([

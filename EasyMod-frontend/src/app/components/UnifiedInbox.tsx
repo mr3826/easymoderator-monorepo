@@ -1053,9 +1053,12 @@ export default function UnifiedInbox() {
           onSearchChange={setSearchQuery}
           onFilterChange={setFilterTab}
           onSelectConversation={(conv) => {
+            const sameConversation = selectedConversationRef.current?.id === conv.id;
             setSelectedConversation(conv);
-            setMessages([]);
-            setLoadingMessages(true);
+            if (!sameConversation) {
+              setMessages([]);
+              setLoadingMessages(true);
+            }
             setMobilePanelOpen(true);
           }}
         />

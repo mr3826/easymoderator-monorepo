@@ -34,7 +34,7 @@ const PLACEHOLDER_CUSTOMER_NAMES = new Set([
     'unknown',
 ]);
 
-const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
 
 async function acquireBulkDeliveryLock(conversationId) {
@@ -1335,6 +1335,12 @@ class ConversationService {
                     }
                 }
             );
+
+            if (status === 'active') {
+                await Promise.all(conversationIds.map((conversationId) => (
+                    Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {})
+                )));
+            }
 
             return {
                 requested: conversationIds.length,
