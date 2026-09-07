@@ -380,7 +380,10 @@ describe('MetaMessengerProvider', () => {
                         },
                     },
                 }),
-                { params: { access_token: 'page-token', appsecret_proof: expect.any(String) } }
+                {
+                    params: { access_token: 'page-token', appsecret_proof: expect.any(String) },
+                    timeout: 30_000,
+                }
             );
         });
 

@@ -76,7 +76,7 @@ const baseConversation = {
 
 type InboxSSECallbacks = Parameters<typeof useInboxSSE>[0]
 
-const setInboxData = (mode: string, messages: any[] = [], conversation = baseConversation) => {
+const setInboxData = (mode: string, messages: any[] = [], conversation: any = baseConversation) => {
   ;(apiClient.getConversations as any).mockResolvedValue({
     data: [conversation],
     ai_reply_mode: mode,
@@ -872,6 +872,38 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     await waitFor(() => expect(screen.getByText('Do you have this in red?')).toBeInTheDocument())
     expect(screen.queryByText('AI is preparing a reply')).not.toBeInTheDocument()
     expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
+  })
+
+  it('clears the previous thread immediately when another conversation is selected', async () => {
+    const otherConversation = {
+      ...baseConversation,
+      id: 'conv-2',
+      customer_id: 'cust-2',
+      customer: { id: 'cust-2', name: 'Bob' },
+    }
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      data: [baseConversation, otherConversation],
+      ai_reply_mode: 'MANUAL',
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.getMessages as any).mockImplementation(async (conversationId: string) => ({
+      messages: conversationId === 'conv-1'
+        ? [{
+            id: 'msg-alice-only',
+            conversation_id: 'conv-1',
+            sender: 'customer',
+            content: 'Alice thread message',
+            created_at: new Date().toISOString(),
+          }]
+        : [],
+      pagination: { page: 1, totalPages: 1 },
+    }))
+    render(<UnifiedInbox />)
+
+    await screen.findByText('Alice thread message')
+    fireEvent.click(screen.getAllByText('Bob')[0])
+
+    expect(screen.queryByText('Alice thread message')).not.toBeInTheDocument()
   })
 
   it('shows a clearly labelled HITL suggestion when AUTO requires human review', async () => {

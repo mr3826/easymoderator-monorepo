@@ -39,12 +39,23 @@ const DELIVERY_LOCK_WAIT_MS = 10_000;
 
 async function acquireBulkDeliveryLock(conversationId) {
     if (!cacheRedis || typeof cacheRedis.set !== 'function'
-        || typeof conversationLockService?.acquireForDelivery !== 'function') return null;
+        || typeof conversationLockService?.acquireForDelivery !== 'function') {
+        if (process.env.NODE_ENV === 'test') return null;
+        throw Object.assign(new Error('Conversation delivery lock is unavailable'), {
+            statusCode: 503,
+            code: 'DELIVERY_LOCK_UNAVAILABLE',
+        });
+    }
     const lock = await conversationLockService.acquireForDelivery(conversationId, {
         lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
         maxWaitMs: DELIVERY_LOCK_WAIT_MS,
     });
-    if (lock?.available === false) return null;
+    if (lock?.available === false && process.env.NODE_ENV !== 'test') {
+        throw Object.assign(new Error('Conversation delivery lock is unavailable'), {
+            statusCode: 503,
+            code: 'DELIVERY_LOCK_UNAVAILABLE',
+        });
+    }
     if (!lock?.success) {
         const error = new Error('Another Inbox delivery is in progress; retry after it completes');
         error.statusCode = 409;
@@ -111,11 +122,32 @@ const isCurrentWorkflowMessage = (message, latestCustomerAt, latestAnswerAt) => 
 const isActiveProviderAttempt = (message, latestCustomerAt, latestAnswerAt) => {
     if (!['ai', 'business'].includes(message?.sender)
         || isProviderConfirmed(message)
+        || workflowDeliverySource(message) === 'HITL_ESCALATION'
         || !isCurrentWorkflowMessage(message, latestCustomerAt, latestAnswerAt)) return false;
     const metadata = normalizeObject(message.metadata);
     if (metadata.provider_send_attempted === true) return false;
     return [MESSAGE_DELIVERY_STATES.GENERATING, MESSAGE_DELIVERY_STATES.SEND_PENDING]
         .includes(normalizeDeliveryState(message));
+};
+
+const RESUME_DISMISSABLE_HELD_REASONS = new Set([
+    'human_active',
+    'low_confidence',
+    'ai_paused',
+    'mode_changed',
+]);
+
+const isResumableStaleCandidate = (message) => {
+    const state = normalizeDeliveryState(message);
+    const metadata = normalizeObject(message.metadata);
+    if (state === MESSAGE_DELIVERY_STATES.HELD
+        && RESUME_DISMISSABLE_HELD_REASONS.has(metadata.held_reason)) return true;
+    return workflowDeliverySource(message) === 'HITL_ESCALATION'
+        && [
+            MESSAGE_DELIVERY_STATES.GENERATING,
+            MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            MESSAGE_DELIVERY_STATES.HELD,
+        ].includes(state);
 };
 
 const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
@@ -1124,11 +1156,23 @@ class ConversationService {
                 const suggestionVisibility = closing || resuming
                     ? SUGGESTION_VISIBILITY.HIDDEN_DISMISSED
                     : SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW;
+                const candidateWhere = {
+                    conversation_id: conversationId,
+                    sender: 'ai',
+                };
+                if (resuming && typeof Message.findOne === 'function') {
+                    const latestCustomer = await Message.findOne({
+                        where: { conversation_id: conversationId, sender: 'customer' },
+                        order: [['created_at', 'DESC']],
+                        attributes: ['created_at'],
+                        ...(transaction ? { transaction } : {}),
+                    });
+                    if (latestCustomer?.created_at) {
+                        candidateWhere.created_at = { [Op.gte]: latestCustomer.created_at };
+                    }
+                }
                 const pending = await Message.findAll({
-                    where: {
-                        conversation_id: conversationId,
-                        sender: 'ai',
-                    },
+                    where: candidateWhere,
                     ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                 });
                 const cancellable = pending.filter((message) => (
@@ -1136,10 +1180,7 @@ class ConversationService {
                     && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.DISMISSED
                     && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.FAILED
                     && normalizeObject(message.metadata).provider_send_attempted !== true
-                    && (!resuming || (
-                        normalizeDeliveryState(message) === MESSAGE_DELIVERY_STATES.HELD
-                        && normalizeObject(message.metadata).held_reason === 'human_active'
-                    ))
+                    && (!resuming || isResumableStaleCandidate(message))
                 ));
                 await Promise.all(cancellable.map(async (message) => {
                     const messageMetadata = normalizeObject(message.metadata);
@@ -1260,6 +1301,7 @@ class ConversationService {
                     try {
                         const updatedConversation = await this.updateConversation(conversationId, shopId, { status: 'closed' });
                         updatedConversationIds.push(conversationId);
+                        await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
                         sseManager.emit(shopId, 'hitl_changed', {
                             conversation_id: conversationId,
                             hitl: updatedConversation.hitl,

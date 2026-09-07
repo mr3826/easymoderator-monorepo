@@ -412,6 +412,43 @@ async function claimDedupKey(key) {
     }
 }
 
+const STALE_PROVIDER_CLAIM_MS = 10 * 60 * 1000;
+
+/**
+ * A crash between the candidate claim and the provider boundary can leave a row
+ * claimed forever. Release the claim only while the send has not started, so the
+ * reconciler still owns genuinely attempted deliveries.
+ */
+async function releaseStaleProviderClaim(message) {
+    if (!message?.id || typeof Message.update !== 'function') return false;
+    const metadata = messageMetadata(message);
+    if (metadata.provider_send_attempted === true) return false;
+    const releasedMetadata = { ...metadata };
+    delete releasedMetadata.provider_send_claimed;
+    delete releasedMetadata.provider_send_claimed_at;
+    delete releasedMetadata.provider_send_claim_token;
+    try {
+        const result = await Message.update(
+            { metadata: releasedMetadata },
+            {
+                where: {
+                    id: message.id,
+                    delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+                    provider_message_id: null,
+                    [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+                },
+            },
+        );
+        const updatedCount = Array.isArray(result) ? result[0] : 1;
+        if (updatedCount !== 1) return false;
+    } catch (error) {
+        console.warn(`[worker] Unable to release stale provider claim for message ${message.id}: ${error.message}`);
+        return false;
+    }
+    message.metadata = releasedMetadata;
+    return true;
+}
+
 async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
     if (!message?.id || !idempotencyKey) return false;
     const metadata = messageMetadata(message);
@@ -1020,6 +1057,7 @@ async function requireHumanRecovery({ turnId, traceId, recoveryAvailable, conver
             reason,
         });
     } catch (recoveryErr) {
+        if (recoveryErr?.retryable) throw recoveryErr;
         if (recoveryAvailable || process.env.NODE_ENV !== 'test') {
             opsAlert('human_recovery_transaction_failed', {
                 detail: `shop=${shopId} conv=${conversationId} turn=${turnId}\nerror: ${recoveryErr.message}`,
@@ -1475,16 +1513,44 @@ async function processMessageJob(job) {
     // ── Guard 1: Redis idempotency ──────────────────────────────────────────
     const dedupScope = metaChannelId || metaAssetId || platform || 'unknown';
     const dedupKey = effExternalId ? `msg:dedup:${shopId}:${dedupScope}:${effExternalId}` : null;
+    const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
+    const automaticCandidateKey = deriveAutomaticSendIdempotencyKey({
+        shopId,
+        conversationId,
+        turnId,
+    });
     if (dedupKey) {
         const isNew = await claimDedupKey(dedupKey);
-        if (!isNew) return { skipped: true, reason: 'duplicate', externalId: effExternalId };
+        if (!isNew) {
+            const staleCandidate = typeof Message.findOne === 'function'
+                ? await Message.findOne({
+                    where: {
+                        conversation_id: conversationId,
+                        sender: 'ai',
+                        send_idempotency_key: automaticCandidateKey,
+                    },
+                })
+                : null;
+            const staleMetadata = staleCandidate?.metadata && typeof staleCandidate.metadata === 'object'
+                ? staleCandidate.metadata
+                : {};
+            const claimedAtMs = Date.parse(staleMetadata.provider_send_claimed_at || '');
+            const staleClaim = staleCandidate
+                && normalizeDeliveryState(staleCandidate) === MESSAGE_DELIVERY_STATES.SEND_PENDING
+                && staleMetadata.provider_send_claimed === true
+                && staleMetadata.provider_send_attempted !== true
+                && (!Number.isFinite(claimedAtMs) || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
+            if (!staleClaim || !(await releaseStaleProviderClaim(staleCandidate))) {
+                return { skipped: true, reason: 'duplicate', externalId: effExternalId };
+            }
+            await cacheRedis.del(dedupKey).catch(() => {});
+        }
     }
 
     let recoveryControl = null;
     let recoveryStarted = false;
     let deliveryLock = null;
     let stableTraceId = jobTraceId || job.id || effExternalId || conversationId;
-    const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
     try {
         const recovery = require('../modules/ai/recovery/turn-recovery.service');
         const { deriveIdempotencyKey } = require('../modules/ai/contracts/action.contract');
@@ -1568,9 +1634,17 @@ async function processMessageJob(job) {
                 && typeof foundAutomaticCandidate.metadata === 'object'
                 ? foundAutomaticCandidate.metadata
                 : {};
-            if (existingState === MESSAGE_DELIVERY_STATES.SEND_PENDING
+            const claimedAtMs = Date.parse(existingMetadata.provider_send_claimed_at || '');
+            const claimIsStale = existingMetadata.provider_send_claimed === true
+                && (!Number.isFinite(claimedAtMs) || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
+            let reusable = existingState === MESSAGE_DELIVERY_STATES.SEND_PENDING
                 && existingMetadata.provider_send_attempted !== true
-                && isAutoSendMode(businessMode)) {
+                && isAutoSendMode(businessMode)
+                && (existingMetadata.provider_send_claimed !== true || claimIsStale);
+            if (reusable && claimIsStale) {
+                reusable = await releaseStaleProviderClaim(foundAutomaticCandidate);
+            }
+            if (reusable) {
                 // A previous attempt was delayed before provider delivery (for
                 // example by Meta rate limiting). Reuse the persisted candidate
                 // instead of creating a second row.
@@ -1671,6 +1745,7 @@ async function processMessageJob(job) {
             }
         } catch (escalateErr) {
             // If escalation itself fails, log and proceed with normal AI processing
+            if (escalateErr?.retryable) throw escalateErr;
             console.error(`[worker] Auto-escalation handler failed (continuing)`, { error: escalateErr.message });
         }
     }
@@ -1850,6 +1925,7 @@ async function processMessageJob(job) {
                 };
             }
         } catch (aiErr) {
+            if (aiErr?.retryable) throw aiErr;
             console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
             // Stage alert (warning): the customer still gets a reply, but it's the
             // generic fallback — the AI pipeline (LLM/RAG/Gemini) is degraded. Throttled.
@@ -2483,7 +2559,8 @@ async function processMessageJob(job) {
                 lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
                 maxWaitMs: DELIVERY_LOCK_WAIT_MS,
             });
-            if (deliveryLock?.available !== false && !deliveryLock?.success) {
+            if ((deliveryLock?.available === false && process.env.NODE_ENV !== 'test')
+                || (deliveryLock?.available !== false && !deliveryLock?.success)) {
                 await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey).catch(() => {});
                 return {
                     success: true,

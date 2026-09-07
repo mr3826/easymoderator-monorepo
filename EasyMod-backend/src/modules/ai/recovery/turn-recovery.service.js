@@ -4,6 +4,10 @@ const { sequelize } = require('../../../utils/database/database-setup');
 const ConversationTurn = require('../../conversation/conversation-turn.entity');
 const { Conversation } = require('../../conversation/conversation.entity');
 const { escalateToHuman } = require('../../conversation/human-handoff.service');
+const conversationLockService = require('../../conversation/conversation-lock.service');
+
+const RECOVERY_LOCK_TIMEOUT_MS = 60_000;
+const RECOVERY_LOCK_WAIT_MS = 10_000;
 
 const CUSTOMER_STATES = Object.freeze([
     'RECEIVED',
@@ -158,26 +162,75 @@ const requireHuman = async (input = {}) => {
     const timestamp = now();
     let turn;
 
-    await sequelize.transaction(async (transaction) => {
-        const [updated] = await Conversation.update(
-            { hitl: true },
-            { where: { id: conversationId, shop_id: shopId }, transaction },
-        );
-        if (updated === 0) throw new Error('Conversation not found for human recovery');
-        turn = await createOrUpdateHumanTurn({ ...input, turnId, conversationId, shopId }, transaction, timestamp);
-    });
+    let currentConversation = typeof Conversation.findOne === 'function'
+        ? await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } })
+        : input.conversation;
+    if (currentConversation && ['closed', 'archived'].includes(currentConversation.status)) {
+        return { turn: null, handoff: null, skipped: 'conversation_closed' };
+    }
 
-    const conversation = input.conversation || await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } });
-    const handoff = await escalateToHuman({
-        conversation,
-        shopId,
-        conversationId,
-        platform: input.platform,
-        recipientId: input.recipientId,
-        channel: input.channel,
-        reason: input.reason || input.recoveryReason,
-    });
-    return { turn, handoff };
+    let deliveryLock = null;
+    if (typeof conversationLockService?.acquireForDelivery === 'function') {
+        try {
+            const lock = await conversationLockService.acquireForDelivery(conversationId, {
+                lockTimeoutMs: RECOVERY_LOCK_TIMEOUT_MS,
+                maxWaitMs: RECOVERY_LOCK_WAIT_MS,
+            });
+            if (lock?.available === false && process.env.NODE_ENV !== 'test') {
+                const error = new Error('delivery_lock_unavailable');
+                error.code = 'DELIVERY_LOCK_UNAVAILABLE';
+                error.retryable = true;
+                throw error;
+            }
+            if (lock && lock.available !== false && !lock.success) {
+                const error = new Error(lock.error || 'delivery_lock_busy');
+                error.code = lock.error || 'DELIVERY_LOCK_BUSY';
+                error.retryable = true;
+                throw error;
+            }
+            deliveryLock = lock?.success ? lock : null;
+        } catch (error) {
+            if (error?.retryable) throw error;
+            deliveryLock = null;
+        }
+    }
+
+    try {
+        if (typeof Conversation.findOne === 'function') {
+            currentConversation = await Conversation.findOne({
+                where: { id: conversationId, shop_id: shopId },
+            });
+            if (currentConversation && ['closed', 'archived'].includes(currentConversation.status)) {
+                return { turn: null, handoff: null, skipped: 'conversation_closed' };
+            }
+        }
+        await sequelize.transaction(async (transaction) => {
+            const [updated] = await Conversation.update(
+                { hitl: true },
+                { where: { id: conversationId, shop_id: shopId }, transaction },
+            );
+            if (updated === 0) throw new Error('Conversation not found for human recovery');
+            turn = await createOrUpdateHumanTurn({ ...input, turnId, conversationId, shopId }, transaction, timestamp);
+        });
+
+        const conversation = currentConversation
+            || await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } });
+        const handoff = await escalateToHuman({
+            conversation,
+            shopId,
+            conversationId,
+            platform: input.platform,
+            recipientId: input.recipientId,
+            channel: input.channel,
+            reason: input.reason || input.recoveryReason,
+            deliveryLock,
+        });
+        return { turn, handoff };
+    } finally {
+        if (deliveryLock?.success && typeof conversationLockService.releaseLock === 'function') {
+            await conversationLockService.releaseLock(conversationId, deliveryLock.lockId).catch(() => {});
+        }
+    }
 };
 
 const isHoldingSuppressed = (state) => HOLDING_SUPPRESSED_STATES.has(state);

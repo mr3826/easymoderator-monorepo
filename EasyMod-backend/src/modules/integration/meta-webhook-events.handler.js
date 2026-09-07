@@ -28,6 +28,7 @@ const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
 const { recordReceiptClaimConflict } = require('./meta-webhook-metrics');
+const { cacheRedis } = require('../../config/redis');
 const receiptService = require('./meta-webhook-receipt.service');
 
 const logger = createLogger('MetaWebhookEvents');
@@ -958,6 +959,9 @@ async function storeIncomingMessage(event) {
                     resolution_note: null,
                     metadata: currentConversationMetadata,
                 }, { transaction: t });
+                if (cacheRedis && typeof cacheRedis.del === 'function') {
+                    await Promise.resolve(cacheRedis.del(`ai:pause:${conversation.id}`)).catch(() => {});
+                }
             }
             const unreadCount = Math.max(0, Number(currentConversationMetadata.unreadCount) || 0) + 1;
             const msgRecord = await Message.create({

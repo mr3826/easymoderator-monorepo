@@ -155,6 +155,7 @@ async function escalateToHuman({
     recipientId,
     channel,
     reason,
+    deliveryLock: providedDeliveryLock = null,
 } = {}) {
     const convId = conversationId || conversation?.id;
     let hitlReady = conversation?.hitl === true;
@@ -202,15 +203,25 @@ async function escalateToHuman({
         console.error(`[handoff] Failed to set hitl for conv ${convId} (${reason}): ${err.message}`);
     }
 
-    let deliveryLock = null;
+    let deliveryLock = providedDeliveryLock;
+    let ownsDeliveryLock = false;
+    let deliveryLockBusy = false;
     if (channel && hitlReady) {
         try {
-            const lock = await conversationLockService.acquireForDelivery(convId, {
-                lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
-                maxWaitMs: DELIVERY_LOCK_WAIT_MS,
-            });
-            if (lock && lock.available !== false && !lock.success) return null;
-            deliveryLock = lock?.success ? lock : null;
+            if (!deliveryLock) {
+                const lock = await conversationLockService.acquireForDelivery(convId, {
+                    lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
+                    maxWaitMs: DELIVERY_LOCK_WAIT_MS,
+                });
+                if (lock?.available === false && process.env.NODE_ENV !== 'test') {
+                    deliveryLockBusy = true;
+                } else if (lock && lock.available !== false && !lock.success) {
+                    deliveryLockBusy = true;
+                } else {
+                    deliveryLock = lock?.success ? lock : null;
+                    ownsDeliveryLock = Boolean(deliveryLock);
+                }
+            }
 
             if (typeof Conversation?.findOne === 'function') {
                 const latestConversation = await Conversation.findOne({
@@ -220,7 +231,7 @@ async function escalateToHuman({
                 if (!latestConversation
                     || latestConversation.hitl !== true
                     || ['closed', 'archived'].includes(latestConversation.status)) {
-                    if (deliveryLock?.success) {
+                    if (ownsDeliveryLock && deliveryLock?.success) {
                         await conversationLockService.releaseLock(convId, deliveryLock.lockId).catch(() => {});
                         deliveryLock = null;
                     }
@@ -229,7 +240,7 @@ async function escalateToHuman({
             }
         } catch (err) {
             console.warn(`[handoff] Holding message delivery lock unavailable for conv ${convId}: ${err.message}`);
-            return null;
+            deliveryLockBusy = true;
         }
     }
 
@@ -249,6 +260,14 @@ async function escalateToHuman({
 
     // 3. Deliver it on the same channel the inbound arrived on
     if (channel && hitlReady) {
+        if (deliveryLockBusy) {
+            await stampHoldingMessage(holdingMsg, convId, MESSAGE_DELIVERY_STATES.HELD, null, {
+                held_reason: 'delivery_lock_busy',
+                suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+            }).catch(() => {});
+            emitHoldingDelivery(shopId, convId, holdingMsg, MESSAGE_DELIVERY_STATES.HELD);
+            return holdingMsg;
+        }
         const pf = normalizeHandoffPlatform(platform);
         if (!hasRequiredContextValue(convId)
             || !hasRequiredContextValue(shopId)
@@ -349,7 +368,7 @@ async function escalateToHuman({
 
         return holdingMsg;
     } finally {
-        if (deliveryLock?.success) {
+        if (ownsDeliveryLock && deliveryLock?.success) {
             await conversationLockService.releaseLock(convId, deliveryLock.lockId).catch(() => {});
         }
     }
