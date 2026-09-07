@@ -174,7 +174,7 @@ const currentCustomerTurn = (rows) => {
 
 const isCurrentTurnSuggestion = (candidate, rows) => {
     const current = currentCustomerTurn(rows);
-    if (!current.pendingCustomers.length) return true;
+    if (!current.pendingCustomers.length) return false;
     const candidateTurnId = logicalTurnIdFor(candidate);
     if (candidateTurnId && current.persistedTurnIds.size) {
         return current.persistedTurnIds.has(candidateTurnId);
