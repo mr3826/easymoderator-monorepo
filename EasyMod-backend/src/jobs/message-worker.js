@@ -1483,6 +1483,7 @@ async function processMessageJob(job) {
     let effImageUrls = [];
     let historyExcludeIds = messageId ? [messageId] : [];
     let replyContext = jobReplyContext;
+    let logicalTurnId = null;
     if (job.data.burstFlush) {
         const burst = require('../jobs/burst-coalescer');
         await burst.clearBurstState(conversationId); // next inbound opens a fresh window
@@ -1496,6 +1497,7 @@ async function processMessageJob(job) {
         effImageUrls = turn.imageUrls;
         historyExcludeIds = turn.messageIds;
         replyContext = turn.messages.at(-1)?.metadata?.reply_to || null;
+        logicalTurnId = turn.logicalTurnId;
     }
 
     // Resolve the channel once and pass it to every step that needs it. With
@@ -1514,10 +1516,11 @@ async function processMessageJob(job) {
     const dedupScope = metaChannelId || metaAssetId || platform || 'unknown';
     const dedupKey = effExternalId ? `msg:dedup:${shopId}:${dedupScope}:${effExternalId}` : null;
     const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
+    logicalTurnId = logicalTurnId || turnId;
     const automaticCandidateKey = deriveAutomaticSendIdempotencyKey({
         shopId,
         conversationId,
-        turnId,
+        turnId: logicalTurnId,
     });
     if (dedupKey) {
         const isNew = await claimDedupKey(dedupKey);
@@ -1619,7 +1622,7 @@ async function processMessageJob(job) {
     const automaticSendIdempotencyKey = deriveAutomaticSendIdempotencyKey({
         shopId,
         conversationId,
-        turnId,
+        turnId: logicalTurnId,
     });
     let existingAutomaticCandidate = null;
     if (typeof Message.findOne === 'function') {
@@ -2030,6 +2033,7 @@ async function processMessageJob(job) {
             grounding_provider: replyProvider,
             grounding_attachment_urls: outboundAttachments.map(a => a.url),
             human_required: humanRequired,
+            logical_turn_id: logicalTurnId,
             delivery_state: lifecycle.deliveryState
                 || (autoMode ? MESSAGE_DELIVERY_STATES.SEND_PENDING : MESSAGE_DELIVERY_STATES.DRAFT_READY),
             delivery_source: lifecycle.deliverySource || (autoMode ? 'AUTO' : 'AI_DRAFT'),
@@ -2037,7 +2041,7 @@ async function processMessageJob(job) {
             send_idempotency_key: lifecycle.sendIdempotencyKey || deriveAutomaticSendIdempotencyKey({
                 shopId,
                 conversationId,
-                turnId,
+                turnId: logicalTurnId,
             }),
         });
     };

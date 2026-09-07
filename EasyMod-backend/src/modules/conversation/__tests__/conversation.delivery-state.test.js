@@ -74,10 +74,36 @@ const draftMessage = {
     update: jest.fn(async (updates) => Object.assign(draftMessage, updates)),
 };
 
+const duplicateDraft = {
+    id: 'duplicate-draft',
+    conversation_id: 'conversation-1',
+    sender: 'ai',
+    content: 'Older duplicate reply',
+    ai_suggestion: 'Older duplicate reply',
+    delivery_state: 'DRAFT_READY',
+    delivery_source: 'AI_DRAFT',
+    metadata: {
+        delivered: false,
+        delivery_state: 'DRAFT_READY',
+        suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+        logical_turn_id: 'burst:customer-1',
+    },
+    created_at: new Date('2026-09-04T10:00:30Z'),
+    update: jest.fn(async function update(updates) { Object.assign(this, updates); }),
+};
+
 beforeEach(() => {
     jest.clearAllMocks();
     mockTransaction.finished = null;
     mockInboxDeliveryOutbox.create.mockResolvedValue({ id: 'outbox-1' });
+    duplicateDraft.delivery_state = 'DRAFT_READY';
+    duplicateDraft.metadata = {
+        delivered: false,
+        delivery_state: 'DRAFT_READY',
+        suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+        logical_turn_id: 'burst:customer-1',
+    };
+    duplicateDraft.created_at = new Date('2026-09-04T10:00:30Z');
 });
 
 describe('ConversationService delivery projection', () => {
@@ -190,6 +216,132 @@ describe('ConversationService delivery projection', () => {
             statusCode: 409,
         });
         expect(attempted.update).not.toHaveBeenCalled();
+    });
+
+    it('terminalizes duplicate same-turn drafts while preserving an unanswered projection', async () => {
+        const candidate = {
+            ...draftMessage,
+            delivery_state: 'DRAFT_READY',
+            metadata: {
+                ...draftMessage.metadata,
+                delivery_state: 'DRAFT_READY',
+                delivery_status: 'pending',
+                logical_turn_id: 'burst:customer-1',
+            },
+            update: jest.fn(async function update(updates) { Object.assign(this, updates); }),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: false,
+            update: jest.fn(),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findOne.mockResolvedValue(candidate);
+        mockMessageModel.findAll.mockResolvedValue([candidate, duplicateDraft, customerMessage]);
+
+        await expect(conversationService.dismissAiDraft(
+            'conversation-1',
+            'shop-a',
+            'draft-message',
+            'user-1',
+        )).resolves.toEqual(expect.objectContaining({ alreadyDismissed: false }));
+
+        expect(candidate.delivery_state).toBe('DISMISSED');
+        expect(duplicateDraft.delivery_state).toBe('DISMISSED');
+        expect(duplicateDraft.metadata).toEqual(expect.objectContaining({
+            delivery_state: 'DISMISSED',
+            suggestion_visibility: 'HIDDEN_DISMISSED',
+            held_reason: 'dismissed',
+            dismissed_as_duplicate: true,
+            dismissed_duplicate_of: 'draft-message',
+        }));
+        expect(duplicateDraft.metadata.provider_send_attempted).not.toBe(true);
+        expect(duplicateDraft.provider_message_id).toBeUndefined();
+        expect(require('../message-lifecycle').isReviewableSuggestion(duplicateDraft)).toBe(false);
+    });
+
+    it('does not dismiss a newer legitimate draft when dismissing a legacy candidate', async () => {
+        const legacyCandidate = {
+            ...draftMessage,
+            id: 'legacy-draft',
+            created_at: new Date('2026-09-04T10:01:00Z'),
+            delivery_state: 'DRAFT_READY',
+            metadata: {
+                ...draftMessage.metadata,
+                delivery_state: 'DRAFT_READY',
+                delivery_status: 'pending',
+                logical_turn_id: undefined,
+            },
+            update: jest.fn(async function update(updates) { Object.assign(this, updates); }),
+        };
+        const newerDraft = {
+            ...duplicateDraft,
+            id: 'newer-draft',
+            created_at: new Date('2026-09-04T10:02:00Z'),
+            metadata: {
+                ...duplicateDraft.metadata,
+                logical_turn_id: 'burst:customer-2',
+            },
+        };
+        mockConversationModel.findOne.mockResolvedValue({ id: 'conversation-1', shop_id: 'shop-a' });
+        mockMessageModel.findOne.mockResolvedValue(legacyCandidate);
+        mockMessageModel.findAll.mockResolvedValue([legacyCandidate, newerDraft, customerMessage]);
+
+        expect(legacyCandidate.metadata.logical_turn_id).toBeUndefined();
+        expect(newerDraft.metadata.logical_turn_id).toBe('burst:customer-2');
+        expect(newerDraft.created_at.getTime()).toBeGreaterThan(legacyCandidate.created_at.getTime());
+
+        await conversationService.dismissAiDraft(
+            'conversation-1',
+            'shop-a',
+            'legacy-draft',
+            'user-1',
+        );
+
+        expect(legacyCandidate.delivery_state).toBe('DISMISSED');
+        expect(newerDraft.delivery_state).toBe('DRAFT_READY');
+        expect(newerDraft.metadata.suggestion_visibility).toBe('VISIBLE_DRAFT_REVIEW');
+    });
+
+    it('rechecks an already dismissed candidate and terminalizes legacy siblings after reload', async () => {
+        const dismissed = {
+            ...draftMessage,
+            delivery_state: 'DISMISSED',
+            metadata: {
+                ...draftMessage.metadata,
+                delivery_state: 'DISMISSED',
+                delivery_status: 'dismissed',
+                suggestion_visibility: 'HIDDEN_DISMISSED',
+                held_reason: 'dismissed',
+            },
+            update: jest.fn(async function update(updates) { Object.assign(this, updates); }),
+        };
+        const legacySibling = {
+            ...duplicateDraft,
+            id: 'legacy-sibling',
+            metadata: {
+                ...duplicateDraft.metadata,
+                logical_turn_id: undefined,
+            },
+            update: jest.fn(async function update(updates) { Object.assign(this, updates); }),
+        };
+        mockConversationModel.findOne.mockResolvedValue({ id: 'conversation-1', shop_id: 'shop-a' });
+        mockMessageModel.findOne.mockResolvedValue(dismissed);
+        mockMessageModel.findAll.mockResolvedValue([dismissed, legacySibling, customerMessage]);
+
+        const result = await conversationService.dismissAiDraft(
+            'conversation-1',
+            'shop-a',
+            'draft-message',
+            'user-1',
+        );
+
+        expect(result.alreadyDismissed).toBe(true);
+        expect(legacySibling.delivery_state).toBe('DISMISSED');
+        expect(legacySibling.metadata.suggestion_visibility).toBe('HIDDEN_DISMISSED');
+        expect(mockTransaction.commit).toHaveBeenCalledTimes(1);
     });
 
     it('persists a read watermark and clears only the owning conversation', async () => {
@@ -433,6 +585,27 @@ describe('ConversationService delivery projection', () => {
                 },
             ],
             expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'AI_FAILED', ai_is_replying: false },
+        },
+        {
+            name: 'AUTO dismissed draft',
+            mode: 'AUTO',
+            messages: [
+                customerMessage,
+                {
+                    id: 'dismissed-ai',
+                    conversation_id: 'conversation-1',
+                    sender: 'ai',
+                    created_at: new Date('2026-09-04T10:01:00Z'),
+                    delivery_state: 'DISMISSED',
+                    metadata: {
+                        delivery_state: 'DISMISSED',
+                        delivery_status: 'dismissed',
+                        suggestion_visibility: 'HIDDEN_DISMISSED',
+                        held_reason: 'dismissed',
+                    },
+                },
+            ],
+            expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED', ai_is_replying: false },
         },
         {
             name: 'AUTO provider outcome unknown',

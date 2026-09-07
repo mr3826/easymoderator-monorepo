@@ -254,6 +254,7 @@ test('DRAFT stores a reviewable candidate and never calls the provider', async (
         expect.objectContaining({
             delivery_state: 'DRAFT_READY',
             suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+            logical_turn_id: 'external-1',
         }),
     );
     expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({

@@ -1042,6 +1042,21 @@ class ConversationController {
                 delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
                 metadata: result.message.metadata,
             });
+            for (const siblingMessageId of result.dismissedSiblingMessageIds || []) {
+                sseManager.emit(shopId, 'message_delivery_updated', {
+                    conversation_id: conversationId,
+                    message_id: siblingMessageId,
+                    delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                    metadata: {
+                        delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                        delivery_status: 'dismissed',
+                        suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                        held_reason: 'dismissed',
+                        dismissed_as_duplicate: true,
+                        dismissed_duplicate_of: messageId,
+                    },
+                });
+            }
             res.json({ success: true, data: { message: conversationService.mapMessage(result.message) } });
         } catch (error) {
             next(error);

@@ -596,8 +596,17 @@ export default function UnifiedInbox() {
       created_at?: string | null;
     }) => {
       const currentMessage = messages.find((message) => message.id === message_id);
+      if (currentMessage
+        && getDeliveryState(currentMessage) === "DISMISSED"
+        && delivery_state !== "DISMISSED") return;
       const workflowConversation = conversationsRef.current.find((conversation) => conversation.id === conversation_id)
         || (selectedConversationRef.current?.id === conversation_id ? selectedConversationRef.current : null);
+      if (delivery_state === "DISMISSED" && selectedConversationRef.current?.id === conversation_id) {
+        // A dismissal changes the server projection for every duplicate
+        // sibling. Invalidate any older page-one response before reloading it.
+        messageRequestRef.current += 1;
+        void loadMessagesRef.current(conversation_id, 1);
+      }
       if (!currentMessage && selectedConversationRef.current?.id === conversation_id) {
         void loadMessagesRef.current(conversation_id, 1);
       }
@@ -941,6 +950,8 @@ export default function UnifiedInbox() {
   const handleDismissSuggestion = async (messageId: string) => {
     if (!selectedConversation) return;
     try {
+      messageRequestRef.current += 1;
+      loadMessagesAbortRef.current?.abort();
       const dismissed = await apiClient.dismissAiDraft(selectedConversation.id, messageId);
       setMessages((prev) => prev.map((message) => message.id === messageId ? dismissed : message));
       setConversations((prev) => prev.map((conversation) => {
@@ -969,6 +980,10 @@ export default function UnifiedInbox() {
         delete next[selectedConversation.id];
         return next;
       });
+      await Promise.allSettled([
+        loadMessagesRef.current(selectedConversation.id, 1),
+        loadConversationsRef.current(),
+      ]);
     } catch (err: unknown) {
       toast.error((err as { message?: string })?.message || t("inbox.errors.dismissSuggestion"));
     }

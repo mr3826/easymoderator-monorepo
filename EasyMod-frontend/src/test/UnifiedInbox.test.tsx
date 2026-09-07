@@ -611,6 +611,9 @@ describe('UnifiedInbox 24h window behavior', () => {
       needs_merchant_reply: true,
       needs_merchant_reply_reason: 'DRAFT_REVIEW_REQUIRED',
     })
+    ;(apiClient.getMessages as any)
+      .mockResolvedValueOnce({ messages: [customerMessage, heldMessage], pagination: { page: 1, totalPages: 1 } })
+      .mockResolvedValue({ messages: [customerMessage], pagination: { page: 1, totalPages: 1 } })
     render(<UnifiedInbox />)
 
     expect(await screen.findByText('Draft ready for review')).toBeInTheDocument()
@@ -730,6 +733,9 @@ describe('UnifiedInbox 24h window behavior', () => {
   it('clears draft-ready state when the held suggestion is dismissed', async () => {
     const { customerMessage, heldMessage } = draftMessages()
     setInboxData('DRAFT', [customerMessage, heldMessage])
+    ;(apiClient.getMessages as any)
+      .mockResolvedValueOnce({ messages: [customerMessage, heldMessage], pagination: { page: 1, totalPages: 1 } })
+      .mockResolvedValue({ messages: [customerMessage], pagination: { page: 1, totalPages: 1 } })
     render(<UnifiedInbox />)
     expect(await screen.findByText('Draft ready for review')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }))

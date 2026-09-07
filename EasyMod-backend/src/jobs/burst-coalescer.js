@@ -244,6 +244,11 @@ function buildCoalescedTurn(messages) {
     return {
         messages,
         messageIds: messages.map((m) => m.id),
+        // The last message is the existing burst/job idempotency anchor. A
+        // later customer message after a held DRAFT must open a new logical
+        // turn when the shop changes to AUTO, while retries of this burst keep
+        // the same candidate identity.
+        logicalTurnId: messages.length ? `burst:${messages[messages.length - 1].id}` : null,
         lastMessageId: messages.length ? messages[messages.length - 1].id : null,
         combinedText: texts.join('\n'),
         imageUrls,
