@@ -200,7 +200,7 @@ const requireHuman = async (input = {}) => {
             currentConversation = await Conversation.findOne({
                 where: { id: conversationId, shop_id: shopId },
             });
-            if (!currentConversation || ['closed', 'archived'].includes(currentConversation.status)) {
+            if (currentConversation && ['closed', 'archived'].includes(currentConversation.status)) {
                 return { turn: null, handoff: null, skipped: 'conversation_closed' };
             }
         }
