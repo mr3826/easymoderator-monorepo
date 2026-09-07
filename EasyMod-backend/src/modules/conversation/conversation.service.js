@@ -1336,8 +1336,15 @@ class ConversationService {
                 }
             );
 
-            if (status === 'active') {
-                await Promise.all(conversationIds.map((conversationId) => (
+            if (status === 'active' && typeof Conversation.findAll === 'function') {
+                const updatedConversationRows = await Conversation.findAll({
+                    where: {
+                        shop_id: shopId,
+                        id: { [Op.in]: conversationIds },
+                    },
+                    attributes: ['id'],
+                });
+                await Promise.all(updatedConversationRows.map(({ id: conversationId }) => (
                     Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {})
                 )));
             }
