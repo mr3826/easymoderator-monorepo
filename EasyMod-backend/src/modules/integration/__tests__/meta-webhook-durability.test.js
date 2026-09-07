@@ -735,14 +735,14 @@ describe('message storage failure', () => {
 // ── 6. Non-business events are accounted for, not ignored ────────────────────
 
 describe('non-business events', () => {
-    test('an echo is recorded and skipped', async () => {
+    test('an unmatched echo is retained for provider-MID reconciliation', async () => {
         await post(buildPayload({}, {
             sender: { id: PAGE_ID },
             recipient: { id: SENDER_PSID },
             message: { mid: 'mid.ECHO', text: 'hi', is_echo: true },
         })).expect(200);
-        expect(receipts()[0].status).toBe('SKIPPED');
-        expect(receipts()[0].last_error_code).toBe('ECHO');
+        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].last_error_code).toBe('ECHO_RECONCILIATION_PENDING');
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
@@ -755,13 +755,13 @@ describe('non-business events', () => {
         expect(receipts()[0].status).toBe('SKIPPED');
     });
 
-    test('a skipped event carries no retained payload', async () => {
+    test('an unmatched echo retains its encrypted payload for retry', async () => {
         await post(buildPayload({}, {
             sender: { id: PAGE_ID },
             recipient: { id: SENDER_PSID },
             message: { mid: 'mid.ECHO2', text: 'hi', is_echo: true },
         })).expect(200);
-        expect(receipts()[0].payload_encrypted).toBeNull();
+        expect(receipts()[0].payload_encrypted).not.toBeNull();
     });
 });
 

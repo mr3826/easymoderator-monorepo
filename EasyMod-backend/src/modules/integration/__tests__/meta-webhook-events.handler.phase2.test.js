@@ -159,6 +159,27 @@ describe('dispatch queue availability', () => {
 });
 
 describe('shared inbound consent and dispatch boundary', () => {
+    test.each([
+        ['null', null],
+        ['zero', 0],
+        ['false', false],
+        ['invalid', 'not-a-timestamp'],
+    ])('normalizes %s provider timestamps to a current valid date', (_label, timestamp) => {
+        const nowMs = Date.parse('2026-09-07T10:00:00.000Z');
+        const normalized = handler._private.normalizeMetaTimestamp(timestamp, nowMs);
+
+        expect(normalized.getTime()).toBe(nowMs);
+    });
+
+    test('normalizes seconds-scale provider timestamps to milliseconds', () => {
+        const normalized = handler._private.normalizeMetaTimestamp(
+            1_700_000_000,
+            Date.parse('2026-09-07T10:00:00.000Z'),
+        );
+
+        expect(normalized.toISOString()).toBe('2023-11-14T22:13:20.000Z');
+    });
+
     test('turns a live receipt claim exception into retryable failure state', async () => {
         const claimError = new Error('receipt claim store unavailable');
         mockReceiptService.claimProcessing.mockRejectedValueOnce(claimError);
@@ -194,7 +215,7 @@ describe('shared inbound consent and dispatch boundary', () => {
 
     test('persists an inbound with an invalid provider timestamp using receipt time', async () => {
         await expect(handler.processMessagingEvent({
-            messaging: { ...messaging, timestamp: 'not-a-timestamp' },
+            messaging: { ...messaging, timestamp: null },
             channel,
             receipt,
             pageId: PAGE_ID,

@@ -1022,6 +1022,54 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     expect(screen.getAllByText('Arrived over SSE').length).toBeGreaterThan(0)
   })
 
+  it('keeps an SSE reopen projection when a stale conversation fetch resolves afterward', async () => {
+    const staleClosedConversation = { ...baseConversation, status: 'closed' as const }
+    let resolveConversations!: (value: { data: any[]; ai_reply_mode: string; pagination: { page: number; totalPages: number } }) => void
+    ;(apiClient.getConversations as any)
+      .mockResolvedValueOnce({
+        data: [baseConversation],
+        ai_reply_mode: 'MANUAL',
+        pagination: { page: 1, totalPages: 1 },
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveConversations = resolve }))
+
+    render(<UnifiedInbox />)
+    await waitFor(() => expect(screen.getByText('1 active')).toBeInTheDocument())
+
+    const callback = latestSSECallbacks()
+    act(() => {
+      callback.onSSEOnline?.()
+      callback.onSSEOnline?.()
+    })
+    act(() => {
+      callback.onNewMessage({
+        conversation_id: 'conv-1',
+        message: {
+          id: 'reopen-message',
+          conversation_id: 'conv-1',
+          content: 'New inbound after resolve',
+          sender: 'customer' as const,
+          message_type: 'text' as const,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      })
+    })
+
+    act(() => {
+      resolveConversations({
+        data: [staleClosedConversation],
+        ai_reply_mode: 'MANUAL',
+        pagination: { page: 1, totalPages: 1 },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('1 active')).toBeInTheDocument()
+      expect(screen.getByText('Needs your reply')).toBeInTheDocument()
+    })
+  })
+
   it('does not consume an SSE id received while its conversation is unselected', async () => {
     const otherConversation = {
       ...baseConversation,

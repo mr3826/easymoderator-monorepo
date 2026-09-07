@@ -234,6 +234,28 @@ describe('storeIncomingMessage', () => {
         expect(result).toMatchObject({ customer_id: CUSTOMER_ID, conversation_id: CONV_ID });
     });
 
+    it('persists every inbound attachment while preserving the first attachment projection', async () => {
+        const attachmentEvent = {
+            ...baseEvent,
+            message: '',
+            attachments: [
+                { type: 'image', payload: { url: 'https://cdn.example/image.png', mime_type: 'image/png' } },
+                { type: 'file', payload: { url: 'https://cdn.example/catalog.pdf', name: 'catalog.pdf', mime_type: 'application/pdf' } },
+            ],
+        };
+
+        await storeIncomingMessage(attachmentEvent);
+
+        expect(mockMessage.create.mock.calls[0][0].metadata).toEqual(expect.objectContaining({
+            message_type: 'image',
+            image_url: 'https://cdn.example/image.png',
+            attachments: [
+                expect.objectContaining({ type: 'image', url: 'https://cdn.example/image.png' }),
+                expect.objectContaining({ type: 'file', url: 'https://cdn.example/catalog.pdf', name: 'catalog.pdf' }),
+            ],
+        }));
+    });
+
     it('persists a scoped Messenger reply_to relationship and increments unread once', async () => {
         const referencedMessage = buildMessage({
             id: 'msg-referenced',
