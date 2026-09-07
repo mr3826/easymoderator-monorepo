@@ -95,6 +95,7 @@ const receipt = { id: 'receipt-1', status: 'RECEIVED' };
 
 beforeEach(() => {
     jest.clearAllMocks();
+    receipt.status = 'RECEIVED';
     mockScheduleBurstFlush.mockReset().mockResolvedValue(undefined);
     mockCancelBurstFlush.mockReset().mockResolvedValue(undefined);
     mockIsStopKeyword.mockReturnValue(false);
@@ -189,6 +190,29 @@ describe('shared inbound consent and dispatch boundary', () => {
             expect.objectContaining({ message: 'consent store unavailable' }),
             expect.objectContaining({ pageId: PAGE_ID }),
         );
+    });
+
+    test('persists an inbound with an invalid provider timestamp using receipt time', async () => {
+        await expect(handler.processMessagingEvent({
+            messaging: { ...messaging, timestamp: 'not-a-timestamp' },
+            channel,
+            receipt,
+            pageId: PAGE_ID,
+            metaAssetId: PAGE_ID,
+        })).resolves.toBe('processed');
+
+        const messagePayload = mockMessage.create.mock.calls[0][0];
+        expect(messagePayload.created_at).toBeInstanceOf(Date);
+        expect(Number.isFinite(messagePayload.created_at.getTime())).toBe(true);
+        expect(mockRecordInbound).toHaveBeenCalledWith(expect.objectContaining({
+            metadata: expect.objectContaining({
+                event_timestamp: expect.any(String),
+            }),
+        }));
+        expect(mockReceiptService.markQueued).toHaveBeenCalledWith(receipt, {
+            shopId: SHOP_ID,
+            metaChannelId: CHANNEL_ID,
+        });
     });
 
     test('does not dispatch when STOP consent bookkeeping fails', async () => {

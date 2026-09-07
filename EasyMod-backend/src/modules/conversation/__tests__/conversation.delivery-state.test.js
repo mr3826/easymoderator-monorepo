@@ -423,6 +423,7 @@ describe('ConversationService delivery projection', () => {
 
         expect(conversation.status).toBe('closed');
         expect(conversation.hitl).toBe(false);
+        expect(conversation.metadata.ai_resume_boundary_at).toEqual(expect.any(String));
         expect(pending.delivery_state).toBe('HELD');
         expect(pending.metadata).toEqual(expect.objectContaining({
             held_reason: 'conversation_closed',

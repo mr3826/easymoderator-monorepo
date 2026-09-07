@@ -320,7 +320,14 @@ export default function UnifiedInbox() {
         );
       }
       if (page === 1) {
-        setMessages(projectedMessages);
+        setMessages((previous) => {
+          const projectedIds = new Set(projectedMessages.map((message) => message.id));
+          const preservedLiveMessages = previous.filter((message) => (
+            message.is_transcript_message !== false && !projectedIds.has(message.id)
+          ));
+          return [...projectedMessages, ...preservedLiveMessages]
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        });
         const status = getAiReplyStatus(
           projectedMessages,
           aiReplyModeRef.current,
