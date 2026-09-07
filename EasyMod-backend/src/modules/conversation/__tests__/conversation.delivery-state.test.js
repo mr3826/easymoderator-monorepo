@@ -881,4 +881,51 @@ describe('ConversationService delivery projection', () => {
         expect(newerCandidate.metadata.suggestion_visibility).toBe('VISIBLE_DRAFT_REVIEW');
         expect(conversation.metadata.ai_resume_boundary_at).toBeTruthy();
     });
+
+    it('terminalizes an unattempted candidate with a malformed turn timestamp', async () => {
+        const candidate = {
+            id: 'malformed-turn-candidate',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date(Date.now() - 10_000),
+            delivery_state: 'HELD',
+            metadata: {
+                delivery_state: 'HELD',
+                turn_started_at: '0',
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+            update: jest.fn(async (updates) => Object.assign(candidate, updates)),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([candidate]);
+
+        await conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false });
+
+        expect(candidate.delivery_state).toBe('DISMISSED');
+        expect(candidate.metadata.held_reason).toBe('resume_obsolete');
+    });
+
+    it('rejects Resume instead of overwriting a malformed existing boundary', async () => {
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: { ai_resume_boundary_at: '0' },
+            update: jest.fn(),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+
+        await expect(conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false }))
+            .rejects.toMatchObject({ code: 'RESUME_BOUNDARY_INVALID' });
+        expect(conversation.update).not.toHaveBeenCalled();
+    });
 });

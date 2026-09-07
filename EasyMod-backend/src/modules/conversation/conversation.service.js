@@ -25,6 +25,7 @@ const {
     deriveMessageSendIdempotencyKey,
     RESUME_BOUNDARY_METADATA_KEY,
     resumeBoundaryStateFor,
+    candidateStartedAtStateFor,
     isBeforeResumeBoundary,
 } = require('./message-lifecycle');
 
@@ -137,6 +138,7 @@ const isResumableStaleCandidate = (message, resumeBoundaryAt) => {
     if (!message || isProviderConfirmed(message)) return false;
     const metadata = normalizeObject(message.metadata);
     if (metadata.provider_send_attempted === true) return false;
+    if (!candidateStartedAtStateFor(message).valid) return true;
     return isBeforeResumeBoundary(message, resumeBoundaryAt);
 };
 
@@ -1202,7 +1204,6 @@ class ConversationService {
             const resuming = updates.hitl === false && !closing;
             const existingResumeBoundaryState = resumeBoundaryStateFor(conversation);
             if (resuming
-                && conversation.hitl !== true
                 && existingResumeBoundaryState.present
                 && !existingResumeBoundaryState.valid) {
                 const error = new Error('Resume AI boundary is invalid');
@@ -1334,7 +1335,9 @@ class ConversationService {
                 ...deriveWorkflowProjection(result.conversation, messages || [], aiReplyMode),
             };
         } catch (error) {
-            throw new Error(`Failed to update conversation: ${error.message}`);
+            const wrapped = new Error(`Failed to update conversation: ${error.message}`);
+            if (error?.code) wrapped.code = error.code;
+            throw wrapped;
         }
     }
 
