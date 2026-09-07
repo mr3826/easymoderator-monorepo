@@ -240,6 +240,37 @@ async function runInboundTrace(client) {
             + ` created_at=${row.message_created_at.toISOString()}`);
     }
 
+    const matchedConversationIds = [...new Set(messages.rows.map((row) => row.conversation_id))];
+    if (matchedConversationIds.length > 0) {
+        const adjacentMessages = await client.query(`
+            SELECT m.id AS message_id, m.external_id AS meta_mid,
+                   m.content, m.created_at AS message_created_at,
+                   (m.metadata::jsonb)->>'reply_to_provider_message_id' AS reply_to_provider_message_id,
+                   (m.metadata::jsonb)->>'reply_to_internal_message_id' AS reply_to_internal_message_id,
+                   (m.metadata::jsonb)->'reply_to'->>'status' AS reply_to_status,
+                   (m.metadata::jsonb)->>'message_type' AS message_type,
+                   (m.metadata::jsonb)->>'image_url' AS image_url,
+                   m.conversation_id
+              FROM public.messages m
+             WHERE m.sender = 'customer'
+               AND m.conversation_id = ANY($3::uuid[])
+               AND m.created_at >= $1 AND m.created_at <= $2
+             ORDER BY m.created_at ASC, m.id ASC
+        `, [from, to, matchedConversationIds]);
+        for (const row of adjacentMessages.rows) {
+            const contentKind = row.content === '[Attachment]' ? 'attachment' : 'text';
+            console.log(`TRACE_ADJACENT_MESSAGE message_id=${row.message_id}`
+                + ` meta_mid=${row.meta_mid || ''} conversation_id=${row.conversation_id}`
+                + ` content_kind=${contentKind}`
+                + ` reply_to_provider_message_id=${row.reply_to_provider_message_id || ''}`
+                + ` reply_to_internal_message_id=${row.reply_to_internal_message_id || ''}`
+                + ` reply_to_status=${row.reply_to_status || ''}`
+                + ` message_type=${row.message_type || ''}`
+                + ` image_url_present=${row.image_url ? 'yes' : 'no'}`
+                + ` created_at=${row.message_created_at.toISOString()}`);
+        }
+    }
+
     const found = matchedReceiptCount > 0 || messages.rows.length > 0;
     console.log(`TRACE_EXISTING_AFTER_DONE_EVENT_FOUND=${found ? 'YES' : 'NO'}`);
     if (messages.rows.length > 0) {
