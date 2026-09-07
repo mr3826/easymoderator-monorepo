@@ -293,7 +293,7 @@ export default function UnifiedInbox() {
       setConversations(mergedConversations);
       setAiReplyStatuses((previous) => {
         const next = { ...previous };
-        result.data.forEach((conversation) => {
+        mergedConversations.forEach((conversation) => {
           if (conversation.ai_is_replying === true && conversation.status !== "closed") {
             next[conversation.id] = "processing";
           } else {

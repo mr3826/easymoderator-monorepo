@@ -147,6 +147,44 @@ const logicalTurnIdFor = (message) => {
     return logicalTurnId ? String(logicalTurnId) : null;
 };
 
+const currentCustomerTurn = (rows) => {
+    const ordered = (Array.isArray(rows) ? rows : [])
+        .filter((row) => Number.isFinite(workflowTimestamp(row)))
+        .sort((left, right) => workflowTimestamp(left) - workflowTimestamp(right));
+    let latestAnswerAt = NaN;
+    for (const row of ordered) {
+        if (isAnsweringOutbound(row)) latestAnswerAt = workflowTimestamp(row);
+    }
+    const pendingCustomers = ordered.filter((row) => (
+        row?.sender === 'customer'
+            && (!Number.isFinite(latestAnswerAt) || workflowTimestamp(row) > latestAnswerAt)
+    ));
+    const persistedTurnIds = new Set(
+        pendingCustomers.map(logicalTurnIdFor).filter(Boolean),
+    );
+    pendingCustomers.forEach((row) => {
+        if (row?.id) persistedTurnIds.add(`burst:${row.id}`);
+    });
+    return {
+        pendingCustomers,
+        persistedTurnIds,
+        firstCustomerAt: pendingCustomers.length ? workflowTimestamp(pendingCustomers[0]) : NaN,
+    };
+};
+
+const isCurrentTurnSuggestion = (candidate, rows) => {
+    const current = currentCustomerTurn(rows);
+    if (!current.pendingCustomers.length) return true;
+    const candidateTurnId = logicalTurnIdFor(candidate);
+    if (candidateTurnId && current.persistedTurnIds.size) {
+        return current.persistedTurnIds.has(candidateTurnId);
+    }
+    const candidateAt = workflowTimestamp(candidate);
+    return !Number.isFinite(current.firstCustomerAt)
+        || !Number.isFinite(candidateAt)
+        || candidateAt >= current.firstCustomerAt;
+};
+
 const legacyLogicalTurnIdFor = (message, rows) => {
     const candidateAt = workflowTimestamp(message);
     if (!Number.isFinite(candidateAt)) return null;
@@ -541,7 +579,13 @@ class ConversationService {
                     conversationMessages.push(candidate);
                     messagesByConversation.set(candidate.conversation_id, conversationMessages);
                 }
-                for (const candidate of candidates.filter(isReviewableSuggestion)) {
+                for (const candidate of candidates.filter((message) => (
+                    isReviewableSuggestion(message)
+                        && isCurrentTurnSuggestion(
+                            message,
+                            messagesByConversation.get(message.conversation_id) || [],
+                        )
+                ))) {
                     suggestionCounts.set(
                         candidate.conversation_id,
                         (suggestionCounts.get(candidate.conversation_id) || 0) + 1,
@@ -658,22 +702,9 @@ class ConversationService {
 
             const projectedMessages = results.rows.map(mapMessage).reverse();
             const messages = projectedMessages.filter((message) => message.is_transcript_message);
-            const latestCustomerMessage = results.rows.find((message) => message.sender === 'customer');
-            const latestCustomerAt = workflowTimestamp(latestCustomerMessage);
-            const latestCustomerTurnId = normalizeObject(latestCustomerMessage?.metadata).logical_turn_id || null;
             const suggestions = results.rows
                 .filter(isReviewableSuggestion)
-                .filter((message) => {
-                    const metadata = normalizeObject(message.metadata);
-                    const suggestionTurnId = metadata.logical_turn_id || null;
-                    if (latestCustomerTurnId && suggestionTurnId) {
-                        return suggestionTurnId === latestCustomerTurnId;
-                    }
-                    const suggestionAt = workflowTimestamp(message);
-                    return !Number.isFinite(latestCustomerAt)
-                        || !Number.isFinite(suggestionAt)
-                        || suggestionAt >= latestCustomerAt;
-                })
+                .filter((message) => isCurrentTurnSuggestion(message, results.rows))
                 .map(mapMessage);
 
             return {

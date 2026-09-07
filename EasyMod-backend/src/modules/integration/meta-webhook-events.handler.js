@@ -637,11 +637,21 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         return { reconciled: false, retryable: true };
     }
 
+    const providerMessageWhere = {
+        conversation_id: conversation.id,
+        [Op.or]: [
+            { external_id: providerMessageId },
+            { provider_message_id: providerMessageId },
+            { metadata: { [Op.contains]: { provider_message_ids: [providerMessageId] } } },
+        ],
+    };
+    const alreadyReconciled = await Message.findOne({ where: providerMessageWhere });
+    if (alreadyReconciled) return { reconciled: true, retryable: false, alreadyReconciled: true };
+
     const candidateWhere = {
         conversation_id: conversation.id,
         sender: { [Op.in]: ['ai', 'business'] },
-        provider_message_id: null,
-        delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED'] },
+        delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED', 'SENT'] },
         [Op.and]: [
             // A FAILED row is eligible only when a provider call actually
             // started; pre-provider failures must not absorb an unrelated echo.
@@ -665,23 +675,40 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         : !echoText && candidates.length === 1
             ? candidates[0]
             : null;
-    if (!candidates.length) return { reconciled: false, retryable: true };
-    if (!candidate || candidate.provider_message_id || candidate.metadata?.provider_message_id) {
-        return { reconciled: false, retryable: true };
-    }
+    if (!candidates.length || !candidate) return { reconciled: false, retryable: true };
 
     let candidateMetadata = candidate.metadata;
     if (typeof candidateMetadata === 'string') {
         try { candidateMetadata = JSON.parse(candidateMetadata); } catch (_) { candidateMetadata = {}; }
     }
     if (!candidateMetadata || typeof candidateMetadata !== 'object' || Array.isArray(candidateMetadata)) candidateMetadata = {};
+    const knownProviderIds = [
+        candidate.provider_message_id,
+        candidateMetadata.provider_message_id,
+        ...(Array.isArray(candidateMetadata.provider_message_ids) ? candidateMetadata.provider_message_ids : []),
+    ].filter(Boolean).map(String);
+    if (knownProviderIds.includes(String(providerMessageId))) {
+        return { reconciled: true, retryable: false, alreadyReconciled: true };
+    }
+    const appendEarlyEcho = candidate.delivery_state === 'SENT'
+        && candidateMetadata.provider_send_attempted === true;
+    if ((candidate.provider_message_id || candidateMetadata.provider_message_id) && !appendEarlyEcho) {
+        return { reconciled: false, retryable: true };
+    }
 
+    const providerMessageIds = [
+        ...(Array.isArray(candidateMetadata.provider_message_ids)
+            ? candidateMetadata.provider_message_ids
+            : []),
+        providerMessageId,
+    ].filter((id, index, ids) => id && ids.indexOf(id) === index);
     const metadata = {
         ...candidateMetadata,
         delivered: true,
         delivery_status: 'sent',
         delivery_state: 'SENT',
         provider_message_id: providerMessageId,
+        provider_message_ids: providerMessageIds,
         provider_send_confirmed: true,
         echo_reconciled: true,
     };
@@ -694,8 +721,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         where: {
             id: candidate.id,
             conversation_id: conversation.id,
-            delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED'] },
-            provider_message_id: null,
+            delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED', 'SENT'] },
             [Op.and]: [
                 literal(`(metadata->>'provider_send_attempted') = 'true'`),
             ],
@@ -1015,14 +1041,28 @@ async function storeIncomingMessage(event) {
                 }
             }
             const unreadCount = Math.max(0, Number(currentConversationMetadata.unreadCount) || 0) + 1;
+            const inboundMetadata = { ...msgMeta, ...replyMetadata };
             const msgRecord = await Message.create({
                 conversation_id: conversation.id,
                 content: msgContent,
                 sender: 'customer',
                 external_id: externalId,
                 created_at: eventTime,
-                metadata: { ...msgMeta, ...replyMetadata },
+                metadata: inboundMetadata,
             }, { transaction: t });
+            const logicalTurnId = msgRecord?.id ? `burst:${msgRecord.id}` : null;
+            if (logicalTurnId) {
+                const metadataWithTurn = { ...inboundMetadata, logical_turn_id: logicalTurnId };
+                if (typeof msgRecord.update === 'function') {
+                    await msgRecord.update({ metadata: metadataWithTurn }, { transaction: t });
+                } else if (typeof Message.update === 'function') {
+                    await Message.update(
+                        { metadata: metadataWithTurn },
+                        { where: { id: msgRecord.id, conversation_id: conversation.id }, transaction: t },
+                    );
+                }
+                msgRecord.metadata = metadataWithTurn;
+            }
 
             // The preview watermark is the only comparable event clock. A
             // legacy conversation without it has no prior watermark, even if
@@ -1285,7 +1325,11 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
             return 'skipped';
         }
 
-        const normalizedTimestamp = normalizeMetaTimestamp(messaging.timestamp);
+        const receiptTime = receipt?.received_at ? new Date(receipt.received_at).getTime() : Date.now();
+        const normalizedTimestamp = normalizeMetaTimestamp(
+            messaging.timestamp,
+            Number.isFinite(receiptTime) ? receiptTime : Date.now(),
+        );
         const normalizedEvent = {
             platform: 'facebook',
             shop_id: channel.shop_id,

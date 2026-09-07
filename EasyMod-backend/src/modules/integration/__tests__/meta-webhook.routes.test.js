@@ -61,7 +61,7 @@ jest.mock('src/modules/channel-providers/meta-channel.service', () => mockMetaCh
 
 const mockCustomer = { findOne: jest.fn(), findOrCreate: jest.fn(), update: jest.fn(), destroy: jest.fn() };
 const mockConversation = { findOne: jest.fn(), create: jest.fn(), update: jest.fn() };
-const mockMessage = { findOne: jest.fn(), create: jest.fn() };
+const mockMessage = { findOne: jest.fn(), create: jest.fn(), update: jest.fn() };
 
 jest.mock('src/modules/entities', () => ({
     Customer: mockCustomer,
