@@ -209,6 +209,9 @@ async function runInboundTrace(client) {
     const messages = await client.query(`
         SELECT m.id AS message_id, m.external_id AS meta_mid,
                m.conversation_id, m.created_at AS message_created_at,
+               (m.metadata::jsonb)->>'reply_to_provider_message_id' AS reply_to_provider_message_id,
+               (m.metadata::jsonb)->>'reply_to_internal_message_id' AS reply_to_internal_message_id,
+               (m.metadata::jsonb)->'reply_to'->>'status' AS reply_to_status,
                c.shop_id, c.customer_id, c.meta_channel_id,
                c.status AS conversation_status, c.hitl,
                c.resolved_at
@@ -225,6 +228,9 @@ async function runInboundTrace(client) {
             + ` meta_mid=${row.meta_mid || ''} conversation_id=${row.conversation_id}`
             + ` shop_id=${row.shop_id} customer_id=${row.customer_id || ''}`
             + ` meta_channel_id=${row.meta_channel_id || ''}`
+            + ` reply_to_provider_message_id=${row.reply_to_provider_message_id || ''}`
+            + ` reply_to_internal_message_id=${row.reply_to_internal_message_id || ''}`
+            + ` reply_to_status=${row.reply_to_status || ''}`
             + ` conversation_status=${row.conversation_status} hitl=${row.hitl}`
             + ` resolved_at=${row.resolved_at ? row.resolved_at.toISOString() : ''}`
             + ` created_at=${row.message_created_at.toISOString()}`);
