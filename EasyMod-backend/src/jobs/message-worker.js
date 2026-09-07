@@ -1478,8 +1478,8 @@ async function finalizeAiMessage(
             conversationId,
             messageId: aiMessage?.id || null,
             deliveryState: resolvedState,
-        providerMessageId: primaryProviderMessageId,
-        providerMessageIds: acknowledgedProviderIds,
+            providerMessageId: primaryProviderMessageId,
+            providerMessageIds: acknowledgedProviderIds,
             heldReason,
         },
     );
@@ -1519,9 +1519,21 @@ async function finalizeAiMessage(
                         })
                         : null;
                     if (latest && isProviderConfirmed(latest)) {
+                        const latestMetadata = messageMetadata(latest);
+                        const latestProviderMessageId = latest.provider_message_id
+                            || latestMetadata.provider_message_id
+                            || primaryProviderMessageId;
+                        const latestProviderMessageIds = [
+                            ...(Array.isArray(latestMetadata.provider_message_ids)
+                                ? latestMetadata.provider_message_ids
+                                : []),
+                            ...acknowledgedProviderIds,
+                            latestProviderMessageId,
+                        ].filter((id, index, ids) => id && ids.indexOf(id) === index);
                         return finalizeAiMessage(latest, shopId, conversationId, {
-                            delivered: false,
-                            heldReason: 'provider_send_failed',
+                            delivered: true,
+                            providerMessageId: latestProviderMessageId,
+                            providerMessageIds: latestProviderMessageIds,
                         });
                     }
                     const error = new Error('AI message lifecycle changed before provider outcome was persisted');
