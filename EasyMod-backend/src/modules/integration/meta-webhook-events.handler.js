@@ -1228,6 +1228,10 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
             return 'skipped';
         }
 
+        const providerTimestamp = new Date(messaging.timestamp);
+        const normalizedTimestamp = Number.isFinite(providerTimestamp.getTime())
+            ? providerTimestamp
+            : new Date();
         const normalizedEvent = {
             platform: 'facebook',
             shop_id: channel.shop_id,
@@ -1237,7 +1241,7 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
             message: messageText || '',
             attachments,
             reply_to: messaging.message?.reply_to || null,
-            timestamp: new Date(messaging.timestamp),
+            timestamp: normalizedTimestamp,
             raw_event: messaging
         };
 

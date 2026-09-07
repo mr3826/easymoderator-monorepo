@@ -1223,6 +1223,11 @@ class ConversationService {
             if (updates.status !== undefined) {
                 fields.status = updates.status;
                 fields.metadata = { ...currentConversationMetadata, status: updates.status };
+                if (updates.status === 'closed') {
+                    // Fence any in-flight pre-close AI turn. A later customer
+                    // inbound is newer than this boundary and still reopens normally.
+                    fields.metadata[RESUME_BOUNDARY_METADATA_KEY] = new Date().toISOString();
+                }
                 if (updates.status === 'closed' && !conversation.resolved_at) {
                     fields.resolved_at = new Date();
                 }
