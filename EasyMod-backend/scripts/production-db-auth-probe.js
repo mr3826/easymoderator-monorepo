@@ -1,6 +1,7 @@
 'use strict';
 
 const dns = require('dns').promises;
+const crypto = require('crypto');
 const net = require('net');
 const { Client } = require('pg');
 
@@ -108,6 +109,23 @@ async function runPreMigrationProbe(client, databaseName) {
     console.log(`THRESHOLD_CONVERSATIONS_MAX=${thresholdRow.max}`);
 }
 
+function decryptWebhookPayload(ciphertext) {
+    if (typeof ciphertext !== 'string' || !ciphertext) throw new Error('empty payload');
+    const rawKey = process.env.CHANNEL_ENCRYPTION_KEY;
+    if (!rawKey) throw new Error('CHANNEL_ENCRYPTION_KEY is not set');
+    const [version, ivHex, authTagHex, encryptedHex] = ciphertext.split(':');
+    if (version !== 'v1' || !ivHex || !authTagHex || !encryptedHex) throw new Error('invalid payload format');
+    const key = /^[a-f0-9]{64}$/i.test(rawKey)
+        ? Buffer.from(rawKey, 'hex')
+        : crypto.createHash('sha256').update(rawKey).digest();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+    decipher.setAAD(Buffer.from('meta-webhook-payload'));
+    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+    let plaintext = decipher.update(encryptedHex, 'hex', 'utf8');
+    plaintext += decipher.final('utf8');
+    return JSON.parse(plaintext);
+}
+
 function parseTraceDate(value, name) {
     const date = new Date(value);
     if (!value || !Number.isFinite(date.getTime())) {
@@ -164,8 +182,7 @@ async function runInboundTrace(client) {
         let payloadMatch = false;
         if (row.payload_encrypted) {
             try {
-                const { decryptPayload } = require('../src/utils/webhook-payload-cipher');
-                const payload = decryptPayload(row.payload_encrypted);
+                const payload = decryptWebhookPayload(row.payload_encrypted);
                 const payloadText = payload?.message?.text || null;
                 payloadMatch = typeof payloadText === 'string' && payloadText.includes(marker);
             } catch (_) {
@@ -224,8 +241,7 @@ async function runInboundTrace(client) {
         const matched = receipts.rows.find((row) => {
             if (!row.payload_encrypted) return false;
             try {
-                const { decryptPayload } = require('../src/utils/webhook-payload-cipher');
-                return String(decryptPayload(row.payload_encrypted)?.message?.text || '').includes(marker);
+                return String(decryptWebhookPayload(row.payload_encrypted)?.message?.text || '').includes(marker);
             } catch (_) {
                 return false;
             }
