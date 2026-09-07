@@ -32,7 +32,7 @@ const { createLogger } = require('../../utils/structured-logger');
 const lifecycleLogger = createLogger('InboxLifecycle');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
-const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
 const META_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_UPLOAD_DIR = path.join(__dirname, '../../../uploads/conversation-attachments');
@@ -1151,7 +1151,7 @@ class ConversationController {
                 deliveryLock = await acquireDeliveryLock(conversationId);
             }
             const conversation = await conversationService.updateConversationStatus(conversationId, shopId, status);
-            if (status === 'closed') {
+            if (status === 'closed' || status === 'active') {
                 await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
             }
 

@@ -63,7 +63,7 @@ const asRetryableDependencyError = (error, code) => {
 };
 
 const providerSendSucceeded = hasProviderAcknowledgement;
-const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1539,7 +1539,9 @@ async function processMessageJob(job) {
                 && normalizeDeliveryState(staleCandidate) === MESSAGE_DELIVERY_STATES.SEND_PENDING
                 && staleMetadata.provider_send_claimed === true
                 && staleMetadata.provider_send_attempted !== true
-                && (!Number.isFinite(claimedAtMs) || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
+                && (Number(workerJob.attemptsMade || 0) > 0
+                    || !Number.isFinite(claimedAtMs)
+                    || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
             if (!staleClaim || !(await releaseStaleProviderClaim(staleCandidate))) {
                 return { skipped: true, reason: 'duplicate', externalId: effExternalId };
             }
@@ -1636,7 +1638,9 @@ async function processMessageJob(job) {
                 : {};
             const claimedAtMs = Date.parse(existingMetadata.provider_send_claimed_at || '');
             const claimIsStale = existingMetadata.provider_send_claimed === true
-                && (!Number.isFinite(claimedAtMs) || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
+                && (Number(workerJob.attemptsMade || 0) > 0
+                    || !Number.isFinite(claimedAtMs)
+                    || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
             let reusable = existingState === MESSAGE_DELIVERY_STATES.SEND_PENDING
                 && existingMetadata.provider_send_attempted !== true
                 && isAutoSendMode(businessMode)
@@ -2561,14 +2565,10 @@ async function processMessageJob(job) {
             });
             if ((deliveryLock?.available === false && process.env.NODE_ENV !== 'test')
                 || (deliveryLock?.available !== false && !deliveryLock?.success)) {
-                await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey).catch(() => {});
-                return {
-                    success: true,
-                    conversationId,
-                    confidence,
-                    sent: false,
-                    reason: deliveryLock.error || 'delivery_lock_busy',
-                };
+                const error = new Error(deliveryLock?.error || 'delivery_lock_busy');
+                error.code = deliveryLock?.error || 'DELIVERY_LOCK_BUSY';
+                error.retryable = true;
+                throw error;
             }
         }
         if (!channel) {

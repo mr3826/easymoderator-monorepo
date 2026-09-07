@@ -114,7 +114,7 @@ class ConversationLockService {
      * instead of racing the provider boundary.
      */
     async acquireForDelivery(conversationId, {
-        lockTimeoutMs = 60_000,
+        lockTimeoutMs = 300_000,
         maxWaitMs = 10_000,
     } = {}) {
         if (!cacheRedis || typeof cacheRedis.set !== 'function') {
