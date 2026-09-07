@@ -50,6 +50,8 @@ const {
     providerAcknowledgementId,
     hasProviderAcknowledgement,
     deriveAutomaticSendIdempotencyKey,
+    resumeBoundaryAtFor,
+    isBeforeResumeBoundary,
 } = require('../modules/conversation/message-lifecycle');
 const lifecycleLogger = createLogger('InboxLifecycle');
 
@@ -467,10 +469,15 @@ async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
             if (typeof Conversation.findOne === 'function') {
                 const conversation = await Conversation.findOne({
                     where: { id: message.conversation_id, shop_id: shopId },
-                    attributes: ['id', 'customer_id', 'channel', 'hitl', 'status'],
+                    attributes: ['id', 'customer_id', 'channel', 'hitl', 'status', 'metadata'],
                     ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                 });
                 if (!conversation || conversation.hitl === true || ['closed', 'archived'].includes(conversation.status)) {
+                    return false;
+                }
+                if (resumeBoundaryAtFor(conversation)
+                    && messageMetadata(message).provider_send_attempted !== true
+                    && isBeforeResumeBoundary(message, resumeBoundaryAtFor(conversation))) {
                     return false;
                 }
                 if (typeof cacheRedis.get === 'function' && await cacheRedis.get(`ai:pause:${message.conversation_id}`)) {
@@ -561,7 +568,7 @@ async function claimProviderSendBoundary(message, idempotencyKey, shopId) {
         const conversation = typeof Conversation.findOne === 'function'
             ? await Conversation.findOne({
                 where: { id: message.conversation_id, shop_id: shopId },
-                attributes: ['id', 'customer_id', 'channel', 'hitl', 'status'],
+                attributes: ['id', 'customer_id', 'channel', 'hitl', 'status', 'metadata'],
                 ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
             })
             : null;
@@ -569,6 +576,11 @@ async function claimProviderSendBoundary(message, idempotencyKey, shopId) {
         if (conversation.hitl === true) return { allowed: false, reason: 'human_active' };
         if (['closed', 'archived'].includes(conversation.status)) {
             return { allowed: false, reason: 'conversation_closed' };
+        }
+        if (resumeBoundaryAtFor(conversation)
+            && messageMetadata(message).provider_send_attempted !== true
+            && isBeforeResumeBoundary(message, resumeBoundaryAtFor(conversation))) {
+            return { allowed: false, reason: 'resume_obsolete' };
         }
         const currentBusinessMode = await getEffectiveAiReplyMode(shopId);
         if (!isAutoSendMode(currentBusinessMode)) {
@@ -730,6 +742,58 @@ function createRecoveryControl({
             ? recovery.isHardTimeoutSuppressed(currentState)
             : recovery.isHoldingSuppressed(currentState);
         if (closed || suppressed) return;
+        try {
+            const conversation = typeof Conversation.findOne === 'function'
+                ? await Conversation.findOne({
+                    where: { id: conversationId, shop_id: shopId },
+                    attributes: ['id', 'metadata'],
+                })
+                : null;
+            const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
+            if (resumeBoundaryAt && isBeforeResumeBoundary({
+                metadata: { turn_started_at: turnStartedAt },
+                created_at: turnStartedAt,
+            }, resumeBoundaryAt)) {
+                if (holdingMessage?.id && typeof Message.update === 'function') {
+                    const metadata = {
+                        ...messageMetadata(holdingMessage),
+                        delivered: false,
+                        delivery_status: 'dismissed',
+                        delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                        suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                        held_reason: 'resume_obsolete',
+                        dismissed_at: new Date().toISOString(),
+                        dismissed_by_resume: true,
+                    };
+                    await Message.update({
+                        delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                        metadata,
+                    }, {
+                        where: {
+                            id: holdingMessage.id,
+                            conversation_id: conversationId,
+                            provider_message_id: null,
+                            [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+                        },
+                    }).catch(() => {});
+                    sseManager.emit(shopId, 'message_delivery_updated', {
+                        conversation_id: conversationId,
+                        message_id: holdingMessage.id,
+                        delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                        metadata,
+                    });
+                }
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    outboundStatus: 'BLOCKED',
+                });
+                return null;
+            }
+        } catch (_) {
+            // A boundary read failure must not turn a held pre-resume turn into a send.
+            return null;
+        }
         if (hardTimeout) {
             await transitionTo('RETRY_PENDING', {
                 recoveryKind,
@@ -890,6 +954,8 @@ function createRecoveryControl({
                         delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
                         delivery_source: 'HITL_ESCALATION',
                         suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_AUTO_PROCESSING,
+                        logical_turn_id: turnId,
+                        turn_started_at: turnStartedAt,
                     },
                 });
                 sseManager.emit(shopId, 'new_message', {
@@ -1042,12 +1108,25 @@ function createRecoveryControl({
     };
 }
 
-async function requireHumanRecovery({ turnId, traceId, recoveryAvailable, conversation, shopId, conversationId, platform, recipientId, channel, reason }) {
+async function requireHumanRecovery({
+    turnId,
+    traceId,
+    turnStartedAt,
+    recoveryAvailable,
+    conversation,
+    shopId,
+    conversationId,
+    platform,
+    recipientId,
+    channel,
+    reason,
+}) {
     try {
         const recovery = require('../modules/ai/recovery/turn-recovery.service');
         return await recovery.requireHuman({
             turnId,
             traceId: traceId || turnId,
+            turnStartedAt,
             conversation,
             shopId,
             conversationId,
@@ -1138,6 +1217,67 @@ async function finalizeAiMessage(
             }) || aiMessage;
         } catch (err) {
             console.warn(`[worker] Failed to re-read AI message lifecycle: ${err.message}`);
+        }
+    }
+
+    // Resume AI establishes a durable boundary, not just a boolean toggle. A
+    // worker that started before Resume may finish generation afterward; it is
+    // allowed to persist history, but it must never recreate reviewable work.
+    if (currentMessage && !isProviderConfirmed(currentMessage)
+        && messageMetadata(currentMessage).provider_send_attempted !== true
+        && typeof Conversation.findOne === 'function') {
+        try {
+            const conversation = await Conversation.findOne({
+                where: { id: conversationId },
+                attributes: ['id', 'metadata'],
+            });
+            const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
+            if (resumeBoundaryAt && isBeforeResumeBoundary(currentMessage, resumeBoundaryAt)) {
+                const resumeMetadata = {
+                    ...messageMetadata(currentMessage),
+                    delivered: false,
+                    delivery_status: 'dismissed',
+                    delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                    suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                    held_reason: 'resume_obsolete',
+                    dismissed_at: new Date().toISOString(),
+                    dismissed_by_resume: true,
+                    provider_message_id: null,
+                };
+                const result = typeof Message.update === 'function'
+                    ? await Message.update({
+                        delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                        delivery_source: currentMessage.delivery_source || resumeMetadata.delivery_source || 'AUTO',
+                        provider_message_id: null,
+                        metadata: resumeMetadata,
+                    }, {
+                        where: {
+                            id: currentMessage.id,
+                            conversation_id: conversationId,
+                            sender: 'ai',
+                            provider_message_id: null,
+                            [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+                        },
+                    })
+                    : [1];
+                const updatedCount = Array.isArray(result) ? result[0] : 1;
+                if (updatedCount === 1 || normalizeDeliveryState(currentMessage) === MESSAGE_DELIVERY_STATES.DISMISSED) {
+                    currentMessage.metadata = resumeMetadata;
+                    currentMessage.delivery_state = MESSAGE_DELIVERY_STATES.DISMISSED;
+                    currentMessage.provider_message_id = null;
+                    sseManager.emit(shopId, 'message_delivery_updated', {
+                        conversation_id: conversationId,
+                        message_id: currentMessage.id,
+                        metadata: resumeMetadata,
+                        delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+                        delivery_source: currentMessage.delivery_source || resumeMetadata.delivery_source || 'AUTO',
+                        provider_message_id: null,
+                    });
+                    return { providerConfirmed: false, persisted: true, resumeObsolete: true, message: currentMessage };
+                }
+            }
+        } catch (err) {
+            console.warn(`[worker] Failed to enforce Resume boundary on AI message: ${err.message}`);
         }
     }
 
@@ -1554,6 +1694,7 @@ async function processMessageJob(job) {
 
     let recoveryControl = null;
     let recoveryStarted = false;
+    let turnStartedAt = null;
     let deliveryLock = null;
     let stableTraceId = jobTraceId || job.id || effExternalId || conversationId;
     try {
@@ -1567,6 +1708,7 @@ async function processMessageJob(job) {
             idempotencyKey: jobIdempotencyKey || deriveIdempotencyKey(['turn', shopId, conversationId, turnId]),
         });
         recoveryStarted = true;
+        turnStartedAt = started.turn.turn_started_at || null;
         stableTraceId = started.turn.trace_id || stableTraceId;
         recoveryControl = createRecoveryControl({
             turnId,
@@ -1743,6 +1885,7 @@ async function processMessageJob(job) {
                 await requireHumanRecovery({
                     turnId,
                     traceId: stableTraceId,
+                    turnStartedAt,
                     recoveryAvailable: recoveryStarted,
                     conversation, shopId, conversationId,
                     platform, recipientId, channel: jobChannel,
@@ -1917,6 +2060,7 @@ async function processMessageJob(job) {
                 await requireHumanRecovery({
                     turnId,
                     traceId: stableTraceId,
+                    turnStartedAt,
                     recoveryAvailable: recoveryStarted,
                     conversation, shopId, conversationId,
                     platform, recipientId, channel: jobChannel,
@@ -2034,6 +2178,7 @@ async function processMessageJob(job) {
             grounding_attachment_urls: outboundAttachments.map(a => a.url),
             human_required: humanRequired,
             logical_turn_id: logicalTurnId,
+            turn_started_at: turnStartedAt,
             delivery_state: lifecycle.deliveryState
                 || (autoMode ? MESSAGE_DELIVERY_STATES.SEND_PENDING : MESSAGE_DELIVERY_STATES.DRAFT_READY),
             delivery_source: lifecycle.deliverySource || (autoMode ? 'AUTO' : 'AI_DRAFT'),
@@ -2109,6 +2254,7 @@ async function processMessageJob(job) {
         await requireHumanRecovery({
             turnId,
             traceId: stableTraceId,
+            turnStartedAt,
             recoveryAvailable: recoveryStarted,
             conversation, shopId, conversationId,
             platform, recipientId, channel: jobChannel, reason: 'grounding_suppressed',
@@ -2167,6 +2313,7 @@ async function processMessageJob(job) {
             await requireHumanRecovery({
                 turnId,
                 traceId: stableTraceId,
+                turnStartedAt,
                 recoveryAvailable: recoveryStarted,
                 conversation, shopId, conversationId,
                 platform, recipientId, channel: jobChannel, reason: 'low_confidence',

@@ -141,6 +141,8 @@ async function getHandoffCooldownMinutes(shopId) {
  * @param {object}   params.conversation    - Sequelize Conversation instance (needs .update)
  * @param {string}   params.shopId
  * @param {string}   [params.conversationId] - defaults to conversation.id
+ * @param {string}   [params.turnId]          - existing logical conversation turn
+ * @param {Date|string} [params.turnStartedAt] - durable turn start boundary
  * @param {string}   params.platform         - 'messenger' | 'facebook' | 'instagram'
  * @param {string}   params.recipientId      - customer PSID/IGSID
  * @param {object}   [params.channel]        - resolved MetaChannel for delivery (null skips delivery)
@@ -151,6 +153,8 @@ async function escalateToHuman({
     conversation,
     shopId,
     conversationId,
+    turnId,
+    turnStartedAt,
     platform,
     recipientId,
     channel,
@@ -246,7 +250,13 @@ async function escalateToHuman({
 
     try {
         // 2. Reassure the customer with one templated holding message
-        const holdingMsg = await sendEscalationAutoReply(convId, shopId).catch(() => null);
+        const holdingMsg = await (turnId || turnStartedAt
+            ? sendEscalationAutoReply(convId, shopId, platform, {
+                logicalTurnId: turnId,
+                turnStartedAt,
+            })
+            : sendEscalationAutoReply(convId, shopId)
+        ).catch(() => null);
         if (!holdingMsg) return null;
 
         const holdingMetadata = holdingMsg.metadata && typeof holdingMsg.metadata === 'object'

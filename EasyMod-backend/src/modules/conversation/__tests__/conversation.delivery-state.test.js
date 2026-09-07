@@ -470,7 +470,7 @@ describe('ConversationService delivery projection', () => {
 
         expect(held.delivery_state).toBe('DISMISSED');
         expect(held.metadata).toEqual(expect.objectContaining({
-            held_reason: 'human_active',
+            held_reason: 'resume_obsolete',
             suggestion_visibility: 'HIDDEN_DISMISSED',
             dismissed_by_resume: true,
         }));
@@ -732,5 +732,153 @@ describe('ConversationService delivery projection', () => {
         expect(escalation.delivery_state).toBe('DISMISSED');
         expect(lowConfidence.delivery_state).toBe('DISMISSED');
         expect(require('../message-lifecycle').isReviewableSuggestion(lowConfidence)).toBe(false);
+    });
+
+    it.each([
+        ['HELD human_active', 'HELD', 'human_active', 'VISIBLE_HITL_REVIEW'],
+        ['HELD low_confidence', 'HELD', 'low_confidence', 'VISIBLE_HITL_REVIEW'],
+        ['HELD ai_paused', 'HELD', 'ai_paused', 'VISIBLE_HITL_REVIEW'],
+        ['HELD mode_changed', 'HELD', 'mode_changed', 'VISIBLE_HITL_REVIEW'],
+        ['HELD policy_blocked', 'HELD', 'policy_blocked', 'VISIBLE_HITL_REVIEW'],
+        ['DRAFT_READY merchant requested', 'DRAFT_READY', 'merchant_requested', 'VISIBLE_MERCHANT_REQUESTED'],
+        ['HITL escalation generating', 'GENERATING', 'handoff', 'HIDDEN_AUTO_PROCESSING'],
+        ['HITL escalation pending', 'SEND_PENDING', 'handoff', 'HIDDEN_AUTO_PROCESSING'],
+        ['HITL escalation held', 'HELD', 'delivery_lock_busy', 'VISIBLE_HITL_REVIEW'],
+    ])('terminalizes every unattempted pre-Resume candidate: %s', async (_name, state, heldReason, visibility) => {
+        const candidate = {
+            id: `candidate-${state}-${heldReason}`,
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date(Date.now() - 10_000),
+            delivery_state: state,
+            delivery_source: heldReason === 'handoff' ? 'HITL_ESCALATION' : 'AI_DRAFT',
+            metadata: {
+                delivered: false,
+                delivery_state: state,
+                held_reason: heldReason,
+                suggestion_visibility: visibility,
+                ...(heldReason === 'handoff' ? { delivery_source: 'HITL_ESCALATION' } : {}),
+            },
+            update: jest.fn(async (updates) => Object.assign(candidate, updates)),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([candidate]);
+
+        await conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false });
+
+        expect(candidate.delivery_state).toBe('DISMISSED');
+        expect(candidate.metadata).toEqual(expect.objectContaining({
+            delivery_state: 'DISMISSED',
+            delivery_status: 'dismissed',
+            suggestion_visibility: 'HIDDEN_DISMISSED',
+            held_reason: 'resume_obsolete',
+            dismissed_by_resume: true,
+        }));
+        expect(candidate.metadata.provider_send_attempted).not.toBe(true);
+        expect(require('../message-lifecycle').isReviewableSuggestion(candidate)).toBe(false);
+    });
+
+    it('preserves provider-confirmed history and unknown provider outcomes on Resume', async () => {
+        const confirmed = {
+            id: 'confirmed-old',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date(Date.now() - 10_000),
+            delivery_state: 'SENT',
+            provider_message_id: 'mid-confirmed',
+            metadata: {
+                delivery_state: 'SENT',
+                provider_message_id: 'mid-confirmed',
+                provider_send_confirmed: true,
+            },
+            update: jest.fn(),
+        };
+        const unknown = {
+            id: 'unknown-old',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date(Date.now() - 10_000),
+            delivery_state: 'SEND_PENDING',
+            provider_message_id: null,
+            metadata: {
+                delivery_state: 'SEND_PENDING',
+                provider_send_attempted: true,
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+            update: jest.fn(),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([confirmed, unknown]);
+
+        await conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false });
+
+        expect(confirmed.update).not.toHaveBeenCalled();
+        expect(unknown.update).not.toHaveBeenCalled();
+        expect(confirmed.delivery_state).toBe('SENT');
+        expect(unknown.delivery_state).toBe('SEND_PENDING');
+        expect(require('../message-lifecycle').isReviewableSuggestion(unknown)).toBe(false);
+    });
+
+    it('preserves a newer post-Resume logical turn and keeps Resume idempotent', async () => {
+        const oldCandidate = {
+            id: 'old-candidate',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date(Date.now() - 10_000),
+            delivery_state: 'HELD',
+            metadata: {
+                delivery_state: 'HELD',
+                held_reason: 'human_active',
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+            update: jest.fn(async (updates) => Object.assign(oldCandidate, updates)),
+        };
+        const newerCandidate = {
+            id: 'newer-candidate',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date(Date.now() + 10_000),
+            delivery_state: 'DRAFT_READY',
+            metadata: {
+                delivery_state: 'DRAFT_READY',
+                logical_turn_id: 'external-post-resume',
+                suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+            },
+            update: jest.fn(async (updates) => Object.assign(newerCandidate, updates)),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([oldCandidate, newerCandidate]);
+
+        await conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false });
+        await conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false });
+
+        expect(oldCandidate.delivery_state).toBe('DISMISSED');
+        expect(newerCandidate.delivery_state).toBe('DRAFT_READY');
+        expect(newerCandidate.metadata.suggestion_visibility).toBe('VISIBLE_DRAFT_REVIEW');
+        expect(conversation.metadata.ai_resume_boundary_at).toBeTruthy();
     });
 });

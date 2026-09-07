@@ -219,6 +219,8 @@ const requireHuman = async (input = {}) => {
             conversation,
             shopId,
             conversationId,
+            turnId,
+            turnStartedAt: input.turnStartedAt || null,
             platform: input.platform,
             recipientId: input.recipientId,
             channel: input.channel,

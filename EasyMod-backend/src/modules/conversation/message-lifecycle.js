@@ -23,6 +23,7 @@ const SUGGESTION_VISIBILITY = Object.freeze({
 });
 
 const stateValues = new Set(Object.values(MESSAGE_DELIVERY_STATES));
+const RESUME_BOUNDARY_METADATA_KEY = 'ai_resume_boundary_at';
 
 function metadataFor(message) {
     if (typeof message?.metadata === 'string') {
@@ -36,6 +37,34 @@ function metadataFor(message) {
     return message?.metadata && typeof message.metadata === 'object'
         ? message.metadata
         : {};
+}
+
+function resumeBoundaryAtFor(conversation) {
+    const metadata = metadataFor(conversation);
+    const value = metadata[RESUME_BOUNDARY_METADATA_KEY];
+    const timestamp = value instanceof Date ? value.getTime() : Date.parse(String(value || ''));
+    return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function candidateStartedAtFor(message) {
+    const metadata = metadataFor(message);
+    const turnStartedAt = Date.parse(String(metadata.turn_started_at || ''));
+    if (Number.isFinite(turnStartedAt)) return turnStartedAt;
+    const createdAt = message?.created_at ?? message?.createdAt;
+    const messageTimestamp = createdAt instanceof Date ? createdAt.getTime() : Date.parse(String(createdAt || ''));
+    return Number.isFinite(messageTimestamp) ? messageTimestamp : null;
+}
+
+function isBeforeResumeBoundary(message, boundaryAt) {
+    const boundaryTimestamp = boundaryAt instanceof Date
+        ? boundaryAt.getTime()
+        : typeof boundaryAt === 'number'
+            ? boundaryAt
+            : Date.parse(String(boundaryAt || ''));
+    const candidateTimestamp = candidateStartedAtFor(message);
+    return Number.isFinite(boundaryTimestamp)
+        && Number.isFinite(candidateTimestamp)
+        && candidateTimestamp <= boundaryTimestamp;
 }
 
 /**
@@ -106,6 +135,7 @@ function isReviewableSuggestion(message) {
     const metadata = metadataFor(message);
     const state = normalizeDeliveryState(message);
     if (state === MESSAGE_DELIVERY_STATES.DISMISSED) return false;
+    if (state === MESSAGE_DELIVERY_STATES.FAILED || metadata.provider_send_attempted === true) return false;
     if (metadata.suggestion_visibility === SUGGESTION_VISIBILITY.HIDDEN_DISMISSED) return false;
     if (state === MESSAGE_DELIVERY_STATES.GENERATING || state === MESSAGE_DELIVERY_STATES.SEND_PENDING) return false;
     return [
@@ -146,7 +176,11 @@ function deriveEscalationSendIdempotencyKey({ shopId, conversationId }) {
 module.exports = {
     MESSAGE_DELIVERY_STATES,
     SUGGESTION_VISIBILITY,
+    RESUME_BOUNDARY_METADATA_KEY,
     normalizeDeliveryState,
+    resumeBoundaryAtFor,
+    candidateStartedAtFor,
+    isBeforeResumeBoundary,
     providerMessageIdFor,
     providerAcknowledgementId,
     hasProviderAcknowledgement,

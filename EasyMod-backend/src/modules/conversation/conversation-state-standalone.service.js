@@ -5,7 +5,13 @@ const { Op } = require('sequelize');
 const Customer = require('../customer/customer.entity');
 const { Conversation, Message } = require('./conversation.entity');
 const { normalizeAiReplyMode } = require('../shop/ai-reply-mode');
-const { MESSAGE_DELIVERY_STATES, isProviderConfirmed } = require('./message-lifecycle');
+const {
+    MESSAGE_DELIVERY_STATES,
+    SUGGESTION_VISIBILITY,
+    isProviderConfirmed,
+    resumeBoundaryAtFor,
+    isBeforeResumeBoundary,
+} = require('./message-lifecycle');
 const { sequelize } = require('../../utils/database/database-setup');
 
 // Import OrderSessionService
@@ -224,48 +230,76 @@ class ConversationStateService {
                 send_idempotency_key = null,
                 ...restMeta
             } = metadata;
-            const message = await Message.create({
-                id: uuidv4(),
-                conversation_id: conversationId,
-                content: response,
-                sender: 'ai',
-                external_id: null,
-                ai_confidence: typeof confidence === 'number' ? confidence : null,
-                source_references: Array.isArray(sourceReferences) && sourceReferences.length
-                    ? sourceReferences
-                    : null,
-                ai_suggestion: response,
-                delivery_state,
-                delivery_source,
-                provider_message_id: null,
-                send_idempotency_key,
-                metadata: {
-                    ...restMeta,
-                    confidence,
-                    delivery_state,
-                    delivery_source,
-                    send_idempotency_key,
-                    delivered: false,
-                    delivery_status: delivery_state === MESSAGE_DELIVERY_STATES.DRAFT_READY ? 'pending' : 'processing',
-                    timestamp: new Date().toISOString(),
-                    type: 'ai_response'
-                }
-            });
-
-            const updateConversationMetadata = async (transaction = null) => {
+            const persist = async (transaction = null) => {
                 const conversation = typeof Conversation.findOne === 'function'
                     ? await Conversation.findOne({
                         where: { id: conversationId },
                         ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                     })
                     : await Conversation.findByPk(conversationId);
-                if (!conversation) return;
+                if (!conversation) throw new Error('Conversation not found');
 
                 let currentMeta = conversation.metadata;
                 if (typeof currentMeta === 'string') {
                     try { currentMeta = JSON.parse(currentMeta); } catch (_) { currentMeta = {}; }
                 }
                 if (!currentMeta || typeof currentMeta !== 'object' || Array.isArray(currentMeta)) currentMeta = {};
+
+                const candidateMetadata = {
+                    ...restMeta,
+                    confidence,
+                    delivery_state,
+                    delivery_source,
+                    send_idempotency_key,
+                };
+                const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
+                const resumeObsolete = Boolean(
+                    resumeBoundaryAt
+                    && candidateMetadata.provider_send_attempted !== true
+                    && isBeforeResumeBoundary({
+                        metadata: candidateMetadata,
+                        created_at: new Date(),
+                    }, resumeBoundaryAt),
+                );
+                const effectiveDeliveryState = resumeObsolete
+                    ? MESSAGE_DELIVERY_STATES.DISMISSED
+                    : delivery_state;
+                const effectiveMetadata = {
+                    ...candidateMetadata,
+                    delivery_state: effectiveDeliveryState,
+                    delivered: false,
+                    delivery_status: resumeObsolete
+                        ? 'dismissed'
+                        : delivery_state === MESSAGE_DELIVERY_STATES.DRAFT_READY ? 'pending' : 'processing',
+                    suggestion_visibility: resumeObsolete
+                        ? SUGGESTION_VISIBILITY.HIDDEN_DISMISSED
+                        : candidateMetadata.suggestion_visibility,
+                    timestamp: new Date().toISOString(),
+                    type: 'ai_response',
+                    ...(resumeObsolete ? {
+                        held_reason: 'resume_obsolete',
+                        dismissed_at: new Date().toISOString(),
+                        dismissed_by_resume: true,
+                    } : {}),
+                };
+                const message = await Message.create({
+                    id: uuidv4(),
+                    conversation_id: conversationId,
+                    content: response,
+                    sender: 'ai',
+                    external_id: null,
+                    ai_confidence: typeof confidence === 'number' ? confidence : null,
+                    source_references: Array.isArray(sourceReferences) && sourceReferences.length
+                        ? sourceReferences
+                        : null,
+                    ai_suggestion: response,
+                    delivery_state: effectiveDeliveryState,
+                    delivery_source,
+                    provider_message_id: null,
+                    send_idempotency_key,
+                    metadata: effectiveMetadata,
+                }, transaction ? { transaction } : undefined);
+
                 await conversation.update({
                     metadata: {
                         ...currentMeta,
@@ -273,14 +307,13 @@ class ConversationStateService {
                         ai_response_count: (Number(currentMeta.ai_response_count) || 0) + 1
                     }
                 }, ...(transaction ? [{ transaction }] : []));
+                return { success: true, message_id: message.id, message };
             };
-            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
-                await sequelize.transaction((transaction) => updateConversationMetadata(transaction));
-            } else {
-                await updateConversationMetadata();
-            }
 
-            return { success: true, message_id: message.id, message };
+            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+                return await sequelize.transaction((transaction) => persist(transaction));
+            }
+            return await persist();
 
         } catch (error) {
             console.error('Store AI response error:', error);

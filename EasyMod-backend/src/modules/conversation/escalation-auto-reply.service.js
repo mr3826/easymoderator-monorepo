@@ -34,7 +34,7 @@ const DEFAULT_ESCALATION_TEMPLATE =
  * @param {string} [channelType]   - Channel identifier (messenger, instagram, etc.) — reserved for future platform-specific routing
  * @returns {Promise<object|null>} - The created message record, or null if skipped/failed
  */
-const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
+const sendEscalationAutoReply = async (conversationId, shopId, channelType, lifecycleMetadata = {}) => {
     try {
         // Resolve the template: shop-specific override → default bilingual template
         let template = DEFAULT_ESCALATION_TEMPLATE;
@@ -137,6 +137,8 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
                 delivery_source: 'HITL_ESCALATION',
                 suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_AUTO_PROCESSING,
                 send_idempotency_key: sendIdempotencyKey,
+                logical_turn_id: lifecycleMetadata.logicalTurnId || null,
+                turn_started_at: lifecycleMetadata.turnStartedAt || null,
             }
         }).catch(async (error) => {
             const isUniqueConflict = error?.name === 'SequelizeUniqueConstraintError'
