@@ -303,7 +303,7 @@ export default function UnifiedInbox() {
         return next;
       });
       setSelectedConversation((previous) => {
-        if (!result.data.length) return null;
+        if (!mergedConversations.length) return null;
         if (!previous) return mergedConversations[0];
         return mergedConversations.find((conversation) => conversation.id === previous.id) || previous;
       });
