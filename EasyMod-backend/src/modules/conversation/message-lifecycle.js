@@ -168,8 +168,10 @@ function deriveAutomaticSendIdempotencyKey({ shopId, conversationId, turnId }) {
     return crypto.createHash('sha256').update(`easymod:inbox-auto-send:${input}`).digest('hex');
 }
 
-function deriveEscalationSendIdempotencyKey({ shopId, conversationId }) {
-    const input = [shopId, conversationId].map((part) => String(part || '')).join('|');
+function deriveEscalationSendIdempotencyKey({ shopId, conversationId, turnId = null }) {
+    const inputParts = [shopId, conversationId];
+    if (turnId) inputParts.push(turnId);
+    const input = inputParts.map((part) => String(part || '')).join('|');
     return crypto.createHash('sha256').update(`easymod:inbox-handoff:${input}`).digest('hex');
 }
 

@@ -33,6 +33,7 @@ const { HOLDING_TEMPLATES, getHoldingTemplate } = require('../recovery/holding-t
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockConversationFindOne.mockReset().mockResolvedValue({ id: 'conv-1', hitl: true });
     mockFindOrCreate.mockResolvedValue([mockTurn, true]);
     mockTurn.state = 'RECEIVED';
     mockTurn.state_transitions = [];
@@ -129,6 +130,29 @@ test('requireHuman does not re-enable HITL while a delivery lock is held', async
     })).rejects.toMatchObject({ code: 'LOCK_ALREADY_HELD', retryable: true });
 
     expect(mockConversationUpdate).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
+});
+
+test('requireHuman skips a pre-Resume turn inside the locked transaction', async () => {
+    mockConversationFindOne.mockResolvedValue({
+        id: 'conv-1',
+        status: 'active',
+        metadata: { ai_resume_boundary_at: new Date(Date.now() - 1_000).toISOString() },
+    });
+
+    const result = await recovery.requireHuman({
+        turnId: 'turn-1',
+        traceId: 'trace-1',
+        turnStartedAt: new Date(Date.now() - 2_000).toISOString(),
+        shopId: 'shop-1',
+        conversationId: 'conv-1',
+        reason: 'ACTION_DENIED',
+        conversation: { id: 'conv-1', status: 'active' },
+    });
+
+    expect(result).toEqual({ turn: null, handoff: null, skipped: 'resume_obsolete' });
+    expect(mockConversationUpdate).not.toHaveBeenCalled();
+    expect(mockFindOrCreate).not.toHaveBeenCalled();
     expect(mockHandoff).not.toHaveBeenCalled();
 });
 

@@ -63,6 +63,12 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType, life
             return null;
         }
 
+        const sendIdempotencyKey = deriveEscalationSendIdempotencyKey({
+            shopId,
+            conversationId,
+            turnId: lifecycleMetadata.logicalTurnId || null,
+        });
+
         // Repeated handoff signals must reuse the same logical reassurance
         // until a prior provider attempt is known to have failed before send.
         if (typeof Message.findOne === 'function') {
@@ -71,6 +77,9 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType, life
                     conversation_id: conversationId,
                     sender: 'ai',
                     delivery_source: 'HITL_ESCALATION',
+                    ...(lifecycleMetadata.logicalTurnId
+                        ? { send_idempotency_key: sendIdempotencyKey }
+                        : {}),
                 },
                 order: [['created_at', 'DESC']],
             });
@@ -112,10 +121,6 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType, life
 
         // Create the auto-reply message
         const messageId = uuidv4();
-        const sendIdempotencyKey = deriveEscalationSendIdempotencyKey({
-            shopId,
-            conversationId,
-        });
         const message = await Message.create({
             id: messageId,
             conversation_id: conversationId,

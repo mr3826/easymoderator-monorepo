@@ -10,6 +10,7 @@ const {
     SUGGESTION_VISIBILITY,
     isProviderConfirmed,
     resumeBoundaryAtFor,
+    candidateStartedAtFor,
     isBeforeResumeBoundary,
 } = require('./message-lifecycle');
 const { sequelize } = require('../../utils/database/database-setup');
@@ -253,6 +254,15 @@ class ConversationStateService {
                     send_idempotency_key,
                 };
                 const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
+                const candidateStartedAt = candidateStartedAtFor({
+                    metadata: candidateMetadata,
+                    created_at: null,
+                });
+                if (resumeBoundaryAt && !Number.isFinite(candidateStartedAt)) {
+                    const error = new Error('AI candidate turn start is unavailable after Resume AI');
+                    error.code = 'RESUME_BOUNDARY_TURN_START_REQUIRED';
+                    throw error;
+                }
                 const resumeObsolete = Boolean(
                     resumeBoundaryAt
                     && candidateMetadata.provider_send_attempted !== true
@@ -317,7 +327,9 @@ class ConversationStateService {
 
         } catch (error) {
             console.error('Store AI response error:', error);
-            throw new Error(`Failed to store AI response: ${error.message}`);
+            const wrapped = new Error(`Failed to store AI response: ${error.message}`);
+            if (error?.code) wrapped.code = error.code;
+            throw wrapped;
         }
     }
 

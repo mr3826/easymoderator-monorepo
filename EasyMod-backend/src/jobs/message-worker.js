@@ -750,10 +750,11 @@ function createRecoveryControl({
                 })
                 : null;
             const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
-            if (resumeBoundaryAt && isBeforeResumeBoundary({
+            const turnIsObsolete = resumeBoundaryAt && (!turnStartedAt || isBeforeResumeBoundary({
                 metadata: { turn_started_at: turnStartedAt },
                 created_at: turnStartedAt,
-            }, resumeBoundaryAt)) {
+            }, resumeBoundaryAt));
+            if (turnIsObsolete) {
                 if (holdingMessage?.id && typeof Message.update === 'function') {
                     const metadata = {
                         ...messageMetadata(holdingMessage),
@@ -909,32 +910,81 @@ function createRecoveryControl({
             }).catch(() => {});
             return null;
         }
-        const finalSendGuard = await getAutomaticSendGuard(shopId, conversationId);
-        if (!finalSendGuard.allowed) {
-            await transitionTo('RETRY_PENDING', {
-                retryState: 'HOLDING_SEND_FAILED',
-                recoveryKind,
-                outboundStatus: 'BLOCKED',
-            });
-            return null;
-        }
-        // ponytail: Redis-durable dedup; move to a DB unique constraint if a lost key ever double-sends.
-        if (!(await claimDedupKey(holdingKey))) {
-            holdingSent = true;
-            return null;
-        }
-        if (closed || (hardTimeout
-            ? recovery.isHardTimeoutSuppressed(currentState)
-            : recovery.isHoldingSuppressed(currentState))) {
-            holdingSent = false;
-            if (typeof cacheRedis.del === 'function') await cacheRedis.del(holdingKey).catch(() => {});
-            return null;
-        }
-
-        holdingSent = true;
-        providerAccepted = false;
-        const content = normalizedMessage.text;
+        let holdingDeliveryLock = null;
         try {
+            if (typeof conversationLockService?.acquireForDelivery === 'function') {
+                const lock = await conversationLockService.acquireForDelivery(conversationId, {
+                    lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
+                    maxWaitMs: DELIVERY_LOCK_WAIT_MS,
+                });
+                if (lock?.available === false || (lock && !lock.success)) {
+                    if (process.env.NODE_ENV !== 'test') {
+                        await transitionTo('RETRY_PENDING', {
+                            retryState: 'HOLDING_SEND_FAILED',
+                            recoveryKind,
+                            outboundStatus: 'BLOCKED',
+                        });
+                        return null;
+                    }
+                } else {
+                    holdingDeliveryLock = lock?.success ? lock : null;
+                }
+            } else if (process.env.NODE_ENV !== 'test') {
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    outboundStatus: 'BLOCKED',
+                });
+                return null;
+            }
+
+            // Re-read the boundary after taking the same delivery fence as
+            // Resume. Either Resume wins and this turn is obsolete, or this
+            // holding send owns the fence through the provider call.
+            const latestConversation = typeof Conversation.findOne === 'function'
+                ? await Conversation.findOne({
+                    where: { id: conversationId, shop_id: shopId },
+                    attributes: ['id', 'status', 'metadata'],
+                })
+                : null;
+            const latestResumeBoundary = resumeBoundaryAtFor(latestConversation);
+            if (latestResumeBoundary && (!turnStartedAt || isBeforeResumeBoundary({
+                metadata: { turn_started_at: turnStartedAt },
+                created_at: turnStartedAt,
+            }, latestResumeBoundary))) {
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    outboundStatus: 'BLOCKED',
+                });
+                return null;
+            }
+
+            const finalSendGuard = await getAutomaticSendGuard(shopId, conversationId);
+            if (!finalSendGuard.allowed) {
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    outboundStatus: 'BLOCKED',
+                });
+                return null;
+            }
+            // ponytail: Redis-durable dedup; move to a DB unique constraint if a lost key ever double-sends.
+            if (!(await claimDedupKey(holdingKey))) {
+                holdingSent = true;
+                return null;
+            }
+            if (closed || (hardTimeout
+                ? recovery.isHardTimeoutSuppressed(currentState)
+                : recovery.isHoldingSuppressed(currentState))) {
+                holdingSent = false;
+                if (typeof cacheRedis.del === 'function') await cacheRedis.del(holdingKey).catch(() => {});
+                return null;
+            }
+
+            holdingSent = true;
+            providerAccepted = false;
+            const content = normalizedMessage.text;
             if (!holdingMessage) {
                 holdingMessage = await Message.create({
                     conversation_id: conversationId,
@@ -1050,6 +1100,10 @@ function createRecoveryControl({
                 context: { shopId, conversationId, turnId, recoveryKind, providerAccepted },
             }).catch(() => {});
             return null;
+        } finally {
+            if (holdingDeliveryLock?.success && typeof conversationLockService?.releaseLock === 'function') {
+                await conversationLockService.releaseLock(conversationId, holdingDeliveryLock.lockId).catch(() => {});
+            }
         }
     };
 
@@ -1388,7 +1442,37 @@ async function finalizeAiMessage(
                     error.code = 'LIFECYCLE_CONFLICT';
                     throw error;
                 }
+            } else if (typeof Message.update === 'function') {
+                const finalizationResult = await Message.update(updateValues, {
+                    where: {
+                        id: currentMessage.id,
+                        conversation_id: conversationId,
+                        sender: 'ai',
+                        provider_message_id: null,
+                        delivery_state: { [Op.ne]: MESSAGE_DELIVERY_STATES.DISMISSED },
+                        [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+                    },
+                });
+                const updatedCount = Array.isArray(finalizationResult) ? finalizationResult[0] : 1;
+                if (updatedCount !== 1) {
+                    const latest = typeof Message.findOne === 'function'
+                        ? await Message.findOne({
+                            where: { id: currentMessage.id, conversation_id: conversationId, sender: 'ai' },
+                        })
+                        : null;
+                    if (latest && isProviderConfirmed(latest)) {
+                        return { providerConfirmed: true, persisted: false, message: latest };
+                    }
+                    if (latest && normalizeDeliveryState(latest) === MESSAGE_DELIVERY_STATES.DISMISSED) {
+                        return { providerConfirmed: false, persisted: false, resumeObsolete: true, message: latest };
+                    }
+                    const error = new Error('AI message lifecycle changed before non-provider outcome was persisted');
+                    error.code = 'LIFECYCLE_CONFLICT';
+                    throw error;
+                }
             } else if (typeof currentMessage.update === 'function') {
+                // Focused unit harnesses may only expose the instance API. Production
+                // always has the conditional static update above.
                 await currentMessage.update(updateValues);
             }
             currentMessage.metadata = resolvedMetadata;
@@ -1403,6 +1487,9 @@ async function finalizeAiMessage(
             }
         } catch (err) {
             if (providerBoundaryFinalization) throw err;
+            if (err?.code === 'LIFECYCLE_CONFLICT') {
+                return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
+            }
             console.warn(`[worker] Failed to stamp delivery flag on AI message: ${err.message}`);
         }
     }
@@ -1723,6 +1810,9 @@ async function processMessageJob(job) {
         });
     } catch (recoveryErr) {
         console.warn(`[worker] Recovery state unavailable for turn ${turnId}: ${recoveryErr.message}`);
+    }
+    if (!turnStartedAt) {
+        return { skipped: true, reason: 'turn_start_unavailable' };
     }
     try {
     // ── Guard 2: HITL (human-in-the-loop) ──────────────────────────────────

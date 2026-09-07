@@ -110,4 +110,25 @@ describe('ConversationStateService Resume boundary', () => {
         );
         expect(result.message.delivery_state).toBe('DRAFT_READY');
     });
+
+    it('fails closed when a candidate has no durable turn start after Resume', async () => {
+        const conversation = {
+            id: 'conversation-1',
+            metadata: { ai_resume_boundary_at: boundary },
+            update: jest.fn(),
+        };
+        mockConversation.findOne.mockResolvedValue(conversation);
+
+        await expect(ConversationStateService.storeAIResponse(
+            'conversation-1',
+            'unanchored reply',
+            {
+                logical_turn_id: 'unknown-turn',
+                delivery_state: 'HELD',
+                delivery_source: 'AUTO',
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+        )).rejects.toMatchObject({ code: 'RESUME_BOUNDARY_TURN_START_REQUIRED' });
+        expect(mockMessage.create).not.toHaveBeenCalled();
+    });
 });

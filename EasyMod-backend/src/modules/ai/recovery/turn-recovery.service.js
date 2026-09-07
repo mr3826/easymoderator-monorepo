@@ -5,6 +5,10 @@ const ConversationTurn = require('../../conversation/conversation-turn.entity');
 const { Conversation } = require('../../conversation/conversation.entity');
 const { escalateToHuman } = require('../../conversation/human-handoff.service');
 const conversationLockService = require('../../conversation/conversation-lock.service');
+const {
+    resumeBoundaryAtFor,
+    isBeforeResumeBoundary,
+} = require('../../conversation/message-lifecycle');
 
 const RECOVERY_LOCK_TIMEOUT_MS = 300_000;
 const RECOVERY_LOCK_WAIT_MS = 10_000;
@@ -205,6 +209,29 @@ const requireHuman = async (input = {}) => {
             }
         }
         await sequelize.transaction(async (transaction) => {
+            const lockedConversation = typeof Conversation.findOne === 'function'
+                ? await Conversation.findOne({
+                    where: { id: conversationId, shop_id: shopId },
+                    attributes: ['id', 'status', 'metadata'],
+                    transaction,
+                    lock: transaction.LOCK?.UPDATE,
+                })
+                : currentConversation;
+            if (!lockedConversation) throw new Error('Conversation not found for human recovery');
+            const resumeBoundaryAt = resumeBoundaryAtFor(lockedConversation);
+            if (resumeBoundaryAt) {
+                if (!input.turnStartedAt) {
+                    turn = null;
+                    return;
+                }
+                if (isBeforeResumeBoundary({
+                    metadata: { turn_started_at: input.turnStartedAt },
+                    created_at: input.turnStartedAt,
+                }, resumeBoundaryAt)) {
+                    turn = null;
+                    return;
+                }
+            }
             const [updated] = await Conversation.update(
                 { hitl: true },
                 { where: { id: conversationId, shop_id: shopId }, transaction },
@@ -212,6 +239,8 @@ const requireHuman = async (input = {}) => {
             if (updated === 0) throw new Error('Conversation not found for human recovery');
             turn = await createOrUpdateHumanTurn({ ...input, turnId, conversationId, shopId }, transaction, timestamp);
         });
+
+        if (!turn) return { turn: null, handoff: null, skipped: 'resume_obsolete' };
 
         const conversation = currentConversation
             || await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } });
