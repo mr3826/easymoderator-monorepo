@@ -243,6 +243,22 @@ test('invalid recovery turn start releases the inbound dedup key and retries', a
     expect(mockCacheDel).toHaveBeenCalledWith('msg:dedup:shop-1:facebook:external-1');
 });
 
+test('invalid Resume boundary fails before AI or order work starts', async () => {
+    mockConversationFindOne.mockResolvedValue({
+        id: 'conv-1',
+        hitl: false,
+        status: 'open',
+        metadata: { ai_resume_boundary_at: '0' },
+    });
+
+    await expect(processMessageJob(makeJob())).rejects.toMatchObject({
+        code: 'RESUME_BOUNDARY_INVALID',
+        retryable: true,
+    });
+    expect(mockProcessNewIntent).not.toHaveBeenCalled();
+    expect(mockHandleOrderFlow).not.toHaveBeenCalled();
+});
+
 test('an unknown business mode fails closed as MANUAL before the LLM', async () => {
     mockGetShopAiSettings.mockResolvedValueOnce(shopSettings('GARBAGE'));
 

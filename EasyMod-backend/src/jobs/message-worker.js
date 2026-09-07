@@ -1873,6 +1873,13 @@ async function processMessageJob(job) {
         console.warn(`[worker] Conversation ${conversationId} not found for shop ${shopId} — skipping job`);
         return { skipped: true, reason: 'conversation_not_found' };
     }
+    const resumeBoundaryState = resumeBoundaryStateFor(conversation);
+    if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+        const error = new Error(`Resume boundary is invalid for conversation ${conversationId}`);
+        error.code = 'RESUME_BOUNDARY_INVALID';
+        error.retryable = true;
+        throw error;
+    }
     await recoveryControl?.transitionTo('CONTEXT_BUILDING');
     if (conversation.hitl) return { skipped: true, reason: 'hitl_active' };
     if (['closed', 'archived'].includes(conversation.status)) {
