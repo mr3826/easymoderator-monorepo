@@ -23,6 +23,7 @@ const SUGGESTION_VISIBILITY = Object.freeze({
 });
 
 const stateValues = new Set(Object.values(MESSAGE_DELIVERY_STATES));
+const RESUME_BOUNDARY_METADATA_KEY = 'ai_resume_boundary_at';
 
 function metadataFor(message) {
     if (typeof message?.metadata === 'string') {
@@ -36,6 +37,63 @@ function metadataFor(message) {
     return message?.metadata && typeof message.metadata === 'object'
         ? message.metadata
         : {};
+}
+
+function timestampStateFor(value) {
+    if (value === undefined) return { present: false, valid: false, timestamp: null };
+    let timestamp = null;
+    if (value instanceof Date) {
+        timestamp = value.getTime();
+    } else if (typeof value === 'number') {
+        timestamp = value;
+    } else if (typeof value === 'string') {
+        const normalized = value.trim();
+        const isIsoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(normalized);
+        if (isIsoTimestamp) timestamp = Date.parse(normalized);
+    }
+    return {
+        present: true,
+        valid: Number.isFinite(timestamp) && timestamp > 0,
+        timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
+    };
+}
+
+function resumeBoundaryStateFor(conversation) {
+    const metadata = metadataFor(conversation);
+    const state = timestampStateFor(metadata[RESUME_BOUNDARY_METADATA_KEY]);
+    return {
+        ...state,
+        present: Object.prototype.hasOwnProperty.call(metadata, RESUME_BOUNDARY_METADATA_KEY),
+    };
+}
+
+function resumeBoundaryAtFor(conversation) {
+    const state = resumeBoundaryStateFor(conversation);
+    return state.valid ? state.timestamp : null;
+}
+
+function candidateStartedAtStateFor(message) {
+    const metadata = metadataFor(message);
+    const turnState = timestampStateFor(metadata.turn_started_at);
+    if (turnState.present) return turnState;
+    const createdAt = message?.created_at ?? message?.createdAt;
+    return timestampStateFor(createdAt);
+}
+
+function candidateStartedAtFor(message) {
+    return candidateStartedAtStateFor(message).timestamp;
+}
+
+function isBeforeResumeBoundary(message, boundaryAt) {
+    const boundaryTimestamp = boundaryAt instanceof Date
+        ? boundaryAt.getTime()
+        : typeof boundaryAt === 'number'
+            ? boundaryAt
+            : Date.parse(String(boundaryAt || ''));
+    const candidateTimestamp = candidateStartedAtFor(message);
+    return Number.isFinite(boundaryTimestamp)
+        && Number.isFinite(candidateTimestamp)
+        && candidateTimestamp <= boundaryTimestamp;
 }
 
 /**
@@ -106,6 +164,7 @@ function isReviewableSuggestion(message) {
     const metadata = metadataFor(message);
     const state = normalizeDeliveryState(message);
     if (state === MESSAGE_DELIVERY_STATES.DISMISSED) return false;
+    if (state === MESSAGE_DELIVERY_STATES.FAILED || metadata.provider_send_attempted === true) return false;
     if (metadata.suggestion_visibility === SUGGESTION_VISIBILITY.HIDDEN_DISMISSED) return false;
     if (state === MESSAGE_DELIVERY_STATES.GENERATING || state === MESSAGE_DELIVERY_STATES.SEND_PENDING) return false;
     return [
@@ -138,15 +197,24 @@ function deriveAutomaticSendIdempotencyKey({ shopId, conversationId, turnId }) {
     return crypto.createHash('sha256').update(`easymod:inbox-auto-send:${input}`).digest('hex');
 }
 
-function deriveEscalationSendIdempotencyKey({ shopId, conversationId }) {
-    const input = [shopId, conversationId].map((part) => String(part || '')).join('|');
+function deriveEscalationSendIdempotencyKey({ shopId, conversationId, turnId = null }) {
+    const inputParts = [shopId, conversationId];
+    if (turnId) inputParts.push(turnId);
+    const input = inputParts.map((part) => String(part || '')).join('|');
     return crypto.createHash('sha256').update(`easymod:inbox-handoff:${input}`).digest('hex');
 }
 
 module.exports = {
     MESSAGE_DELIVERY_STATES,
     SUGGESTION_VISIBILITY,
+    RESUME_BOUNDARY_METADATA_KEY,
+    timestampStateFor,
+    resumeBoundaryStateFor,
+    candidateStartedAtStateFor,
     normalizeDeliveryState,
+    resumeBoundaryAtFor,
+    candidateStartedAtFor,
+    isBeforeResumeBoundary,
     providerMessageIdFor,
     providerAcknowledgementId,
     hasProviderAcknowledgement,

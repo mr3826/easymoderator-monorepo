@@ -23,6 +23,10 @@ const {
     isProviderConfirmed,
     isReviewableSuggestion,
     deriveMessageSendIdempotencyKey,
+    RESUME_BOUNDARY_METADATA_KEY,
+    resumeBoundaryStateFor,
+    candidateStartedAtStateFor,
+    isBeforeResumeBoundary,
 } = require('./message-lifecycle');
 
 const PLACEHOLDER_CUSTOMER_NAMES = new Set([
@@ -130,24 +134,12 @@ const isActiveProviderAttempt = (message, latestCustomerAt, latestAnswerAt) => {
         .includes(normalizeDeliveryState(message));
 };
 
-const RESUME_DISMISSABLE_HELD_REASONS = new Set([
-    'human_active',
-    'low_confidence',
-    'ai_paused',
-    'mode_changed',
-]);
-
-const isResumableStaleCandidate = (message) => {
-    const state = normalizeDeliveryState(message);
+const isResumableStaleCandidate = (message, resumeBoundaryAt) => {
+    if (!message || isProviderConfirmed(message)) return false;
     const metadata = normalizeObject(message.metadata);
-    if (state === MESSAGE_DELIVERY_STATES.HELD
-        && RESUME_DISMISSABLE_HELD_REASONS.has(metadata.held_reason)) return true;
-    return workflowDeliverySource(message) === 'HITL_ESCALATION'
-        && [
-            MESSAGE_DELIVERY_STATES.GENERATING,
-            MESSAGE_DELIVERY_STATES.SEND_PENDING,
-            MESSAGE_DELIVERY_STATES.HELD,
-        ].includes(state);
+    if (metadata.provider_send_attempted === true) return false;
+    if (!candidateStartedAtStateFor(message).valid) return true;
+    return isBeforeResumeBoundary(message, resumeBoundaryAt);
 };
 
 const logicalTurnIdFor = (message) => {
@@ -1207,11 +1199,30 @@ class ConversationService {
                 throw new Error('Conversation not found');
             }
 
+            const currentConversationMetadata = normalizeObject(conversation.metadata);
+            const closing = updates.status === 'closed';
+            const resuming = updates.hitl === false && !closing;
+            const existingResumeBoundaryState = resumeBoundaryStateFor(conversation);
+            if (resuming
+                && existingResumeBoundaryState.present
+                && !existingResumeBoundaryState.valid) {
+                const error = new Error('Resume AI boundary is invalid');
+                error.code = 'RESUME_BOUNDARY_INVALID';
+                throw error;
+            }
+            const existingResumeBoundary = existingResumeBoundaryState.valid
+                ? existingResumeBoundaryState.timestamp
+                : null;
+            const resumeBoundary = resuming
+                ? (conversation.hitl === true || !existingResumeBoundary
+                    ? new Date().toISOString()
+                    : new Date(existingResumeBoundary).toISOString())
+                : null;
             const fields = {};
             if (updates.hitl !== undefined) fields.hitl = updates.hitl;
             if (updates.status !== undefined) {
                 fields.status = updates.status;
-                fields.metadata = { ...(conversation.metadata || {}), status: updates.status };
+                fields.metadata = { ...currentConversationMetadata, status: updates.status };
                 if (updates.status === 'closed' && !conversation.resolved_at) {
                     fields.resolved_at = new Date();
                 }
@@ -1220,6 +1231,12 @@ class ConversationService {
                     // global automation mode is intentionally unchanged.
                     fields.hitl = false;
                 }
+            }
+            if (resuming && (conversation.hitl === true || !existingResumeBoundary)) {
+                fields.metadata = {
+                    ...(fields.metadata || currentConversationMetadata),
+                    [RESUME_BOUNDARY_METADATA_KEY]: resumeBoundary,
+                };
             }
             if (updates.assignee_id !== undefined) fields.assignee_id = updates.assignee_id;
             if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
@@ -1234,8 +1251,6 @@ class ConversationService {
             // persisted pending candidate from appearing sendable elsewhere.
             if ((updates.hitl === true || updates.hitl === false || updates.status === 'closed')
                 && typeof Message.findAll === 'function') {
-                const closing = updates.status === 'closed';
-                const resuming = updates.hitl === false && !closing;
                 const heldReason = closing ? 'conversation_closed' : 'human_active';
                 const nextState = resuming
                     ? MESSAGE_DELIVERY_STATES.DISMISSED
@@ -1247,17 +1262,6 @@ class ConversationService {
                     conversation_id: conversationId,
                     sender: 'ai',
                 };
-                if (resuming && typeof Message.findOne === 'function') {
-                    const latestCustomer = await Message.findOne({
-                        where: { conversation_id: conversationId, sender: 'customer' },
-                        order: [['created_at', 'DESC']],
-                        attributes: ['created_at'],
-                        ...(transaction ? { transaction } : {}),
-                    });
-                    if (latestCustomer?.created_at) {
-                        candidateWhere.created_at = { [Op.gte]: latestCustomer.created_at };
-                    }
-                }
                 const pending = await Message.findAll({
                     where: candidateWhere,
                     ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
@@ -1265,9 +1269,8 @@ class ConversationService {
                 const cancellable = pending.filter((message) => (
                     !isProviderConfirmed(message)
                     && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.DISMISSED
-                    && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.FAILED
                     && normalizeObject(message.metadata).provider_send_attempted !== true
-                    && (!resuming || isResumableStaleCandidate(message))
+                    && (!resuming || isResumableStaleCandidate(message, resumeBoundary))
                 ));
                 await Promise.all(cancellable.map(async (message) => {
                     const messageMetadata = normalizeObject(message.metadata);
@@ -1276,7 +1279,7 @@ class ConversationService {
                         delivered: false,
                         delivery_status: resuming ? 'dismissed' : 'held',
                         delivery_state: nextState,
-                        held_reason: heldReason,
+                        held_reason: resuming ? 'resume_obsolete' : heldReason,
                         suggestion_visibility: suggestionVisibility,
                         ...(resuming ? {
                             dismissed_at: new Date().toISOString(),
@@ -1332,7 +1335,9 @@ class ConversationService {
                 ...deriveWorkflowProjection(result.conversation, messages || [], aiReplyMode),
             };
         } catch (error) {
-            throw new Error(`Failed to update conversation: ${error.message}`);
+            const wrapped = new Error(`Failed to update conversation: ${error.message}`);
+            if (error?.code) wrapped.code = error.code;
+            throw wrapped;
         }
     }
 

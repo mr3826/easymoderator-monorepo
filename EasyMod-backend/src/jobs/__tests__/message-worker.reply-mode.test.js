@@ -13,6 +13,7 @@ const mockChannel = {
 const mockGetShopAiSettings = jest.fn();
 const mockGetChannelSettings = jest.fn();
 const mockCacheGet = jest.fn(async () => null);
+const mockCacheDel = jest.fn(async () => 1);
 const mockFindUniqueChannel = jest.fn(async () => mockChannel);
 const mockFindChannelById = jest.fn(async () => mockChannel);
 const mockFindChannelByAsset = jest.fn(async () => null);
@@ -43,7 +44,7 @@ jest.mock('src/config/redis', () => ({
         get: mockCacheGet,
         set: jest.fn(async () => 'OK'),
         setex: jest.fn(async () => 'OK'),
-        del: jest.fn(async () => 1),
+        del: mockCacheDel,
     },
 }));
 jest.mock('src/utils/ops-alert', () => ({ opsAlert: jest.fn(async () => {}) }));
@@ -176,6 +177,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockChannel.status = 'CONNECTED';
     mockCacheGet.mockReset().mockResolvedValue(null);
+    mockCacheDel.mockReset().mockResolvedValue(1);
     mockConversationFindOne.mockResolvedValue({ id: 'conv-1', hitl: false, status: 'open', metadata: {} });
     mockMessageFindAll.mockResolvedValue([]);
     mockMessageCount.mockResolvedValue(0);
@@ -227,6 +229,34 @@ test('MANUAL business mode skips before any LLM or outbound policy work', async 
     expect(mockHandleOrderFlow).not.toHaveBeenCalled();
     expect(mockEvaluateOutbound).not.toHaveBeenCalled();
     expect(mockSendMessage).not.toHaveBeenCalled();
+});
+
+test('invalid recovery turn start releases the inbound dedup key and retries', async () => {
+    mockRecoveryStartTurn.mockResolvedValueOnce({
+        turn: { trace_id: 'trace-1', turn_started_at: 'not-a-timestamp', state: 'RECEIVED' },
+    });
+
+    await expect(processMessageJob(makeJob())).rejects.toMatchObject({
+        code: 'TURN_START_UNAVAILABLE',
+        retryable: true,
+    });
+    expect(mockCacheDel).toHaveBeenCalledWith('msg:dedup:shop-1:facebook:external-1');
+});
+
+test('invalid Resume boundary fails before AI or order work starts', async () => {
+    mockConversationFindOne.mockResolvedValue({
+        id: 'conv-1',
+        hitl: false,
+        status: 'open',
+        metadata: { ai_resume_boundary_at: '0' },
+    });
+
+    await expect(processMessageJob(makeJob())).rejects.toMatchObject({
+        code: 'RESUME_BOUNDARY_INVALID',
+        retryable: true,
+    });
+    expect(mockProcessNewIntent).not.toHaveBeenCalled();
+    expect(mockHandleOrderFlow).not.toHaveBeenCalled();
 });
 
 test('an unknown business mode fails closed as MANUAL before the LLM', async () => {

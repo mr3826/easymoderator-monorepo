@@ -922,6 +922,39 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     expect(screen.getByText('AI suggestion — NOT SENT')).toBeInTheDocument()
   })
 
+  it('removes a stale HITL suggestion immediately when Resume emits terminal dismissal', async () => {
+    const hitlConversation = { ...baseConversation, ai_reply_mode: 'AUTO', hitl: true }
+    renderWith(hitlConversation, [
+      customerMsg,
+      aiMsg({ delivery_state: 'HELD', delivered: false, held_reason: 'human_active', suggestion_visibility: 'VISIBLE_HITL_REVIEW' }),
+    ])
+
+    expect(await screen.findByText('Human review required')).toBeInTheDocument()
+    expect(screen.getByText('AI suggestion — NOT SENT')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Resume AI/i }))
+    await waitFor(() => expect(apiClient.updateConversation).toHaveBeenCalledWith('conv-1', { hitl: false }))
+
+    act(() => {
+      latestSSECallbacks().onMessageDeliveryUpdated?.({
+        conversation_id: 'conv-1',
+        message_id: 'msg-ai-1',
+        delivery_state: 'DISMISSED',
+        metadata: {
+          delivery_state: 'DISMISSED',
+          delivery_status: 'dismissed',
+          suggestion_visibility: 'HIDDEN_DISMISSED',
+          held_reason: 'resume_obsolete',
+          dismissed_by_resume: true,
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Human review required')).not.toBeInTheDocument()
+      expect(screen.queryByText('AI suggestion — NOT SENT')).not.toBeInTheDocument()
+    })
+  })
+
   it('renders a resolved Messenger reply quote without duplicating the referenced message', async () => {
     renderWith(baseConversation, [{
       ...customerMsg,

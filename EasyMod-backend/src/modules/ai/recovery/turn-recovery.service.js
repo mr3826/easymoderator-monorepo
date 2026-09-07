@@ -5,6 +5,12 @@ const ConversationTurn = require('../../conversation/conversation-turn.entity');
 const { Conversation } = require('../../conversation/conversation.entity');
 const { escalateToHuman } = require('../../conversation/human-handoff.service');
 const conversationLockService = require('../../conversation/conversation-lock.service');
+const {
+    timestampStateFor,
+    resumeBoundaryStateFor,
+    resumeBoundaryAtFor,
+    isBeforeResumeBoundary,
+} = require('../../conversation/message-lifecycle');
 
 const RECOVERY_LOCK_TIMEOUT_MS = 300_000;
 const RECOVERY_LOCK_WAIT_MS = 10_000;
@@ -161,6 +167,7 @@ const requireHuman = async (input = {}) => {
     const shopId = requiredText(input.shopId, 'shopId');
     const timestamp = now();
     let turn;
+    let skipReason = null;
 
     let currentConversation = typeof Conversation.findOne === 'function'
         ? await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } })
@@ -205,6 +212,38 @@ const requireHuman = async (input = {}) => {
             }
         }
         await sequelize.transaction(async (transaction) => {
+            const lockedConversation = typeof Conversation.findOne === 'function'
+                ? await Conversation.findOne({
+                    where: { id: conversationId, shop_id: shopId },
+                    attributes: ['id', 'status', 'metadata'],
+                    transaction,
+                    lock: transaction.LOCK?.UPDATE,
+            })
+                : currentConversation;
+            if (!lockedConversation) throw new Error('Conversation not found for human recovery');
+            const turnStartedState = timestampStateFor(input.turnStartedAt);
+            if (!turnStartedState.valid) {
+                turn = null;
+                skipReason = 'turn_start_unavailable';
+                return;
+            }
+            const resumeBoundaryState = resumeBoundaryStateFor(lockedConversation);
+            if (resumeBoundaryState.present && !resumeBoundaryState.valid) {
+                turn = null;
+                skipReason = 'resume_boundary_invalid';
+                return;
+            }
+            const resumeBoundaryAt = resumeBoundaryAtFor(lockedConversation);
+            if (resumeBoundaryAt) {
+                if (isBeforeResumeBoundary({
+                    metadata: { turn_started_at: turnStartedState.timestamp },
+                    created_at: turnStartedState.timestamp,
+                }, resumeBoundaryAt)) {
+                    turn = null;
+                    skipReason = 'resume_obsolete';
+                    return;
+                }
+            }
             const [updated] = await Conversation.update(
                 { hitl: true },
                 { where: { id: conversationId, shop_id: shopId }, transaction },
@@ -213,12 +252,16 @@ const requireHuman = async (input = {}) => {
             turn = await createOrUpdateHumanTurn({ ...input, turnId, conversationId, shopId }, transaction, timestamp);
         });
 
+        if (!turn) return { turn: null, handoff: null, skipped: skipReason || 'resume_obsolete' };
+
         const conversation = currentConversation
             || await Conversation.findOne({ where: { id: conversationId, shop_id: shopId } });
         const handoff = await escalateToHuman({
             conversation,
             shopId,
             conversationId,
+            turnId,
+            turnStartedAt: input.turnStartedAt || null,
             platform: input.platform,
             recipientId: input.recipientId,
             channel: input.channel,

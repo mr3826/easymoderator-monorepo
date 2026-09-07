@@ -34,7 +34,7 @@ const DEFAULT_ESCALATION_TEMPLATE =
  * @param {string} [channelType]   - Channel identifier (messenger, instagram, etc.) — reserved for future platform-specific routing
  * @returns {Promise<object|null>} - The created message record, or null if skipped/failed
  */
-const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
+const sendEscalationAutoReply = async (conversationId, shopId, channelType, lifecycleMetadata = {}) => {
     try {
         // Resolve the template: shop-specific override → default bilingual template
         let template = DEFAULT_ESCALATION_TEMPLATE;
@@ -63,6 +63,12 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
             return null;
         }
 
+        const sendIdempotencyKey = deriveEscalationSendIdempotencyKey({
+            shopId,
+            conversationId,
+            turnId: lifecycleMetadata.logicalTurnId || null,
+        });
+
         // Repeated handoff signals must reuse the same logical reassurance
         // until a prior provider attempt is known to have failed before send.
         if (typeof Message.findOne === 'function') {
@@ -71,6 +77,9 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
                     conversation_id: conversationId,
                     sender: 'ai',
                     delivery_source: 'HITL_ESCALATION',
+                    ...(lifecycleMetadata.logicalTurnId
+                        ? { send_idempotency_key: sendIdempotencyKey }
+                        : {}),
                 },
                 order: [['created_at', 'DESC']],
             });
@@ -112,10 +121,6 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
 
         // Create the auto-reply message
         const messageId = uuidv4();
-        const sendIdempotencyKey = deriveEscalationSendIdempotencyKey({
-            shopId,
-            conversationId,
-        });
         const message = await Message.create({
             id: messageId,
             conversation_id: conversationId,
@@ -137,6 +142,8 @@ const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {
                 delivery_source: 'HITL_ESCALATION',
                 suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_AUTO_PROCESSING,
                 send_idempotency_key: sendIdempotencyKey,
+                logical_turn_id: lifecycleMetadata.logicalTurnId || null,
+                turn_started_at: lifecycleMetadata.turnStartedAt || null,
             }
         }).catch(async (error) => {
             const isUniqueConflict = error?.name === 'SequelizeUniqueConstraintError'
