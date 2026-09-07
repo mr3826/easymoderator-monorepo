@@ -1388,6 +1388,41 @@ async function finalizeAiMessage(
     // downgrade that durable truth to FAILED, and never replace its MID with a
     // stale response from the request that timed out.
     if (isProviderConfirmed(currentMessage)) {
+        if (delivered && acknowledgedProviderIds.length > 0 && typeof Message.update === 'function') {
+            const mergeConfirmedProviderIds = async (transaction = null) => {
+                const locked = typeof Message.findOne === 'function'
+                    ? await Message.findOne({
+                        where: { id: currentMessage.id, conversation_id: conversationId, sender: 'ai' },
+                        ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
+                    })
+                    : currentMessage;
+                if (!locked) return;
+                const lockedMetadata = messageMetadata(locked);
+                const mergedProviderIds = [
+                    ...(Array.isArray(lockedMetadata.provider_message_ids) ? lockedMetadata.provider_message_ids : []),
+                    locked.provider_message_id,
+                    lockedMetadata.provider_message_id,
+                    ...acknowledgedProviderIds,
+                ].filter((id, index, ids) => id && ids.indexOf(id) === index);
+                const mergedMetadata = {
+                    ...lockedMetadata,
+                    provider_message_ids: mergedProviderIds,
+                };
+                await Message.update({ metadata: mergedMetadata }, {
+                    where: { id: currentMessage.id, conversation_id: conversationId, sender: 'ai' },
+                    ...(transaction ? { transaction } : {}),
+                });
+                currentMessage.metadata = mergedMetadata;
+                currentMessage.provider_message_id = locked.provider_message_id
+                    || lockedMetadata.provider_message_id
+                    || primaryProviderMessageId;
+            };
+            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+                await sequelize.transaction((transaction) => mergeConfirmedProviderIds(transaction));
+            } else {
+                await mergeConfirmedProviderIds();
+            }
+        }
         const confirmedMetadata = messageMetadata(currentMessage);
         const confirmedState = normalizeDeliveryState(currentMessage);
         const confirmedProviderMessageId = currentMessage.provider_message_id

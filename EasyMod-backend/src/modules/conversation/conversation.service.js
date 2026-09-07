@@ -40,6 +40,7 @@ const PLACEHOLDER_CUSTOMER_NAMES = new Set([
 
 const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
+const CURRENT_TURN_PROJECTION_LIMIT = 200;
 
 async function acquireBulkDeliveryLock(conversationId) {
     if (!cacheRedis || typeof cacheRedis.set !== 'function'
@@ -721,6 +722,8 @@ class ConversationService {
                         'provider_message_id',
                         'metadata',
                     ],
+                    order: [['created_at', 'DESC'], ['id', 'DESC']],
+                    limit: CURRENT_TURN_PROJECTION_LIMIT,
                 }) || [])
                 : [];
             const projectionRows = allProjectionRows.length ? allProjectionRows : results.rows;

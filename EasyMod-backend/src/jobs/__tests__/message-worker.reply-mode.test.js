@@ -328,6 +328,23 @@ test('Page automation_mode and ai_auto_reply cannot override an AUTO business', 
     }));
 });
 
+test('AUTO persists every provider MID returned for a multi-part send', async () => {
+    mockSendMessage.mockResolvedValueOnce({
+        providerMessageIds: ['provider-text', 'provider-image'],
+    });
+
+    const result = await processMessageJob(makeJob());
+
+    expect(result.sent).toBe(true);
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        provider_message_id: 'provider-image',
+        metadata: expect.objectContaining({
+            provider_message_id: 'provider-image',
+            provider_message_ids: ['provider-text', 'provider-image'],
+        }),
+    }));
+});
+
 test('AUTO fails closed when the provider returns no message ID', async () => {
     mockSendMessage.mockResolvedValueOnce({ sent: true, providerMessageId: null });
 

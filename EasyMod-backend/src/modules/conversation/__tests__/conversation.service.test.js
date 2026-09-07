@@ -138,4 +138,44 @@ describe('message projection turn scoping', () => {
         expect(result.messages[0].id).toBe('customer-new');
         expect(result.suggestions).toEqual([]);
     });
+
+    it('filters stale drafts outside the requested message page', async () => {
+        Conversation.findOne = jest.fn().mockResolvedValue({
+            id: 'conversation-1',
+            shop_id: 'shop-1',
+        });
+        const latestInbound = {
+            id: 'customer-new',
+            conversation_id: 'conversation-1',
+            sender: 'customer',
+            content: 'New inbound',
+            created_at: new Date('2026-09-07T09:05:00.000Z'),
+            metadata: { logical_turn_id: 'burst:customer-new' },
+        };
+        const staleDraft = {
+            id: 'draft-old',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            content: 'Old draft',
+            created_at: new Date('2026-09-07T09:00:00.000Z'),
+            metadata: {
+                delivery_state: 'DRAFT_READY',
+                logical_turn_id: 'burst:customer-old',
+                suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+            },
+        };
+        Message.findAndCountAll = jest.fn().mockResolvedValue({
+            rows: [latestInbound],
+            count: 2,
+        });
+        Message.findAll = jest.fn().mockResolvedValue([latestInbound, staleDraft]);
+
+        const result = await conversationService.getMessages('conversation-1', 'shop-1', { page: 2 });
+
+        expect(result.suggestions).toEqual([]);
+        expect(Message.findAll).toHaveBeenCalledWith(expect.objectContaining({
+            limit: expect.any(Number),
+            order: [['created_at', 'DESC'], ['id', 'DESC']],
+        }));
+    });
 });

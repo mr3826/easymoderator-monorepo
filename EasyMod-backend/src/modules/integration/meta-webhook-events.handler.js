@@ -696,13 +696,13 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         return { reconciled: false, retryable: true };
     }
 
-    const providerMessageIds = [
+    let providerMessageIds = [
         ...(Array.isArray(candidateMetadata.provider_message_ids)
             ? candidateMetadata.provider_message_ids
             : []),
         providerMessageId,
     ].filter((id, index, ids) => id && ids.indexOf(id) === index);
-    const metadata = {
+    let metadata = {
         ...candidateMetadata,
         delivered: true,
         delivery_status: 'sent',
@@ -712,21 +712,69 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         provider_send_confirmed: true,
         echo_reconciled: true,
     };
-    const [updatedCount] = await Message.update({
-        external_id: providerMessageId,
-        metadata,
-        delivery_state: 'SENT',
-        provider_message_id: providerMessageId,
-    }, {
-        where: {
-            id: candidate.id,
-            conversation_id: conversation.id,
-            delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED', 'SENT'] },
-            [Op.and]: [
-                literal(`(metadata->>'provider_send_attempted') = 'true'`),
-            ],
-        },
-    });
+    let updatedCount = 0;
+    if (typeof Message.update === 'function' && typeof sequelize.transaction === 'function') {
+        ({ updatedCount, metadata, providerMessageIds } = await sequelize.transaction(async (transaction) => {
+            const locked = await Message.findOne({
+                where: { id: candidate.id, conversation_id: conversation.id },
+                transaction,
+                lock: transaction.LOCK?.UPDATE,
+            });
+            if (!locked) return { updatedCount: 0, metadata, providerMessageIds };
+            let lockedMetadata = locked.metadata;
+            if (typeof lockedMetadata === 'string') {
+                try { lockedMetadata = JSON.parse(lockedMetadata); } catch (_) { lockedMetadata = {}; }
+            }
+            if (!lockedMetadata || typeof lockedMetadata !== 'object' || Array.isArray(lockedMetadata)) lockedMetadata = {};
+            providerMessageIds = [
+                ...(Array.isArray(lockedMetadata.provider_message_ids) ? lockedMetadata.provider_message_ids : []),
+                locked.provider_message_id,
+                lockedMetadata.provider_message_id,
+                providerMessageId,
+            ].filter((id, index, ids) => id && ids.indexOf(id) === index);
+            metadata = {
+                ...lockedMetadata,
+                delivered: true,
+                delivery_status: 'sent',
+                delivery_state: 'SENT',
+                provider_message_id: providerMessageId,
+                provider_message_ids: providerMessageIds,
+                provider_send_confirmed: true,
+                echo_reconciled: true,
+            };
+            const [count] = await Message.update({
+                external_id: providerMessageId,
+                metadata,
+                delivery_state: 'SENT',
+                provider_message_id: providerMessageId,
+            }, {
+                where: {
+                    id: candidate.id,
+                    conversation_id: conversation.id,
+                    delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED', 'SENT'] },
+                    [Op.and]: [literal(`(metadata->>'provider_send_attempted') = 'true'`)],
+                },
+                transaction,
+            });
+            return { updatedCount: count, metadata, providerMessageIds };
+        }));
+    } else if (typeof Message.update === 'function') {
+        [updatedCount] = await Message.update({
+            external_id: providerMessageId,
+            metadata,
+            delivery_state: 'SENT',
+            provider_message_id: providerMessageId,
+        }, {
+            where: {
+                id: candidate.id,
+                conversation_id: conversation.id,
+                delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED', 'SENT'] },
+                [Op.and]: [literal(`(metadata->>'provider_send_attempted') = 'true'`)],
+            },
+        });
+    } else {
+        updatedCount = 1;
+    }
     if (updatedCount !== 1) return { reconciled: false, retryable: true };
     if (InboxDeliveryOutbox && typeof InboxDeliveryOutbox.update === 'function') {
         await InboxDeliveryOutbox.update({
