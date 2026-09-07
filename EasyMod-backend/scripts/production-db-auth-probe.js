@@ -108,6 +108,148 @@ async function runPreMigrationProbe(client, databaseName) {
     console.log(`THRESHOLD_CONVERSATIONS_MAX=${thresholdRow.max}`);
 }
 
+function parseTraceDate(value, name) {
+    const date = new Date(value);
+    if (!value || !Number.isFinite(date.getTime())) {
+        throw new Error(`${name} must be an ISO timestamp`);
+    }
+    return date;
+}
+
+/**
+ * Read-only incident trace for one bounded Meta inbound window.
+ *
+ * This mode deliberately runs through the existing protected DB probe instead
+ * of adding a public diagnostic endpoint. It reports identifiers and lifecycle
+ * state only; it never prints receipt payloads, PSIDs, tokens, or message text.
+ */
+async function runInboundTrace(client) {
+    if (process.env.PROBE_INBOUND_TRACE !== 'true') return false;
+
+    const from = parseTraceDate(process.env.TRACE_FROM, 'TRACE_FROM');
+    const to = parseTraceDate(process.env.TRACE_TO, 'TRACE_TO');
+    const marker = String(process.env.TRACE_MARKER || 'EASYMOD_AFTER_DONE').trim();
+    if (to <= from) throw new Error('TRACE_TO must be after TRACE_FROM');
+    if (marker.length < 5 || marker.length > 200) throw new Error('TRACE_MARKER length is invalid');
+
+    console.log(`TRACE_WINDOW_FROM=${from.toISOString()}`);
+    console.log(`TRACE_WINDOW_TO=${to.toISOString()}`);
+    console.log(`TRACE_MARKER=${marker}`);
+
+    const channels = await client.query(`
+        SELECT mc.id, mc.meta_asset_id, mc.display_name, mc.status, mc.shop_id,
+               s.shop_name
+          FROM public.meta_channels mc
+          LEFT JOIN public.shops s ON s.id = mc.shop_id
+         WHERE mc.platform = 'facebook'
+         ORDER BY mc.display_name, mc.meta_asset_id
+    `);
+    for (const row of channels.rows) {
+        console.log(`TRACE_CHANNEL channel_id=${row.id} page_id=${row.meta_asset_id}`
+            + ` name=${JSON.stringify(row.display_name || '')} status=${row.status}`
+            + ` shop_id=${row.shop_id || ''} shop_name=${JSON.stringify(row.shop_name || '')}`);
+    }
+
+    const receipts = await client.query(`
+        SELECT id, page_id, event_id, shop_id, meta_channel_id, status,
+               retry_count, last_error_code, received_at, processed_at,
+               next_retry_at, payload_encrypted
+          FROM public.meta_webhook_receipts
+         WHERE received_at >= $1 AND received_at <= $2
+         ORDER BY received_at ASC, id ASC
+    `, [from, to]);
+
+    let matchedReceiptCount = 0;
+    for (const row of receipts.rows) {
+        let payloadMatch = false;
+        if (row.payload_encrypted) {
+            try {
+                const { decryptPayload } = require('../src/utils/webhook-payload-cipher');
+                const payload = decryptPayload(row.payload_encrypted);
+                const payloadText = payload?.message?.text || null;
+                payloadMatch = typeof payloadText === 'string' && payloadText.includes(marker);
+            } catch (_) {
+                // Keep the receipt row visible; decrypt failures are themselves
+                // evidence without exposing encrypted payload material.
+            }
+        }
+        console.log(`TRACE_RECEIPT receipt_id=${row.id} page_id=${row.page_id}`
+            + ` event_id=${row.event_id || ''} shop_id=${row.shop_id || ''}`
+            + ` meta_channel_id=${row.meta_channel_id || ''} status=${row.status}`
+            + ` retry_count=${row.retry_count} last_error_code=${row.last_error_code || ''}`
+            + ` received_at=${row.received_at.toISOString()}`
+            + ` processed_at=${row.processed_at ? row.processed_at.toISOString() : ''}`
+            + ` next_retry_at=${row.next_retry_at ? row.next_retry_at.toISOString() : ''}`
+            + ` payload_retained=${row.payload_encrypted ? 'yes' : 'no'}`);
+        if (payloadMatch) {
+            matchedReceiptCount += 1;
+            console.log(`TRACE_RECEIPT_MATCH receipt_id=${row.id} meta_mid=${row.event_id || ''}`
+                + ` receipt_status=${row.status} page_id=${row.page_id}`
+                + ` shop_id=${row.shop_id || ''} meta_channel_id=${row.meta_channel_id || ''}`);
+        }
+    }
+
+    const messages = await client.query(`
+        SELECT m.id AS message_id, m.external_id AS meta_mid,
+               m.conversation_id, m.created_at AS message_created_at,
+               c.shop_id, c.customer_id, c.meta_channel_id,
+               c.status AS conversation_status, c.hitl,
+               c.resolved_at
+          FROM public.messages m
+          JOIN public.conversations c ON c.id = m.conversation_id
+         WHERE m.sender = 'customer'
+           AND m.created_at >= $1 AND m.created_at <= $2
+           AND m.content ILIKE ('%' || $3 || '%')
+         ORDER BY m.created_at ASC, m.id ASC
+    `, [from, to, marker]);
+
+    for (const row of messages.rows) {
+        console.log(`TRACE_MESSAGE_MATCH message_id=${row.message_id}`
+            + ` meta_mid=${row.meta_mid || ''} conversation_id=${row.conversation_id}`
+            + ` shop_id=${row.shop_id} customer_id=${row.customer_id || ''}`
+            + ` meta_channel_id=${row.meta_channel_id || ''}`
+            + ` conversation_status=${row.conversation_status} hitl=${row.hitl}`
+            + ` resolved_at=${row.resolved_at ? row.resolved_at.toISOString() : ''}`
+            + ` created_at=${row.message_created_at.toISOString()}`);
+    }
+
+    const found = matchedReceiptCount > 0 || messages.rows.length > 0;
+    console.log(`TRACE_EXISTING_AFTER_DONE_EVENT_FOUND=${found ? 'YES' : 'NO'}`);
+    if (messages.rows.length > 0) {
+        const row = messages.rows[0];
+        console.log(`TRACE_LAST_CONFIRMED_STAGE=R_API_MESSAGE_ROW`);
+        console.log(`TRACE_FIRST_FAILED_STAGE=NONE_MESSAGE_PERSISTED`);
+        console.log(`TRACE_CURRENT_CONVERSATION_STATUS=${row.conversation_status}`);
+    } else if (matchedReceiptCount > 0) {
+        const matched = receipts.rows.find((row) => {
+            if (!row.payload_encrypted) return false;
+            try {
+                const { decryptPayload } = require('../src/utils/webhook-payload-cipher');
+                return String(decryptPayload(row.payload_encrypted)?.message?.text || '').includes(marker);
+            } catch (_) {
+                return false;
+            }
+        });
+        console.log(`TRACE_LAST_CONFIRMED_STAGE=C_RECEIPT_PAYLOAD_MATCH`);
+        console.log(`TRACE_FIRST_FAILED_STAGE=${matched.status === 'DEAD_LETTERED'
+            ? 'L_MESSAGE_INSERT_OR_RETRY_EXHAUSTED'
+            : matched.status === 'IDENTITY_NOT_RESOLVED'
+                ? 'F_CHANNEL_RESOLUTION'
+                : matched.status === 'RETRY_PENDING' || matched.status === 'MESSAGE_STORE_FAILED'
+                    ? 'L_MESSAGE_INSERT_OR_STORE_RETRY'
+                    : matched.status === 'RECEIVED' || matched.status === 'PROCESSING'
+                        ? 'D_RECEIPT_PROCESSING_STUCK'
+                        : 'L_MESSAGE_PERSISTENCE_NOT_CONFIRMED'}`);
+        console.log(`TRACE_RECEIPT_ID=${matched.id}`);
+        console.log(`TRACE_META_MID=${matched.event_id || ''}`);
+        console.log(`TRACE_RECEIPT_STATUS=${matched.status}`);
+    } else {
+        console.log('TRACE_LAST_CONFIRMED_STAGE=NONE');
+        console.log('TRACE_FIRST_FAILED_STAGE=UNKNOWN_META_DELIVERY_OR_WINDOW');
+    }
+    return true;
+}
+
 async function main() {
     if (!process.env.DATABASE_URL) {
         throw new Error('DATABASE_URL is required');
@@ -144,6 +286,11 @@ async function main() {
             await runPreMigrationProbe(client, databaseName);
             console.log('PRE_MIGRATION_SCHEMA=EXPECTED');
         }
+        if (process.env.PROBE_INBOUND_TRACE === 'true') {
+            failureStage = 'INBOUND_TRACE';
+            await runInboundTrace(client);
+            console.log('INBOUND_TRACE=PASS');
+        }
     } finally {
         await client.end().catch(() => {});
     }
@@ -157,4 +304,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { decodeRenderedEnvValue, main, runPreMigrationProbe };
+module.exports = { decodeRenderedEnvValue, main, runPreMigrationProbe, runInboundTrace };
