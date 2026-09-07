@@ -702,9 +702,31 @@ class ConversationService {
 
             const projectedMessages = results.rows.map(mapMessage).reverse();
             const messages = projectedMessages.filter((message) => message.is_transcript_message);
-            const suggestions = results.rows
+            const allProjectionRows = typeof Message.findAll === 'function'
+                ? (await Message.findAll({
+                    where: { conversation_id: conversationId },
+                    attributes: [
+                        'id',
+                        'conversation_id',
+                        'sender',
+                        'content',
+                        'ai_suggestion',
+                        'ai_confidence',
+                        'source_references',
+                        'message_tag',
+                        'created_at',
+                        'updated_at',
+                        'delivery_state',
+                        'delivery_source',
+                        'provider_message_id',
+                        'metadata',
+                    ],
+                }) || [])
+                : [];
+            const projectionRows = allProjectionRows.length ? allProjectionRows : results.rows;
+            const suggestions = projectionRows
                 .filter(isReviewableSuggestion)
-                .filter((message) => isCurrentTurnSuggestion(message, results.rows))
+                .filter((message) => isCurrentTurnSuggestion(message, projectionRows))
                 .map(mapMessage);
 
             return {

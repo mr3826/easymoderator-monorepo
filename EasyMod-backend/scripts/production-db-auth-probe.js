@@ -162,15 +162,20 @@ async function runInboundTrace(client) {
     console.log(`TRACE_WINDOW_TO=${to.toISOString()}`);
     console.log(`TRACE_MARKER=${marker}`);
 
-    const channels = await client.query(`
+    const channelResult = await client.query(`
         SELECT mc.id, mc.meta_asset_id, mc.display_name, mc.status, mc.shop_id,
                s.shop_name
           FROM public.meta_channels mc
           LEFT JOIN public.shops s ON s.id = mc.shop_id
          WHERE mc.platform = 'facebook'
          ORDER BY mc.display_name, mc.meta_asset_id
-         LIMIT 1000
+         LIMIT 1001
     `);
+    const channelsTruncated = channelResult.rows.length > 1000;
+    const channels = channelsTruncated
+        ? { ...channelResult, rows: channelResult.rows.slice(0, 1000) }
+        : channelResult;
+    console.log(`TRACE_CHANNELS_TRUNCATED=${channelsTruncated ? 'YES' : 'NO'}`);
     for (const row of channels.rows) {
         console.log(`TRACE_CHANNEL channel_id=${row.id} page_id=${row.meta_asset_id}`
             + ` name=${JSON.stringify(row.display_name || '')} status=${row.status}`
