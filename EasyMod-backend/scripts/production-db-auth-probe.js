@@ -4,6 +4,8 @@ const dns = require('dns').promises;
 const crypto = require('crypto');
 const net = require('net');
 const { Client } = require('pg');
+const MAX_TRACE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_TRACE_ROWS = 5000;
 
 const expectedDatabase = process.env.EXPECTED_DB_NAME || 'easymod_prod';
 let failureStage = 'DB_URL';
@@ -148,8 +150,14 @@ async function runInboundTrace(client) {
     const to = parseTraceDate(process.env.TRACE_TO, 'TRACE_TO');
     const marker = String(process.env.TRACE_MARKER || 'EASYMOD_AFTER_DONE').trim();
     if (to <= from) throw new Error('TRACE_TO must be after TRACE_FROM');
+    if (to.getTime() - from.getTime() > MAX_TRACE_WINDOW_MS) {
+        throw new Error('trace window must not exceed 15 minutes');
+    }
     if (marker.length < 5 || marker.length > 200) throw new Error('TRACE_MARKER length is invalid');
 
+    await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await client.query("SET LOCAL statement_timeout = '10s'");
+    try {
     console.log(`TRACE_WINDOW_FROM=${from.toISOString()}`);
     console.log(`TRACE_WINDOW_TO=${to.toISOString()}`);
     console.log(`TRACE_MARKER=${marker}`);
@@ -161,6 +169,7 @@ async function runInboundTrace(client) {
           LEFT JOIN public.shops s ON s.id = mc.shop_id
          WHERE mc.platform = 'facebook'
          ORDER BY mc.display_name, mc.meta_asset_id
+         LIMIT 1000
     `);
     for (const row of channels.rows) {
         console.log(`TRACE_CHANNEL channel_id=${row.id} page_id=${row.meta_asset_id}`
@@ -175,7 +184,8 @@ async function runInboundTrace(client) {
           FROM public.meta_webhook_receipts
          WHERE received_at >= $1 AND received_at <= $2
          ORDER BY received_at ASC, id ASC
-    `, [from, to]);
+         LIMIT $3
+    `, [from, to, MAX_TRACE_ROWS]);
 
     let matchedReceiptCount = 0;
     for (const row of receipts.rows) {
@@ -221,9 +231,10 @@ async function runInboundTrace(client) {
           JOIN public.conversations c ON c.id = m.conversation_id
          WHERE m.sender = 'customer'
            AND m.created_at >= $1 AND m.created_at <= $2
-           AND m.content ILIKE ('%' || $3 || '%')
+           AND position($3 in coalesce(m.content, '')) > 0
          ORDER BY m.created_at ASC, m.id ASC
-    `, [from, to, marker]);
+         LIMIT $4
+    `, [from, to, marker, MAX_TRACE_ROWS]);
 
     for (const row of messages.rows) {
         console.log(`TRACE_MESSAGE_MATCH message_id=${row.message_id}`
@@ -256,7 +267,8 @@ async function runInboundTrace(client) {
                AND m.conversation_id = ANY($3::uuid[])
                AND m.created_at >= $1 AND m.created_at <= $2
              ORDER BY m.created_at ASC, m.id ASC
-        `, [from, to, matchedConversationIds]);
+             LIMIT $4
+        `, [from, to, matchedConversationIds, MAX_TRACE_ROWS]);
         for (const row of adjacentMessages.rows) {
             const contentKind = row.content === '[Attachment]' ? 'attachment' : 'text';
             console.log(`TRACE_ADJACENT_MESSAGE message_id=${row.message_id}`
@@ -305,6 +317,9 @@ async function runInboundTrace(client) {
         console.log('TRACE_FIRST_FAILED_STAGE=UNKNOWN_META_DELIVERY_OR_WINDOW');
     }
     return true;
+    } finally {
+        await client.query('ROLLBACK').catch(() => {});
+    }
 }
 
 async function main() {

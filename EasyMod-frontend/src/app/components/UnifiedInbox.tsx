@@ -88,6 +88,27 @@ const mergeReadProjection = (
   };
 };
 
+const mergeConversationLists = (
+  serverConversations: Conversation[],
+  liveConversations: Conversation[],
+  revisions: Record<string, number>,
+  requestRevisions: Map<string, number>,
+): Conversation[] => {
+  const liveById = new Map(liveConversations.map((conversation) => [conversation.id, conversation]));
+  const serverIds = new Set(serverConversations.map((conversation) => conversation.id));
+  const merged = serverConversations.map((conversation) => {
+    const live = liveById.get(conversation.id);
+    const wasUpdatedDuringRequest = live
+      && (revisions[conversation.id] || 0) > (requestRevisions.get(conversation.id) || 0);
+    return wasUpdatedDuringRequest ? { ...conversation, ...live } : conversation;
+  });
+  const liveOnly = liveConversations.filter((conversation) => (
+    !serverIds.has(conversation.id)
+      && (revisions[conversation.id] || 0) > (requestRevisions.get(conversation.id) || 0)
+  ));
+  return [...merged, ...liveOnly];
+};
+
 const mergeMessageLifecycle = (current: Message, incoming: Message): Message => {
   const currentState = getDeliveryState(current);
   const incomingState = getDeliveryState(incoming);
@@ -225,6 +246,8 @@ export default function UnifiedInbox() {
   const aiReplyModeRevisionRef = useRef(0);
   const selectedConversationRef = useRef<Conversation | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
+  const conversationProjectionRevisionRef = useRef<Record<string, number>>({});
+  const liveMessageIdsRef = useRef<Set<string>>(new Set());
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const readWatermarkRef = useRef<Record<string, string>>({});
   const readRequestRef = useRef<Record<string, number>>({});
@@ -251,6 +274,7 @@ export default function UnifiedInbox() {
 
   const loadConversations = useCallback(async () => {
     const modeRevision = aiReplyModeRevisionRef.current;
+    const requestRevisions = new Map(Object.entries(conversationProjectionRevisionRef.current));
     try {
       setLoadingConversations(true);
       setError(null);
@@ -260,7 +284,13 @@ export default function UnifiedInbox() {
         aiReplyModeRef.current = normalizedMode;
         setAiReplyMode(normalizedMode);
       }
-      setConversations(result.data);
+      const mergedConversations = mergeConversationLists(
+        result.data,
+        conversationsRef.current,
+        conversationProjectionRevisionRef.current,
+        requestRevisions,
+      );
+      setConversations(mergedConversations);
       setAiReplyStatuses((previous) => {
         const next = { ...previous };
         result.data.forEach((conversation) => {
@@ -274,8 +304,8 @@ export default function UnifiedInbox() {
       });
       setSelectedConversation((previous) => {
         if (!result.data.length) return null;
-        if (!previous) return result.data[0];
-        return result.data.find((conversation) => conversation.id === previous.id) || previous;
+        if (!previous) return mergedConversations[0];
+        return mergedConversations.find((conversation) => conversation.id === previous.id) || previous;
       });
     } catch {
       setError(t("inbox.errors.loadConversations"));
@@ -322,10 +352,15 @@ export default function UnifiedInbox() {
       if (page === 1) {
         setMessages((previous) => {
           const projectedIds = new Set(projectedMessages.map((message) => message.id));
+          projectedIds.forEach((id) => liveMessageIdsRef.current.delete(id));
+          const mergedProjectedMessages = projectedMessages.map((message) => {
+            const previousMessage = previous.find((item) => item.id === message.id);
+            return previousMessage ? mergeMessageLifecycle(previousMessage, message) : message;
+          });
           const preservedLiveMessages = previous.filter((message) => (
-            message.is_transcript_message !== false && !projectedIds.has(message.id)
+            liveMessageIdsRef.current.has(message.id) && !projectedIds.has(message.id)
           ));
-          return [...projectedMessages, ...preservedLiveMessages]
+          return [...mergedProjectedMessages, ...preservedLiveMessages]
             .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         });
         const status = getAiReplyStatus(
@@ -445,6 +480,9 @@ export default function UnifiedInbox() {
   useInboxSSE({
     onNewMessage: useCallback(({ conversation_id, message, unread_count }) => {
       if (!message?.id || seenMessageIdsRef.current.has(message.id)) return;
+      conversationProjectionRevisionRef.current[conversation_id] =
+        (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
+      liveMessageIdsRef.current.add(message.id);
       const selectedId = selectedConversationRef.current?.id;
       const isSelected = selectedId === conversation_id;
       if (isSelected) seenMessageIdsRef.current.add(message.id);
@@ -550,6 +588,8 @@ export default function UnifiedInbox() {
       needs_merchant_reply_reason?: string | null;
       ai_is_replying?: boolean;
     }) => {
+      conversationProjectionRevisionRef.current[conversation_id] =
+        (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const workflow = {
         hitl,
         ...(status ? { status } : {}),
@@ -571,6 +611,8 @@ export default function UnifiedInbox() {
     }, []),
 
     onAiPaused: useCallback(({ conversation_id, reason }: { conversation_id: string; reason?: string }) => {
+      conversationProjectionRevisionRef.current[conversation_id] =
+        (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const workflow = {
         needs_merchant_reply: true,
         needs_merchant_reply_reason: "AI_PAUSED",
@@ -602,6 +644,8 @@ export default function UnifiedInbox() {
       content?: string | null;
       created_at?: string | null;
     }) => {
+      conversationProjectionRevisionRef.current[conversation_id] =
+        (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const currentMessage = messages.find((message) => message.id === message_id);
       if (currentMessage
         && getDeliveryState(currentMessage) === "DISMISSED"

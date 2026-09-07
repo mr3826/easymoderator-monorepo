@@ -507,8 +507,37 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
 // ─── Message storage ──────────────────────────────────────────────────────────
 
 const REPLY_PREVIEW_MAX_LENGTH = 1000;
+const META_TIMESTAMP_MIN_MS = Date.parse('2000-01-01T00:00:00.000Z');
+const META_TIMESTAMP_MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 
-async function resolveLocalReplyContext({ providerMessageId, shopId, channelType, metaChannelId, conversationId, transaction }) {
+function normalizeMetaTimestamp(value, nowMs = Date.now()) {
+    const numericValue = typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+            ? Number(value)
+            : NaN;
+    if (!Number.isFinite(numericValue) || numericValue <= 0) return new Date(nowMs);
+
+    // Meta emits milliseconds, but seconds-scale values must not become
+    // 1970-dated messages that disappear from unread and page-one projections.
+    const timestampMs = numericValue < 1e12 ? numericValue * 1000 : numericValue;
+    if (!Number.isFinite(timestampMs)
+        || timestampMs < META_TIMESTAMP_MIN_MS
+        || timestampMs > nowMs + META_TIMESTAMP_MAX_FUTURE_MS) {
+        return new Date(nowMs);
+    }
+    return new Date(timestampMs);
+}
+
+async function resolveLocalReplyContext({
+    providerMessageId,
+    shopId,
+    channelType,
+    metaChannelId,
+    conversationId,
+    customerId,
+    transaction,
+}) {
     if (!providerMessageId || !shopId || !metaChannelId || !conversationId || typeof Message.findOne !== 'function') return null;
 
     const conversationWhere = {
@@ -516,23 +545,38 @@ async function resolveLocalReplyContext({ providerMessageId, shopId, channelType
         channel: channelType,
         meta_channel_id: metaChannelId,
     };
-    const referenced = await Message.findOne({
+    const providerMessageWhere = {
+        [Op.or]: [
+            { external_id: providerMessageId },
+            { provider_message_id: providerMessageId },
+            // Meta sends text and each attachment as separate provider
+            // messages. Outbound persistence keeps all returned MIDs in this
+            // JSON array while exposing the last MID as provider_message_id.
+            { metadata: { [Op.contains]: { provider_message_ids: [providerMessageId] } } },
+        ],
+    };
+    const includeConversation = (where) => ({
+        model: Conversation,
+        as: 'conversation',
+        required: true,
+        where,
+        attributes: ['id', 'shop_id', 'channel', 'meta_channel_id'],
+    });
+    let referenced = await Message.findOne({
         where: {
             conversation_id: conversationId,
-            [Op.or]: [
-                { external_id: providerMessageId },
-                { provider_message_id: providerMessageId },
-            ],
+            ...providerMessageWhere,
         },
-        include: [{
-            model: Conversation,
-            as: 'conversation',
-            required: true,
-            where: conversationWhere,
-            attributes: ['id', 'shop_id', 'channel', 'meta_channel_id'],
-        }],
+        include: [includeConversation(conversationWhere)],
         transaction,
     });
+    if (!referenced && customerId) {
+        referenced = await Message.findOne({
+            where: providerMessageWhere,
+            include: [includeConversation({ ...conversationWhere, customer_id: customerId })],
+            transaction,
+        });
+    }
     if (!referenced) return null;
 
     const metadata = referenced.metadata && typeof referenced.metadata === 'object'
@@ -567,7 +611,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         defaults: {},
         createIfMissing: false,
     });
-    if (!customer) return { reconciled: false, retryable: false };
+    if (!customer) return { reconciled: false, retryable: true };
 
     const conversation = await Conversation.findOne({
         where: {
@@ -590,7 +634,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         order: [['updated_at', 'DESC']],
     });
     if (!conversation || typeof Message.findOne !== 'function') {
-        return { reconciled: false, retryable: false };
+        return { reconciled: false, retryable: true };
     }
 
     const candidateWhere = {
@@ -621,9 +665,9 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         : !echoText && candidates.length === 1
             ? candidates[0]
             : null;
-    if (!candidates.length) return { reconciled: false, retryable: false };
+    if (!candidates.length) return { reconciled: false, retryable: true };
     if (!candidate || candidate.provider_message_id || candidate.metadata?.provider_message_id) {
-        return { reconciled: false, retryable: false };
+        return { reconciled: false, retryable: true };
     }
 
     let candidateMetadata = candidate.metadata;
@@ -657,7 +701,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
             ],
         },
     });
-    if (updatedCount !== 1) return { reconciled: false, retryable: false };
+    if (updatedCount !== 1) return { reconciled: false, retryable: true };
     if (InboxDeliveryOutbox && typeof InboxDeliveryOutbox.update === 'function') {
         await InboxDeliveryOutbox.update({
             status: 'COMPLETED',
@@ -911,11 +955,17 @@ async function storeIncomingMessage(event) {
 
             let msgMeta = {};
             if (attachments.length > 0) {
+                msgMeta.attachments = attachments.map((attachment) => ({
+                    type: attachment?.type || null,
+                    url: attachment?.payload?.url || null,
+                    name: attachment?.payload?.name || null,
+                    mime_type: attachment?.payload?.mime_type || null,
+                }));
                 const first = attachments[0];
                 if (first.type === 'image') {
-                    msgMeta = { message_type: 'image', image_url: first.payload?.url || null };
+                    msgMeta = { ...msgMeta, message_type: 'image', image_url: first.payload?.url || null };
                 } else {
-                    msgMeta = { message_type: 'file', file_url: first.payload?.url || null, file_name: first.payload?.name || null };
+                    msgMeta = { ...msgMeta, message_type: 'file', file_url: first.payload?.url || null, file_name: first.payload?.name || null };
                 }
             }
             const replyTo = event.raw_event?.message?.reply_to || event.reply_to || null;
@@ -925,6 +975,7 @@ async function storeIncomingMessage(event) {
                 channelType,
                 metaChannelId: meta_channel_id,
                 conversationId: conversation.id,
+                customerId: customer.id,
                 transaction: t,
             });
             const replyMetadata = buildReplyMetadata(replyTo, resolvedReply);
@@ -1208,13 +1259,19 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
                     metaChannelId: channel.id,
                     error: err.message,
                 });
-                return { reconciled: false, retryable: false };
+                return { reconciled: false, retryable: true };
             });
             if (!reconciliation?.reconciled) {
                 logger.warn('Meta outbound echo did not match a unique pending message', {
                     shopId: channel.shop_id,
                     metaChannelId: channel.id,
                 });
+                if (reconciliation?.retryable) {
+                    const error = new Error('Meta outbound echo reconciliation is pending');
+                    error.code = 'ECHO_RECONCILIATION_PENDING';
+                    error.retryable = true;
+                    throw error;
+                }
             }
             await receiptService.markSkipped(receipt, 'ECHO');
             return 'skipped';
@@ -1228,10 +1285,7 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
             return 'skipped';
         }
 
-        const providerTimestamp = new Date(messaging.timestamp);
-        const normalizedTimestamp = Number.isFinite(providerTimestamp.getTime())
-            ? providerTimestamp
-            : new Date();
+        const normalizedTimestamp = normalizeMetaTimestamp(messaging.timestamp);
         const normalizedEvent = {
             platform: 'facebook',
             shop_id: channel.shop_id,
@@ -1392,6 +1446,7 @@ module.exports = {
         processInboundConsent,
         QueueDispatchError,
         fallbackCustomerName,
+        normalizeMetaTimestamp,
         resolveLocalReplyContext,
         buildReplyMetadata,
     },

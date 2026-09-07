@@ -37,7 +37,7 @@ jest.mock('../../../utils/structured-logger', () => ({
     createLogger: jest.fn(() => mockLogger),
 }));
 
-const { Conversation } = require('../../entities');
+const { Conversation, Message } = require('../../entities');
 const subscriptionService = require('../../subscription/subscription.service');
 const shopService = require('../../shop/shop.service');
 const { sequelize } = require('../../../utils/database/database-setup');
@@ -98,5 +98,44 @@ describe('conversation list reply-mode envelope', () => {
         expect(shopService.getShopAiSettings).toHaveBeenCalledTimes(1);
         expect(shopService.getShopAiSettings).toHaveBeenCalledWith('shop-1');
         expect(Conversation.findAndCountAll).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('message projection turn scoping', () => {
+    it('does not expose a stale reviewable draft from before the latest customer turn', async () => {
+        Conversation.findOne = jest.fn().mockResolvedValue({
+            id: 'conversation-1',
+            shop_id: 'shop-1',
+        });
+        const staleDraft = {
+            id: 'draft-old',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            content: 'Old draft',
+            created_at: new Date('2026-09-07T09:00:00.000Z'),
+            metadata: {
+                delivery_state: 'DRAFT_READY',
+                logical_turn_id: 'turn-old',
+                suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+            },
+        };
+        const latestInbound = {
+            id: 'customer-new',
+            conversation_id: 'conversation-1',
+            sender: 'customer',
+            content: 'New inbound',
+            created_at: new Date('2026-09-07T09:05:00.000Z'),
+            metadata: { logical_turn_id: 'turn-new' },
+        };
+        Message.findAndCountAll = jest.fn().mockResolvedValue({
+            rows: [latestInbound, staleDraft],
+            count: 2,
+        });
+
+        const result = await conversationService.getMessages('conversation-1', 'shop-1');
+
+        expect(result.messages).toHaveLength(1);
+        expect(result.messages[0].id).toBe('customer-new');
+        expect(result.suggestions).toEqual([]);
     });
 });

@@ -658,8 +658,22 @@ class ConversationService {
 
             const projectedMessages = results.rows.map(mapMessage).reverse();
             const messages = projectedMessages.filter((message) => message.is_transcript_message);
+            const latestCustomerMessage = results.rows.find((message) => message.sender === 'customer');
+            const latestCustomerAt = workflowTimestamp(latestCustomerMessage);
+            const latestCustomerTurnId = normalizeObject(latestCustomerMessage?.metadata).logical_turn_id || null;
             const suggestions = results.rows
                 .filter(isReviewableSuggestion)
+                .filter((message) => {
+                    const metadata = normalizeObject(message.metadata);
+                    const suggestionTurnId = metadata.logical_turn_id || null;
+                    if (latestCustomerTurnId && suggestionTurnId) {
+                        return suggestionTurnId === latestCustomerTurnId;
+                    }
+                    const suggestionAt = workflowTimestamp(message);
+                    return !Number.isFinite(latestCustomerAt)
+                        || !Number.isFinite(suggestionAt)
+                        || suggestionAt >= latestCustomerAt;
+                })
                 .map(mapMessage);
 
             return {
