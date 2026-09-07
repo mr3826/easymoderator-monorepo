@@ -212,6 +212,8 @@ async function runInboundTrace(client) {
                (m.metadata::jsonb)->>'reply_to_provider_message_id' AS reply_to_provider_message_id,
                (m.metadata::jsonb)->>'reply_to_internal_message_id' AS reply_to_internal_message_id,
                (m.metadata::jsonb)->'reply_to'->>'status' AS reply_to_status,
+               (m.metadata::jsonb)->>'message_type' AS message_type,
+               (m.metadata::jsonb)->>'image_url' AS image_url,
                c.shop_id, c.customer_id, c.meta_channel_id,
                c.status AS conversation_status, c.hitl,
                c.resolved_at
@@ -231,6 +233,8 @@ async function runInboundTrace(client) {
             + ` reply_to_provider_message_id=${row.reply_to_provider_message_id || ''}`
             + ` reply_to_internal_message_id=${row.reply_to_internal_message_id || ''}`
             + ` reply_to_status=${row.reply_to_status || ''}`
+            + ` message_type=${row.message_type || ''}`
+            + ` image_url_present=${row.image_url ? 'yes' : 'no'}`
             + ` conversation_status=${row.conversation_status} hitl=${row.hitl}`
             + ` resolved_at=${row.resolved_at ? row.resolved_at.toISOString() : ''}`
             + ` created_at=${row.message_created_at.toISOString()}`);
