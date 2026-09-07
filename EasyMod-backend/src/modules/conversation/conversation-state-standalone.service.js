@@ -338,9 +338,6 @@ class ConversationStateService {
      */
     static async updateConversationState(conversationId, stateUpdate) {
         try {
-            const conversation = await Conversation.findByPk(conversationId);
-            if (!conversation) throw new Error('Conversation not found');
-
             const {
                 intent,
                 language,
@@ -351,45 +348,64 @@ class ConversationStateService {
                 unsafeShadowActions = 0,
                 shadowDivergence,
             } = stateUpdate;
-            const currentMeta = conversation.metadata || {};
             const normalizedAutomationMode = automation_mode === undefined
                 ? undefined
                 : normalizeAiReplyMode(automation_mode);
-            const nextMetadata = {
-                ...currentMeta,
-                ...(intent !== undefined ? { last_intent: intent } : {}),
-                ...(language !== undefined ? { language_detected: language } : {}),
-                ...(confidence !== undefined ? { last_intent_confidence: intentConfidence ?? confidence } : {}),
-                ...(normalizedAutomationMode !== undefined ? { automation_mode: normalizedAutomationMode } : {}),
-                ...(intentRecord ? { last_intent_record: intentRecord } : {}),
-                ...(unsafeShadowActions ? {
-                    unsafeShadowActions: (Number(currentMeta.unsafeShadowActions) || 0) + Number(unsafeShadowActions),
-                } : {}),
-                ...(shadowDivergence ? { lastShadowDivergence: shadowDivergence } : {}),
-                last_state_update: new Date().toISOString(),
-            };
+            const persist = async (transaction = null) => {
+                const conversation = typeof Conversation.findOne === 'function'
+                    ? await Conversation.findOne({
+                        where: { id: conversationId },
+                        ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
+                    })
+                    : await Conversation.findByPk(conversationId);
+                if (!conversation) throw new Error('Conversation not found');
 
-            const stateColumns = { metadata: nextMetadata };
-            if (intent !== undefined) stateColumns.intent = intent;
-            if (confidence !== undefined) {
-                stateColumns.confidence = Number.isFinite(Number(confidence))
-                    && Number(confidence) >= 0
-                    && Number(confidence) <= 1
-                    ? Math.round(Number(confidence) * 100)
-                    : confidence;
-            }
-            await conversation.update(stateColumns);
-
-            return {
-                success: true,
-                conversation_state: {
-                    status: conversation.status,
-                    last_intent: intent,
-                    language,
-                    confidence,
-                    automation_mode: normalizedAutomationMode
+                let currentMeta = conversation.metadata || {};
+                if (typeof currentMeta === 'string') {
+                    try { currentMeta = JSON.parse(currentMeta); } catch (_) { currentMeta = {}; }
                 }
+                if (!currentMeta || typeof currentMeta !== 'object' || Array.isArray(currentMeta)) currentMeta = {};
+                const nextMetadata = {
+                    ...currentMeta,
+                    ...(intent !== undefined ? { last_intent: intent } : {}),
+                    ...(language !== undefined ? { language_detected: language } : {}),
+                    ...(confidence !== undefined ? { last_intent_confidence: intentConfidence ?? confidence } : {}),
+                    ...(normalizedAutomationMode !== undefined ? { automation_mode: normalizedAutomationMode } : {}),
+                    ...(intentRecord ? { last_intent_record: intentRecord } : {}),
+                    ...(unsafeShadowActions ? {
+                        unsafeShadowActions: (Number(currentMeta.unsafeShadowActions) || 0) + Number(unsafeShadowActions),
+                    } : {}),
+                    ...(shadowDivergence ? { lastShadowDivergence: shadowDivergence } : {}),
+                    last_state_update: new Date().toISOString(),
+                };
+
+                const stateColumns = { metadata: nextMetadata };
+                if (intent !== undefined) stateColumns.intent = intent;
+                if (confidence !== undefined) {
+                    stateColumns.confidence = Number.isFinite(Number(confidence))
+                        && Number(confidence) >= 0
+                        && Number(confidence) <= 1
+                        ? Math.round(Number(confidence) * 100)
+                        : confidence;
+                }
+                await conversation.update(stateColumns, ...(transaction ? [{ transaction }] : []));
+
+                return {
+                    success: true,
+                    conversation_state: {
+                        status: conversation.status,
+                        last_intent: intent,
+                        language,
+                        confidence,
+                        automation_mode: normalizedAutomationMode
+                    }
+                };
             };
+
+            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+                return await sequelize.transaction((transaction) => persist(transaction));
+            }
+            return await persist();
 
         } catch (error) {
             console.error('Update conversation state error:', error);

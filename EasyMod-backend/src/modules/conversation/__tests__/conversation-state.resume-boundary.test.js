@@ -131,4 +131,29 @@ describe('ConversationStateService Resume boundary', () => {
         )).rejects.toMatchObject({ code: 'RESUME_BOUNDARY_TURN_START_REQUIRED' });
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
+
+    it('merges shadow state from a locked row without erasing the Resume boundary', async () => {
+        const conversation = {
+            id: 'conversation-1',
+            metadata: { ai_resume_boundary_at: boundary },
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversation.findOne.mockResolvedValue(conversation);
+
+        await ConversationStateService.updateConversationState('conversation-1', {
+            intent: 'GENERAL_INQUIRY',
+            language: 'en',
+            confidence: 0.9,
+        });
+
+        expect(conversation.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                metadata: expect.objectContaining({
+                    ai_resume_boundary_at: boundary,
+                    last_intent: 'GENERAL_INQUIRY',
+                }),
+            }),
+            { transaction: mockTransaction },
+        );
+    });
 });

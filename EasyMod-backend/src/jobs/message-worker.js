@@ -1264,6 +1264,7 @@ async function finalizeAiMessage(
     }
 
     let currentMessage = aiMessage;
+    let lifecycleReadError = null;
     if (aiMessage?.id && typeof Message.findOne === 'function') {
         try {
             currentMessage = await Message.findOne({
@@ -1271,7 +1272,11 @@ async function finalizeAiMessage(
             }) || aiMessage;
         } catch (err) {
             console.warn(`[worker] Failed to re-read AI message lifecycle: ${err.message}`);
+            lifecycleReadError = err;
         }
+    }
+    if (lifecycleReadError) {
+        return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
     }
 
     // Resume AI establishes a durable boundary, not just a boolean toggle. A
@@ -1285,6 +1290,9 @@ async function finalizeAiMessage(
                 where: { id: conversationId },
                 attributes: ['id', 'metadata'],
             });
+            if (!conversation && process.env.NODE_ENV !== 'test') {
+                return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
+            }
             const resumeBoundaryAt = resumeBoundaryAtFor(conversation);
             if (resumeBoundaryAt && isBeforeResumeBoundary(currentMessage, resumeBoundaryAt)) {
                 const resumeMetadata = {
@@ -1332,6 +1340,7 @@ async function finalizeAiMessage(
             }
         } catch (err) {
             console.warn(`[worker] Failed to enforce Resume boundary on AI message: ${err.message}`);
+            return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
         }
     }
 
@@ -1487,10 +1496,8 @@ async function finalizeAiMessage(
             }
         } catch (err) {
             if (providerBoundaryFinalization) throw err;
-            if (err?.code === 'LIFECYCLE_CONFLICT') {
-                return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
-            }
             console.warn(`[worker] Failed to stamp delivery flag on AI message: ${err.message}`);
+            return { providerConfirmed: false, persisted: false, invalidated: true, message: currentMessage };
         }
     }
     const message = currentMessage?.toJSON ? currentMessage.toJSON() : currentMessage;
@@ -1812,7 +1819,11 @@ async function processMessageJob(job) {
         console.warn(`[worker] Recovery state unavailable for turn ${turnId}: ${recoveryErr.message}`);
     }
     if (!turnStartedAt) {
-        return { skipped: true, reason: 'turn_start_unavailable' };
+        if (dedupKey) await cacheRedis.del(dedupKey).catch(() => {});
+        const error = new Error(`Durable turn start is unavailable for ${turnId}`);
+        error.code = 'TURN_START_UNAVAILABLE';
+        error.retryable = true;
+        throw error;
     }
     try {
     // ── Guard 2: HITL (human-in-the-loop) ──────────────────────────────────

@@ -91,6 +91,18 @@ jest.mock('src/modules/analytics/growth-metrics.service', () => ({ recordActivat
 jest.mock('src/modules/analytics/funnel-events.service', () => ({ recordFunnelEvent: jest.fn(() => Promise.resolve()) }));
 jest.mock('src/modules/shop/ai-messaging', () => ({ buildGreeting: jest.fn(() => '') }));
 jest.mock('src/modules/shop/shop.entity', () => ({ findByPk: jest.fn(async () => ({ name: 'Demo', settings: {} })) }));
+jest.mock('src/modules/ai/recovery/turn-recovery.service', () => ({
+    startTurn: jest.fn(async ({ traceId }) => ({
+        turn: { trace_id: traceId, turn_started_at: new Date(), state: 'RECEIVED' },
+    })),
+    transition: jest.fn(async () => {}),
+    requireHuman: jest.fn(async (input) => ({
+        turn: null,
+        handoff: await require('src/modules/conversation/human-handoff.service').escalateToHuman(input),
+    })),
+    isHoldingSuppressed: jest.fn(() => false),
+    isHardTimeoutSuppressed: jest.fn(() => false),
+}));
 
 const { processMessageJob, _private } = require('src/jobs/message-worker');
 const { Conversation } = require('src/modules/conversation/conversation.entity');
