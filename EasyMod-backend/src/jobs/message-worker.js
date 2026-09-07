@@ -2651,6 +2651,13 @@ async function processMessageJob(job) {
             throw error;
         }
     } catch (err) {
+        if (err?.retryable || err?.code === 'DELIVERY_LOCK_BUSY' || err?.code === 'DELIVERY_LOCK_UNAVAILABLE') {
+            await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey).catch(() => {});
+            if (dedupKey && typeof cacheRedis.del === 'function') {
+                await cacheRedis.del(dedupKey).catch(() => {});
+            }
+            throw err;
+        }
         // Check for rate limit signal from the provider
         if (err.retryAfterMs) {
             // A provider-side rate-limit response is a negative acknowledgement
