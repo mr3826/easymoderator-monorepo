@@ -1062,6 +1062,9 @@ function createRecoveryControl({
             providerAccepted = true;
             if (holdingMessage?.update) {
                 const providerMessageId = providerAcknowledgementId(sendResult);
+                const providerMessageIds = Array.isArray(sendResult.providerMessageIds)
+                    ? [...new Set(sendResult.providerMessageIds.filter(Boolean).map(String))]
+                    : (providerMessageId ? [providerMessageId] : []);
                 const sentMetadata = {
                     ...(holdingMessage.metadata || {}),
                     delivered: true,
@@ -1071,6 +1074,7 @@ function createRecoveryControl({
                     suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_SENT,
                     provider_send_confirmed: true,
                     provider_message_id: providerMessageId,
+                    provider_message_ids: providerMessageIds,
                 };
                 holdingMessage.metadata = sentMetadata;
                 holdingMessage.delivery_state = MESSAGE_DELIVERY_STATES.SENT;
@@ -1275,12 +1279,18 @@ async function finalizeAiMessage(
         delivered,
         heldReason = null,
         providerMessageId = null,
+        providerMessageIds = [],
         deliveryState = null,
         deliverySource = 'AUTO',
         suggestionVisibility = null,
     },
 ) {
-    if (delivered && !providerMessageId) {
+    const acknowledgedProviderIds = [
+        ...(Array.isArray(providerMessageIds) ? providerMessageIds : []),
+        providerMessageId,
+    ].filter((id, index, ids) => id && ids.indexOf(id) === index).map(String);
+    const primaryProviderMessageId = providerMessageId || acknowledgedProviderIds[acknowledgedProviderIds.length - 1] || null;
+    if (delivered && !primaryProviderMessageId) {
         const error = new Error('Provider acknowledgement did not include a message ID');
         error.code = 'PROVIDER_NO_ACK';
         throw error;
@@ -1378,6 +1388,41 @@ async function finalizeAiMessage(
     // downgrade that durable truth to FAILED, and never replace its MID with a
     // stale response from the request that timed out.
     if (isProviderConfirmed(currentMessage)) {
+        if (delivered && acknowledgedProviderIds.length > 0 && typeof Message.update === 'function') {
+            const mergeConfirmedProviderIds = async (transaction = null) => {
+                const locked = typeof Message.findOne === 'function'
+                    ? await Message.findOne({
+                        where: { id: currentMessage.id, conversation_id: conversationId, sender: 'ai' },
+                        ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
+                    })
+                    : currentMessage;
+                if (!locked) return;
+                const lockedMetadata = messageMetadata(locked);
+                const mergedProviderIds = [
+                    ...(Array.isArray(lockedMetadata.provider_message_ids) ? lockedMetadata.provider_message_ids : []),
+                    locked.provider_message_id,
+                    lockedMetadata.provider_message_id,
+                    ...acknowledgedProviderIds,
+                ].filter((id, index, ids) => id && ids.indexOf(id) === index);
+                const mergedMetadata = {
+                    ...lockedMetadata,
+                    provider_message_ids: mergedProviderIds,
+                };
+                await Message.update({ metadata: mergedMetadata }, {
+                    where: { id: currentMessage.id, conversation_id: conversationId, sender: 'ai' },
+                    ...(transaction ? { transaction } : {}),
+                });
+                currentMessage.metadata = mergedMetadata;
+                currentMessage.provider_message_id = locked.provider_message_id
+                    || lockedMetadata.provider_message_id
+                    || primaryProviderMessageId;
+            };
+            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+                await sequelize.transaction((transaction) => mergeConfirmedProviderIds(transaction));
+            } else {
+                await mergeConfirmedProviderIds();
+            }
+        }
         const confirmedMetadata = messageMetadata(currentMessage);
         const confirmedState = normalizeDeliveryState(currentMessage);
         const confirmedProviderMessageId = currentMessage.provider_message_id
@@ -1417,7 +1462,8 @@ async function finalizeAiMessage(
         suggestion_visibility: resolvedVisibility,
         // Meta's own mid for the reply — the only durable link between our row
         // and what the customer actually received.
-        provider_message_id: providerMessageId,
+        provider_message_id: primaryProviderMessageId,
+        ...(acknowledgedProviderIds.length > 0 ? { provider_message_ids: acknowledgedProviderIds } : {}),
         provider_send_confirmed: Boolean(delivered),
         ...(heldReason === 'provider_send_failed' ? { provider_send_attempted: true } : {}),
     };
@@ -1432,7 +1478,8 @@ async function finalizeAiMessage(
             conversationId,
             messageId: aiMessage?.id || null,
             deliveryState: resolvedState,
-            providerMessageId,
+            providerMessageId: primaryProviderMessageId,
+            providerMessageIds: acknowledgedProviderIds,
             heldReason,
         },
     );
@@ -1449,7 +1496,7 @@ async function finalizeAiMessage(
         metadata: resolvedMetadata,
         delivery_state: resolvedState,
         delivery_source: deliverySource,
-        provider_message_id: providerMessageId,
+        provider_message_id: primaryProviderMessageId,
     };
     if (currentMessage) {
         const providerBoundaryFinalization = delivered || heldReason === 'provider_send_failed';
@@ -1472,9 +1519,21 @@ async function finalizeAiMessage(
                         })
                         : null;
                     if (latest && isProviderConfirmed(latest)) {
+                        const latestMetadata = messageMetadata(latest);
+                        const latestProviderMessageId = latest.provider_message_id
+                            || latestMetadata.provider_message_id
+                            || primaryProviderMessageId;
+                        const latestProviderMessageIds = [
+                            ...(Array.isArray(latestMetadata.provider_message_ids)
+                                ? latestMetadata.provider_message_ids
+                                : []),
+                            ...acknowledgedProviderIds,
+                            latestProviderMessageId,
+                        ].filter((id, index, ids) => id && ids.indexOf(id) === index);
                         return finalizeAiMessage(latest, shopId, conversationId, {
-                            delivered: false,
-                            heldReason: 'provider_send_failed',
+                            delivered: true,
+                            providerMessageId: latestProviderMessageId,
+                            providerMessageIds: latestProviderMessageIds,
                         });
                     }
                     const error = new Error('AI message lifecycle changed before provider outcome was persisted');
@@ -1517,7 +1576,7 @@ async function finalizeAiMessage(
             currentMessage.metadata = resolvedMetadata;
             currentMessage.delivery_state = resolvedState;
             currentMessage.delivery_source = deliverySource;
-            currentMessage.provider_message_id = providerMessageId;
+            currentMessage.provider_message_id = primaryProviderMessageId;
             if (delivered && typeof Conversation.update === 'function' && currentMessage.content) {
                 await Conversation.update(
                     { message: currentMessage.content },
@@ -1539,7 +1598,7 @@ async function finalizeAiMessage(
                 metadata: resolvedMetadata,
                 delivery_state: resolvedState,
                 delivery_source: deliverySource,
-                provider_message_id: providerMessageId,
+                provider_message_id: primaryProviderMessageId,
                 is_transcript_message: Boolean(delivered),
             }
             : null,
@@ -3025,6 +3084,9 @@ async function processMessageJob(job) {
         delivered: true,
         heldReason: null,
         providerMessageId: providerAcknowledgementId(sendResult),
+        providerMessageIds: Array.isArray(sendResult.providerMessageIds)
+            ? sendResult.providerMessageIds
+            : [],
         deliveryState: MESSAGE_DELIVERY_STATES.SENT,
         deliverySource: 'AUTO',
         suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_SENT,

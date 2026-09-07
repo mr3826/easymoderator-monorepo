@@ -141,11 +141,7 @@ describe('ConversationService delivery projection', () => {
         const result = await conversationService.getMessages('conversation-1', 'shop-a');
 
         expect(result.messages.map((message) => message.id)).toEqual(['customer-message', 'sent-message']);
-        expect(result.suggestions.map((message) => message.id)).toEqual(['draft-message']);
-        expect(result.suggestions[0]).toEqual(expect.objectContaining({
-            delivery_state: 'DRAFT_READY',
-            is_transcript_message: false,
-        }));
+        expect(result.suggestions).toEqual([]);
     });
 
     it('claims a draft row before approval and does not create a second message', async () => {

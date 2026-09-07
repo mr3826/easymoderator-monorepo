@@ -292,8 +292,11 @@ export default function UnifiedInbox() {
       );
       setConversations(mergedConversations);
       setAiReplyStatuses((previous) => {
-        const next = { ...previous };
-        result.data.forEach((conversation) => {
+        const visibleIds = new Set(mergedConversations.map((conversation) => conversation.id));
+        const next = Object.fromEntries(
+          Object.entries(previous).filter(([conversationId]) => visibleIds.has(conversationId)),
+        );
+        mergedConversations.forEach((conversation) => {
           if (conversation.ai_is_replying === true && conversation.status !== "closed") {
             next[conversation.id] = "processing";
           } else {

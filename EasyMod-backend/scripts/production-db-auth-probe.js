@@ -162,22 +162,27 @@ async function runInboundTrace(client) {
     console.log(`TRACE_WINDOW_TO=${to.toISOString()}`);
     console.log(`TRACE_MARKER=${marker}`);
 
-    const channels = await client.query(`
+    const channelResult = await client.query(`
         SELECT mc.id, mc.meta_asset_id, mc.display_name, mc.status, mc.shop_id,
                s.shop_name
           FROM public.meta_channels mc
           LEFT JOIN public.shops s ON s.id = mc.shop_id
          WHERE mc.platform = 'facebook'
          ORDER BY mc.display_name, mc.meta_asset_id
-         LIMIT 1000
+         LIMIT 1001
     `);
+    const channelsTruncated = channelResult.rows.length > 1000;
+    const channels = channelsTruncated
+        ? { ...channelResult, rows: channelResult.rows.slice(0, 1000) }
+        : channelResult;
+    console.log(`TRACE_CHANNELS_TRUNCATED=${channelsTruncated ? 'YES' : 'NO'}`);
     for (const row of channels.rows) {
         console.log(`TRACE_CHANNEL channel_id=${row.id} page_id=${row.meta_asset_id}`
             + ` name=${JSON.stringify(row.display_name || '')} status=${row.status}`
             + ` shop_id=${row.shop_id || ''} shop_name=${JSON.stringify(row.shop_name || '')}`);
     }
 
-    const receipts = await client.query(`
+    const receiptResult = await client.query(`
         SELECT id, page_id, event_id, shop_id, meta_channel_id, status,
                retry_count, last_error_code, received_at, processed_at,
                next_retry_at, payload_encrypted
@@ -185,7 +190,12 @@ async function runInboundTrace(client) {
          WHERE received_at >= $1 AND received_at <= $2
          ORDER BY received_at ASC, id ASC
          LIMIT $3
-    `, [from, to, MAX_TRACE_ROWS]);
+    `, [from, to, MAX_TRACE_ROWS + 1]);
+    const receiptsTruncated = receiptResult.rows.length > MAX_TRACE_ROWS;
+    const receipts = receiptsTruncated
+        ? { ...receiptResult, rows: receiptResult.rows.slice(0, MAX_TRACE_ROWS) }
+        : receiptResult;
+    console.log(`TRACE_RECEIPTS_TRUNCATED=${receiptsTruncated ? 'YES' : 'NO'}`);
 
     let matchedReceiptCount = 0;
     for (const row of receipts.rows) {
@@ -216,7 +226,7 @@ async function runInboundTrace(client) {
         }
     }
 
-    const messages = await client.query(`
+    const messageResult = await client.query(`
         SELECT m.id AS message_id, m.external_id AS meta_mid,
                m.conversation_id, m.created_at AS message_created_at,
                (m.metadata::jsonb)->>'reply_to_provider_message_id' AS reply_to_provider_message_id,
@@ -234,7 +244,12 @@ async function runInboundTrace(client) {
            AND position($3 in coalesce(m.content, '')) > 0
          ORDER BY m.created_at ASC, m.id ASC
          LIMIT $4
-    `, [from, to, marker, MAX_TRACE_ROWS]);
+    `, [from, to, marker, MAX_TRACE_ROWS + 1]);
+    const messagesTruncated = messageResult.rows.length > MAX_TRACE_ROWS;
+    const messages = messagesTruncated
+        ? { ...messageResult, rows: messageResult.rows.slice(0, MAX_TRACE_ROWS) }
+        : messageResult;
+    console.log(`TRACE_MESSAGES_TRUNCATED=${messagesTruncated ? 'YES' : 'NO'}`);
 
     for (const row of messages.rows) {
         console.log(`TRACE_MESSAGE_MATCH message_id=${row.message_id}`
@@ -253,7 +268,7 @@ async function runInboundTrace(client) {
 
     const matchedConversationIds = [...new Set(messages.rows.map((row) => row.conversation_id))];
     if (matchedConversationIds.length > 0) {
-        const adjacentMessages = await client.query(`
+        const adjacentResult = await client.query(`
             SELECT m.id AS message_id, m.external_id AS meta_mid,
                    m.content, m.created_at AS message_created_at,
                    (m.metadata::jsonb)->>'reply_to_provider_message_id' AS reply_to_provider_message_id,
@@ -268,7 +283,12 @@ async function runInboundTrace(client) {
                AND m.created_at >= $1 AND m.created_at <= $2
              ORDER BY m.created_at ASC, m.id ASC
              LIMIT $4
-        `, [from, to, matchedConversationIds, MAX_TRACE_ROWS]);
+        `, [from, to, matchedConversationIds, MAX_TRACE_ROWS + 1]);
+        const adjacentTruncated = adjacentResult.rows.length > MAX_TRACE_ROWS;
+        const adjacentMessages = adjacentTruncated
+            ? { ...adjacentResult, rows: adjacentResult.rows.slice(0, MAX_TRACE_ROWS) }
+            : adjacentResult;
+        console.log(`TRACE_ADJACENT_MESSAGES_TRUNCATED=${adjacentTruncated ? 'YES' : 'NO'}`);
         for (const row of adjacentMessages.rows) {
             const contentKind = row.content === '[Attachment]' ? 'attachment' : 'text';
             console.log(`TRACE_ADJACENT_MESSAGE message_id=${row.message_id}`
