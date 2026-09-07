@@ -244,6 +244,11 @@ function buildCoalescedTurn(messages) {
     return {
         messages,
         messageIds: messages.map((m) => m.id),
+        // The first unanswered customer message is the stable identity of the
+        // logical turn. Later burst flushes may include more messages from the
+        // same unanswered suffix, but must not create a second reviewable AI
+        // candidate for that turn.
+        logicalTurnId: messages.length ? `burst:${messages[0].id}` : null,
         lastMessageId: messages.length ? messages[messages.length - 1].id : null,
         combinedText: texts.join('\n'),
         imageUrls,

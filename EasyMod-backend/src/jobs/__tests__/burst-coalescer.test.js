@@ -89,6 +89,7 @@ describe('burst-coalescer', () => {
             ]);
             expect(turn.combinedText).toBe('Orna ache?\nlal color ashe?\nSize hobe');
             expect(turn.messageIds).toEqual(['m1', 'm2', 'm3']);
+            expect(turn.logicalTurnId).toBe('burst:m1');
             expect(turn.lastMessageId).toBe('m3');
             expect(turn.imageUrls).toEqual([]);
         });
@@ -107,6 +108,7 @@ describe('burst-coalescer', () => {
             const turn = coalescer.buildCoalescedTurn([]);
             expect(turn.messages).toEqual([]);
             expect(turn.combinedText).toBe('');
+            expect(turn.logicalTurnId).toBeNull();
             expect(turn.lastMessageId).toBeNull();
         });
     });

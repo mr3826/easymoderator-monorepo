@@ -150,6 +150,69 @@ const isResumableStaleCandidate = (message) => {
         ].includes(state);
 };
 
+const logicalTurnIdFor = (message) => {
+    const logicalTurnId = normalizeObject(message?.metadata).logical_turn_id;
+    return logicalTurnId ? String(logicalTurnId) : null;
+};
+
+const isDismissableDuplicateSibling = (candidate, sibling) => {
+    if (!candidate?.id || !sibling?.id || candidate.id === sibling.id) return false;
+    if (!isReviewableSuggestion(sibling)) return false;
+
+    const candidateTurnId = logicalTurnIdFor(candidate);
+    const siblingTurnId = logicalTurnIdFor(sibling);
+    if (candidateTurnId && siblingTurnId) return candidateTurnId === siblingTurnId;
+
+    // Rows created before logical_turn_id was persisted cannot be joined to a
+    // newer candidate safely. For that legacy shape, only terminalize older
+    // siblings in the same unanswered suffix; never remove a newer draft.
+    if (candidateTurnId || siblingTurnId) {
+        return Boolean(candidateTurnId && !siblingTurnId)
+            && workflowTimestamp(sibling) <= workflowTimestamp(candidate);
+    }
+    return workflowTimestamp(sibling) <= workflowTimestamp(candidate);
+};
+
+const dismissedMetadata = (message, actorId, dismissedAt, duplicateOf = null) => ({
+    ...normalizeObject(message?.metadata),
+    delivered: false,
+    delivery_status: 'dismissed',
+    delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+    suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+    held_reason: 'dismissed',
+    dismissed_at: dismissedAt,
+    dismissed_by_user_id: actorId || null,
+    ...(duplicateOf ? {
+        dismissed_as_duplicate: true,
+        dismissed_duplicate_of: duplicateOf,
+    } : {}),
+});
+
+const loadDismissalCandidates = async (conversationId, transaction, candidate) => {
+    if (typeof Message.findAll !== 'function') return [candidate];
+    const rows = await Message.findAll({
+        where: { conversation_id: conversationId, sender: 'ai' },
+        transaction,
+        lock: transaction.LOCK?.UPDATE,
+    });
+    const byId = new Map([[candidate.id, candidate]]);
+    for (const row of Array.isArray(rows) ? rows : []) {
+        if (row?.id && !byId.has(row.id)) byId.set(row.id, row);
+    }
+    return [...byId.values()];
+};
+
+const terminalizeDuplicateSiblings = async (candidate, rows, transaction, actorId, dismissedAt) => {
+    for (const sibling of rows) {
+        if (!isDismissableDuplicateSibling(candidate, sibling)) continue;
+        await sibling.update({
+            metadata: dismissedMetadata(sibling, actorId, dismissedAt, candidate.id),
+            delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
+            delivery_source: sibling.delivery_source || 'AI_DRAFT',
+        }, { transaction });
+    }
+};
+
 const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
     const metadata = normalizeObject(conversation?.metadata);
     const status = conversation?.status || metadata.status || 'active';
@@ -925,7 +988,16 @@ class ConversationService {
             }
 
             const state = normalizeDeliveryState(candidate);
+            const dismissalCandidates = await loadDismissalCandidates(conversationId, transaction, candidate);
+            const dismissedAt = new Date().toISOString();
             if (state === MESSAGE_DELIVERY_STATES.DISMISSED) {
+                await terminalizeDuplicateSiblings(
+                    candidate,
+                    dismissalCandidates,
+                    transaction,
+                    actorId,
+                    dismissedAt,
+                );
                 await transaction.commit();
                 return { message: mapMessage(candidate), alreadyDismissed: true };
             }
@@ -954,21 +1026,19 @@ class ConversationService {
                 throw error;
             }
 
-            const metadata = {
-                ...normalizeObject(candidate.metadata),
-                delivered: false,
-                delivery_status: 'dismissed',
-                delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
-                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
-                held_reason: 'dismissed',
-                dismissed_at: new Date().toISOString(),
-                dismissed_by_user_id: actorId || null,
-            };
+            const metadata = dismissedMetadata(candidate, actorId, dismissedAt);
             await candidate.update({
                 metadata,
                 delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
                 delivery_source: candidate.delivery_source || 'AI_DRAFT',
             }, { transaction });
+            await terminalizeDuplicateSiblings(
+                candidate,
+                dismissalCandidates,
+                transaction,
+                actorId,
+                dismissedAt,
+            );
             await transaction.commit();
             return { message: candidate, alreadyDismissed: false };
         } catch (error) {
