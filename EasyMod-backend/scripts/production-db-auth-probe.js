@@ -4,22 +4,17 @@ const dns = require('dns').promises;
 const crypto = require('crypto');
 const fs = require('fs/promises');
 const net = require('net');
+const path = require('path');
 const { Client } = require('pg');
-const {
-    ATTACHMENT_URL_TTL_SECONDS,
-    absolutePathForKey,
-    mintAttachmentUrl,
-    parseStorageKey,
-    recoverStorageKeyFromLegacyUrl,
-} = require('../src/modules/conversation/attachment-storage');
+const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
 const MAX_TRACE_WINDOW_MS = 15 * 60 * 1000;
 const MAX_TRACE_ROWS = 5000;
 
 const expectedDatabase = process.env.EXPECTED_DB_NAME || 'easymod_prod';
 let failureStage = 'DB_URL';
 
-// Reuse the application attachment contract so probe signing and recovery cannot
-// drift from the code path that serves Inbox attachments.
+// Keep this probe self-contained because production copies only this script into
+// the running image for the independent database and attachment checks.
 function decodeRenderedEnvValue(value) {
     const raw = String(value ?? '');
     const trimmed = raw.trim();
@@ -33,6 +28,74 @@ function decodeRenderedEnvValue(value) {
     } catch (_) {
         return value;
     }
+}
+
+function parseAttachmentStorageKey(value) {
+    if (typeof value !== 'string') return null;
+    const parts = value.split('/');
+    if (parts.length !== 2
+        || !/^[A-Za-z0-9_-]{1,64}$/.test(parts[0])
+        || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/.test(parts[1])
+        || parts[1].includes('..')) return null;
+    return { shopId: parts[0], fileName: parts[1] };
+}
+
+function resolvePublicAssetOrigin() {
+    const configured = [
+        process.env.PUBLIC_ASSET_URL,
+        process.env.PUBLIC_BASE_URL,
+        process.env.API_URL,
+        process.env.BASE_URL,
+    ].find(Boolean);
+    if (configured) return new URL(configured).origin;
+    return process.env.NODE_ENV === 'production'
+        ? 'https://api.easymod.tech'
+        : 'http://localhost:3000';
+}
+
+function isAllowedLegacyAssetUrl(value) {
+    if (typeof value !== 'string' || !value) return false;
+    if (value.startsWith('/')) return value.startsWith('/uploads/');
+    try {
+        return new URL(value).origin === resolvePublicAssetOrigin();
+    } catch {
+        return false;
+    }
+}
+
+function recoverStorageKeyFromLegacyUrl(value, options = {}) {
+    const expectedShopId = typeof options === 'object' ? options.expectedShopId : options;
+    if (!isAllowedLegacyAssetUrl(value)) return null;
+    let parsed;
+    try {
+        parsed = new URL(value, resolvePublicAssetOrigin());
+    } catch {
+        return null;
+    }
+    if (!parsed.pathname.startsWith('/uploads/')) return null;
+    let decodedPath;
+    try {
+        decodedPath = decodeURIComponent(parsed.pathname.slice('/uploads/'.length));
+    } catch {
+        return null;
+    }
+    const parts = decodedPath.split('/');
+    if (parts.length !== 3 || parts[0] !== 'conversation-attachments') return null;
+    const key = parseAttachmentStorageKey(`${parts[1]}/${parts[2]}`);
+    if (!key || (expectedShopId && String(expectedShopId) !== key.shopId)) return null;
+    return `${key.shopId}/${key.fileName}`;
+}
+
+function absolutePathForAttachmentKey(storageKey) {
+    const key = parseAttachmentStorageKey(storageKey);
+    if (!key) return null;
+    const uploadRoot = path.resolve(
+        process.env.EASYMOD_UPLOAD_ROOT || path.resolve(__dirname, '../uploads'),
+    );
+    const attachmentRoot = path.resolve(uploadRoot, 'conversation-attachments');
+    const absolutePath = path.resolve(attachmentRoot, key.shopId, key.fileName);
+    if (!absolutePath.startsWith(`${attachmentRoot}${path.sep}`)) return null;
+    return absolutePath;
 }
 
 function assertTcpConnection(host, port) {
@@ -146,15 +209,16 @@ function parseTraceDate(value, name) {
 
 function mintProbeAttachmentUrl({ shopId, fileName, baseUrl, expires }) {
     if (!Number.isSafeInteger(expires)) throw new Error('invalid attachment expiry');
-    const now = expires - ATTACHMENT_URL_TTL_SECONDS;
-    if (now < 0) throw new Error('invalid attachment expiry');
-    return mintAttachmentUrl({
-        shopId,
-        fileName,
-        baseUrl,
-        now,
-        ttlSeconds: ATTACHMENT_URL_TTL_SECONDS,
-    });
+    const key = parseAttachmentStorageKey(`${shopId}/${fileName}`);
+    if (!key) throw new Error('invalid attachment identity');
+    const secret = process.env.CSRF_SECRET || process.env.SESSION_SECRET || '';
+    if (!secret) throw new Error('attachment signing secret is not configured');
+    const origin = new URL(baseUrl).origin;
+    const signature = crypto.createHmac('sha256', secret)
+        .update(`${key.shopId}/${key.fileName}.${expires}`)
+        .digest('hex');
+    return `${origin}/uploads/conversation-attachments/${key.shopId}/${key.fileName}`
+        + `?expires=${expires}&signature=${signature}`;
 }
 
 async function runAttachmentTrace(client) {
@@ -198,18 +262,18 @@ async function runAttachmentTrace(client) {
         if (!row) throw new Error('historical attachment message was not found');
 
         const oldUrl = row.image_url || row.file_url || '';
-        const durableKey = parseStorageKey(row.attachment_storage_key);
+        const durableKey = parseAttachmentStorageKey(row.attachment_storage_key);
         const recoveredKey = row.attachment_storage_key == null
             ? recoverStorageKeyFromLegacyUrl(oldUrl, { expectedShopId: row.shop_id })
             : null;
-        const key = durableKey || parseStorageKey(recoveredKey);
+        const key = durableKey || parseAttachmentStorageKey(recoveredKey);
         const shopMatches = Boolean(key && String(row.shop_id) === key.shopId);
         console.log(`ATTACHMENT_TRACE_DURABLE_KEY_PRESENT=${key ? 'YES' : 'NO'}`);
         console.log(`ATTACHMENT_TRACE_DURABLE_KEY_RECOVERED=${!durableKey && key ? 'YES' : 'NO'}`);
         console.log(`ATTACHMENT_TRACE_SHOP_MATCH=${shopMatches ? 'YES' : 'NO'}`);
         if (!shopMatches) throw new Error('historical attachment storage key is invalid or cross-shop');
 
-        const absolutePath = absolutePathForKey(`${key.shopId}/${key.fileName}`);
+        const absolutePath = absolutePathForAttachmentKey(`${key.shopId}/${key.fileName}`);
         if (!absolutePath) throw new Error('attachment path escaped upload root');
         const stat = await fs.stat(absolutePath).catch(() => null);
         console.log(`ATTACHMENT_TRACE_FILE_PRESENT=${stat?.isFile() ? 'YES' : 'NO'}`);
@@ -555,7 +619,7 @@ module.exports = {
     decodeRenderedEnvValue,
     main,
     mintProbeAttachmentUrl,
-    parseAttachmentStorageKey: parseStorageKey,
+    parseAttachmentStorageKey,
     runAttachmentTrace,
     runPreMigrationProbe,
     runInboundTrace,
