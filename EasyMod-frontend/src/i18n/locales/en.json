@@ -649,6 +649,7 @@
     "selectConversation": "Select a conversation to view messages",
     "imageProcessed": "Image processed ✓",
     "imageSkipped": "Image skipped (limit reached)",
+    "attachmentUnavailable": "Attachment unavailable",
     "humanTooltip": "Human agent active — click to take over",
     "resumeAiTooltip": "Hand this conversation back to AI without sending a message",
     "aiTooltip": "AI is handling this conversation automatically",

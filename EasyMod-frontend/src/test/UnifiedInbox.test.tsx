@@ -1173,7 +1173,10 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
       message_type: 'file' as const,
       metadata: {
         file_name: 'catalog.pdf',
-        file_url: 'https://cdn.example.com/catalog.pdf',
+        file_url: 'https://api.easymod.tech/uploads/conversation-attachments/shop-1/catalog.pdf?expires=1&signature=expired',
+        attachment_source: 'inbox_upload',
+        attachment_storage_key: 'shop-1/catalog.pdf',
+        attachment_available: true,
         delivery_status: 'failed',
         delivery_error: 'Meta API rejected the attachment',
       },
@@ -1185,7 +1188,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
 
     expect(await screen.findByAltText('Attachment')).toHaveAttribute('src', 'https://cdn.example.com/inbound.png')
     expect(screen.getByText('catalog.pdf')).toBeInTheDocument()
-    expect(screen.getByText('Download file')).toHaveAttribute('href', 'https://cdn.example.com/catalog.pdf')
+    expect(screen.getByText('Download file')).toHaveAttribute('href', 'https://api.easymod.tech/uploads/conversation-attachments/shop-1/catalog.pdf?expires=1&signature=expired')
     fireEvent.click(screen.getByRole('button', { name: /Retry/i }))
 
     await waitFor(() => {
@@ -1195,11 +1198,54 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
         message_type: 'file',
         metadata: expect.objectContaining({
           file_name: 'catalog.pdf',
-          file_url: 'https://cdn.example.com/catalog.pdf',
+          file_url: 'https://api.easymod.tech/uploads/conversation-attachments/shop-1/catalog.pdf?expires=1&signature=expired',
+          attachment_source: 'inbox_upload',
+          attachment_storage_key: 'shop-1/catalog.pdf',
           delivery_status: 'pending',
         }),
       }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
     })
+  })
+
+  it('renders an explicit unavailable state for a missing attachment', async () => {
+    const missingImage = {
+      id: 'msg-image-missing',
+      conversation_id: 'conv-1',
+      content: '[Attachment]',
+      sender: 'customer' as const,
+      message_type: 'image' as const,
+      metadata: {
+        message_type: 'image',
+        attachment_source: 'inbox_upload',
+        attachment_storage_key: 'shop-1/missing.png',
+        attachment_available: false,
+      },
+      created_at: olderTs,
+      updated_at: olderTs,
+    }
+
+    renderWith(baseConversation, [missingImage])
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Attachment unavailable')
+  })
+
+  it('falls back when an attachment disappears after serialization', async () => {
+    const image = {
+      id: 'msg-image-race',
+      conversation_id: 'conv-1',
+      content: '[Attachment]',
+      sender: 'customer' as const,
+      message_type: 'image' as const,
+      metadata: { image_url: 'https://api.easymod.tech/uploads/conversation-attachments/shop-1/race.png' },
+      created_at: olderTs,
+      updated_at: olderTs,
+    }
+
+    renderWith(baseConversation, [image])
+    const renderedImage = await screen.findByAltText('Attachment')
+    fireEvent.error(renderedImage)
+
+    expect(await screen.findByText('Attachment unavailable')).toBeInTheDocument()
   })
 
   it('renders each native attachment type from metadata', async () => {

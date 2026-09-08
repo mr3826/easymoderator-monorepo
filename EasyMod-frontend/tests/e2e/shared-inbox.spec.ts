@@ -30,8 +30,19 @@ const mockConversations = [
 ];
 
 const mockMessages = [
-    { id: 'msg-1', conversation_id: 'conv-1', direction: 'incoming', content: 'What is the price?', created_at: new Date(Date.now() - 60000).toISOString() },
-    { id: 'msg-2', conversation_id: 'conv-1', direction: 'outgoing', content: 'The price is 500 BDT', created_at: new Date().toISOString() }
+    {
+        id: 'msg-1', conversation_id: 'conv-1', sender: 'customer', message_type: 'image',
+        content: 'What is the price?',
+        metadata: {
+            message_type: 'image',
+            image_url: 'https://api.easymod.tech/uploads/conversation-attachments/shop-1/old-photo.png?expires=9999999999&signature=test',
+            attachment_source: 'inbox_upload',
+            attachment_storage_key: 'shop-1/old-photo.png',
+            attachment_available: true,
+        },
+        created_at: new Date(Date.now() - 60000).toISOString(),
+    },
+    { id: 'msg-2', conversation_id: 'conv-1', sender: 'agent', message_type: 'text', direction: 'outgoing', content: 'The price is 500 BDT', created_at: new Date().toISOString() }
 ];
 
 async function setupRoutes(page: any) {
@@ -51,8 +62,8 @@ async function setupRoutes(page: any) {
             return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { user: mockUser, currentShop: mockShop, allShops: [mockShop] } }) });
         }
         if (path === '/api/conversation' && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { conversations: mockConversations, pagination: { total: 3, page: 1, pageSize: 50 } } }) });
-        if (path.match(/\/api\/conversation\/[\w-]+\/messages/)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { messages: mockMessages, pagination: { page: 1, totalPages: 1 } } }) });
-        if (path.match(/\/api\/conversation\/[\w-]+\/message/) && method === 'POST') return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: 'msg-new', content: 'New reply', direction: 'outgoing', created_at: new Date().toISOString() } }) });
+        if (path.match(/\/api\/conversation\/[\w-]+\/messages$/) && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { messages: mockMessages, pagination: { page: 1, totalPages: 1 } } }) });
+        if (path.match(/\/api\/conversation\/[\w-]+\/messages$/) && method === 'POST') return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: 'msg-new', content: 'New reply', sender: 'agent', message_type: 'text', created_at: new Date().toISOString() } }) });
 
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true,"data":[]}' });
     });
@@ -118,6 +129,22 @@ test('customer name shown in conversation list', async ({ page }) => {
     await loginAndGo(page);
     await expect(page.getByText('Ahmed Hassan', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Fatima Begum', { exact: true }).first()).toBeVisible();
+});
+
+test('historical attachment renders after reload', async ({ page }) => {
+    await page.route('https://api.easymod.tech/uploads/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'),
+    }));
+    await setupRoutes(page);
+    await loginAndGo(page);
+    await page.getByText('Ahmed Hassan', { exact: true }).click();
+    await expect(page.locator('img[alt="Attachment"]')).toBeVisible();
+
+    await page.reload();
+    await page.getByText('Ahmed Hassan', { exact: true }).click();
+    await expect(page.locator('img[alt="Attachment"]')).toBeVisible();
 });
 
 test('unread badge visible for conversations with unread messages', async ({ page }) => {

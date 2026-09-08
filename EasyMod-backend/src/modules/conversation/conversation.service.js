@@ -6,7 +6,7 @@ const {
     MetaChannelSettings,
     InboxDeliveryOutbox,
 } = require('../entities');
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
@@ -28,6 +28,15 @@ const {
     candidateStartedAtStateFor,
     isBeforeResumeBoundary,
 } = require('./message-lifecycle');
+const {
+    ATTACHMENT_URL_TTL_SECONDS,
+    PREPARED_ATTACHMENT_METADATA,
+    attachmentExists,
+    mintAttachmentUrl,
+    parseStorageKey,
+    resolveAttachmentStorageKey,
+} = require('./attachment-storage');
+const { resolvePublicAssetOrigin } = require('../../config/origins');
 
 const PLACEHOLDER_CUSTOMER_NAMES = new Set([
     'customer',
@@ -373,6 +382,10 @@ const CLIENT_MESSAGE_METADATA_FIELDS = new Set([
     'provider_message_ids',
     'provider_send_confirmed',
     'provider_send_attempted',
+    'provider_send_claimed',
+    'provider_send_claimed_at',
+    'provider_send_claim_token',
+    'outbox_reconciled',
     'delivery_state',
     'delivery_status',
     'delivered',
@@ -381,6 +394,9 @@ const CLIENT_MESSAGE_METADATA_FIELDS = new Set([
     'reply_to_provider_message_id',
     'reply_to_internal_message_id',
     'reply_to_is_self_reply',
+    'attachment_storage_key',
+    'attachment_source',
+    'attachment_available',
 ]);
 
 const sanitizeClientMessageMetadata = (metadata) => Object.fromEntries(
@@ -411,8 +427,50 @@ const plainCustomer = (customer, channel) => {
     return raw;
 };
 
-const mapMessage = (message) => {
+const projectedAttachmentMetadata = (message, metadata, shopId) => {
+    const isStoredAttachment = metadata.attachment_source === 'inbox_upload'
+        || Object.prototype.hasOwnProperty.call(metadata, 'attachment_storage_key');
+    if (!isStoredAttachment) return message?.metadata || null;
+
+    const storageKey = resolveAttachmentStorageKey(metadata, shopId);
+    const parsedStorageKey = parseStorageKey(storageKey);
+    if (!parsedStorageKey) {
+        const unavailable = { ...metadata, attachment_available: false };
+        delete unavailable.image_url;
+        delete unavailable.file_url;
+        return unavailable;
+    }
+
+    try {
+        const publicUrl = mintAttachmentUrl({
+            shopId: parsedStorageKey.shopId,
+            fileName: parsedStorageKey.fileName,
+            baseUrl: resolvePublicAssetOrigin(),
+            ttlSeconds: ATTACHMENT_URL_TTL_SECONDS,
+        });
+        const projected = {
+            ...metadata,
+            attachment_storage_key: storageKey,
+            attachment_available: true,
+            file_url: publicUrl,
+        };
+        if ((metadata.message_type || message?.message_type) === 'image') {
+            projected.image_url = publicUrl;
+        } else {
+            delete projected.image_url;
+        }
+        return projected;
+    } catch (_) {
+        const unavailable = { ...metadata, attachment_available: false };
+        delete unavailable.image_url;
+        delete unavailable.file_url;
+        return unavailable;
+    }
+};
+
+const mapMessage = (message, shopId) => {
     const metadata = normalizeObject(message?.metadata);
+    const responseMetadata = projectedAttachmentMetadata(message, metadata, shopId);
     const deliveryState = normalizeDeliveryState(message);
     const sender = message?.sender === 'business' ? 'agent' : message?.sender;
     return {
@@ -421,7 +479,7 @@ const mapMessage = (message) => {
         content: message.content,
         sender,
         message_type: metadata.message_type || 'text',
-        metadata: message.metadata || null,
+        metadata: responseMetadata,
         ai_suggestion: message.ai_suggestion || null,
         ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
         source_references: message.source_references || null,
@@ -443,9 +501,29 @@ const mapMessage = (message) => {
     };
 };
 
+async function markMissingAttachments(messages) {
+    const keys = [...new Set(messages
+        .filter((message) => message.metadata?.attachment_available !== false)
+        .map((message) => message.metadata?.attachment_storage_key)
+        .filter((key) => typeof key === 'string'))];
+    if (!keys.length) return messages;
+
+    const availability = new Map(await Promise.all(keys.map(async (key) => (
+        [key, await attachmentExists(key)]
+    ))));
+    return messages.map((message) => {
+        const key = message.metadata?.attachment_storage_key;
+        if (!key || availability.get(key) !== false) return message;
+        const metadata = { ...(message.metadata || {}), attachment_available: false };
+        delete metadata.image_url;
+        delete metadata.file_url;
+        return { ...message, metadata };
+    });
+}
+
 class ConversationService {
-    mapMessage(message) {
-        return mapMessage(message);
+    mapMessage(message, shopId) {
+        return mapMessage(message, shopId);
     }
 
     mapConversation(conversation) {
@@ -702,8 +780,8 @@ class ConversationService {
                 offset
             });
 
-            const projectedMessages = results.rows.map(mapMessage).reverse();
-            const messages = projectedMessages.filter((message) => message.is_transcript_message);
+            const projectedMessages = results.rows.map((message) => mapMessage(message, shopId)).reverse();
+            const transcriptMessages = projectedMessages.filter((message) => message.is_transcript_message);
             const allProjectionRows = typeof Message.findAll === 'function'
                 ? (await Message.findAll({
                     where: { conversation_id: conversationId },
@@ -727,10 +805,14 @@ class ConversationService {
                 }) || [])
                 : [];
             const projectionRows = allProjectionRows.length ? allProjectionRows : results.rows;
-            const suggestions = projectionRows
+            const projectedSuggestions = projectionRows
                 .filter(isReviewableSuggestion)
                 .filter((message) => isCurrentTurnSuggestion(message, projectionRows))
-                .map(mapMessage);
+                .map((message) => mapMessage(message, shopId));
+            const [messages, suggestions] = await Promise.all([
+                markMissingAttachments(transcriptMessages),
+                markMissingAttachments(projectedSuggestions),
+            ]);
 
             return {
                 messages,
@@ -861,11 +943,13 @@ class ConversationService {
                     ...(transaction ? { transaction } : {}),
                 });
                 if (existing) {
-                    return { ...mapMessage(existing), idempotency_replay: true };
+                    return { ...mapMessage(existing, shopId), idempotency_replay: true };
                 }
             }
+            const preparedAttachmentMetadata = messageData[PREPARED_ATTACHMENT_METADATA] || null;
             const metadata = {
                 ...sanitizeClientMessageMetadata(messageData.metadata),
+                ...(preparedAttachmentMetadata || {}),
                 message_type: messageData.message_type || messageData.metadata?.message_type || 'text',
                 ...(isManualOutbound ? {
                     delivered: !isMetaOutbound,
@@ -894,7 +978,7 @@ class ConversationService {
                 send_idempotency_key: sendIdempotencyKey,
             }, transaction ? { transaction } : undefined);
 
-            return { ...mapMessage(message), idempotency_replay: false };
+            return { ...mapMessage(message, shopId), idempotency_replay: false };
         };
 
         try {
@@ -935,7 +1019,7 @@ class ConversationService {
             const state = normalizeDeliveryState(candidate);
             if (state === MESSAGE_DELIVERY_STATES.SENT || state === MESSAGE_DELIVERY_STATES.DELIVERED) {
                 await transaction.commit();
-                return { message: mapMessage(candidate), alreadySent: true };
+                return { message: mapMessage(candidate, shopId), alreadySent: true };
             }
             if (state === MESSAGE_DELIVERY_STATES.SEND_PENDING) {
                 const error = new Error('AI suggestion send is already in progress');
@@ -1079,7 +1163,7 @@ class ConversationService {
                     dismissedAt,
                 );
                 await transaction.commit();
-                return { message: mapMessage(candidate), alreadyDismissed: true, dismissedSiblingMessageIds };
+                return { message: mapMessage(candidate, shopId), alreadyDismissed: true, dismissedSiblingMessageIds };
             }
             if (state === MESSAGE_DELIVERY_STATES.SENT || state === MESSAGE_DELIVERY_STATES.DELIVERED) {
                 const error = new Error('A sent AI message cannot be dismissed');
@@ -1248,7 +1332,7 @@ class ConversationService {
             sseManager.emit(shopId, 'message_delivery_updated', {
                 conversation_id: conversationId,
                 message_id: message.id,
-                metadata,
+                metadata: mapMessage(message, shopId).metadata,
                 delivery_state: MESSAGE_DELIVERY_STATES.HELD,
                 delivery_source: message.delivery_source || metadata.delivery_source || null,
                 content: message.content || null,
@@ -1421,7 +1505,7 @@ class ConversationService {
                 sseManager.emit(shopId, 'message_delivery_updated', {
                     conversation_id: conversationId,
                     message_id: message.id,
-                    metadata,
+                    metadata: mapMessage(message, shopId).metadata,
                     delivery_state: metadata.delivery_state,
                     delivery_source: message.delivery_source || metadata.delivery_source || null,
                     content: message.content || null,
@@ -1795,7 +1879,7 @@ class ConversationService {
                 }
             });
 
-            return this._mapMessage(escalationReply);
+            return this._mapMessage(escalationReply, shopId);
         } catch (error) {
             console.warn(`Failed to send escalation auto-reply for conversation ${conversationId}:`, error.message);
             return null;
@@ -1805,17 +1889,8 @@ class ConversationService {
     /**
      * Helper to map message entity to API response format
      */
-    _mapMessage(message) {
-        return {
-            id: message.id,
-            conversation_id: message.conversation_id,
-            content: message.content,
-            sender: message.sender === 'business' ? 'agent' : message.sender,
-            ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
-            source_references: message.source_references || null,
-            created_at: message.created_at,
-            updated_at: message.updated_at || message.created_at
-        };
+    _mapMessage(message, shopId) {
+        return mapMessage(message, shopId);
     }
 }
 

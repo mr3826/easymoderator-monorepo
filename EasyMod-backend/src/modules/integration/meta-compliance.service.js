@@ -27,13 +27,14 @@ const OrderSession = require('../order/order-session.entity');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
+const { UPLOAD_ROOT } = require('../../utils/image-upload.service');
+const {
+    isAllowedLegacyAssetUrl,
+    parseStorageKey,
+    recoverStorageKeyFromLegacyUrl,
+} = require('../conversation/attachment-storage');
 
 const logger = createLogger('MetaComplianceService');
-const UPLOAD_ROOT = path.resolve(__dirname, '../../../uploads');
-const OWNED_ATTACHMENT_PREFIXES = [
-    '/uploads/conversation-attachments/',
-    '/uploads/invoices/',
-];
 const PROCESSING_STALE_MS = 15 * 60 * 1000;
 
 function sha256(value) {
@@ -91,8 +92,11 @@ async function writeAudit(action, requestId, {
     }, { transaction });
 }
 
-function ownedAttachmentPath(value) {
+function ownedAttachmentPath(value, { expectedShopId } = {}) {
     if (typeof value !== 'string') return null;
+    if (!isAllowedLegacyAssetUrl(value)) return null;
+    const recoveredStorageKey = recoverStorageKeyFromLegacyUrl(value, { expectedShopId });
+    if (recoveredStorageKey) return `conversation-attachments/${recoveredStorageKey}`;
     let pathname;
     try {
         pathname = value.startsWith('/')
@@ -101,7 +105,6 @@ function ownedAttachmentPath(value) {
     } catch (_) {
         return null;
     }
-    if (!OWNED_ATTACHMENT_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return null;
 
     let decoded;
     try {
@@ -110,9 +113,10 @@ function ownedAttachmentPath(value) {
         return null;
     }
     const normalized = decoded.replace(/\\/g, '/');
-    const allowedDirectory = normalized.startsWith('conversation-attachments/')
-        || normalized.startsWith('invoices/');
-    if (!allowedDirectory || normalized.split('/').includes('..')) {
+    if (normalized.startsWith('conversation-attachments/')) {
+        return null;
+    }
+    if (!normalized.startsWith('invoices/') || normalized.split('/').includes('..')) {
         return null;
     }
     return normalized;
@@ -175,10 +179,14 @@ async function fencedRequestUpdate(request, processingToken, values, {
     Object.assign(request, values);
 }
 
-function collectOwnedAttachmentPaths(messages) {
+function collectOwnedAttachmentPaths(messages, expectedShopId = null) {
     const paths = new Set();
     for (const message of messages) {
         const metadata = message?.metadata || message?.get?.('metadata') || {};
+        const storageKey = parseStorageKey(metadata.attachment_storage_key);
+        if (storageKey && (!expectedShopId || storageKey.shopId === String(expectedShopId))) {
+            paths.add(`conversation-attachments/${storageKey.shopId}/${storageKey.fileName}`);
+        }
         const candidates = [
             metadata.image_url,
             metadata.file_url,
@@ -188,7 +196,7 @@ function collectOwnedAttachmentPaths(messages) {
                 : []),
         ];
         for (const candidate of candidates) {
-            const relativePath = ownedAttachmentPath(candidate);
+            const relativePath = ownedAttachmentPath(candidate, { expectedShopId });
             if (relativePath) paths.add(relativePath);
         }
     }
@@ -321,7 +329,7 @@ async function deleteCustomerData(customer, mapping, request, transaction) {
             transaction,
         })
         : [];
-    const attachmentPaths = collectOwnedAttachmentPaths(messages);
+    const attachmentPaths = collectOwnedAttachmentPaths(messages, shopId);
 
     await consentService.recordDataDeletion({
         shopId,

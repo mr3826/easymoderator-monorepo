@@ -34,6 +34,29 @@ function isValidMediaUrl(url: unknown): url is string {
   }
 }
 
+function AttachmentImage({
+  url,
+  alt,
+  className,
+  fallbackLabel,
+}: {
+  url: string;
+  alt: string;
+  className: string;
+  fallbackLabel: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="text-sm italic text-gray-500">{fallbackLabel}</span>;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
 function getDeliveryState(message: Message): MessageDeliveryState | null {
@@ -124,6 +147,7 @@ const MessageItem = memo(function MessageItem({
   customerName: string;
   onRetry: (message: Message) => void;
 }) {
+  const { t } = useTranslation();
   const ts = new Date(message.created_at).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -179,7 +203,11 @@ const MessageItem = memo(function MessageItem({
               : "a previous Messenger message"}
           </div>
         )}
-        {attachments.length > 0 ? (
+        {message.metadata?.attachment_available === false ? (
+          <span role="status" className="text-sm italic text-gray-500">
+            {t("inbox.attachmentUnavailable")}
+          </span>
+        ) : attachments.length > 0 ? (
           <div className="space-y-2">
             {attachments.map((attachment: MessageAttachment, index: number) => {
               const type = String(attachment?.type || "").toLowerCase();
@@ -200,10 +228,11 @@ const MessageItem = memo(function MessageItem({
                 return (
                   <div key={`${type}-${index}`}>
                     {isValidMediaUrl(url) ? (
-                      <img
-                        src={url}
+                      <AttachmentImage
+                        url={url}
                         alt={attachment?.name || "Inline image"}
                         className="max-w-xs rounded-xl border border-black/5"
+                        fallbackLabel={t("inbox.attachmentUnavailable")}
                       />
                     ) : (
                       <span className="text-sm italic text-gray-500">Inline image</span>
@@ -242,10 +271,11 @@ const MessageItem = memo(function MessageItem({
         ) : message.message_type === "image" ? (
           <div>
             {isValidMediaUrl(message.metadata?.image_url) ? (
-              <img
-                src={message.metadata.image_url}
+              <AttachmentImage
+                url={message.metadata.image_url}
                 alt="Attachment"
                 className="max-w-xs rounded-xl border border-black/5"
+                fallbackLabel={t("inbox.attachmentUnavailable")}
               />
             ) : (
               <span className="text-sm italic text-gray-500">[Image]</span>

@@ -97,6 +97,9 @@ export interface MessageMetadata {
   file_name?: string;
   mime_type?: string;
   file_size?: number;
+  attachment_source?: string | null;
+  attachment_storage_key?: string | null;
+  attachment_available?: boolean;
   delivery_status?: 'processing' | 'pending' | 'sent' | 'failed' | 'held' | 'dismissed';
   delivery_error?: string;
   /** true = delivered to the customer; false = HELD as a reviewable suggestion. */
