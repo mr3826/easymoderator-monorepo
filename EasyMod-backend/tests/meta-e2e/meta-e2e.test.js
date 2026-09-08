@@ -986,3 +986,65 @@ describe('META-E2E-013 — the first message on a conversation is metered', () =
         expect(await conversationEvents()).toHaveLength(1);
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// META-E2E-014 — resolve and inbound ordering
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('META-E2E-014 — resolve cannot strand a newer inbound turn', () => {
+    test('an inbound committed before Resolve keeps the conversation open', async () => {
+        await harness.deliver({
+            text: 'black panjabi ache?',
+            candidate: 'EM E2E Black Panjabi — ৳1847.',
+        });
+        const conversation = await harness.conversationFor(IDS.shopA);
+        const baselineCustomer = (await harness.messagesFor(conversation.id))
+            .filter((message) => message.sender === 'customer')
+            .at(-1);
+        expect(baselineCustomer).toBeDefined();
+
+        transport.setCandidate('EM E2E Blue Shirt — ৳990.');
+        const inbound = harness.messagePayload({
+            pageId: IDS.pageA,
+            psid: CUSTOMER_PSID,
+            text: 'blue shirt ache?',
+            mid: 'm_e2e_inbound_before_resolve',
+        });
+        expect((await harness.postWebhook(inbound)).status).toBe(200);
+
+        const outcome = await harness.resolveConversation({
+            shopId: IDS.shopA,
+            lastSeenMessageId: baselineCustomer.id,
+        });
+        expect(outcome.status).toBe('active');
+        expect(outcome.resolution_outcome).toBe('kept_open_newer_customer_message');
+
+        const [jobResult] = await harness.drainQueue();
+        expect(jobResult.sent).toBe(true);
+        expect((await harness.conversationFor(IDS.shopA)).status).toBe('active');
+    });
+
+    test('Resolve before a later inbound closes first, then the inbound reopens it', async () => {
+        await harness.deliver({
+            text: 'black panjabi ache?',
+            candidate: 'EM E2E Black Panjabi — ৳1847.',
+        });
+        const conversation = await harness.conversationFor(IDS.shopA);
+        const baselineCustomer = (await harness.messagesFor(conversation.id))
+            .filter((message) => message.sender === 'customer')
+            .at(-1);
+        const resolved = await harness.resolveConversation({
+            shopId: IDS.shopA,
+            lastSeenMessageId: baselineCustomer.id,
+        });
+        expect(resolved.status).toBe('closed');
+
+        const result = await harness.deliver({
+            text: 'blue shirt ache?',
+            candidate: 'EM E2E Blue Shirt — ৳990.',
+            mid: 'm_e2e_inbound_after_resolve',
+        });
+        expect(result.sends.length).toBeGreaterThan(0);
+        expect((await harness.conversationFor(IDS.shopA)).status).toBe('active');
+    });
+});

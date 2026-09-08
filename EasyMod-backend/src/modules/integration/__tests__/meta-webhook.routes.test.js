@@ -256,6 +256,33 @@ describe('storeIncomingMessage', () => {
         }));
     });
 
+    it('persists Messenger quick-reply payloads without dropping attachment metadata', async () => {
+        const quickReplyEvent = {
+            ...baseEvent,
+            raw_event: {
+                message: {
+                    mid: 'mid.quick-reply',
+                    text: 'Yes',
+                    quick_reply: { payload: 'SIZE_GUIDE_YES' },
+                },
+            },
+            attachments: [
+                { type: 'image', payload: { url: 'https://cdn.example/selected.png' } },
+                { type: 'file', payload: { url: 'https://cdn.example/details.pdf', name: 'details.pdf' } },
+            ],
+        };
+
+        await storeIncomingMessage(quickReplyEvent);
+
+        expect(mockMessage.create.mock.calls[0][0].metadata).toEqual(expect.objectContaining({
+            quick_reply: { payload: 'SIZE_GUIDE_YES' },
+            attachments: [
+                expect.objectContaining({ type: 'image', url: 'https://cdn.example/selected.png' }),
+                expect.objectContaining({ type: 'file', url: 'https://cdn.example/details.pdf', name: 'details.pdf' }),
+            ],
+        }));
+    });
+
     it('persists a scoped Messenger reply_to relationship and increments unread once', async () => {
         const referencedMessage = buildMessage({
             id: 'msg-referenced',

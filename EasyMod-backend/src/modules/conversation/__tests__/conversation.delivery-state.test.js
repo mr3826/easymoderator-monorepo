@@ -433,6 +433,39 @@ describe('ConversationService delivery projection', () => {
         }));
     });
 
+    it('keeps a conversation open when a customer message arrives after the merchant last saw it', async () => {
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: false,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findOne
+            .mockResolvedValueOnce({
+                id: 'last-seen-message',
+                created_at: new Date('2026-09-04T10:00:00Z'),
+            })
+            .mockResolvedValueOnce({ id: 'newer-customer-message' });
+        mockMessageModel.findAll.mockResolvedValue([]);
+
+        const result = await conversationService.updateConversation(
+            'conversation-1',
+            'shop-a',
+            { status: 'closed', last_seen_message_id: 'last-seen-message' },
+        );
+
+        expect(conversation.status).toBe('active');
+        expect(conversation.resolved_at).toBeUndefined();
+        expect(conversation.metadata).not.toHaveProperty('ai_resume_boundary_at');
+        expect(result).toEqual(expect.objectContaining({
+            status: 'active',
+            resolution_outcome: 'kept_open_newer_customer_message',
+        }));
+    });
+
     it('dismisses human-held AI candidates when Resume AI returns control', async () => {
         const held = {
             id: 'held-ai',

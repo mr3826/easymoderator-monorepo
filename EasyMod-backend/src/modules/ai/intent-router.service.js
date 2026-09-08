@@ -91,8 +91,20 @@ const normalizeReplyContext = (replyContext) => {
     const quotedText = typeof replyContext.content === 'string'
         ? replyContext.content.slice(0, 1000)
         : null;
+    const referencedFileName = typeof replyContext.file_name === 'string'
+        ? replyContext.file_name.slice(0, 1000)
+        : null;
+    const referencedType = typeof replyContext.message_type === 'string'
+        ? replyContext.message_type.slice(0, 1000)
+        : null;
     const quotedSafety = typeof sanitizePromptInput === 'function' && quotedText
         ? sanitizePromptInput(quotedText)
+        : null;
+    const fileNameSafety = typeof sanitizePromptInput === 'function' && referencedFileName
+        ? sanitizePromptInput(referencedFileName)
+        : null;
+    const typeSafety = typeof sanitizePromptInput === 'function' && referencedType
+        ? sanitizePromptInput(referencedType)
         : null;
     return {
         provider_message_id: String(providerMessageId).slice(0, 255),
@@ -104,6 +116,12 @@ const normalizeReplyContext = (replyContext) => {
         referenced_text: quotedSafety?.clean === false
             ? '[quoted text omitted: instruction-like content]'
             : quotedText,
+        referenced_type: typeSafety?.clean === false
+            ? '[referenced type omitted: instruction-like content]'
+            : referencedType,
+        referenced_file_name: fileNameSafety?.clean === false
+            ? '[file name omitted: instruction-like content]'
+            : referencedFileName,
         status: replyContext.status === 'resolved' ? 'resolved' : 'unavailable',
     };
 };

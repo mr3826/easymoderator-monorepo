@@ -187,6 +187,7 @@ export async function updateConversation(
     hitl?: boolean;
     assignee_id?: string;
     resolution_note?: string;
+    last_seen_message_id?: string;
   }
 ): Promise<Conversation> {
   const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.patch(

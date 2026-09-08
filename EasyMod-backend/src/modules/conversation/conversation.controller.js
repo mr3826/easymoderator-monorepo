@@ -1102,14 +1102,14 @@ class ConversationController {
                 });
             }
 
-            const { hitl, status, assignee_id, resolution_note } = req.body;
+            const { hitl, status, assignee_id, resolution_note, last_seen_message_id } = req.body;
             if (hitl !== undefined || status === 'closed') {
                 deliveryLock = await acquireDeliveryLock(conversationId);
             }
             const conversation = await conversationService.updateConversation(
                 conversationId,
                 shopId,
-                { hitl, status, assignee_id, resolution_note }
+                { hitl, status, assignee_id, resolution_note, last_seen_message_id }
             );
 
             // Notify other agent tabs of ownership and workflow changes. Manual

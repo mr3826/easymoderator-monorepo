@@ -13,6 +13,13 @@ export type MessageDeliveryState =
   | 'FAILED'
   | 'HELD'
   | 'DISMISSED';
+
+export interface MessageAttachment {
+  type?: 'image' | 'video' | 'audio' | 'file' | 'sticker' | string | null;
+  url?: string | null;
+  name?: string | null;
+  mime_type?: string | null;
+}
 export type SuggestionVisibility =
   | 'HIDDEN_AUTO_PROCESSING'
   | 'VISIBLE_DRAFT_REVIEW'
@@ -78,10 +85,13 @@ export type HeldReason =
   | 'policy_blocked'
   | 'provider_send_failed'
   | 'dismissed'
+  | 'resume_obsolete'
+  | 'newer_customer_message'
   | 'executed_mutation_without_outbound_send';
 
 export interface MessageMetadata {
   message_type?: MessageType;
+  attachments?: MessageAttachment[];
   image_url?: string;
   file_url?: string;
   file_name?: string;
@@ -101,6 +111,7 @@ export interface MessageMetadata {
   reply_to_internal_message_id?: string | null;
   reply_to_is_self_reply?: boolean;
   reply_to?: ReplyContext;
+  quick_reply?: { payload?: unknown };
   [key: string]: unknown;
 }
 
@@ -153,6 +164,7 @@ export interface Conversation {
   lastReadMessageId?: string | null;
   lastReadMessageAt?: string | null;
   suggestionCount?: number;
+  resolution_outcome?: 'kept_open_newer_customer_message' | null;
   hasAiSuggestion?: boolean;
   needs_merchant_reply?: boolean;
   needs_merchant_reply_reason?: string | null;
