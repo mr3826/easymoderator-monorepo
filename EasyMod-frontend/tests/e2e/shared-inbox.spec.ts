@@ -139,11 +139,11 @@ test('historical attachment renders after reload', async ({ page }) => {
     }));
     await setupRoutes(page);
     await loginAndGo(page);
-    await page.getByText('Ahmed Hassan', { exact: true }).click();
+    await page.locator('h3').filter({ hasText: 'Ahmed Hassan' }).click();
     await expect(page.locator('img[alt="Attachment"]')).toBeVisible();
 
     await page.reload();
-    await page.getByText('Ahmed Hassan', { exact: true }).click();
+    await page.locator('h3').filter({ hasText: 'Ahmed Hassan' }).click();
     await expect(page.locator('img[alt="Attachment"]')).toBeVisible();
 });
 
