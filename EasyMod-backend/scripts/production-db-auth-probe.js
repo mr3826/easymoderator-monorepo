@@ -2,16 +2,19 @@
 
 const dns = require('dns').promises;
 const crypto = require('crypto');
+const fs = require('fs/promises');
 const net = require('net');
+const path = require('path');
 const { Client } = require('pg');
+const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
 const MAX_TRACE_WINDOW_MS = 15 * 60 * 1000;
 const MAX_TRACE_ROWS = 5000;
 
 const expectedDatabase = process.env.EXPECTED_DB_NAME || 'easymod_prod';
 let failureStage = 'DB_URL';
 
-// Keep the probe standalone: it is copied into the running backend image, which
-// may predate the source tree that produced the probe script.
+// Keep this probe self-contained because production copies only this script into
+// the running image for the independent database and attachment checks.
 function decodeRenderedEnvValue(value) {
     const raw = String(value ?? '');
     const trimmed = raw.trim();
@@ -25,6 +28,74 @@ function decodeRenderedEnvValue(value) {
     } catch (_) {
         return value;
     }
+}
+
+function parseAttachmentStorageKey(value) {
+    if (typeof value !== 'string') return null;
+    const parts = value.split('/');
+    if (parts.length !== 2
+        || !/^[A-Za-z0-9_-]{1,64}$/.test(parts[0])
+        || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/.test(parts[1])
+        || parts[1].includes('..')) return null;
+    return { shopId: parts[0], fileName: parts[1] };
+}
+
+function resolvePublicAssetOrigin() {
+    const configured = [
+        process.env.PUBLIC_ASSET_URL,
+        process.env.PUBLIC_BASE_URL,
+        process.env.API_URL,
+        process.env.BASE_URL,
+    ].find(Boolean);
+    if (configured) return new URL(configured).origin;
+    return process.env.NODE_ENV === 'production'
+        ? 'https://api.easymod.tech'
+        : 'http://localhost:3000';
+}
+
+function isAllowedLegacyAssetUrl(value) {
+    if (typeof value !== 'string' || !value) return false;
+    if (value.startsWith('/')) return value.startsWith('/uploads/');
+    try {
+        return new URL(value).origin === resolvePublicAssetOrigin();
+    } catch {
+        return false;
+    }
+}
+
+function recoverStorageKeyFromLegacyUrl(value, options = {}) {
+    const expectedShopId = typeof options === 'object' ? options.expectedShopId : options;
+    if (!isAllowedLegacyAssetUrl(value)) return null;
+    let parsed;
+    try {
+        parsed = new URL(value, resolvePublicAssetOrigin());
+    } catch {
+        return null;
+    }
+    if (!parsed.pathname.startsWith('/uploads/')) return null;
+    let decodedPath;
+    try {
+        decodedPath = decodeURIComponent(parsed.pathname.slice('/uploads/'.length));
+    } catch {
+        return null;
+    }
+    const parts = decodedPath.split('/');
+    if (parts.length !== 3 || parts[0] !== 'conversation-attachments') return null;
+    const key = parseAttachmentStorageKey(`${parts[1]}/${parts[2]}`);
+    if (!key || (expectedShopId && String(expectedShopId) !== key.shopId)) return null;
+    return `${key.shopId}/${key.fileName}`;
+}
+
+function absolutePathForAttachmentKey(storageKey) {
+    const key = parseAttachmentStorageKey(storageKey);
+    if (!key) return null;
+    const uploadRoot = path.resolve(
+        process.env.EASYMOD_UPLOAD_ROOT || path.resolve(__dirname, '../uploads'),
+    );
+    const attachmentRoot = path.resolve(uploadRoot, 'conversation-attachments');
+    const absolutePath = path.resolve(attachmentRoot, key.shopId, key.fileName);
+    if (!absolutePath.startsWith(`${attachmentRoot}${path.sep}`)) return null;
+    return absolutePath;
 }
 
 function assertTcpConnection(host, port) {
@@ -134,6 +205,150 @@ function parseTraceDate(value, name) {
         throw new Error(`${name} must be an ISO timestamp`);
     }
     return date;
+}
+
+function mintProbeAttachmentUrl({ shopId, fileName, baseUrl, expires }) {
+    if (!Number.isSafeInteger(expires)) throw new Error('invalid attachment expiry');
+    const key = parseAttachmentStorageKey(`${shopId}/${fileName}`);
+    if (!key) throw new Error('invalid attachment identity');
+    const secret = process.env.CSRF_SECRET || process.env.SESSION_SECRET || '';
+    if (!secret) throw new Error('attachment signing secret is not configured');
+    const origin = new URL(baseUrl).origin;
+    const signature = crypto.createHmac('sha256', secret)
+        .update(`${key.shopId}/${key.fileName}.${expires}`)
+        .digest('hex');
+    return `${origin}/uploads/conversation-attachments/${key.shopId}/${key.fileName}`
+        + `?expires=${expires}&signature=${signature}`;
+}
+
+async function runAttachmentTrace(client) {
+    if (process.env.PROBE_ATTACHMENT_TRACE !== 'true') return false;
+
+    const messageId = String(
+        process.env.PROBE_ATTACHMENT_MESSAGE_ID || process.env.TRACE_ATTACHMENT_MESSAGE_ID || '',
+    ).trim();
+    if (!messageId) throw new Error('PROBE_ATTACHMENT_MESSAGE_ID is required');
+    const requestedShopId = String(process.env.PROBE_ATTACHMENT_SHOP_ID || '').trim();
+    const publicBaseUrl = process.env.PROBE_PUBLIC_ASSET_URL
+        || process.env.PUBLIC_ASSET_URL
+        || process.env.PUBLIC_BASE_URL
+        || process.env.API_URL
+        || process.env.BASE_URL
+        || 'https://api.easymod.tech';
+    const parsedBaseUrl = new URL(publicBaseUrl);
+    if (!['http:', 'https:'].includes(parsedBaseUrl.protocol)) {
+        throw new Error('attachment public asset URL must use HTTP(S)');
+    }
+
+    await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await client.query("SET LOCAL statement_timeout = '10s'");
+    try {
+        const result = await client.query(`
+            SELECT m.id AS message_id,
+                   m.conversation_id,
+                   m.metadata::jsonb->>'attachment_storage_key' AS attachment_storage_key,
+                   m.metadata::jsonb->>'image_url' AS image_url,
+                   m.metadata::jsonb->>'file_url' AS file_url,
+                   m.metadata::text AS metadata_text,
+                   c.shop_id
+              FROM public.messages m
+              JOIN public.conversations c ON c.id = m.conversation_id
+             WHERE m.id = $1
+               AND ($2 = '' OR c.shop_id::text = $2)
+             LIMIT 1
+        `, [messageId, requestedShopId]);
+        const row = result.rows[0];
+        console.log(`ATTACHMENT_TRACE_MESSAGE_FOUND=${row ? 'YES' : 'NO'}`);
+        if (!row) throw new Error('historical attachment message was not found');
+
+        const oldUrl = row.image_url || row.file_url || '';
+        const durableKey = parseAttachmentStorageKey(row.attachment_storage_key);
+        const recoveredKey = row.attachment_storage_key == null
+            ? recoverStorageKeyFromLegacyUrl(oldUrl, { expectedShopId: row.shop_id })
+            : null;
+        const key = durableKey || parseAttachmentStorageKey(recoveredKey);
+        const shopMatches = Boolean(key && String(row.shop_id) === key.shopId);
+        console.log(`ATTACHMENT_TRACE_DURABLE_KEY_PRESENT=${key ? 'YES' : 'NO'}`);
+        console.log(`ATTACHMENT_TRACE_DURABLE_KEY_RECOVERED=${!durableKey && key ? 'YES' : 'NO'}`);
+        console.log(`ATTACHMENT_TRACE_SHOP_MATCH=${shopMatches ? 'YES' : 'NO'}`);
+        if (!shopMatches) throw new Error('historical attachment storage key is invalid or cross-shop');
+
+        const absolutePath = absolutePathForAttachmentKey(`${key.shopId}/${key.fileName}`);
+        if (!absolutePath) throw new Error('attachment path escaped upload root');
+        const stat = await fs.stat(absolutePath).catch(() => null);
+        console.log(`ATTACHMENT_TRACE_FILE_PRESENT=${stat?.isFile() ? 'YES' : 'NO'}`);
+        if (!stat?.isFile()) throw new Error('historical attachment binary is missing from the volume');
+
+        let oldExpired = false;
+        try {
+            const oldExpires = Number(new URL(oldUrl).searchParams.get('expires'));
+            oldExpired = Number.isSafeInteger(oldExpires) && oldExpires < Math.floor(Date.now() / 1000);
+        } catch (_) {
+            oldExpired = false;
+        }
+        console.log(`ATTACHMENT_TRACE_OLD_URL_PRESENT=${oldUrl ? 'YES' : 'NO'}`);
+        console.log(`ATTACHMENT_TRACE_OLD_URL_EXPIRED=${oldExpired ? 'YES' : 'NO'}`);
+        if (!oldUrl || !oldExpired) throw new Error('historical attachment URL is not expired');
+
+        const oldResponse = await fetch(oldUrl, { signal: AbortSignal.timeout(10_000) })
+            .catch((error) => { throw new Error(`expired attachment HTTP check failed: ${error.message}`); });
+        await oldResponse.arrayBuffer();
+        console.log(`ATTACHMENT_TRACE_OLD_URL_STATUS=${oldResponse.status}`);
+        if (oldResponse.status !== 404) throw new Error('expired attachment URL did not return 404');
+
+        const messagesApiUrl = String(process.env.PROBE_MESSAGES_API_URL || '').trim();
+        if (!messagesApiUrl) throw new Error('PROBE_MESSAGES_API_URL is required');
+        const authorization = String(process.env.PROBE_AUTHORIZATION || '').trim();
+        if (!authorization) throw new Error('PROBE_AUTHORIZATION is required with PROBE_MESSAGES_API_URL');
+        const messagesResponse = await fetch(messagesApiUrl, {
+            headers: { Authorization: authorization },
+            signal: AbortSignal.timeout(10_000),
+        });
+        console.log(`ATTACHMENT_TRACE_MESSAGES_API_STATUS=${messagesResponse.status}`);
+        if (!messagesResponse.ok) throw new Error('messages API did not return 2xx');
+        const messagesPayload = await messagesResponse.json()
+            .catch((error) => { throw new Error(`messages API returned invalid JSON: ${error.message}`); });
+        const projectedMessages = messagesPayload?.data?.messages
+            || messagesPayload?.messages
+            || [];
+        const projectedMessage = Array.isArray(projectedMessages)
+            ? projectedMessages.find((message) => String(message?.id) === messageId)
+            : null;
+        if (!projectedMessage) throw new Error('messages API did not return the historical attachment message');
+        const projectedMetadata = typeof projectedMessage.metadata === 'string'
+            ? JSON.parse(projectedMessage.metadata)
+            : projectedMessage.metadata;
+        const applicationUrl = projectedMetadata?.image_url || projectedMetadata?.file_url || '';
+        console.log(`ATTACHMENT_TRACE_APPLICATION_URL_PRESENT=${applicationUrl ? 'YES' : 'NO'}`);
+        console.log(`ATTACHMENT_TRACE_APPLICATION_URL_DIFFERENT=${applicationUrl && applicationUrl !== oldUrl ? 'YES' : 'NO'}`);
+        if (!applicationUrl || applicationUrl === oldUrl) {
+            throw new Error('application returned the expired attachment URL');
+        }
+
+        let response;
+        try {
+            response = await fetch(applicationUrl, { signal: AbortSignal.timeout(10_000) });
+            const body = await response.arrayBuffer();
+            console.log(`ATTACHMENT_TRACE_HTTP_STATUS=${response.status}`);
+            console.log(`ATTACHMENT_TRACE_HTTP_BYTES=${body.byteLength > 0 ? 'PRESENT' : 'EMPTY'}`);
+            console.log(`ATTACHMENT_TRACE_HTTP_CONTENT_TYPE=${response.headers?.get?.('content-type') || ''}`);
+            if (!response.ok || body.byteLength === 0) throw new Error('application attachment URL did not return bytes');
+        } catch (error) {
+            throw new Error(`application attachment HTTP check failed: ${error.message}`);
+        }
+
+        const after = await client.query(
+            'SELECT metadata::text AS metadata_text FROM public.messages WHERE id = $1',
+            [messageId],
+        );
+        const rowUnchanged = after.rows[0]?.metadata_text === row.metadata_text;
+        console.log(`ATTACHMENT_TRACE_ROW_UNCHANGED=${rowUnchanged ? 'YES' : 'NO'}`);
+        if (!rowUnchanged) throw new Error('attachment trace observed a changed message row');
+        console.log('ATTACHMENT_TRACE=PASS');
+    } finally {
+        await client.query('ROLLBACK').catch(() => {});
+    }
+    return true;
 }
 
 /**
@@ -383,6 +598,10 @@ async function main() {
             await runInboundTrace(client);
             console.log('INBOUND_TRACE=PASS');
         }
+        if (process.env.PROBE_ATTACHMENT_TRACE === 'true') {
+            failureStage = 'ATTACHMENT_TRACE';
+            await runAttachmentTrace(client);
+        }
     } finally {
         await client.end().catch(() => {});
     }
@@ -396,4 +615,12 @@ if (require.main === module) {
     });
 }
 
-module.exports = { decodeRenderedEnvValue, main, runPreMigrationProbe, runInboundTrace };
+module.exports = {
+    decodeRenderedEnvValue,
+    main,
+    mintProbeAttachmentUrl,
+    parseAttachmentStorageKey,
+    runAttachmentTrace,
+    runPreMigrationProbe,
+    runInboundTrace,
+};

@@ -248,12 +248,12 @@ describe('Meta compliance deletion transaction', () => {
         mockModels.Message.findAll.mockResolvedValue([{
             id: 'message-1',
             metadata: {
-                image_url: 'https://easymod.tech/uploads/conversation-attachments/shop-1/file.png',
+                image_url: 'https://api.easymod.tech/uploads/conversation-attachments/shop-1/file.png',
             },
         }]);
         mockModels.Order.findAll.mockResolvedValue([{ id: 'order-1' }, { id: 'order-2' }]);
         const invoice = {
-            pdf_url: 'https://easymod.tech/uploads/invoices/shop-1/order-1.pdf',
+            pdf_url: 'https://api.easymod.tech/uploads/invoices/shop-1/order-1.pdf',
             order_data: {
                 order_number: 'ORD-1',
                 total: 1200,
@@ -528,9 +528,19 @@ describe('Meta compliance deletion transaction', () => {
     test('attachment policy ignores remote and traversal paths', () => {
         const paths = service._private.collectOwnedAttachmentPaths([
             { metadata: { image_url: 'https://attacker.invalid/private.png' } },
+            { metadata: { url: 'https://attacker.invalid/uploads/invoices/other.pdf' } },
             { metadata: { file_url: '/uploads/conversation-attachments/../secret.txt' } },
             { metadata: { file_url: '/uploads/conversation-attachments/shop-1/safe.png' } },
         ]);
         expect(paths).toEqual(['conversation-attachments/shop-1/safe.png']);
+    });
+
+    test('attachment policy collects durable storage keys only for the owning shop', () => {
+        const paths = service._private.collectOwnedAttachmentPaths([
+            { metadata: { attachment_storage_key: 'shop-1/durable.png' } },
+            { metadata: { attachment_storage_key: 'shop-2/foreign.png' } },
+        ], 'shop-1');
+
+        expect(paths).toEqual(['conversation-attachments/shop-1/durable.png']);
     });
 });

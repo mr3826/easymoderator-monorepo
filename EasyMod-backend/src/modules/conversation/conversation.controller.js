@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const { Op, literal } = require('sequelize');
+const { Op, literal, where: sequelizeWhere } = require('sequelize');
 const conversationService = require('./conversation.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
@@ -26,8 +26,20 @@ const {
     hasProviderAcknowledgement,
 } = require('./message-lifecycle');
 const { resolvePublicAssetOrigin } = require('../../config/origins');
-const config = require('../../config/config');
 const { createLogger } = require('../../utils/structured-logger');
+const {
+    ATTACHMENT_URL_TTL_SECONDS,
+    PREPARED_ATTACHMENT_METADATA,
+    absolutePathForKey,
+    attachmentSigningSecret,
+    buildStorageKey,
+    markPreparedAttachmentMetadata,
+    mintAttachmentUrl,
+    parseStorageKey,
+    recoverStorageKeyFromLegacyUrl,
+    resolveAttachmentStorageKey,
+    signAttachmentPath,
+} = require('./attachment-storage');
 
 const lifecycleLogger = createLogger('InboxLifecycle');
 
@@ -35,8 +47,6 @@ const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
 const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
 const META_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
-const ATTACHMENT_UPLOAD_DIR = path.join(__dirname, '../../../uploads/conversation-attachments');
-const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
 const ALLOWED_META_ATTACHMENT_TYPES = {
     'image/jpeg': { ext: 'jpg', metaType: 'image' },
     'image/png': { ext: 'png', metaType: 'image' },
@@ -127,32 +137,22 @@ function safePublicBaseUrl(req) {
     return resolvePublicAssetOrigin(req);
 }
 
-function attachmentSigningSecret() {
-    return config.csrfSecret || config.sessionSecret || '';
-}
-
-function signAttachmentPath(shopId, fileName, expires) {
-    return crypto.createHmac('sha256', attachmentSigningSecret())
-        .update(`${shopId}/${fileName}.${expires}`)
-        .digest('hex');
-}
-
 async function serveConversationAttachment(req, res, next) {
     try {
         const { shopId, fileName } = req.params;
         const expires = Number(req.query.expires);
         const signature = String(req.query.signature || '');
         const secret = attachmentSigningSecret();
+        const storageKey = parseStorageKey(`${shopId}/${fileName}`);
 
         if (!secret || !/^\d+$/.test(String(req.query.expires || ''))
             || !Number.isSafeInteger(expires) || expires < Math.floor(Date.now() / 1000)
-            || !/^[A-Za-z0-9_-]+$/.test(shopId)
-            || path.basename(fileName) !== fileName
+            || !storageKey
             || !/^[a-f0-9]{64}$/.test(signature)) {
             return res.status(404).end();
         }
 
-        const expected = signAttachmentPath(shopId, fileName, expires);
+        const expected = signAttachmentPath(storageKey.shopId, storageKey.fileName, expires);
         const expectedBuffer = Buffer.from(expected, 'utf8');
         const receivedBuffer = Buffer.from(signature, 'utf8');
         if (expectedBuffer.length !== receivedBuffer.length
@@ -160,7 +160,8 @@ async function serveConversationAttachment(req, res, next) {
             return res.status(404).end();
         }
 
-        const absolutePath = path.join(ATTACHMENT_UPLOAD_DIR, shopId, fileName);
+        const absolutePath = absolutePathForKey(`${storageKey.shopId}/${storageKey.fileName}`);
+        if (!absolutePath) return res.status(404).end();
         const stat = await fs.stat(absolutePath).catch(() => null);
         if (!stat?.isFile()) return res.status(404).end();
         return res.sendFile(absolutePath, { dotfiles: 'deny' }, (error) => {
@@ -175,13 +176,83 @@ function getAttachmentUrlFromMetadata(metadata = {}) {
     return metadata.image_url || metadata.file_url || metadata.file_data_url;
 }
 
+function hasConversationAttachmentPath(value) {
+    if (typeof value !== 'string' || !value) return false;
+    try {
+        const parsed = value.startsWith('/') && !value.startsWith('//')
+            ? new URL(value, 'https://local.invalid')
+            : new URL(value);
+        const decodedPath = decodeURIComponent(parsed.pathname).replace(/\\/g, '/');
+        return decodedPath.startsWith('/uploads/conversation-attachments/');
+    } catch (_) {
+        return false;
+    }
+}
+
+function preparedAttachmentResult(messageData, metadata, preparedMetadata) {
+    return markPreparedAttachmentMetadata({
+        ...messageData,
+        metadata,
+    }, preparedMetadata);
+}
+
 async function prepareOutboundAttachmentMetadata(req, shopId, messageData) {
     const metadata = { ...(messageData.metadata || {}) };
     const incomingDataUrl = metadata.file_data_url || (parseDataUrl(metadata.image_url) ? metadata.image_url : null) || (parseDataUrl(metadata.file_url) ? metadata.file_url : null);
     const existingUrl = metadata.image_url || metadata.file_url;
+    const suppliedStorageKey = metadata.attachment_storage_key;
+    let storageKey = null;
 
-    if (!incomingDataUrl && !existingUrl) {
+    if (suppliedStorageKey !== undefined && suppliedStorageKey !== null) {
+        const parsedStorageKey = parseStorageKey(suppliedStorageKey);
+        if (!parsedStorageKey || parsedStorageKey.shopId !== String(shopId)) {
+            throw makeHttpError(400, 'Attachment storage key is invalid for this shop');
+        }
+        storageKey = `${parsedStorageKey.shopId}/${parsedStorageKey.fileName}`;
+    } else if (existingUrl) {
+        storageKey = recoverStorageKeyFromLegacyUrl(existingUrl, { expectedShopId: shopId });
+        if (!storageKey && hasConversationAttachmentPath(existingUrl)) {
+            throw makeHttpError(400, 'Attachment URL is not valid for this shop');
+        }
+    }
+
+    if (!incomingDataUrl && !existingUrl && !storageKey) {
         return messageData;
+    }
+
+    if (!incomingDataUrl && storageKey) {
+        const parsedStorageKey = parseStorageKey(storageKey);
+        const publicBaseUrl = safePublicBaseUrl(req);
+        if (!isHttpsUrl(publicBaseUrl)) {
+            throw makeHttpError(400, 'Attachment delivery requires an HTTPS PUBLIC_BASE_URL or BASE_URL');
+        }
+        const publicUrl = mintAttachmentUrl({
+            shopId: parsedStorageKey.shopId,
+            fileName: parsedStorageKey.fileName,
+            baseUrl: publicBaseUrl,
+            ttlSeconds: ATTACHMENT_URL_TTL_SECONDS,
+        });
+        const messageType = metadata.message_type || messageData.message_type
+            || (metadata.image_url ? 'image' : 'file');
+        const storedMetadata = {
+            ...metadata,
+            file_url: publicUrl,
+            delivery_status: metadata.delivery_status || 'pending',
+            attachment_source: 'inbox_upload',
+            attachment_storage_key: storageKey,
+            attachment_available: true,
+        };
+        delete storedMetadata.file_data_url;
+        if (messageType === 'image') {
+            storedMetadata.image_url = publicUrl;
+        } else {
+            delete storedMetadata.image_url;
+        }
+        return preparedAttachmentResult(messageData, storedMetadata, {
+            attachment_storage_key: storageKey,
+            attachment_source: 'inbox_upload',
+            attachment_available: true,
+        });
     }
 
     if (!incomingDataUrl && existingUrl && !isHttpsUrl(existingUrl)) {
@@ -212,19 +283,23 @@ async function prepareOutboundAttachmentMetadata(req, shopId, messageData) {
     if (!isHttpsUrl(publicBaseUrl)) {
         throw makeHttpError(400, 'Attachment delivery requires an HTTPS PUBLIC_BASE_URL or BASE_URL');
     }
-    const uploadDir = path.join(ATTACHMENT_UPLOAD_DIR, shopId);
-    await fs.mkdir(uploadDir, { recursive: true });
-    const fileName = `${Date.now()}-${crypto.randomUUID()}.${allowed.ext}`;
-    const absolutePath = path.join(uploadDir, fileName);
-    await fs.writeFile(absolutePath, parsed.buffer);
-
     if (!attachmentSigningSecret()) {
         throw makeHttpError(503, 'Attachment delivery is not configured');
     }
-    const expires = Math.floor(Date.now() / 1000) + ATTACHMENT_URL_TTL_SECONDS;
-    const signature = signAttachmentPath(shopId, fileName, expires);
-    const publicPath = `/uploads/conversation-attachments/${shopId}/${fileName}`;
-    const publicUrl = `${publicBaseUrl}${publicPath}?expires=${expires}&signature=${signature}`;
+    const fileName = `${Date.now()}-${crypto.randomUUID()}.${allowed.ext}`;
+    const newStorageKey = buildStorageKey(shopId, fileName);
+    const absolutePath = absolutePathForKey(newStorageKey);
+    if (!absolutePath) throw makeHttpError(500, 'Attachment storage path is invalid');
+    const uploadDir = path.dirname(absolutePath);
+    await fs.mkdir(uploadDir, { recursive: true });
+    await fs.writeFile(absolutePath, parsed.buffer);
+
+    const publicUrl = mintAttachmentUrl({
+        shopId,
+        fileName,
+        baseUrl: publicBaseUrl,
+        ttlSeconds: ATTACHMENT_URL_TTL_SECONDS,
+    });
     const storedMetadata = {
         ...metadata,
         message_type: messageType,
@@ -233,6 +308,8 @@ async function prepareOutboundAttachmentMetadata(req, shopId, messageData) {
         file_url: publicUrl,
         delivery_status: 'pending',
         attachment_source: 'inbox_upload',
+        attachment_storage_key: newStorageKey,
+        attachment_available: true,
     };
     delete storedMetadata.file_data_url;
     if (messageType === 'image') {
@@ -241,18 +318,36 @@ async function prepareOutboundAttachmentMetadata(req, shopId, messageData) {
         delete storedMetadata.image_url;
     }
 
-    return {
+    return preparedAttachmentResult({
         ...messageData,
         message_type: messageType,
-        metadata: storedMetadata,
-    };
+    }, storedMetadata, {
+        attachment_storage_key: newStorageKey,
+        attachment_source: 'inbox_upload',
+        attachment_available: true,
+    });
 }
 
-function buildOutboundAttachments(message) {
-    const metadata = message?.metadata || {};
+function buildOutboundAttachments(message, shopId) {
+    const metadata = messageMetadata(message);
     const messageType = metadata.message_type || message?.message_type;
     if (!['image', 'file'].includes(messageType)) return [];
-    const url = getAttachmentUrlFromMetadata(metadata);
+    const isStoredAttachment = metadata.attachment_source === 'inbox_upload'
+        || metadata.attachment_storage_key !== undefined;
+    let url = getAttachmentUrlFromMetadata(metadata);
+    if (isStoredAttachment) {
+        const storageKey = resolveAttachmentStorageKey(metadata, shopId);
+        const parsedStorageKey = parseStorageKey(storageKey);
+        if (!parsedStorageKey) {
+            throw new Error('Outbound attachment storage key is invalid');
+        }
+        url = mintAttachmentUrl({
+            shopId: parsedStorageKey.shopId,
+            fileName: parsedStorageKey.fileName,
+            baseUrl: resolvePublicAssetOrigin(),
+            ttlSeconds: ATTACHMENT_URL_TTL_SECONDS,
+        });
+    }
     if (!isHttpsUrl(url)) {
         throw new Error('Outbound attachment URL must be HTTPS');
     }
@@ -279,6 +374,23 @@ function messageMetadata(message) {
         : {};
 }
 
+function projectedMessageMetadata(message, shopId) {
+    const projected = typeof conversationService.mapMessage === 'function'
+        ? conversationService.mapMessage(message, shopId)
+        : null;
+    return projected?.metadata || messageMetadata(message);
+}
+
+function providerClaimTokenPredicate(token) {
+    if (!token) return null;
+    if (!/^[a-f0-9]{32}$/i.test(String(token))) return literal('1 = 0');
+    return sequelizeWhere(
+        literal("metadata->>'provider_send_claim_token'"),
+        Op.eq,
+        String(token),
+    );
+}
+
 async function updateDeliveryStatus(shopId, conversationId, message, status, updates = {}) {
     if (!message?.id) return false;
     const deliveryState = updates.delivery_state || (
@@ -293,6 +405,7 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
         || message.metadata?.provider_message_id
         || null;
     const claimToken = messageMetadata(message).provider_send_claim_token;
+    const claimTokenPredicate = providerClaimTokenPredicate(claimToken);
     if (status === 'sent' && !providerMessageId) {
         const error = new Error('Provider acknowledgement did not include a message ID');
         error.code = 'PROVIDER_NO_ACK';
@@ -325,9 +438,7 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
             conversation_id: conversationId,
             provider_message_id: null,
             delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
-            ...(claimToken ? {
-                [Op.and]: [literal(`(metadata->>'provider_send_claim_token') = '${claimToken}'`)],
-            } : {}),
+            ...(claimTokenPredicate ? { [Op.and]: [claimTokenPredicate] } : {}),
         },
     });
     const updatedCount = Array.isArray(result) ? result[0] : 1;
@@ -350,7 +461,7 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
     sseManager.emit(shopId, 'message_delivery_updated', {
         conversation_id: conversationId,
         message_id: message.id,
-        metadata,
+        metadata: projectedMessageMetadata(message, shopId),
         delivery_state: deliveryState,
         provider_message_id: providerMessageId,
         delivery_source: metadata.delivery_source || null,
@@ -428,7 +539,7 @@ async function markOutboundProviderAttempted(conversationId, message) {
             provider_message_id: null,
             [Op.and]: [
                 literal(`(metadata->>'provider_send_claimed') = 'true'`),
-                literal(`(metadata->>'provider_send_claim_token') = '${metadata.provider_send_claim_token}'`),
+                providerClaimTokenPredicate(metadata.provider_send_claim_token),
             ],
         },
     });
@@ -463,12 +574,12 @@ async function recordLifecycleAudit({ action, shopId, conversationId, messageId,
     }));
 }
 
-async function loadProjectedMessage(messageId, conversationId) {
+async function loadProjectedMessage(messageId, conversationId, shopId) {
     if (typeof MessageModel.findOne !== 'function') return null;
     const message = await MessageModel.findOne({
         where: { id: messageId, conversation_id: conversationId },
     });
-    return message ? conversationService.mapMessage(message) : null;
+    return message ? conversationService.mapMessage(message, shopId) : null;
 }
 
 /**
@@ -495,7 +606,7 @@ async function deliverViaMetaIfApplicable(
     const content = typeof outboundMessage === 'string' ? outboundMessage : outboundMessage?.content || '';
     let attachments = [];
     try {
-        attachments = typeof outboundMessage === 'string' ? [] : buildOutboundAttachments(outboundMessage);
+        attachments = typeof outboundMessage === 'string' ? [] : buildOutboundAttachments(outboundMessage, shopId);
         const conversation = await ConvModel.findOne({
             where: { id: conversationId, shop_id: shopId },
             include: [{ model: CustomerModel, as: 'customer' }]
@@ -856,6 +967,12 @@ class ConversationController {
                 ...preparedMessageData,
                 send_idempotency_key: req.get('Idempotency-Key') || preparedMessageData.send_idempotency_key || null,
             };
+            if (preparedMessageData[PREPARED_ATTACHMENT_METADATA]) {
+                Object.defineProperty(messageData, PREPARED_ATTACHMENT_METADATA, {
+                    value: preparedMessageData[PREPARED_ATTACHMENT_METADATA],
+                    enumerable: false,
+                });
+            }
 
             const message = await conversationService.createMessage(conversationId, shopId, messageData);
 
@@ -949,7 +1066,7 @@ class ConversationController {
                 conversation_id: conversationId,
                 message_id: messageId,
                 delivery_state: normalizeDeliveryState(claim.message) || MESSAGE_DELIVERY_STATES.SEND_PENDING,
-                metadata: claim.message.metadata,
+                metadata: projectedMessageMetadata(claim.message, shopId),
             });
 
             if (!claim.alreadySent) {
@@ -993,7 +1110,8 @@ class ConversationController {
                     }));
             }
 
-            const message = await loadProjectedMessage(messageId, conversationId) || conversationService.mapMessage(claim.message);
+            const message = await loadProjectedMessage(messageId, conversationId, shopId)
+                || conversationService.mapMessage(claim.message, shopId);
             res.status(claim.alreadySent ? 200 : 200).json({
                 success: true,
                 data: { message },
@@ -1040,7 +1158,7 @@ class ConversationController {
                 conversation_id: conversationId,
                 message_id: messageId,
                 delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
-                metadata: result.message.metadata,
+                metadata: projectedMessageMetadata(result.message, shopId),
             });
             for (const siblingMessageId of result.dismissedSiblingMessageIds || []) {
                 sseManager.emit(shopId, 'message_delivery_updated', {
@@ -1057,7 +1175,7 @@ class ConversationController {
                     },
                 });
             }
-            res.json({ success: true, data: { message: conversationService.mapMessage(result.message) } });
+            res.json({ success: true, data: { message: conversationService.mapMessage(result.message, shopId) } });
         } catch (error) {
             next(error);
         }
@@ -1400,5 +1518,9 @@ const conversationController = new ConversationController();
 conversationController.serveConversationAttachment = serveConversationAttachment;
 // Exposed for unit testing only — not part of the route surface.
 conversationController._deliverViaMetaIfApplicable = deliverViaMetaIfApplicable;
+conversationController._private = {
+    buildOutboundAttachments,
+    prepareOutboundAttachmentMetadata,
+};
 
 module.exports = conversationController;
