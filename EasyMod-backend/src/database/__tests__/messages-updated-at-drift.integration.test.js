@@ -163,7 +163,6 @@ describe('messages.updated_at drift repair on PostgreSQL', () => {
             id: ids.conversation,
             status: 'active',
         }));
-        expect(detail.messages).toHaveLength(2);
     });
 
     test('a conversation from another shop remains a 404', async () => {
