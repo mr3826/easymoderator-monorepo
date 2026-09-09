@@ -715,10 +715,10 @@ async function releaseAutomaticCandidate(message, idempotencyKey) {
 }
 
 /**
- * Start the durable timeout clock only after the inbound dedup claim. Every
- * path clears both timers before the worker returns. Redis makes the holding
- * message replay-safe across BullMQ attempts; the local flag prevents the two
- * clocks from racing inside one attempt.
+ * Recovery callers may opt into a durable provider-delay holding clock. The
+ * normal AI pipeline keeps that clock disabled while context, grounding, and
+ * model work are still in flight; otherwise a slow model can trigger a
+ * customer-facing holding message before the actual AUTO reply is ready.
  */
 function createRecoveryControl({
     turnId,
@@ -730,6 +730,7 @@ function createRecoveryControl({
     language = 'en',
     turnStartedAt = new Date(),
     initialState = 'RECEIVED',
+    providerDelayRecovery = true,
 }) {
     const recovery = require('../modules/ai/recovery/turn-recovery.service');
     const { getHoldingTemplate } = require('../modules/ai/recovery/holding-templates');
@@ -1157,8 +1158,22 @@ function createRecoveryControl({
         });
         return inFlight;
     };
-    const fiveSecondTimer = setTimeout(() => { void scheduleHolding('PROVIDER_DELAY'); }, Math.max(0, 5000 - elapsedMs));
-    const eightSecondTimer = setTimeout(() => { void scheduleHolding('PROVIDER_DELAY', { hardTimeout: true }); }, Math.max(0, 8000 - elapsedMs));
+    const fiveSecondTimer = providerDelayRecovery
+        ? setTimeout(() => { void scheduleHolding('PROVIDER_DELAY'); }, Math.max(0, 5000 - elapsedMs))
+        : null;
+    const eightSecondTimer = providerDelayRecovery
+        ? setTimeout(() => { void scheduleHolding('PROVIDER_DELAY', { hardTimeout: true }); }, Math.max(0, 8000 - elapsedMs))
+        : null;
+
+    if (!providerDelayRecovery) {
+        lifecycleLogger.info('ai_recovery_provider_delay_watch_skipped', {
+            shopId,
+            conversationId,
+            turnId,
+            stage: 'AI_PIPELINE_BEFORE_PROVIDER_BOUNDARY',
+            reason: 'model_and_grounding_work_must_not_emit_a_provider_holding_message',
+        });
+    }
 
     return {
         transitionTo,
@@ -1910,6 +1925,10 @@ async function processMessageJob(job) {
             language: job.data.language || 'en',
             turnStartedAt: started.turn.turn_started_at,
             initialState: started.turn.state || 'RECEIVED',
+            // A model can legitimately take longer than the recovery holding
+            // threshold. Do not send a second provider message while the AI
+            // pipeline is still before its irreversible send boundary.
+            providerDelayRecovery: false,
         });
     } catch (recoveryErr) {
         console.warn(`[worker] Recovery state unavailable for turn ${turnId}: ${recoveryErr.message}`);
