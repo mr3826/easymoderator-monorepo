@@ -13,6 +13,8 @@ const mockMetaChannel: MetaChannel = {
   displayName: 'My Facebook Page',
   pictureUrl: null,
   status: 'CONNECTED',
+  isHealthy: true,
+  needsReconnect: false,
   lastError: null,
   tokenExpiresAt: null,
   tokenLastRefreshedAt: new Date().toISOString(),
@@ -32,6 +34,7 @@ const {
   mockListMetaChannels,
   mockDisconnectMetaChannel,
   mockInitiateMetaOAuth,
+  mockReconnectMetaChannel,
   mockHandleMetaOAuthCallback,
   mockConnectMetaAsset,
 } = vi.hoisted(() => {
@@ -39,6 +42,7 @@ const {
     mockListMetaChannels:      vi.fn().mockResolvedValue([]),
     mockDisconnectMetaChannel: vi.fn().mockResolvedValue({ id: 'mc-1' }),
     mockInitiateMetaOAuth:     vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' }),
+    mockReconnectMetaChannel:   vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com', state: 'state-reconnect', channelId: 'mc-1', platform: 'facebook' }),
     mockHandleMetaOAuthCallback: vi.fn().mockResolvedValue({ pages: [], tempToken: 'tmp' }),
     mockConnectMetaAsset:      vi.fn().mockResolvedValue({ webhookWarning: null }),
   };
@@ -48,7 +52,7 @@ const {
 vi.mock('@/api/domains/meta-channels', () => ({
   listMetaChannels:           mockListMetaChannels,
   disconnectMetaChannel:      mockDisconnectMetaChannel,
-  reconnectMetaChannel:       vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com', state: 'st', channelId: 'mc-1', platform: 'facebook' }),
+  reconnectMetaChannel:       mockReconnectMetaChannel,
   pingMetaChannel:            vi.fn().mockResolvedValue({ ping: { ok: true, latencyMs: 10 } }),
   getMetaChannelConsentSummary: vi.fn().mockResolvedValue({ channelId: 'mc-1', counts: { optIns: 0, optOuts: 0, deauthorized: 0, dataDeleted: 0 }, recentEvents: [] }),
   updateMetaChannelPurposeLabel: vi.fn().mockResolvedValue({}),
@@ -105,9 +109,11 @@ describe('ChatSettings', () => {
     mockListMetaChannels.mockReset().mockResolvedValue(mockChannels);
     mockDisconnectMetaChannel.mockReset().mockResolvedValue({ id: 'mc-1' });
     mockInitiateMetaOAuth.mockReset().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' });
+    mockReconnectMetaChannel.mockReset().mockResolvedValue({ redirectUrl: 'https://example.com', state: 'state-reconnect', channelId: 'mc-1', platform: 'facebook' });
     mockHandleMetaOAuthCallback.mockReset().mockResolvedValue({ pages: [], tempToken: 'tmp' });
     mockConnectMetaAsset.mockReset().mockResolvedValue({ webhookWarning: null });
     lastBroadcastChannel = null;
+    sessionStorage.clear();
 
     vi.spyOn(window, 'open').mockReturnValue({ closed: false, close: vi.fn() } as unknown as Window);
     Object.defineProperty(globalThis, 'BroadcastChannel', {
@@ -324,6 +330,82 @@ describe('ChatSettings', () => {
     expect(screen.queryByText('GRANULAR_TARGET')).not.toBeInTheDocument();
   });
 
+  it('allows a reconnect-required Page to be selected and preselects it after OAuth', async () => {
+    mockListMetaChannels.mockResolvedValue([{
+      ...mockMetaChannel,
+      status: 'TOKEN_EXPIRED',
+      isHealthy: false,
+      needsReconnect: true,
+    }]);
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [{
+        id: 'page-123',
+        name: 'My Facebook Page',
+        category: null,
+        pictureUrl: null,
+        tasks: ['MESSAGING', 'MANAGE'],
+        connectable: true,
+        reason: null,
+      }],
+      tempToken: 'tmp-reconnect',
+    });
+
+    await renderComponent();
+
+    const reconnectButton = await screen.findByRole('button', { name: /Reconnect Facebook Page/i });
+    expect(reconnectButton).toBeEnabled();
+    fireEvent.click(reconnectButton);
+    await waitFor(() => expect(mockReconnectMetaChannel).toHaveBeenCalledWith('mc-1'));
+
+    await act(async () => {
+      lastBroadcastChannel?.onmessage?.({
+        data: { type: 'OAUTH_SUCCESS', code: 'reconnect-code', state: 'state-reconnect' },
+      });
+      await flushPromises();
+    });
+
+    expect((await screen.findAllByText('My Facebook Page')).length).toBeGreaterThan(0);
+    const pagePickerText = screen.getAllByText('My Facebook Page').find((node) => node.closest('label'));
+    const pageCheckbox = pagePickerText?.closest('label')?.querySelector('input');
+    expect(pageCheckbox).not.toBeDisabled();
+    expect(pageCheckbox).toBeChecked();
+    expect(screen.getByRole('button', { name: /Connect \(1\)/i })).toBeEnabled();
+    expect(screen.getAllByText('Reconnect').length).toBeGreaterThan(0);
+  });
+
+  it('keeps a healthy Page disabled with its Connected badge', async () => {
+    mockListMetaChannels.mockResolvedValue([{ ...mockMetaChannel }]);
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [{
+        id: 'page-123',
+        name: 'My Facebook Page',
+        category: null,
+        pictureUrl: null,
+        tasks: ['MESSAGING', 'MANAGE'],
+        connectable: true,
+        reason: null,
+      }],
+      tempToken: 'tmp-healthy',
+    });
+
+    await renderComponent();
+    fireEvent.click(await screen.findByRole('button', { name: /Add another Facebook Page/i }));
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'));
+
+    await act(async () => {
+      lastBroadcastChannel?.onmessage?.({
+        data: { type: 'OAUTH_SUCCESS', code: 'code-healthy', state: 'state-123' },
+      });
+      await flushPromises();
+    });
+
+    const pagePickerText = screen.getAllByText('My Facebook Page').find((node) => node.closest('label'));
+    const pageCheckbox = pagePickerText?.closest('label')?.querySelector('input');
+    expect(pageCheckbox).toBeDisabled();
+    expect(screen.getAllByText('Connected').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Connect \(0\)/i })).toBeDisabled();
+  });
+
   // ── Disconnect ──────────────────────────────────────────────────────────
 
   it('calls disconnectMetaChannel when disconnect is confirmed', async () => {
@@ -343,6 +425,8 @@ describe('ChatSettings', () => {
     mockListMetaChannels.mockResolvedValueOnce([{
       ...mockMetaChannel,
       status: 'DISCONNECTED',
+      isHealthy: false,
+      needsReconnect: false,
     }]);
 
     await renderComponent();
@@ -397,6 +481,8 @@ describe('ChatSettings', () => {
     mockListMetaChannels.mockResolvedValueOnce([{
       ...mockMetaChannel,
       status: 'ERROR',
+      isHealthy: false,
+      needsReconnect: true,
       lastError: 'webhook_subscription_unverified',
     }]);
 
@@ -411,6 +497,8 @@ describe('ChatSettings', () => {
     mockListMetaChannels.mockResolvedValueOnce([{
       ...mockMetaChannel,
       status: 'ERROR',
+      isHealthy: false,
+      needsReconnect: true,
       lastError: 'some_other_error',
     }]);
 

@@ -38,6 +38,8 @@ export interface MetaChannel {
   displayName: string;
   pictureUrl: string | null;
   status: MetaChannelStatus;
+  isHealthy: boolean;
+  needsReconnect: boolean;
   lastError: string | null;
   tokenExpiresAt: string | null;
   tokenLastRefreshedAt: string | null;

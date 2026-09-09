@@ -64,6 +64,7 @@ export default function ChatSettings() {
 
   const [activeOAuth, setActiveOAuth] = useState<{
     step: "connecting" | "page-select";
+    reconnectChannelId?: string;
   } | null>(null);
   const [availablePages, setAvailablePages] = useState<MetaOAuthAsset[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<Set<string>>(new Set());
@@ -159,6 +160,7 @@ export default function ChatSettings() {
     }
     oauthInProgressRef.current = true;
     try {
+      sessionStorage.removeItem("easymod_oauth_channel_id");
       trackFunnelEvent("facebook_connect_started", { surface: "chat_settings" });
       const { redirectUrl } = await initiateMetaOAuth("facebook");
 
@@ -191,6 +193,7 @@ export default function ChatSettings() {
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
           if (!expectedNonce || data.state !== expectedNonce) {
             toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
+            sessionStorage.removeItem("easymod_oauth_channel_id");
             setActiveOAuth(null);
             cleanup();
             return;
@@ -209,6 +212,7 @@ export default function ChatSettings() {
             });
         } else if (data?.type === "OAUTH_ERROR") {
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
+          sessionStorage.removeItem("easymod_oauth_channel_id");
           toast.error(data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
           setActiveOAuth(null);
         }
@@ -225,6 +229,7 @@ export default function ChatSettings() {
       window.addEventListener("message", handler);
     } catch {
       sessionStorage.removeItem(OAUTH_NONCE_KEY);
+      sessionStorage.removeItem("easymod_oauth_channel_id");
       oauthInProgressRef.current = false;
       toast.error(t("channels.errors.oauthInitFailed", "সংযোগ শুরু করা যায়নি"));
     }
@@ -238,6 +243,7 @@ export default function ChatSettings() {
       oauthListenerRef.current = null;
     }
     sessionStorage.removeItem(OAUTH_NONCE_KEY);
+    sessionStorage.removeItem("easymod_oauth_channel_id");
     setActiveOAuth(null);
     setAvailablePages([]);
     setSelectedPageIds(new Set());
@@ -279,6 +285,7 @@ export default function ChatSettings() {
         if (result.webhookWarning) webhookWarning = result.webhookWarning;
       }
       await fetchChannels();
+      sessionStorage.removeItem("easymod_oauth_channel_id");
       trackFunnelEvent("facebook_connect_succeeded", {
         pages_connected: pagesToConnect.length,
       }, { onceKey: "facebook_connect_succeeded" });
@@ -333,6 +340,7 @@ export default function ChatSettings() {
       return;
     }
     oauthInProgressRef.current = true;
+    const reconnectChannelId = channel.id;
     try {
       const { redirectUrl, state } = await reconnectMetaChannel(channel.id);
 
@@ -342,13 +350,14 @@ export default function ChatSettings() {
         /* non-critical */
       }
       sessionStorage.setItem("easymod_oauth_channel_type", "facebook");
+      sessionStorage.setItem("easymod_oauth_channel_id", reconnectChannelId);
 
       oauthPopupRef.current = window.open(
         redirectUrl,
         "meta_oauth",
         "width=600,height=700,left=200,top=100",
       );
-      setActiveOAuth({ step: "connecting" });
+      setActiveOAuth({ step: "connecting", reconnectChannelId });
 
       const bc = new BroadcastChannel("easymod_oauth");
       const cleanup = () => {
@@ -364,6 +373,7 @@ export default function ChatSettings() {
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
           if (!expectedNonce || data.state !== expectedNonce) {
             toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
+            sessionStorage.removeItem("easymod_oauth_channel_id");
             setActiveOAuth(null);
             cleanup();
             return;
@@ -372,9 +382,10 @@ export default function ChatSettings() {
           handleMetaOAuthCallback(data.code, data.state)
             .then((result) => {
               setAvailablePages(result.pages);
-              setSelectedPageIds(new Set());
+              const reconnectPage = result.pages.find((page) => page.id === channel.metaAssetId);
+              setSelectedPageIds(reconnectPage ? new Set([reconnectPage.id]) : new Set());
               setTempToken(result.tempToken);
-              setActiveOAuth({ step: "page-select" });
+              setActiveOAuth({ step: "page-select", reconnectChannelId });
             })
             .catch((err) => {
               reportConnectError("OAuth callback", err);
@@ -382,6 +393,7 @@ export default function ChatSettings() {
             });
         } else if (data?.type === "OAUTH_ERROR") {
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
+          sessionStorage.removeItem("easymod_oauth_channel_id");
           toast.error(data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
           setActiveOAuth(null);
         }
@@ -398,6 +410,7 @@ export default function ChatSettings() {
       window.addEventListener("message", handler);
     } catch {
       sessionStorage.removeItem(OAUTH_NONCE_KEY);
+      sessionStorage.removeItem("easymod_oauth_channel_id");
       oauthInProgressRef.current = false;
       toast.error(t("channels.errors.oauthInitFailed", "সংযোগ শুরু করা যায়নি"));
     }
@@ -436,8 +449,14 @@ export default function ChatSettings() {
       ? "bg-red-50 text-red-700"
       : "bg-green-50 text-green-700";
 
-  // Asset IDs already connected — used to disable those rows in the page picker.
-  const alreadyConnectedAssetIds = new Set(channels.map((c) => c.metaAssetId));
+  // Only healthy channels block adding the same Page. Reconnect-required
+  // channels remain selectable so OAuth can heal the existing row in place.
+  const alreadyConnectedAssetIds = new Set(
+    channels.filter((channel) => channel.isHealthy).map((channel) => channel.metaAssetId),
+  );
+  const reconnectRequiredAssetIds = new Set(
+    channels.filter((channel) => channel.needsReconnect).map((channel) => channel.metaAssetId),
+  );
   const selectedPageCount = availablePages.filter(
     (page) => page.connectable === true
       && selectedPageIds.has(page.id)
@@ -518,14 +537,17 @@ export default function ChatSettings() {
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {availablePages.map((page) => {
                     const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
+                    const needsReconnect = !isAlreadyConnected && reconnectRequiredAssetIds.has(page.id);
                     const isConnectable = page.connectable === true;
                     const isDisabled = isAlreadyConnected || !isConnectable;
                     return (
                       <label
                         key={page.id}
                         className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
-                          isDisabled
+                          isAlreadyConnected
                             ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
+                            : !isConnectable
+                            ? "border-amber-200 bg-amber-50 cursor-not-allowed opacity-80"
                             : selectedPageIds.has(page.id)
                             ? "border-blue-500 bg-white cursor-pointer"
                             : "border-gray-200 bg-white hover:bg-gray-50 cursor-pointer"
@@ -563,6 +585,12 @@ export default function ChatSettings() {
                           <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
                             <Check className="w-3 h-3" />
                             {t("channels.health.connected")}
+                          </span>
+                        )}
+                        {needsReconnect && (
+                          <span className="flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                            <AlertCircle className="w-3 h-3" />
+                            {t("channels.badge.reconnect")}
                           </span>
                         )}
                       </label>
@@ -633,8 +661,8 @@ export default function ChatSettings() {
       {!isLoading && !loadError && channels.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2">
           {channels.map((channel) => {
-            const isConnected = channel.status === "CONNECTED";
-            const isTokenExpired = channel.status === "TOKEN_EXPIRED" || channel.status === "REVOKED";
+            const isConnected = channel.isHealthy;
+            const needsReconnect = channel.needsReconnect;
             const isErrored = channel.status === "ERROR";
             const isActionRequired =
               channel.status === "ERROR" &&
@@ -682,7 +710,7 @@ export default function ChatSettings() {
                       {t("channels.statusActive")}
                     </span>
                   )}
-                  {isTokenExpired && (
+                  {needsReconnect && !isErrored && (
                     <span className="flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
                       <AlertCircle className="w-3 h-3" />
                       {t("channels.badge.reconnect")}
@@ -720,7 +748,7 @@ export default function ChatSettings() {
                     );
                   })()}
 
-                {!isConnected && isTokenExpired && (
+                {!isConnected && needsReconnect && (
                   <button
                     onClick={() => handleReconnect(channel)}
                     style={{ backgroundColor: FB_BRAND }}
