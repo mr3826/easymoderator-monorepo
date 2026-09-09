@@ -65,6 +65,7 @@ export default function ChatSettings() {
   const [activeOAuth, setActiveOAuth] = useState<{
     step: "connecting" | "page-select";
     reconnectChannelId?: string;
+    reconnectAssetId?: string;
   } | null>(null);
   const [availablePages, setAvailablePages] = useState<MetaOAuthAsset[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<Set<string>>(new Set());
@@ -105,7 +106,7 @@ export default function ChatSettings() {
     }
   };
 
-  const fetchChannels = async () => {
+  const fetchChannels = async (): Promise<boolean> => {
     try {
       setIsLoading(true);
       setLoadError(null);
@@ -113,9 +114,11 @@ export default function ChatSettings() {
       setChannels(
         fetched.filter((c) => c.platform === "facebook" && c.status !== "DISCONNECTED"),
       );
+      return true;
     } catch (error: unknown) {
       const { code, message } = extractMetaApiError(error);
       setLoadError(getMetaErrorMessage(code, message, "en"));
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -258,6 +261,7 @@ export default function ChatSettings() {
   const togglePageSelection = (pageId: string) => {
     const page = availablePages.find((candidate) => candidate.id === pageId);
     if (page?.connectable !== true) return;
+    if (activeOAuth?.reconnectAssetId && pageId !== activeOAuth.reconnectAssetId) return;
 
     setSelectedPageIds((prev) => {
       const next = new Set(prev);
@@ -284,7 +288,13 @@ export default function ChatSettings() {
         });
         if (result.webhookWarning) webhookWarning = result.webhookWarning;
       }
-      await fetchChannels();
+      const refreshed = await fetchChannels();
+      if (!refreshed) {
+        throw new Error(t(
+          "channels.errors.refreshFailed",
+          "The connection was saved, but the channel status could not be refreshed. Reload the page to verify.",
+        ));
+      }
       sessionStorage.removeItem("easymod_oauth_channel_id");
       trackFunnelEvent("facebook_connect_succeeded", {
         pages_connected: pagesToConnect.length,
@@ -382,10 +392,11 @@ export default function ChatSettings() {
           handleMetaOAuthCallback(data.code, data.state)
             .then((result) => {
               setAvailablePages(result.pages);
-              const reconnectPage = result.pages.find((page) => page.id === channel.metaAssetId);
+              const reconnectAssetId = result.reconnectAssetId || channel.metaAssetId;
+              const reconnectPage = result.pages.find((page) => page.id === reconnectAssetId);
               setSelectedPageIds(reconnectPage ? new Set([reconnectPage.id]) : new Set());
               setTempToken(result.tempToken);
-              setActiveOAuth({ step: "page-select", reconnectChannelId });
+              setActiveOAuth({ step: "page-select", reconnectChannelId, reconnectAssetId });
             })
             .catch((err) => {
               reportConnectError("OAuth callback", err);
@@ -538,13 +549,15 @@ export default function ChatSettings() {
                   {availablePages.map((page) => {
                     const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
                     const needsReconnect = !isAlreadyConnected && reconnectRequiredAssetIds.has(page.id);
+                    const isOutsideReconnectTarget = Boolean(activeOAuth?.reconnectAssetId)
+                      && page.id !== activeOAuth?.reconnectAssetId;
                     const isConnectable = page.connectable === true;
-                    const isDisabled = isAlreadyConnected || !isConnectable;
+                    const isDisabled = isAlreadyConnected || !isConnectable || isOutsideReconnectTarget;
                     return (
                       <label
                         key={page.id}
                         className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
-                          isAlreadyConnected
+                          isAlreadyConnected || isOutsideReconnectTarget
                             ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
                             : !isConnectable
                             ? "border-amber-200 bg-amber-50 cursor-not-allowed opacity-80"

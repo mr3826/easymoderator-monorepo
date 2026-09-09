@@ -35,16 +35,27 @@ function normalizePlatform(platform) {
     return null;
 }
 
-function canReleaseCrossShopClaim(channel, userId) {
+async function lockMetaAssetClaim(transaction, metaAssetId) {
+    if (typeof sequelize.getDialect !== 'function' || sequelize.getDialect() !== 'postgres') return;
+    if (typeof sequelize.query !== 'function') return;
+
+    // Serialize connects for the same Page before the cross-tenant lookup. The
+    // per-shop unique index cannot prevent two shops from winning a race.
+    await sequelize.query(
+        'SELECT pg_advisory_xact_lock(hashtext(:lockKey))',
+        {
+            replacements: { lockKey: `easymod:meta-channel:${metaAssetId}` },
+            transaction,
+        },
+    );
+}
+
+function canReleaseCrossShopClaim(channel) {
     if (!channel) return false;
     // Only an explicit disconnect relinquishes a claim. A broken connection
     // can still belong to its merchant and must not be taken over silently.
     if (channel.status === 'DISCONNECTED') return true;
-    // Legacy rows before the OAuth audit fix can have no connector id. A fresh
-    // Meta OAuth page token is the current ownership proof, so let those rows be
-    // released instead of permanently blocking the Page.
-    if (!channel.connected_by_user_id) return true;
-    return sameId(channel.connected_by_user_id, userId);
+    return false;
 }
 
 class MetaChannelService {
@@ -88,10 +99,10 @@ class MetaChannelService {
         const releasedConflictingChannels = [];
         try {
             const now = new Date();
+            await lockMetaAssetClaim(transaction, metaAssetId);
             // Check if this asset is claimed by a different shop (cross-shop guard).
-            // Only explicitly disconnected or legacy-unowned claims can be
-            // released after fresh Meta OAuth. Broken owned claims still block
-            // to prevent accidental tenant takeover.
+            // Only explicitly disconnected claims can be released after fresh
+            // Meta OAuth. Missing connector audit data is not ownership proof.
             const conflictingChannels = await MetaChannel.findAll({
                 where: {
                     meta_asset_id: metaAssetId,
@@ -100,7 +111,7 @@ class MetaChannelService {
                 transaction
             });
             const blockingConflict = conflictingChannels.find((existing) => (
-                !canReleaseCrossShopClaim(existing, userId)
+                !canReleaseCrossShopClaim(existing)
             ));
             if (blockingConflict) {
                 throw new AppError(

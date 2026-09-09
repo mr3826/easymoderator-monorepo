@@ -46,16 +46,24 @@ function findAuthorizedPage(pages, assetId) {
  * @param {string} userId
  * @param {string} shopId
  * @param {'facebook'} platform
+ * @param {{ targetChannelId?: string, targetAssetId?: string }|null} [reconnectTarget]
  * @returns {{ redirectUrl: string, state: string }}
  */
-async function initiateOAuth(userId, shopId, platform) {
+async function initiateOAuth(userId, shopId, platform, reconnectTarget = null) {
     const nonce = crypto.randomBytes(16).toString('hex');
     const state = `${platform}:${shopId}:${userId}:${nonce}`;
 
     // Bind the exact redirect URI to this single-use state. This keeps OAuth
     // exchanges valid if configuration changes while a Facebook dialog is open.
     const redirectUri = config.metaOAuthRedirectUri;
-    await stateStore.put(state, { userId, shopId, platform, redirectUri });
+    await stateStore.put(state, {
+        userId,
+        shopId,
+        platform,
+        redirectUri,
+        reconnectChannelId: reconnectTarget?.targetChannelId || null,
+        reconnectAssetId: reconnectTarget?.targetAssetId || null,
+    });
 
     const provider = getProvider('facebook');
     const redirectUrl = await provider.buildAuthUrl({ state, scopes: [], redirectUri });
@@ -72,7 +80,7 @@ async function initiateOAuth(userId, shopId, platform) {
  * @param {string} state  — must match a previously stored initiateOAuth state
  * @param {string} userId
  * @param {string} shopId
- * @returns {{ pages: Asset[], tempToken: string }}
+ * @returns {{ pages: Asset[], tempToken: string, reconnectChannelId: string|null, reconnectAssetId: string|null }}
  */
 async function handleCallback(code, state, userId, shopId) {
     // Recover state (validates CSRF nonce)
@@ -111,10 +119,17 @@ async function handleCallback(code, state, userId, shopId) {
         metaIdentity,
         userId,
         shopId,
+        reconnectChannelId: stored.reconnectChannelId || null,
+        reconnectAssetId: stored.reconnectAssetId || null,
     });
 
     logger.info('OAuth callback processed', { shopId, platform, pageCount: pages.length });
-    return { pages, tempToken };
+    return {
+        pages,
+        tempToken,
+        reconnectChannelId: stored.reconnectChannelId || null,
+        reconnectAssetId: stored.reconnectAssetId || null,
+    };
 }
 
 /**
@@ -151,6 +166,22 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         throw Object.assign(new Error('This Facebook Page was not selected in the Meta authorization step. Please reconnect and select it in Facebook first.'), { status: 403 });
     }
 
+    if (callbackPayload.reconnectChannelId || callbackPayload.reconnectAssetId) {
+        const targetMatches = callbackPayload.reconnectChannelId
+            && callbackPayload.reconnectAssetId
+            && String(callbackPayload.reconnectAssetId) === String(assetId);
+        const targetChannel = targetMatches
+            ? await metaChannelService.findByShopAndAsset(shopId, callbackPayload.reconnectAssetId)
+            : null;
+        if (!targetChannel || String(targetChannel.id) !== String(callbackPayload.reconnectChannelId)) {
+            throw new AppError(
+                'Reconnect must update the Page connection that started this OAuth flow.',
+                409,
+                'META_RECONNECT_TARGET_MISMATCH',
+            );
+        }
+    }
+
     const eligibility = evaluatePageEligibility(authorizedPage.tasks);
     if (!eligibility.connectable) {
         throw new AppError(
@@ -178,7 +209,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     // Upsert into meta_channels. NOTE: the key is `userId` — upsertFromOAuth
     // destructures `userId` (not `connectedByUserId`); the old name left
     // connected_by_user_id NULL on every connect.
-    const channel = await metaChannelService.upsertFromOAuth({
+    let channel = await metaChannelService.upsertFromOAuth({
         shopId,
         platform,
         metaAssetId: assetId,
@@ -256,16 +287,16 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         await provider.subscribeWebhook({ channel });
         const verify = await provider.verifyWebhookSubscription({ channel });
         if (verify.ok) {
-            await metaChannelService.confirmWebhookActive(channel.id, verify.fields);
+            channel = await metaChannelService.confirmWebhookActive(channel.id, verify.fields);
             logger.info('Webhook subscribed + verified', { channelId: channel.id, platform });
         } else {
             webhookWarning = 'Webhook subscription could not be verified — action required.';
-            await metaChannelService.updateStatus(channel.id, 'ERROR', 'webhook_subscription_unverified');
+            channel = await metaChannelService.updateStatus(channel.id, 'ERROR', 'webhook_subscription_unverified');
             logger.warn('Webhook unverified after subscribe', { channelId: channel.id, fields: verify.fields });
         }
     } catch (err) {
         webhookWarning = `Webhook subscription failed: ${err.message}`;
-        await metaChannelService.updateStatus(channel.id, 'ERROR', 'webhook_subscription_failed');
+        channel = await metaChannelService.updateStatus(channel.id, 'ERROR', 'webhook_subscription_failed');
         logger.warn('Webhook subscription failed', { channelId: channel.id, err: err.message });
     }
 

@@ -126,6 +126,8 @@ describe('ChatSettings (Channels)', () => {
     mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [],
       tempToken: 't'.repeat(64),
+      reconnectChannelId: null,
+      reconnectAssetId: null,
     } as MetaOAuthCallbackResult)
 
     await act(async () => {
@@ -199,6 +201,8 @@ describe('ChatSettings (Channels)', () => {
         { id: 'page-2', name: 'Page Two', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MODERATE'], connectable: true, reason: null },
       ],
       tempToken: 't'.repeat(64),
+      reconnectChannelId: null,
+      reconnectAssetId: null,
     } as MetaOAuthCallbackResult)
 
     await act(async () => {
@@ -331,6 +335,8 @@ describe('ChatSettings (Channels)', () => {
     mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [{ id: 'page-1', name: 'Page One', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MANAGE'], connectable: true, reason: null }],
       tempToken: 't'.repeat(64),
+      reconnectChannelId: null,
+      reconnectAssetId: null,
     } as MetaOAuthCallbackResult)
     mockConnectMetaAsset.mockRejectedValueOnce({
       statusCode: 403,
