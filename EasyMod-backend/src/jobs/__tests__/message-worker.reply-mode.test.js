@@ -297,6 +297,40 @@ test('DRAFT stores a reviewable candidate and never calls the provider', async (
     }));
 });
 
+test('AUTO waits for a slow model without sending a recovery holding message', async () => {
+    let resolveModel;
+    mockProcessNewIntent.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveModel = resolve;
+    }));
+
+    const processing = processMessageJob(makeJob());
+    for (let attempt = 0; attempt < 20 && !mockProcessNewIntent.mock.calls.length; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(mockProcessNewIntent).toHaveBeenCalledTimes(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 5500));
+    expect(mockSendMessage).not.toHaveBeenCalled();
+
+    resolveModel({
+        response: 'candidate response',
+        confidence: 0.95,
+        source: 'llm',
+        grounding: {
+            productStatus: 'NO_CANDIDATE',
+            mediaStatus: 'NOT_REQUESTED',
+            mediaProductId: null,
+            verifiedProducts: [],
+            knowledgeIds: [],
+        },
+        attachments: [],
+    });
+
+    const result = await processing;
+    expect(result.sent).toBe(true);
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+});
+
 test('Page automation_mode and ai_auto_reply cannot override an AUTO business', async () => {
     mockGetChannelSettings.mockResolvedValue({
         ...channelSettings,
