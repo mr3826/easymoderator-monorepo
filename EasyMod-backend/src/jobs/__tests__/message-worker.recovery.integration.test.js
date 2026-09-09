@@ -159,6 +159,27 @@ test('recovery holding delivery rechecks business mode before provider delivery'
     }
 });
 
+test('AI pipeline turns do not emit provider-delay holding messages before the send boundary', async () => {
+    const control = workerPrivate.createRecoveryControl({
+        turnId: 'ai-pipeline-turn',
+        shopId: IDS.shopA,
+        conversationId: CONVERSATION_ID,
+        platform: 'facebook',
+        recipientId: '7000000000000002',
+        channel: { id: 'channel-recovery' },
+        language: 'en',
+        providerDelayRecovery: false,
+    });
+    control.setPolicySettings({ automation_mode: 'AI_ACTIVE', ai_auto_reply: true });
+
+    await jest.advanceTimersByTimeAsync(8000);
+    await control.flush();
+    await control.close();
+
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(await Message.count({ where: { conversation_id: CONVERSATION_ID } })).toBe(0);
+});
+
 test('HUMAN_REQUIRED and hitl are committed together and a missing conversation creates neither', async () => {
     await recovery.requireHuman({
         turnId: 'human-turn', traceId: 'trace-human', turnStartedAt: new Date().toISOString(), shopId: IDS.shopA, conversationId: CONVERSATION_ID,

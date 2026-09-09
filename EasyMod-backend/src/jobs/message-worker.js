@@ -715,10 +715,10 @@ async function releaseAutomaticCandidate(message, idempotencyKey) {
 }
 
 /**
- * Start the durable timeout clock only after the inbound dedup claim. Every
- * path clears both timers before the worker returns. Redis makes the holding
- * message replay-safe across BullMQ attempts; the local flag prevents the two
- * clocks from racing inside one attempt.
+ * Recovery callers may opt into a durable provider-delay holding message. The
+ * normal AI pipeline keeps that customer-facing message suppressed while
+ * context, grounding, and model work are still in flight; it still records the
+ * timeout state so stalled turns remain observable and recoverable.
  */
 function createRecoveryControl({
     turnId,
@@ -730,6 +730,7 @@ function createRecoveryControl({
     language = 'en',
     turnStartedAt = new Date(),
     initialState = 'RECEIVED',
+    providerDelayRecovery = true,
 }) {
     const recovery = require('../modules/ai/recovery/turn-recovery.service');
     const { getHoldingTemplate } = require('../modules/ai/recovery/holding-templates');
@@ -744,6 +745,7 @@ function createRecoveryControl({
     let resolvePolicySettings;
     const policySettingsReady = new Promise((resolve) => { resolvePolicySettings = resolve; });
     let hardTimeoutTransition = null;
+    let providerDelayTransition = null;
     const startedAtMs = new Date(turnStartedAt).getTime();
     const elapsedMs = Number.isFinite(startedAtMs) ? Math.max(0, Date.now() - startedAtMs) : 0;
 
@@ -1157,14 +1159,46 @@ function createRecoveryControl({
         });
         return inFlight;
     };
-    const fiveSecondTimer = setTimeout(() => { void scheduleHolding('PROVIDER_DELAY'); }, Math.max(0, 5000 - elapsedMs));
-    const eightSecondTimer = setTimeout(() => { void scheduleHolding('PROVIDER_DELAY', { hardTimeout: true }); }, Math.max(0, 8000 - elapsedMs));
+    const recordProviderDelay = ({ hardTimeout = false } = {}) => {
+        const transition = transitionTo('RETRY_PENDING', {
+            recoveryKind: 'PROVIDER_DELAY',
+            retryState: hardTimeout ? 'HARD_TIMEOUT' : 'PROVIDER_DELAY',
+            outboundStatus: 'PENDING',
+            ...(hardTimeout ? { hardTimeoutAt: new Date().toISOString() } : {}),
+        });
+        providerDelayTransition = transition;
+        if (hardTimeout) hardTimeoutTransition = transition;
+        return transition;
+    };
+    const scheduleProviderDelay = (options) => (
+        providerDelayRecovery ? scheduleHolding('PROVIDER_DELAY', options) : recordProviderDelay(options)
+    );
+    const fiveSecondTimer = setTimeout(
+        () => { void scheduleProviderDelay(); },
+        Math.max(0, 5000 - elapsedMs),
+    );
+    const eightSecondTimer = setTimeout(
+        () => { void scheduleProviderDelay({ hardTimeout: true }); },
+        Math.max(0, 8000 - elapsedMs),
+    );
+
+    if (!providerDelayRecovery) {
+        lifecycleLogger.info('ai_recovery_provider_delay_holding_suppressed', {
+            shopId,
+            conversationId,
+            turnId,
+            stage: 'AI_PIPELINE_BEFORE_PROVIDER_BOUNDARY',
+            decision: 'RECORD_TIMEOUT_WITHOUT_PROVIDER_MESSAGE',
+            reason: 'model_and_grounding_work_must_not_emit_a_provider_holding_message',
+        });
+    }
 
     return {
         transitionTo,
         complete: async (state, metadata = {}) => {
             if (state === 'SENT' && inFlight) await inFlight;
             if (state === 'SENT' && hardTimeoutTransition) await hardTimeoutTransition;
+            if (state === 'SENT' && providerDelayTransition) await providerDelayTransition;
             closed = true;
             clearTimeout(fiveSecondTimer);
             clearTimeout(eightSecondTimer);
@@ -1183,7 +1217,7 @@ function createRecoveryControl({
             resolvePolicySettings(policySettings);
             clearTimeout(fiveSecondTimer);
             clearTimeout(eightSecondTimer);
-            return Promise.all([inFlight, hardTimeoutTransition].filter(Boolean));
+            return Promise.all([inFlight, hardTimeoutTransition, providerDelayTransition].filter(Boolean));
         },
         sendHolding: scheduleHolding,
     };
@@ -1910,6 +1944,10 @@ async function processMessageJob(job) {
             language: job.data.language || 'en',
             turnStartedAt: started.turn.turn_started_at,
             initialState: started.turn.state || 'RECEIVED',
+            // A model can legitimately take longer than the recovery holding
+            // threshold. Do not send a second provider message while the AI
+            // pipeline is still before its irreversible send boundary.
+            providerDelayRecovery: false,
         });
     } catch (recoveryErr) {
         console.warn(`[worker] Recovery state unavailable for turn ${turnId}: ${recoveryErr.message}`);
