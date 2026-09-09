@@ -28,6 +28,8 @@ const mockMetaChannelSettings = {
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
         transaction: jest.fn(),
+        getDialect: jest.fn(() => 'postgres'),
+        query: jest.fn().mockResolvedValue([]),
     },
 }));
 
@@ -98,26 +100,45 @@ describe('MetaChannelService cross-shop Meta asset claims', () => {
         mockDrainChannelJobs.mockResolvedValue({ removed: 0 });
     });
 
-    test('releases legacy cross-shop claims with no connected_by_user_id after fresh OAuth', async () => {
+    test('serializes cross-tenant connects for the same Page', async () => {
+        await connect();
+
+        expect(sequelize.query).toHaveBeenCalledWith(
+            'SELECT pg_advisory_xact_lock(hashtext(:lockKey))',
+            {
+                replacements: { lockKey: 'easymod:meta-channel:PAGE_1' },
+                transaction: mockTransaction,
+            },
+        );
+    });
+
+    test('blocks legacy cross-shop claims with no connected_by_user_id', async () => {
         const legacyClaim = makeConflict({ connected_by_user_id: null });
         mockMetaChannel.findAll.mockResolvedValue([legacyClaim]);
-        const created = makeCreatedChannel();
-        mockMetaChannel.create.mockResolvedValue(created);
 
-        const result = await connect();
-
-        expect(result).toBe(created);
-        expect(legacyClaim.status).toBe('DISCONNECTED');
-        expect(legacyClaim.page_access_token_ct).toBeNull();
-        expect(legacyClaim.last_error).toBe('reassigned_to_new_shop_after_fresh_meta_oauth');
-        expect(legacyClaim.save).toHaveBeenCalledWith({ transaction: mockTransaction });
-        expect(mockDrainChannelJobs).toHaveBeenCalledWith({
-            metaChannelId: 'old-channel',
-            shopId: 'old-shop',
-            platform: 'facebook',
+        await expect(connect()).rejects.toMatchObject({
+            status: 409,
+            code: 'META_ASSET_ALREADY_CONNECTED',
         });
-        expect(mockTransaction.commit).toHaveBeenCalledTimes(1);
-        expect(mockTransaction.rollback).not.toHaveBeenCalled();
+
+        expect(legacyClaim.save).not.toHaveBeenCalled();
+        expect(mockMetaChannel.create).not.toHaveBeenCalled();
+        expect(mockTransaction.commit).not.toHaveBeenCalled();
+        expect(mockTransaction.rollback).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not use the same Meta user ID as cross-shop ownership proof', async () => {
+        const sameUserClaim = makeConflict({ connected_by_user_id: 'new-user' });
+        mockMetaChannel.findAll.mockResolvedValue([sameUserClaim]);
+
+        await expect(connect()).rejects.toMatchObject({
+            status: 409,
+            code: 'META_ASSET_ALREADY_CONNECTED',
+        });
+
+        expect(sameUserClaim.save).not.toHaveBeenCalled();
+        expect(mockMetaChannel.create).not.toHaveBeenCalled();
+        expect(mockTransaction.rollback).toHaveBeenCalledTimes(1);
     });
 
     test('blocks a modern active claim owned by a different EasyModerator user', async () => {
@@ -139,17 +160,38 @@ describe('MetaChannelService cross-shop Meta asset claims', () => {
         expect(mockDrainChannelJobs).not.toHaveBeenCalled();
     });
 
-    test('releases non-routable cross-shop claims before connecting the Page to this shop', async () => {
+    test('blocks a TOKEN_EXPIRED cross-shop claim owned by a different user', async () => {
         const expiredClaim = makeConflict({
             status: 'TOKEN_EXPIRED',
             connected_by_user_id: 'other-user',
+            page_access_token_ct: null,
         });
         mockMetaChannel.findAll.mockResolvedValue([expiredClaim]);
 
+        await expect(connect()).rejects.toMatchObject({
+            status: 409,
+            code: 'META_ASSET_ALREADY_CONNECTED',
+        });
+
+        expect(expiredClaim.save).not.toHaveBeenCalled();
+        expect(mockMetaChannel.create).not.toHaveBeenCalled();
+        expect(mockDrainChannelJobs).not.toHaveBeenCalled();
+        expect(mockTransaction.commit).not.toHaveBeenCalled();
+        expect(mockTransaction.rollback).toHaveBeenCalledTimes(1);
+    });
+
+    test('releases an explicitly disconnected cross-shop claim', async () => {
+        const disconnectedClaim = makeConflict({
+            status: 'DISCONNECTED',
+            connected_by_user_id: 'other-user',
+            page_access_token_ct: null,
+        });
+        mockMetaChannel.findAll.mockResolvedValue([disconnectedClaim]);
+
         await connect();
 
-        expect(expiredClaim.status).toBe('DISCONNECTED');
-        expect(expiredClaim.page_access_token_ct).toBeNull();
+        expect(disconnectedClaim.status).toBe('DISCONNECTED');
+        expect(disconnectedClaim.page_access_token_ct).toBeNull();
         expect(mockMetaChannel.create).toHaveBeenCalledWith(
             expect.objectContaining({
                 shop_id: 'new-shop',
@@ -158,6 +200,29 @@ describe('MetaChannelService cross-shop Meta asset claims', () => {
             }),
             { transaction: mockTransaction }
         );
+    });
+
+    test('reconnects an existing same-tenant Page in place', async () => {
+        const existingChannel = makeConflict({
+            id: 'existing-channel',
+            shop_id: 'new-shop',
+            meta_asset_id: 'PAGE_1',
+            status: 'TOKEN_EXPIRED',
+            connected_by_user_id: 'old-user',
+            page_access_token_ct: null,
+        });
+        mockMetaChannel.findOne.mockResolvedValue(existingChannel);
+
+        const result = await connect();
+
+        expect(result).toBe(existingChannel);
+        expect(mockMetaChannel.create).not.toHaveBeenCalled();
+        expect(existingChannel.status).toBe('CONNECTED');
+        expect(existingChannel.last_error).toBeNull();
+        expect(existingChannel.disconnected_at).toBeNull();
+        expect(existingChannel.connected_by_user_id).toBe('new-user');
+        expect(existingChannel.save).toHaveBeenCalledWith({ transaction: mockTransaction });
+        expect(mockTransaction.commit).toHaveBeenCalledTimes(1);
     });
 
     test('findUniqueConnectedByShopAndPlatform resolves the only connected Facebook channel', async () => {

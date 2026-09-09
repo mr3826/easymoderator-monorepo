@@ -16,7 +16,7 @@ vi.mock('@/api/domains/meta-channels', () => ({
     {
       id: 'mc-1', shopId: 'sh', platform: 'facebook', metaAssetId: 'pg-1',
       displayName: 'Facebook Inbox', pictureUrl: null,
-      status: 'CONNECTED', lastError: null, tokenExpiresAt: null,
+      status: 'CONNECTED', isHealthy: true, needsReconnect: false, lastError: null, tokenExpiresAt: null,
       tokenLastRefreshedAt: null, webhookSubscribedFields: [],
       purposeLabel: null,
       webhookLastVerifiedAt: null, connectedAt: null, disconnectedAt: null,
@@ -25,7 +25,7 @@ vi.mock('@/api/domains/meta-channels', () => ({
     {
       id: 'mc-2', shopId: 'sh', platform: 'facebook', metaAssetId: 'pg-2',
       displayName: 'Second Facebook Page', pictureUrl: null,
-      status: 'CONNECTED', lastError: null, tokenExpiresAt: null,
+      status: 'CONNECTED', isHealthy: true, needsReconnect: false, lastError: null, tokenExpiresAt: null,
       tokenLastRefreshedAt: null, webhookSubscribedFields: [],
       purposeLabel: null,
       webhookLastVerifiedAt: null, connectedAt: null, disconnectedAt: null,

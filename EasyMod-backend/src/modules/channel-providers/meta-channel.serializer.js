@@ -1,5 +1,10 @@
 'use strict';
 
+const {
+    HEALTHY_STATUSES,
+    RECONNECT_REQUIRED_STATUSES,
+} = require('./meta-channel.statuses');
+
 /**
  * Serialize a Meta channel for merchant-facing API responses.
  *
@@ -19,6 +24,7 @@ function serializeChannel(channel, options = {}) {
         return undefined;
     };
     const settings = read('settings') || channel?.get?.('settings') || null;
+    const status = read('status');
 
     const serialized = {
         id: read('id'),
@@ -27,7 +33,9 @@ function serializeChannel(channel, options = {}) {
         metaAssetId: read('meta_asset_id', 'metaAssetId'),
         displayName: read('display_name', 'displayName'),
         pictureUrl: read('picture_url', 'pictureUrl'),
-        status: read('status'),
+        status,
+        isHealthy: HEALTHY_STATUSES.has(status),
+        needsReconnect: RECONNECT_REQUIRED_STATUSES.has(status),
         lastError: read('last_error', 'lastError'),
         tokenExpiresAt: read('token_expires_at', 'tokenExpiresAt'),
         tokenLastRefreshedAt: read('token_last_refreshed_at', 'tokenLastRefreshedAt'),

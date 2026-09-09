@@ -20,11 +20,10 @@ const MetaChannelSettings = require('./meta-channel-settings.entity');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const { drainChannelJobs } = require('../../jobs/message-queue');
+const { VALID_STATUSES } = require('./meta-channel.statuses');
 
 const logger = createLogger('MetaChannelService');
 
-const VALID_STATUSES = ['CONNECTED', 'TOKEN_EXPIRED', 'REVOKED', 'DISCONNECTED', 'ERROR'];
-const RELEASABLE_CROSS_SHOP_STATUSES = new Set(['DISCONNECTED', 'REVOKED', 'TOKEN_EXPIRED', 'ERROR']);
 const REASSIGNED_LAST_ERROR = 'reassigned_to_new_shop_after_fresh_meta_oauth';
 
 function sameId(a, b) {
@@ -36,15 +35,27 @@ function normalizePlatform(platform) {
     return null;
 }
 
-function canReleaseCrossShopClaim(channel, userId) {
+async function lockMetaAssetClaim(transaction, metaAssetId) {
+    if (typeof sequelize.getDialect !== 'function' || sequelize.getDialect() !== 'postgres') return;
+    if (typeof sequelize.query !== 'function') return;
+
+    // Serialize connects for the same Page before the cross-tenant lookup. The
+    // per-shop unique index cannot prevent two shops from winning a race.
+    await sequelize.query(
+        'SELECT pg_advisory_xact_lock(hashtext(:lockKey))',
+        {
+            replacements: { lockKey: `easymod:meta-channel:${metaAssetId}` },
+            transaction,
+        },
+    );
+}
+
+function canReleaseCrossShopClaim(channel) {
     if (!channel) return false;
-    if (RELEASABLE_CROSS_SHOP_STATUSES.has(channel.status)) return true;
-    if (!channel.page_access_token_ct) return true;
-    // Legacy rows before the OAuth audit fix can have no connector id. A fresh
-    // Meta OAuth page token is the current ownership proof, so let those rows be
-    // released instead of permanently blocking the Page.
-    if (!channel.connected_by_user_id) return true;
-    return sameId(channel.connected_by_user_id, userId);
+    // Only an explicit disconnect relinquishes a claim. A broken connection
+    // can still belong to its merchant and must not be taken over silently.
+    if (channel.status === 'DISCONNECTED') return true;
+    return false;
 }
 
 class MetaChannelService {
@@ -88,10 +99,10 @@ class MetaChannelService {
         const releasedConflictingChannels = [];
         try {
             const now = new Date();
+            await lockMetaAssetClaim(transaction, metaAssetId);
             // Check if this asset is claimed by a different shop (cross-shop guard).
-            // Stale/non-routable claims are released after a fresh Meta OAuth
-            // proves the current user can manage this Page. A modern active claim
-            // from another user still blocks to prevent accidental tenant takeover.
+            // Only explicitly disconnected claims can be released after fresh
+            // Meta OAuth. Missing connector audit data is not ownership proof.
             const conflictingChannels = await MetaChannel.findAll({
                 where: {
                     meta_asset_id: metaAssetId,
@@ -100,7 +111,7 @@ class MetaChannelService {
                 transaction
             });
             const blockingConflict = conflictingChannels.find((existing) => (
-                !canReleaseCrossShopClaim(existing, userId)
+                !canReleaseCrossShopClaim(existing)
             ));
             if (blockingConflict) {
                 throw new AppError(

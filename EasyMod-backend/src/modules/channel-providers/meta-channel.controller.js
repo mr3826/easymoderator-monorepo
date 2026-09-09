@@ -98,7 +98,11 @@ exports.reconnect = async (req, res, next) => {
         const { redirectUrl, state } = await oauthService.initiateOAuth(
             userId,
             shopId,
-            channel.platform
+            channel.platform,
+            {
+                targetChannelId: channel.id,
+                targetAssetId: channel.meta_asset_id,
+            },
         );
 
         logger.info('Reconnect initiated', { channelId, platform: channel.platform });

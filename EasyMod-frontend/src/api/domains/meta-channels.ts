@@ -38,6 +38,8 @@ export interface MetaChannel {
   displayName: string;
   pictureUrl: string | null;
   status: MetaChannelStatus;
+  isHealthy: boolean;
+  needsReconnect: boolean;
   lastError: string | null;
   tokenExpiresAt: string | null;
   tokenLastRefreshedAt: string | null;
@@ -68,6 +70,8 @@ export interface MetaOAuthCallbackResult {
   pages: MetaOAuthAsset[];
   /** Opaque callback token; never a raw Meta access token. */
   tempToken: string;
+  reconnectChannelId: string | null;
+  reconnectAssetId: string | null;
 }
 
 export interface MetaConnectAssetResult extends MetaChannel {

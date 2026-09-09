@@ -54,14 +54,16 @@ jest.mock('../../../utils/database/database-setup', () => ({
 
 const mockUpsertFromOAuth = jest.fn();
 const mockUpdateStatus = jest.fn().mockResolvedValue({});
-const mockConfirmWebhookActive = jest.fn().mockResolvedValue({});
+const mockConfirmWebhookActive = jest.fn();
 const mockDisconnect = jest.fn().mockResolvedValue({});
+const mockFindByShopAndAsset = jest.fn();
 
 jest.mock('../meta-channel.service', () => ({
     upsertFromOAuth: mockUpsertFromOAuth,
     updateStatus: mockUpdateStatus,
     confirmWebhookActive: mockConfirmWebhookActive,
     disconnect: mockDisconnect,
+    findByShopAndAsset: mockFindByShopAndAsset,
 }));
 
 const stateStore = require('../oauth-state.store');
@@ -86,6 +88,21 @@ describe('initiateOAuth (facebook) scopes', () => {
         const result = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
         expect(result.redirectUrl).toBeTruthy();
         expect(result.state).toMatch(/^facebook:/);
+    });
+
+    test('stores a reconnect target in the server-side OAuth state', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook', {
+            targetChannelId: 'channel-1',
+            targetAssetId: 'PAGE_1',
+        });
+
+        expect(stateStore.put).toHaveBeenCalledWith(
+            expect.stringMatching(/^facebook:/),
+            expect.objectContaining({
+                reconnectChannelId: 'channel-1',
+                reconnectAssetId: 'PAGE_1',
+            }),
+        );
     });
 });
 
@@ -117,6 +134,8 @@ describe('OAuth callback null-state guards', () => {
 
         expect(result.pages).toEqual(pages);
         expect(result.tempToken).toMatch(/^[a-f0-9]{64}$/);
+        expect(result.reconnectChannelId).toBeNull();
+        expect(result.reconnectAssetId).toBeNull();
         expect(result.tempToken).not.toBe('user-tok');
         expect(stateStore.put).toHaveBeenCalledWith(
             `callback:shop-abc:facebook:${result.tempToken}`,
@@ -132,6 +151,31 @@ describe('OAuth callback null-state guards', () => {
             code: 'auth-code',
             redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
         });
+    });
+
+    test('carries a reconnect target from OAuth state into the opaque callback payload', async () => {
+        stateStore.take.mockResolvedValueOnce({
+            userId: 'user-xyz',
+            shopId: 'shop-abc',
+            platform: 'facebook',
+            redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
+            reconnectChannelId: 'channel-1',
+            reconnectAssetId: 'PAGE_42',
+        });
+
+        const result = await oauthService.handleCallback('auth-code', 'state-targeted', 'user-xyz', 'shop-abc');
+
+        expect(result).toEqual(expect.objectContaining({
+            reconnectChannelId: 'channel-1',
+            reconnectAssetId: 'PAGE_42',
+        }));
+        expect(stateStore.put).toHaveBeenCalledWith(
+            expect.stringMatching(/^callback:shop-abc:facebook:/),
+            expect.objectContaining({
+                reconnectChannelId: 'channel-1',
+                reconnectAssetId: 'PAGE_42',
+            }),
+        );
     });
 
     test.each([
@@ -156,6 +200,8 @@ describe('connectPage() webhook verify wiring', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockUpsertFromOAuth.mockResolvedValue(CHANNEL);
+        mockFindByShopAndAsset.mockResolvedValue(CHANNEL);
+        mockConfirmWebhookActive.mockResolvedValue(CHANNEL);
         mockGetAssetAccessToken.mockResolvedValue({ token: 'page-tok', expiresAt: null });
         mockSubscribeWebhook.mockResolvedValue(undefined);
         stateStore.get.mockResolvedValue({
@@ -344,5 +390,54 @@ describe('connectPage() webhook verify wiring', () => {
 
         expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+    });
+
+    test('rejects a reconnect callback that targets a different channel or Page', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: ['MESSAGING', 'MANAGE'],
+            }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            reconnectChannelId: 'expected-channel',
+            reconnectAssetId: ASSET_ID,
+        });
+        mockFindByShopAndAsset.mockResolvedValueOnce({ id: 'different-channel' });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({
+            status: 409,
+            code: 'META_RECONNECT_TARGET_MISMATCH',
+        });
+
+        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+    });
+
+    test('returns the updated unhealthy status when webhook verification fails', async () => {
+        mockVerifyWebhookSubscription.mockResolvedValue({ ok: false, fields: [] });
+        const unhealthyChannel = {
+            id: 'chan-1',
+            status: 'ERROR',
+            toJSON: () => ({ id: 'chan-1', status: 'ERROR' }),
+        };
+        mockUpdateStatus.mockResolvedValueOnce(unhealthyChannel);
+
+        const result = await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
+
+        expect(result).toEqual(expect.objectContaining({
+            status: 'ERROR',
+            isHealthy: false,
+            needsReconnect: true,
+        }));
     });
 });
