@@ -1,0 +1,56 @@
+# Module-local .gitignore (ADR M-001). This module is a standalone package outside the root
+# workspace — the root .gitignore does not (and should not) know about Expo/Android build
+# artifacts or credential-shaped files, so everything mobile-specific is declared here instead.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# generated native projects (Phase 1 stays managed/CNG — see ADR M-002; a later phase generates
+# these on demand for local builds, but they are never committed)
+android/
+ios/
+
+# native build artifacts
+*.apk
+*.aab
+.kotlin/
+*.orig.*
+
+# credentials / secrets — must never be committed (Security Scan's gitleaks runs across all
+# branches' full history, see docs/mobile/CURRENT_STATE.md §2)
+google-services.json
+GoogleService-Info.plist
+*.keystore
+*.jks
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+credentials.json
+.env
+.env.*
+!.env.example
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# typescript
+*.tsbuildinfo
+
+# test/coverage output
+coverage/

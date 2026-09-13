@@ -51,6 +51,16 @@ Mobile development runs against a disposable backend, not the pilot production d
   (ADR-referenced in Phase 1); the `.preview`/production variants require HTTPS, enforced by env
   validation at build time.
 
+**Phase 1 addendum (learned while scaffolding, not previously documented):** the env-validation
+check above (`app.config.ts` throwing on a non-HTTPS URL for `preview`/`production`) is necessary
+but not sufficient for the `.dev` variant to actually reach `localhost` over `adb reverse` on a
+real device. Android 9+ (API 28+) blocks cleartext traffic by default at the OS level regardless
+of what the JS-level config says, and this app's target SDK is 36. Making the `.dev` variant's
+`adb reverse` workflow work on a real device/AVD will additionally need either
+`expo-build-properties`'s `android.usesCleartextTraffic` option or a network-security-config XML —
+neither is wired up yet, since Phase 1 does no device/emulator run. Whoever first does a real
+`.dev` build against `adb reverse` (Phase 2+) should expect to add this.
+
 ## 4. What this environment is never used for
 
 No dev-environment step in this document touches the pilot production database, the production

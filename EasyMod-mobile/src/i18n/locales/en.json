@@ -1,0 +1,75 @@
+{
+  "common": {
+    "signIn": "Sign In",
+    "logout": "Logout",
+    "cancel": "Cancel",
+    "save": "Save",
+    "retry": "Retry",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "close": "Close",
+    "bdPhoneInvalid": "Enter a valid Bangladeshi mobile number (01X-XXXX-XXXX)"
+  },
+  "auth": {
+    "signin": {
+      "welcomeBack": "Welcome back! 👋",
+      "loginPrompt": "Sign in to your EasyModerator account",
+      "emailLabel": "Email or Mobile Number",
+      "emailPlaceholder": "Enter your email",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "signingIn": "Signing in...",
+      "signInButton": "Sign in →",
+      "errors": {
+        "emailRequired": "Please enter your email",
+        "passwordRequired": "Please enter your password",
+        "invalidCredentials": "Invalid email or password"
+      }
+    }
+  },
+  "nav": {
+    "home": "Home",
+    "orders": "Orders"
+  },
+  "inbox": {
+    "offlineBanner": "Connection lost — will reconnect automatically."
+  },
+  "mobile": {
+    "tabs": {
+      "home": "Home",
+      "inbox": "Inbox",
+      "quickAction": "Quick Action",
+      "orders": "Orders",
+      "more": "More"
+    },
+    "placeholder": {
+      "phase2": "{{screen}} — Phase 2"
+    },
+    "offline": {
+      "bannerTitle": "You're offline",
+      "mutationsDisabled": "Showing saved data. Confirming orders, booking couriers, and replies are unavailable until you reconnect."
+    },
+    "more": {
+      "loggedInAs": "Logged in as {{email}}",
+      "logout": "Logout",
+      "loggingOut": "Logging out..."
+    },
+    "errorBoundary": {
+      "title": "Something went wrong",
+      "message": "The app hit an unexpected problem. Your data is safe — try again.",
+      "retry": "Try again"
+    },
+    "error": {
+      "network": "Could not reach the server. Check your connection and try again.",
+      "timeout": "The request took too long. Please try again.",
+      "unauthorized": "Your session has expired. Please sign in again.",
+      "forbidden": "You don't have permission to do that.",
+      "notFound": "We couldn't find what you were looking for.",
+      "validation": "Please check the highlighted fields and try again.",
+      "rateLimited": "Too many attempts. Please wait a moment and try again.",
+      "server": "Something went wrong on our end. Please try again shortly.",
+      "unknown": "Something unexpected happened. Please try again."
+    }
+  }
+}
