@@ -35,6 +35,12 @@ const statusOf = (record) => String(record?.status || '').toUpperCase();
 /**
  * Create or observe one durable claim. Only a newly-created claim receives an
  * owner token. Existing PENDING/INDETERMINATE claims are never re-owned here.
+ *
+ * Scoped to (shop_id, order_id) only — one active dispatch claim per order,
+ * regardless of provider. `provider` is stored data on the row, not part of
+ * its identity, so a second attempt that names a different courier for an
+ * order that already has a claim is observed (not created) here, the same
+ * way a same-provider retry always has been.
  */
 const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, provider, idempotencyKey }) => {
     const model = getCourierDispatchModel(suppliedModel);
@@ -42,8 +48,9 @@ const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, pro
 
     const ownerToken = crypto.randomUUID();
     const [record, created] = await model.findOrCreate({
-        where: { shop_id: shopId, order_id: orderId, provider },
+        where: { shop_id: shopId, order_id: orderId },
         defaults: {
+            provider,
             idempotency_key: idempotencyKey,
             status: 'PENDING',
             dispatch_owner_token: ownerToken,
@@ -63,11 +70,17 @@ const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, pro
 
     // A definitive provider rejection is the only state that may be explicitly
     // reopened by a new caller. The CAS prevents two retries from both owning it.
+    // The reopening caller may name a different provider than the failed
+    // attempt (the row's identity no longer pins one), so provider and its
+    // derived idempotency key are refreshed here too — otherwise a reopened
+    // row would keep advertising the courier that was never actually retried.
     if (statusOf(record) === 'FAILED' && record?.id && typeof model.update === 'function') {
         const [updated] = await model.update(
             {
                 status: 'PENDING',
                 dispatch_owner_token: ownerToken,
+                provider,
+                idempotency_key: idempotencyKey,
                 error: null,
             },
             { where: { id: record.id, status: 'FAILED' } },
@@ -76,6 +89,8 @@ const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, pro
             Object.assign(record, {
                 status: 'PENDING',
                 dispatch_owner_token: ownerToken,
+                provider,
+                idempotency_key: idempotencyKey,
                 error: null,
             });
             return { state: 'claimed', provider, record, ownerToken, idempotencyKey };
