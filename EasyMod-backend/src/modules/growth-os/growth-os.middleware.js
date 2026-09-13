@@ -5,11 +5,15 @@ const config = require('../../config/config');
 const { cacheRedis } = require('../../config/redis');
 const cacheService = require('../../utils/cache.service');
 const repository = require('./growth-os.repository');
-const { getPermissionsForRole, hasPermission } = require('./growth-os.permissions');
+const {
+  getPermissionsForRole,
+  hasPermission,
+  resolveCanonicalRole,
+  MFA_REQUIRED_ROLES,
+} = require('./growth-os.permissions');
 
 const ROLE_CACHE_TTL_SECONDS = 60;
 const REDIS_PROBE_TIMEOUT_MS = 1000;
-const MFA_REQUIRED_ROLES = new Set(['FOUNDER', 'GROWTH_MANAGER']);
 
 async function assertGrowthOsRuntimeReady() {
   // Growth authorization may not silently fall back to a process-local cache
@@ -62,16 +66,24 @@ async function resolveGrowthOsAccess(userId) {
   const cacheKey = `growth-os:user:${userId}:role`;
   const cached = await cacheService.getStrict(cacheKey);
   if (cached !== null && cached !== undefined) {
-    return cached === 'NONE'
-      ? null
-      : { role: cached, permissions: getPermissionsForRole(cached) };
+    return cached === 'NONE' ? null : buildAccess(cached);
   }
 
   const roleRecord = await repository.findActiveRoleForUser(userId);
   const role = roleRecord?.role || null;
   await cacheService.setStrict(cacheKey, role || 'NONE', ROLE_CACHE_TTL_SECONDS);
 
-  return role ? { role, permissions: getPermissionsForRole(role) } : null;
+  return role ? buildAccess(role) : null;
+}
+
+function buildAccess(rawRole) {
+  const canonical = resolveCanonicalRole(rawRole);
+  if (!canonical) return null;
+  return {
+    role: canonical,
+    rawRole,
+    permissions: getPermissionsForRole(rawRole),
+  };
 }
 
 function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
@@ -97,8 +109,12 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
 
       // Growth roles are global internal roles. Require an authentication
       // assurance claim for the roles that can view or mutate broad operating
-      // data; merchant/frontend claims are never accepted here.
-      if (MFA_REQUIRED_ROLES.has(access.role) && req.user.mfaVerified !== true) {
+      // data; merchant/frontend claims are never accepted here. The raw
+      // (possibly legacy) role is checked too so alias mapping never becomes
+      // an MFA-assurance downgrade.
+      const requiresMfa = MFA_REQUIRED_ROLES.has(access.role)
+        || MFA_REQUIRED_ROLES.has(access.rawRole);
+      if (requiresMfa && req.user.mfaVerified !== true) {
         throw new AppError(
           'Multi-factor authentication is required for this Growth OS role.',
           403,

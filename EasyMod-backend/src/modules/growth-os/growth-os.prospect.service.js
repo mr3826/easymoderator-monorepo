@@ -845,7 +845,8 @@ class GrowthOsProspectService {
     const scope = assertReadScope(access, userId);
     if (!isProspectStatus(status)) throw invalidInput('status is invalid.');
     const db = getSequelize();
-    return runWithDatabaseProtection(() => db.transaction(async (transaction) => {
+    let linkedShopForActivation = null;
+    const result = await runWithDatabaseProtection(() => db.transaction(async (transaction) => {
       const prospect = await repository.findProspectById(prospectId, {
         scope,
         transaction,
@@ -869,6 +870,12 @@ class GrowthOsProspectService {
       if (status === 'converted' && !prospect.linked_shop_id) {
         throw invalidInput('converted prospects require linkedShopId.');
       }
+      if (status === 'onboarding' && !prospect.linked_shop_id) {
+        throw invalidInput('onboarding prospects require a linked shop first.');
+      }
+      if (prospect.status === 'onboarding' && status === 'qualified' && !normalizedReason) {
+        throw invalidInput('A reason is required to return a prospect from onboarding.');
+      }
       const oldValues = auditSnapshot(prospect);
       await prospect.update({
         status,
@@ -889,8 +896,33 @@ class GrowthOsProspectService {
         newValues: auditSnapshot(prospect),
         ...mutationAudit(audit),
       }, transaction);
+      if (status === 'onboarding' && prospect.linked_shop_id) {
+        linkedShopForActivation = prospect.linked_shop_id;
+      }
       return toApiProspect(prospect, scope);
     }));
+
+    // Activation is the primary Growth success event: if the linked shop has
+    // already recorded its activation moment, entering onboarding converts
+    // immediately rather than waiting for a future reply.
+    if (status === 'onboarding' && linkedShopForActivation) {
+      try {
+        const { Shop } = require('../entities');
+        const shop = await Shop.findByPk(linkedShopForActivation, { attributes: ['settings'] });
+        if (shop?.settings?.activation?.activated_at) {
+          await this.markLinkedShopsActivated({ shopId: linkedShopForActivation });
+          const fresh = await runWithDatabaseProtection(
+            () => repository.findProspectById(prospectId, { scope }),
+            { operation: 'activation_reread' },
+          );
+          if (fresh) return toApiProspect(fresh, scope);
+        }
+      } catch (error) {
+        if (error instanceof AppError && error.statusCode !== 503) throw error;
+        logServiceError('Growth activation sync after onboarding failed', error, { prospectId });
+      }
+    }
+    return result;
   }
 
   async link({ userId, access, prospectId, shopId, linkedUserId, reason, audit = {} }) {
@@ -1090,6 +1122,58 @@ class GrowthOsProspectService {
         throw error;
       }
     });
+  }
+
+  /**
+   * System-driven activation completion (§23): when the merchant engine
+   * records a shop's first successful AI reply, any prospect already in
+   * onboarding for that linked shop is converted. Called from the analytics
+   * activation path with the same best-effort semantics — failures must
+   * never surface to merchant message processing.
+   */
+  async markLinkedShopsActivated({ shopId, conversationId = null } = {}) {
+    if (!shopId) return { activated: 0 };
+    const db = getSequelize();
+    const { GrowthOsProspect } = repository.getModels();
+    const inOnboarding = await runWithDatabaseProtection(async () => GrowthOsProspect.findAll({
+      attributes: ['id', 'status'],
+      where: { linked_shop_id: shopId, status: 'onboarding' },
+    }), { operation: 'activation_lookup' });
+    if (inOnboarding.length === 0) return { activated: 0 };
+
+    let activated = 0;
+    for (const candidate of inOnboarding) {
+      await runWithDatabaseProtection(() => db.transaction(async (transaction) => {
+        const prospect = await repository.findProspectById(candidate.id, {
+          scope: null,
+          transaction,
+          lock: true,
+          include: false,
+        });
+        if (!prospect || prospect.status !== 'onboarding') return;
+        if (!canTransition(prospect.status, 'converted')) return;
+        const oldValues = auditSnapshot(prospect);
+        await prospect.update({
+          status: 'converted',
+          status_changed_at: new Date(),
+        }, { transaction });
+        await recordMutation({
+          prospectId: prospect.id,
+          actorUserId: null,
+          eventType: 'activated',
+          fromValue: oldValues.status,
+          toValue: 'converted',
+          reason: 'first_successful_ai_reply',
+          changedFields: ['status', 'status_changed_at'],
+          metadata: { shop_id: shopId, conversation_id: conversationId },
+          action: 'growth_os:prospect_activated',
+          oldValues,
+          newValues: auditSnapshot(prospect),
+        }, transaction);
+        activated += 1;
+      }), { operation: 'activation_transition' });
+    }
+    return { activated };
   }
 }
 

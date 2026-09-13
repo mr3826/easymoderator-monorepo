@@ -74,6 +74,15 @@ jest.mock('../../../utils/cache.service', () => mockCacheService);
 jest.mock('../growth-os.repository', () => mockGrowthRepository);
 jest.mock('../growth-os.prospect.repository', () => mockProspectRepository);
 jest.mock('../growth-os.roles.service', () => mockRoleService);
+jest.mock('../growth-os.users.service', () => ({
+  listGrowthUsers: jest.fn(async () => []),
+  createGrowthUser: jest.fn(),
+  setGrowthUserStatus: jest.fn(),
+  changeGrowthUserRole: jest.fn(),
+  revokeGrowthUserAccess: jest.fn(),
+  resetGrowthUserPassword: jest.fn(),
+  revokeGrowthUserSessions: jest.fn(),
+}));
 
 const prospectService = require('../growth-os.prospect.service');
 const growthOsRoutes = require('../growth-os.routes');
@@ -246,7 +255,11 @@ describe('Growth OS prospect route security', () => {
   });
 
   it('applies the prospect permission matrix to every Growth role', async () => {
+    // Two-role model: every legacy role resolves to canonical GROWTH_USER or
+    // SUPER_ADMIN, both of which hold full prospect read/manage access.
     const roles = [
+      'SUPER_ADMIN',
+      'GROWTH_USER',
       'FOUNDER',
       'GROWTH_MANAGER',
       'BUSINESS_EXECUTIVE',
@@ -254,9 +267,7 @@ describe('Growth OS prospect route security', () => {
       'CUSTOMER_SUCCESS',
       'READ_ONLY_ANALYST',
     ];
-    const readRoles = new Set(['FOUNDER', 'GROWTH_MANAGER', 'BUSINESS_EXECUTIVE', 'MARKETER']);
-    const updateRoles = new Set(['FOUNDER', 'GROWTH_MANAGER', 'BUSINESS_EXECUTIVE']);
-    const manageRoles = new Set(['FOUNDER', 'GROWTH_MANAGER']);
+    const superAdminRoles = new Set(['SUPER_ADMIN', 'FOUNDER']);
 
     for (const role of roles) {
       setIdentity({ id: `${role.toLowerCase()}-1`, role });
@@ -289,19 +300,37 @@ describe('Growth OS prospect route security', () => {
       const suggestionsResponse = await request(app)
         .get(`/api/internal/growth-os/prospects/${PROSPECT_ID}/linkage-suggestions`);
 
-      expect(listResponse.status).toBe(readRoles.has(role) ? 200 : 403);
-      expect(duplicateResponse.status).toBe(readRoles.has(role) ? 200 : 403);
-      expect(updateResponse.status).toBe(updateRoles.has(role) ? 200 : 403);
-      expect(statusResponse.status).toBe(updateRoles.has(role) ? 200 : 403);
-      expect(manageResponse.status).toBe(manageRoles.has(role) ? 201 : 403);
-      expect(assignResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
-      expect(linkResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
-      expect(mergeResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
-      expect(suggestionsResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
+      const adminUsersResponse = await request(app).get('/api/internal/growth-os/admin/users');
+      const roleGrantResponse = await request(app)
+        .post('/api/internal/growth-os/roles')
+        .send({ userId: FOREIGN_PROSPECT_ID, role: 'GROWTH_USER', reason: 'matrix probe' });
+
+      expect(listResponse.status).toBe(200);
+      expect(duplicateResponse.status).toBe(200);
+      expect(updateResponse.status).toBe(200);
+      expect(statusResponse.status).toBe(200);
+      expect(manageResponse.status).toBe(201);
+      expect(assignResponse.status).toBe(200);
+      expect(linkResponse.status).toBe(200);
+      expect(mergeResponse.status).toBe(200);
+      expect(suggestionsResponse.status).toBe(200);
+      // Admin domain stays SUPER_ADMIN-only for every growth role value,
+      // including legacy strings and GROWTH_USER.
+      expect(adminUsersResponse.status).toBe(superAdminRoles.has(role) ? 200 : 403);
+      expect(roleGrantResponse.status).toBe(superAdminRoles.has(role) ? 201 : 403);
+      if (!superAdminRoles.has(role)) {
+        expect(mockRoleService.grantRole).not.toHaveBeenCalled();
+      }
+      mockRoleService.grantRole.mockClear();
     }
   });
 
-  it('redacts marketer contact fields while retaining the safe prospect shape', async () => {
+  // Two-role model: legacy marketer/executive roles resolve to canonical
+  // GROWTH_USER, which reads the full prospect ledger. Contact redaction and
+  // source/narrow scopes no longer apply to any grantable role; these tests
+  // pin that migration so a future regression cannot silently re-introduce
+  // legacy scoping without updating this contract.
+  it('gives a legacy marketer row full (unredacted) prospect visibility as GROWTH_USER', async () => {
     setIdentity({ id: MARKETER_ID, role: 'MARKETER' });
 
     const response = await request(app).get('/api/internal/growth-os/prospects');
@@ -310,15 +339,9 @@ describe('Growth OS prospect route security', () => {
     expect(response.status).toBe(200);
     expect(item).toMatchObject({
       businessName: 'North Star Retail',
-      contactName: null,
-      contactPhone: null,
-      contactEmail: null,
-      pageUrl: null,
-      redacted: true,
+      contactEmail: 'owner@example.test',
     });
-    expect(JSON.stringify(response.body)).not.toContain('owner@example.test');
-    expect(JSON.stringify(response.body)).not.toContain('01700000000');
-    expect(JSON.stringify(response.body)).not.toContain('facebook.com/north-star');
+    expect(item.redacted).toBeUndefined();
   });
 
   it('returns linkage suggestions only through the manage_all route', async () => {
@@ -337,36 +360,33 @@ describe('Growth OS prospect route security', () => {
     }));
   });
 
-  it('restricts marketer reads to marketing-attributable sources', async () => {
+  it('removes the legacy source restriction for marketer rows', async () => {
     setIdentity({ id: MARKETER_ID, role: 'MARKETER' });
 
     const list = await request(app).get('/api/internal/growth-os/prospects');
     expect(list.status).toBe(200);
     expect(list.body.data.items.map((item) => item.id)).toEqual(
-      expect.arrayContaining([PROSPECT_ID, MARKETING_PROSPECT_ID]),
+      expect.arrayContaining([PROSPECT_ID, MARKETING_PROSPECT_ID, FOREIGN_PROSPECT_ID]),
     );
-    expect(list.body.data.items.map((item) => item.id)).not.toContain(FOREIGN_PROSPECT_ID);
 
     const manual = makeProspect({ source: 'manual_entry' });
     mockProspectRows[PROSPECT_ID] = manual;
     const detail = await request(app).get(`/api/internal/growth-os/prospects/${PROSPECT_ID}`);
-    expect(detail.status).toBe(404);
+    expect(detail.status).toBe(200);
   });
 
-  it('denies an executive IDOR lookup outside the assigned scope', async () => {
+  it('reads outside the former executive assigned scope as GROWTH_USER', async () => {
     setIdentity({ id: EXECUTIVE_ID, role: 'BUSINESS_EXECUTIVE' });
 
     const response = await request(app)
       .get(`/api/internal/growth-os/prospects/${FOREIGN_PROSPECT_ID}`);
 
-    expect(response.status).toBe(404);
-    expect(response.body.code).toBe('GROWTH_OS_PROSPECT_NOT_FOUND');
+    expect(response.status).toBe(200);
     expect(mockProspectRepository.findProspectById).toHaveBeenCalledWith(
       FOREIGN_PROSPECT_ID,
       expect.objectContaining({
         scope: expect.objectContaining({
-          kind: 'assigned',
-          where: { owner_user_id: EXECUTIVE_ID },
+          kind: 'all',
         }),
       }),
     );

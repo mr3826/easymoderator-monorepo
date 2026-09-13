@@ -4,7 +4,16 @@ const { Op } = require('sequelize');
 const { validate: isUuid } = require('uuid');
 const cacheService = require('../../utils/cache.service');
 const { AppError } = require('../../utils/AppError');
-const { GROWTH_OS_ROLES, isGrowthOsRole } = require('./growth-os.permissions');
+const {
+  GROWTH_OS_CANONICAL_ROLES,
+  LEGACY_GROWTH_OS_ROLES,
+  isGrantableGrowthOsRole,
+} = require('./growth-os.permissions');
+
+const SUPER_ADMIN_ROLE_VALUES = Object.freeze([
+  GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN,
+  LEGACY_GROWTH_OS_ROLES.FOUNDER,
+]);
 
 const ROLE_CACHE_TTL_SECONDS = 60;
 const MAX_REASON_LENGTH = 200;
@@ -93,8 +102,19 @@ function safeRole(roleRecord) {
 async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, userAgent }) {
   assertUuid(actorUserId, 'actorUserId');
   assertUuid(targetUserId, 'targetUserId');
-  if (!isGrowthOsRole(role)) {
-    throw new AppError('role is not a valid Growth OS role.', 400, 'GROWTH_OS_INVALID_ROLE');
+  if (!isGrantableGrowthOsRole(role)) {
+    throw new AppError(
+      'role must be SUPER_ADMIN or GROWTH_USER.',
+      400,
+      'GROWTH_OS_INVALID_ROLE',
+    );
+  }
+  if (role === GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN && targetUserId === actorUserId) {
+    throw new AppError(
+      'A Super Admin cannot grant SUPER_ADMIN to themselves.',
+      403,
+      'GROWTH_OS_SELF_ESCALATION_FORBIDDEN',
+    );
   }
   const normalizedReason = normalizeReason(reason);
   const { sequelize } = require('../../utils/database/database-setup');
@@ -149,6 +169,18 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
   });
 }
 
+async function invalidateInternalSessionsBestEffort(userId) {
+  try {
+    const { invalidateUserSessions } = require('../auth/auth.service');
+    await invalidateUserSessions(userId);
+  } catch (_error) {
+    // The role/cache revocation above already ended Growth access. Session
+    // invalidation is defence-in-depth; surface it operationally instead of
+    // pretending the revoke failed after it committed.
+    console.error('[growth-os] session invalidation failed for revoked internal user');
+  }
+}
+
 async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAgent }) {
   assertUuid(actorUserId, 'actorUserId');
   assertUuid(targetUserId, 'targetUserId');
@@ -156,7 +188,7 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
   const { sequelize } = require('../../utils/database/database-setup');
   const { GrowthOsUserRole } = require('../entities');
 
-  return sequelize.transaction(async (transaction) => {
+  const result = await sequelize.transaction(async (transaction) => {
     const roleRecord = await GrowthOsUserRole.findOne({
       where: {
         user_id: targetUserId,
@@ -170,22 +202,27 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
       throw new AppError('The target user has no active Growth OS role.', 404, 'GROWTH_OS_ROLE_NOT_FOUND');
     }
 
-    if (roleRecord.role === GROWTH_OS_ROLES.FOUNDER) {
+    if (SUPER_ADMIN_ROLE_VALUES.includes(roleRecord.role)) {
       // PostgreSQL rejects FOR UPDATE on aggregate queries. Lock the active
-      // Founder rows first, then count the locked result inside this
-      // transaction so concurrent revocations cannot remove the last Founder.
-      const activeFounders = await GrowthOsUserRole.findAll({
-        attributes: ['id'],
+      // Super Admin (including legacy Founder) rows first, then count the
+      // locked result inside this transaction so concurrent revocations
+      // cannot remove the last Super Admin or self-lock the console.
+      const activeSuperAdmins = await GrowthOsUserRole.findAll({
+        attributes: ['id', 'user_id'],
         where: {
-          role: GROWTH_OS_ROLES.FOUNDER,
+          role: { [Op.in]: SUPER_ADMIN_ROLE_VALUES },
           is_active: true,
           revoked_at: { [Op.is]: null },
         },
         transaction,
         lock: transaction.LOCK?.UPDATE,
       });
-      if (activeFounders.length <= 1) {
-        throw new AppError('The last active Growth OS Founder cannot be revoked.', 409, 'GROWTH_OS_LAST_FOUNDER');
+      if (activeSuperAdmins.length <= 1) {
+        throw new AppError(
+          'The last active Growth OS Super Admin cannot be revoked.',
+          409,
+          'GROWTH_OS_LAST_SUPER_ADMIN',
+        );
       }
     }
 
@@ -210,10 +247,240 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
 
     return safeRole(roleRecord);
   });
+
+  await invalidateInternalSessionsBestEffort(targetUserId);
+  return result;
+}
+
+// Temporarily suspend (active -> inactive) or re-activate (inactive ->
+// active) the most recent non-revoked role row. This is distinct from
+// revoke, which is terminal. The last-Super-Admin and self-lockout guards
+// apply to suspension too.
+async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAddress, userAgent }) {
+  assertUuid(actorUserId, 'actorUserId');
+  assertUuid(targetUserId, 'targetUserId');
+  const normalizedReason = normalizeReason(reason);
+  const { sequelize } = require('../../utils/database/database-setup');
+  const { GrowthOsUserRole } = require('../entities');
+
+  const result = await sequelize.transaction(async (transaction) => {
+    const activeRow = await GrowthOsUserRole.findOne({
+      where: {
+        user_id: targetUserId,
+        is_active: true,
+        revoked_at: { [Op.is]: null },
+      },
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    const inactiveRow = activeRow ? null : await GrowthOsUserRole.findOne({
+      where: {
+        user_id: targetUserId,
+        revoked_at: { [Op.is]: null },
+      },
+      transaction,
+      order: [['granted_at', 'DESC']],
+      lock: transaction.LOCK?.UPDATE,
+    });
+
+    if (active && !activeRow) {
+      if (!inactiveRow) {
+        throw new AppError(
+          'The target user has no unrevoked Growth OS role to activate.',
+          404,
+          'GROWTH_OS_ROLE_NOT_FOUND',
+        );
+      }
+      const otherActive = await GrowthOsUserRole.findOne({
+        attributes: ['id'],
+        where: {
+          user_id: targetUserId,
+          is_active: true,
+          revoked_at: { [Op.is]: null },
+        },
+        transaction,
+      });
+      if (otherActive) {
+        throw new AppError(
+          'The target user already has an active Growth OS role.',
+          409,
+          'GROWTH_OS_ROLE_ALREADY_ASSIGNED',
+        );
+      }
+      await inactiveRow.update({ is_active: true }, { transaction });
+      await writeAudit({
+        actorUserId,
+        roleRecord: inactiveRow,
+        oldValues: { user_id: targetUserId, is_active: false },
+        newValues: { user_id: targetUserId, is_active: true },
+        reason: normalizedReason,
+        action: 'growth_os:role_activated',
+        ipAddress,
+        userAgent,
+      }, transaction);
+      await invalidateRoleCache(targetUserId, transaction);
+      return safeRole(inactiveRow);
+    }
+
+    if (!active) {
+      if (!activeRow) {
+        throw new AppError(
+          'The target user does not have an active Growth OS role.',
+          404,
+          'GROWTH_OS_ROLE_NOT_FOUND',
+        );
+      }
+      if (SUPER_ADMIN_ROLE_VALUES.includes(activeRow.role)) {
+        const activeSuperAdmins = await GrowthOsUserRole.findAll({
+          attributes: ['id'],
+          where: {
+            role: { [Op.in]: SUPER_ADMIN_ROLE_VALUES },
+            is_active: true,
+            revoked_at: { [Op.is]: null },
+          },
+          transaction,
+          lock: transaction.LOCK?.UPDATE,
+        });
+        if (activeSuperAdmins.length <= 1) {
+          throw new AppError(
+            'The last active Growth OS Super Admin cannot be suspended.',
+            409,
+            'GROWTH_OS_LAST_SUPER_ADMIN',
+          );
+        }
+      }
+      await activeRow.update({ is_active: false }, { transaction });
+      await writeAudit({
+        actorUserId,
+        roleRecord: activeRow,
+        oldValues: { user_id: targetUserId, is_active: true },
+        newValues: { user_id: targetUserId, is_active: false },
+        reason: normalizedReason,
+        action: 'growth_os:role_suspended',
+        ipAddress,
+        userAgent,
+      }, transaction);
+      await invalidateRoleCache(targetUserId, transaction);
+      return safeRole(activeRow);
+    }
+
+    // Requested status matches the current status; nothing to do.
+    throw new AppError(
+      'The requested Growth OS status already matches.',
+      409,
+      'GROWTH_OS_ROLE_ALREADY_ASSIGNED',
+    );
+  });
+
+  if (!active) {
+    await invalidateInternalSessionsBestEffort(targetUserId);
+  }
+  return result;
+}
+
+// Atomically replace the active role (SUPER_ADMIN <-> GROWTH_USER) while
+// keeping one audit trail entry per side of the change.
+async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, userAgent }) {
+  assertUuid(actorUserId, 'actorUserId');
+  assertUuid(targetUserId, 'targetUserId');
+  if (!isGrantableGrowthOsRole(role)) {
+    throw new AppError('role must be SUPER_ADMIN or GROWTH_USER.', 400, 'GROWTH_OS_INVALID_ROLE');
+  }
+  if (role === GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN && targetUserId === actorUserId) {
+    throw new AppError(
+      'A Super Admin cannot escalate their own role.',
+      403,
+      'GROWTH_OS_SELF_ESCALATION_FORBIDDEN',
+    );
+  }
+  const normalizedReason = normalizeReason(reason);
+  const { sequelize } = require('../../utils/database/database-setup');
+  const { GrowthOsUserRole } = require('../entities');
+
+  return sequelize.transaction(async (transaction) => {
+    const activeRow = await GrowthOsUserRole.findOne({
+      where: {
+        user_id: targetUserId,
+        is_active: true,
+        revoked_at: { [Op.is]: null },
+      },
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!activeRow) {
+      throw new AppError(
+        'The target user must already have one active Growth OS role.',
+        404,
+        'GROWTH_OS_ROLE_NOT_FOUND',
+      );
+    }
+    if (activeRow.role === role) {
+      throw new AppError(
+        'The target user already holds that Growth OS role.',
+        409,
+        'GROWTH_OS_ROLE_ALREADY_ASSIGNED',
+      );
+    }
+
+    if (SUPER_ADMIN_ROLE_VALUES.includes(activeRow.role)) {
+      const activeSuperAdmins = await GrowthOsUserRole.findAll({
+        attributes: ['id'],
+        where: {
+          role: { [Op.in]: SUPER_ADMIN_ROLE_VALUES },
+          is_active: true,
+          revoked_at: { [Op.is]: null },
+        },
+        transaction,
+        lock: transaction.LOCK?.UPDATE,
+      });
+      if (activeSuperAdmins.length <= 1) {
+        throw new AppError(
+          'The last active Growth OS Super Admin cannot be demoted.',
+          409,
+          'GROWTH_OS_LAST_SUPER_ADMIN',
+        );
+      }
+    }
+
+    await activeRow.update({
+      is_active: false,
+      revoked_by: actorUserId,
+      revoked_at: new Date(),
+    }, { transaction });
+
+    const nextRow = await GrowthOsUserRole.create({
+      user_id: targetUserId,
+      role,
+      is_active: true,
+      granted_by: actorUserId,
+      granted_at: new Date(),
+      revoked_by: null,
+      revoked_at: null,
+      metadata: { source: 'growth_os_user_admin', replaced_role: activeRow.role },
+    }, { transaction });
+
+    await writeAudit({
+      actorUserId,
+      roleRecord: activeRow,
+      oldValues: { user_id: targetUserId, role: activeRow.role },
+      newValues: { user_id: targetUserId, role },
+      reason: normalizedReason,
+      action: 'growth_os:role_changed',
+      ipAddress,
+      userAgent,
+    }, transaction);
+    await invalidateRoleCache(targetUserId, transaction);
+
+    return safeRole(nextRow);
+  });
 }
 
 module.exports = {
   grantRole,
   revokeRole,
+  setActiveStatus,
+  changeRole,
+  isSuperAdminRoleValue: (role) => SUPER_ADMIN_ROLE_VALUES.includes(role),
+  SUPER_ADMIN_ROLE_VALUES,
   ROLE_CACHE_TTL_SECONDS,
 };

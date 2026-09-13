@@ -22,7 +22,11 @@ async function getSession(userId, growthOsAccess) {
   return {
     internalUserId: user.id,
     displayName: user.full_name || 'Internal user',
+    // `role` is the canonical two-role model value; legacyRole is exposed so
+    // the UI can show historical grants (FOUNDER et al) without inventing a
+    // parallel identity.
     role: growthOsAccess.role,
+    legacyRole: growthOsAccess.rawRole !== growthOsAccess.role ? growthOsAccess.rawRole : null,
     permissions: growthOsAccess.permissions,
   };
 }

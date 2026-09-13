@@ -278,6 +278,49 @@ const createUserWithShop = async (userData) => {
 };
 
 /**
+ * True when the user currently holds an active Growth OS internal role.
+ * Used solely to allow shop-less sign-in/refresh for internal staff accounts.
+ * This is NOT an authorization decision: Growth API requests are still
+ * authorized per-request by the strict Growth OS middleware. Failing any
+ * lookup here returns false (deny), which only affects users who would
+ * otherwise receive the existing "no associated shops" 403.
+ */
+const hasActiveGrowthOsRole = async (userId) => {
+    if (!userId) return false;
+    try {
+        const { GrowthOsUserRole } = require('../entities');
+        const row = await GrowthOsUserRole.findOne({
+            attributes: ['id'],
+            where: {
+                user_id: userId,
+                is_active: true,
+                revoked_at: { [Op.is]: null },
+            },
+        });
+        return Boolean(row);
+    } catch (_error) {
+        return false;
+    }
+};
+
+/**
+ * Invalidate every existing session for a user: bump token_version (the
+ * revocation check in auth.middleware rejects all pre-bump JWTs immediately
+ * once the cache entry is deleted) and clear the stored refresh token.
+ * Returns the new token version.
+ */
+const invalidateUserSessions = async (userId) => {
+    const user = await User.findByPk(userId, { attributes: ['id', 'token_version'] });
+    if (!user) return null;
+    await user.update({
+        refresh_token: null,
+        token_version: sequelize.literal('token_version + 1'),
+    });
+    await cacheService.delete(`user:${userId}:token_version`);
+    return user.token_version + 1;
+};
+
+/**
  * Authenticate user (with lockout check)
  */
 const authenticateUser = async (email, password) => {
@@ -320,30 +363,36 @@ const authenticateUser = async (email, password) => {
         return { requires2fa: true, tempToken };
     }
 
-    // Check if user has any shops
+    // Determine which shop to log into. Users with no active shop membership
+    // may only obtain a session when they hold an active Growth OS internal
+    // role; the token then carries a null shopId, which every shop-scoped
+    // merchant route rejects on scope. Everyone else keeps the historical
+    // 403 behaviour unchanged.
     if (!user.shops || user.shops.length === 0) {
-        throw new AppError('User has no associated shops', 403);
-    }
-
-    // Determine which shop to log into
-    let loggedShopId;
-
-    // If user has last_logged_shop_id and it's still accessible, use it
-    if (user.last_logged_shop_id) {
-        const hasAccessToLastShop = user.shops.some(shop => shop.id === user.last_logged_shop_id);
-        if (hasAccessToLastShop) {
-            loggedShopId = user.last_logged_shop_id;
+        if (!(await hasActiveGrowthOsRole(user.id))) {
+            throw new AppError('User has no associated shops', 403);
         }
     }
 
-    // Otherwise, use the first shop (or first owner shop if available)
-    if (!loggedShopId) {
-        const ownerShop = user.shops.find(shop => shop.UserShop.role === 'owner');
-        loggedShopId = ownerShop ? ownerShop.id : user.shops[0].id;
-    }
+    // If user has last_logged_shop_id and it's still accessible, use it
+    let loggedShopId = null;
+    if (user.shops && user.shops.length > 0) {
+        if (user.last_logged_shop_id) {
+            const hasAccessToLastShop = user.shops.some(shop => shop.id === user.last_logged_shop_id);
+            if (hasAccessToLastShop) {
+                loggedShopId = user.last_logged_shop_id;
+            }
+        }
 
-    // Update last logged shop
-    await user.update({ last_logged_shop_id: loggedShopId });
+        // Otherwise, use the first shop (or first owner shop if available)
+        if (!loggedShopId) {
+            const ownerShop = user.shops.find(shop => shop.UserShop.role === 'owner');
+            loggedShopId = ownerShop ? ownerShop.id : user.shops[0].id;
+        }
+
+        // Update last logged shop
+        await user.update({ last_logged_shop_id: loggedShopId });
+    }
 
     // Generate tokens with shopId and token_version included
     const accessToken = generateAccessToken({
@@ -364,7 +413,9 @@ const authenticateUser = async (email, password) => {
     await user.update({ refresh_token: hashedRefreshToken });
 
     // Get the logged shop details
-    const loggedShop = user.shops.find(shop => shop.id === loggedShopId);
+    const loggedShop = loggedShopId
+        ? user.shops.find(shop => shop.id === loggedShopId)
+        : null;
 
     // Return user data without password
     const userResponse = {
@@ -375,12 +426,14 @@ const authenticateUser = async (email, password) => {
         profile_picture: user.profile_picture
     };
 
-    const currentShop = {
-        id: loggedShop.id,
-        unique_code: loggedShop.unique_code,
-        shop_name: loggedShop.shop_name,
-        role: loggedShop.UserShop.role
-    };
+    const currentShop = loggedShop
+        ? {
+            id: loggedShop.id,
+            unique_code: loggedShop.unique_code,
+            shop_name: loggedShop.shop_name,
+            role: loggedShop.UserShop.role
+        }
+        : null;
 
     return {
         user: userResponse,
@@ -535,8 +588,10 @@ const validateRefreshToken = async (refreshToken) => {
             throw new AppError('Invalid refresh token', 401);
         }
 
-        // Require valid shopId - reject if user has no active shop session
-        if (!user.last_logged_shop_id) {
+        // Require valid shopId - reject if user has no active shop session.
+        // Internal Growth OS users are the one exception: their sessions carry
+        // a null shopId and are re-authorized per-request by Growth middleware.
+        if (!user.last_logged_shop_id && !(await hasActiveGrowthOsRole(user.id))) {
             throw new AppError('No active shop session found. Please login again.', 401);
         }
 
@@ -544,12 +599,12 @@ const validateRefreshToken = async (refreshToken) => {
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
-            shopId: user.last_logged_shop_id,
+            shopId: user.last_logged_shop_id || null,
             tokenVersion: user.token_version,
             mfaVerified: decoded.mfaVerified === true,
         });
 
-        return { accessToken, userId: user.id, shopId: user.last_logged_shop_id };
+        return { accessToken, userId: user.id, shopId: user.last_logged_shop_id || null };
     } catch (error) {
         throw new AppError('Invalid or expired refresh token', 401);
     }
@@ -638,5 +693,7 @@ module.exports = {
     getAuthContext,
     logoutUser,
     isTokenBlacklisted,
-    generateUniqueShopCode
+    generateUniqueShopCode,
+    hasActiveGrowthOsRole,
+    invalidateUserSessions
 };

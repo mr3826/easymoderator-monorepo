@@ -179,7 +179,7 @@ describe('Growth OS session authorization', () => {
     expect(GrowthOsUserRole.findAll).not.toHaveBeenCalled();
   });
 
-  it('allows an authorized founder and returns safe session fields', async () => {
+  it('resolves a legacy founder to canonical SUPER_ADMIN with safe session fields', async () => {
     roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech', mfaVerified: true };
     roleHolder.growthRole = 'FOUNDER';
 
@@ -189,24 +189,57 @@ describe('Growth OS session authorization', () => {
     expect(res.body.data).toMatchObject({
       internalUserId: 'founder-1',
       displayName: 'Founder User',
-      role: 'FOUNDER',
+      role: 'SUPER_ADMIN',
+      legacyRole: 'FOUNDER',
     });
     expect(res.body.data.permissions).toContain('growth_os.roles.manage');
+    expect(res.body.data.permissions).toContain('growth_os.admin.users.manage');
     expect(res.body.data).not.toHaveProperty('token');
     expect(res.body.data).not.toHaveProperty('password');
   });
 
-  it('allows an authorized executive with limited permissions', async () => {
+  it('resolves a legacy executive to canonical GROWTH_USER without admin permissions', async () => {
     roleHolder.user = { userId: 'executive-1', email: 'exec@easymod.tech' };
     roleHolder.growthRole = 'BUSINESS_EXECUTIVE';
 
     const res = await request(app).get('/api/internal/growth-os/session');
 
     expect(res.status).toBe(200);
-    expect(res.body.data.role).toBe('BUSINESS_EXECUTIVE');
-    expect(res.body.data.permissions).toContain('growth_os.prospects.read_assigned');
+    expect(res.body.data.role).toBe('GROWTH_USER');
+    expect(res.body.data.legacyRole).toBe('BUSINESS_EXECUTIVE');
+    expect(res.body.data.permissions).toContain('growth_os.prospects.read_all');
+    expect(res.body.data.permissions).toContain('growth_os.followups.manage');
     expect(res.body.data.permissions).not.toContain('growth_os.roles.manage');
-    expect(res.body.data.permissions).not.toContain('growth_os.prospects.read_all');
+    expect(res.body.data.permissions).not.toContain('growth_os.admin.users.manage');
+    expect(res.body.data.permissions).not.toContain('growth_os.admin.merchants.mutate');
+  });
+
+  it('grants a canonical GROWTH_USER full workspace without admin or user-management access, no MFA required', async () => {
+    roleHolder.user = { userId: 'growth-1', email: 'growth@easymod.tech', mfaVerified: false };
+    roleHolder.growthRole = 'GROWTH_USER';
+
+    const session = await request(app).get('/api/internal/growth-os/session');
+    expect(session.status).toBe(200);
+    expect(session.body.data.permissions).toContain('growth_os.merchants.read_insight');
+    expect(session.body.data.permissions).not.toContain('growth_os.admin.merchants.read');
+
+    const adminUsers = await request(app).get('/api/internal/growth-os/admin/users');
+    expect(adminUsers.status).toBe(403);
+    const adminGrantRole = await request(app)
+      .post('/api/internal/growth-os/admin/users')
+      .send({ email: 'new@easymod.tech', fullName: 'Nope', role: 'SUPER_ADMIN', reason: 'x' });
+    expect(adminGrantRole.status).toBe(403);
+    expect(growthRoleService.grantRole).not.toHaveBeenCalled();
+  });
+
+  it('requires MFA assurance for the canonical SUPER_ADMIN role too', async () => {
+    roleHolder.user = { userId: 'sa-1', email: 'sa@easymod.tech', mfaVerified: false };
+    roleHolder.growthRole = 'SUPER_ADMIN';
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
   });
 
   it('requires MFA assurance for privileged Growth roles', async () => {

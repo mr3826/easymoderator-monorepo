@@ -117,6 +117,16 @@ const recordActivation = async (shopId, conversationId = null) => {
         }
 
         activationConfirmed = await writeActivation(shop, shopId, conversationId);
+        if (activationConfirmed) {
+            // Best-effort Growth funnel completion: convert linked prospects
+            // already in onboarding. This must never affect the reply path.
+            try {
+                const prospectService = require('../growth-os/growth-os.prospect.service');
+                await prospectService.markLinkedShopsActivated({ shopId, conversationId });
+            } catch (syncErr) {
+                console.error('Growth activation prospect sync failed:', { name: syncErr?.name, code: syncErr?.code });
+            }
+        }
     } catch (err) {
         // Best-effort — swallow so a reply is never blocked by metrics
         // bookkeeping, but retain a sanitized operational signal.

@@ -59,9 +59,14 @@ const verify = async (req, res, next) => {
         const user = await User.findByPk(userId);
         if (!user) throw new AppError('User not found', 404);
 
+        // A null shopId is only acceptable for internal Growth OS staff
+        // accounts (no shop membership required); everyone else must re-login.
         const shopId = user.last_logged_shop_id || null;
         if (!shopId) {
-            throw new AppError('No active shop session found. Please login again.', 401);
+            const { hasActiveGrowthOsRole } = require('./auth.service');
+            if (!(await hasActiveGrowthOsRole(user.id))) {
+                throw new AppError('No active shop session found. Please login again.', 401);
+            }
         }
 
         // Include tokenVersion so 2FA-issued sessions honour the same revocation
