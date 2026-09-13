@@ -278,9 +278,22 @@ const createUserWithShop = async (userData) => {
 };
 
 /**
- * Authenticate user (with lockout check)
+ * Verify credentials (lockout + password + TOTP-gate) and resolve which shop
+ * a successful login lands in. Extracted out of authenticateUser so a second
+ * caller (native auth, ADR M-004) can reuse the exact same password/lockout/
+ * 2FA logic without duplicating it and — critically — without inheriting
+ * authenticateUser's own token-issuance/single-refresh-token-slot side
+ * effects, which are native's whole reason for existing as a separate flow.
+ *
+ * This is a pure extraction: authenticateUser below calls it and then does
+ * exactly what it always did with the result, in the same order, so its
+ * external behavior (inputs, outputs, side effects, error messages) is
+ * unchanged. Proven by the full auth.security.test.js suite passing at an
+ * identical count before and after this change.
+ *
+ * Returns either { requires2fa: true, tempToken } or { user, loggedShopId }.
  */
-const authenticateUser = async (email, password) => {
+const resolveAuthenticatedUser = async (email, password) => {
     // Check if account is locked
     await checkAccountLockout(email);
 
@@ -344,6 +357,19 @@ const authenticateUser = async (email, password) => {
 
     // Update last logged shop
     await user.update({ last_logged_shop_id: loggedShopId });
+
+    return { user, loggedShopId };
+};
+
+/**
+ * Authenticate user (with lockout check)
+ */
+const authenticateUser = async (email, password) => {
+    const resolved = await resolveAuthenticatedUser(email, password);
+    if (resolved.requires2fa) {
+        return resolved;
+    }
+    const { user, loggedShopId } = resolved;
 
     // Generate tokens with shopId and token_version included
     const accessToken = generateAccessToken({
@@ -638,5 +664,8 @@ module.exports = {
     getAuthContext,
     logoutUser,
     isTokenBlacklisted,
-    generateUniqueShopCode
+    generateUniqueShopCode,
+    // ADR M-004: reused (not duplicated) by the native auth module.
+    resolveAuthenticatedUser,
+    blacklistToken,
 };

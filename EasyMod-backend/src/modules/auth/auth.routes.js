@@ -136,4 +136,9 @@ router.post('/2fa/disable', authenticate, totpController.disable);
 // Session management routes
 router.use('/sessions', require('./session.routes'));
 
+// ADR M-004: native (body-token) auth — a clean, dedicated mount. Does NOT
+// touch the /sessions mount above, including its pre-existing
+// /api/auth/sessions/sessions double-mount, which is left exactly as-is.
+router.use('/native', require('./native/native.routes'));
+
 module.exports = router;

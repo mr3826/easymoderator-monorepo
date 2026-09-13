@@ -1,0 +1,190 @@
+name: Mobile CI
+
+# Isolation contract (ADR M-009, docs/mobile/adr/M-009-ci-isolation.md): this
+# workflow only ever runs against feature/mobile-app and mobile/** branches,
+# never main; it carries no secrets, no deployment environment, and no
+# workflow_dispatch trigger; and it never pushes to a registry or reaches a
+# host over SSH. The isolation-guard job below fails the run structurally if
+# any of that ever changes — do not weaken it to make a future change pass.
+
+on:
+  push:
+    branches:
+      - feature/mobile-app
+      - 'mobile/**'
+  pull_request:
+    branches:
+      - feature/mobile-app
+
+permissions:
+  contents: read
+
+jobs:
+  isolation-guard:
+    name: Isolation guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Verify this workflow carries no secrets, environment, dispatch, or main-reaching trigger
+        run: node .github/scripts/verify-mobile-ci-isolation.js
+
+  protected-paths:
+    name: Protected paths untouched
+    runs-on: ubuntu-latest
+    needs: [isolation-guard]
+    outputs:
+      backend_touched: ${{ steps.diff.outputs.backend_touched }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Diff against origin/main and enforce the mobile-isolation allowlist
+        id: diff
+        run: node .github/scripts/verify-mobile-protected-paths.js
+
+  gitleaks:
+    name: Historical secret scan
+    runs-on: ubuntu-latest
+    needs: [isolation-guard]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository history with Gitleaks
+        # Same pinned digest as the existing Security Scan workflow (Gitleaks
+        # v8.28.0). Keep the block scalar free of inline comments — they
+        # become literal Docker arguments.
+        run: >-
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/repo"
+          zricethezav/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+          git --config=/repo/.gitleaks.toml --redact --verbose --log-opts="--all" /repo
+
+  mobile:
+    name: Mobile — typecheck, lint, unit, audit
+    runs-on: ubuntu-latest
+    needs: [isolation-guard]
+    defaults:
+      run:
+        working-directory: ./EasyMod-mobile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test -- --ci
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  backend-regression:
+    name: Backend regression (Node 20)
+    runs-on: ubuntu-latest
+    needs: [protected-paths]
+    # Only runs when this branch's diff against origin/main touches
+    # EasyMod-backend/ at all — a documentation-only or mobile-app-only branch
+    # never spins up Postgres/Redis for this job.
+    if: needs.protected-paths.outputs.backend_touched == 'true'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: easymod_integration_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Backend unit + security suite
+        working-directory: ./EasyMod-backend
+        run: |
+          npm run test:security
+          npm test
+
+      - name: Migrate the integration database
+        working-directory: ./EasyMod-backend
+        env:
+          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
+          DB_SSL: 'false'
+          NODE_ENV: test
+        run: npm run migrate
+
+      - name: Backend integration suite
+        working-directory: ./EasyMod-backend
+        env:
+          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
+          REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:integration
+
+  # Android Gradle build + Maestro on-emulator flows are opt-in (ADR M-009 —
+  # emulator minutes are metered) and are intentionally NOT defined in this
+  # initial version of the workflow: adding that job means pinning a Java
+  # setup action and an emulator/Maestro-runner action by digest, the same way
+  # every other action in this file is pinned, and no digest is fabricated
+  # here without verifying it against the real action first. The phase that
+  # first needs an on-device/CI Android build (per docs/mobile/MOBILE_ARCHITECTURE.md
+  # §6, ANDROID_DEV_BUILD is currently a local Gradle gate, not a CI job) adds
+  # this job with real, verified pins rather than placeholder ones.
+
+  mobile-ci-gate:
+    name: Mobile CI
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [isolation-guard, protected-paths, gitleaks, mobile]
+    steps:
+      - name: Report the mobile CI verdict
+        env:
+          R_GUARD: ${{ needs.isolation-guard.result }}
+          R_PATHS: ${{ needs.protected-paths.result }}
+          R_LEAKS: ${{ needs.gitleaks.result }}
+          R_MOBILE: ${{ needs.mobile.result }}
+        run: |
+          set -euo pipefail
+          echo "Isolation guard:    $R_GUARD"
+          echo "Protected paths:    $R_PATHS"
+          echo "Gitleaks:           $R_LEAKS"
+          echo "Mobile checks:      $R_MOBILE"
+          if [ "$R_GUARD" != "success" ] || [ "$R_PATHS" != "success" ] || [ "$R_LEAKS" != "success" ] || [ "$R_MOBILE" != "success" ]; then
+            echo "Mobile CI: FAIL"
+            exit 1
+          fi
+          echo "Mobile CI: PASS"
