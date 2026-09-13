@@ -18,6 +18,26 @@ const { HTTP_STATUS } = require('../../constants/http-status');
 // Without this, a throw inside the detached setImmediate vanished silently —
 // leaving products un-embedded with no trace.
 const moduleLogger = createLogger('ProductService');
+
+// Fields that must always come from the authenticated request context
+// (JWT shopId, route params, or Sequelize itself) and never from
+// client-supplied body data. The Joi schemas for create/update intentionally
+// end in `.unknown(true)` to stay lenient for the growing set of AI/import
+// fields on this resource, which means a client can smuggle any of these
+// through validation — e.g. a `shop_id` in the body would otherwise let a
+// user of Shop A create or move a product into Shop B. Stripping them here,
+// at the single choke point both the RESTful and legacy routes funnel
+// through, closes that off regardless of what the validator allows.
+const SERVER_OWNED_PRODUCT_FIELDS = ['shop_id', 'shopId', 'id', 'created_at', 'updated_at', 'createdAt', 'updatedAt'];
+
+const stripServerOwnedFields = (data = {}) => {
+    const sanitized = { ...data };
+    for (const field of SERVER_OWNED_PRODUCT_FIELDS) {
+        delete sanitized[field];
+    }
+    return sanitized;
+};
+
 // Atomic stock update utility
 const updateProductStock = async (shopId, sku, delta, transaction = null) => {
     // Find product by shop and SKU
@@ -183,6 +203,10 @@ const verifyShopAccess = async (userId, shopId) => {
 const createProduct = async (userId, shopId, productData, requestId = null) => {
     const logger = createLogger(requestId, shopId, userId);
 
+    // SECURITY: strip shop_id/id/timestamps from client input before they can
+    // reach Product.create — see SERVER_OWNED_PRODUCT_FIELDS above.
+    productData = stripServerOwnedFields(productData);
+
     // Verify shop access
     await verifyShopAccess(userId, shopId);
 
@@ -210,10 +234,12 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
     const newMediaPaths = getProductMediaPaths(productData.images, productData.image_url, shopId);
     
     try {
-        // Create product within transaction
+        // Create product within transaction.
+        // shop_id is spread last so it always wins over any stray client value
+        // that survives stripServerOwnedFields above (defense in depth).
         const product = await Product.create({
-            shop_id: shopId,
-            ...productData
+            ...productData,
+            shop_id: shopId
         }, { transaction });
 
         // Commit transaction - NOW product is persisted
@@ -275,6 +301,12 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
  * Update a product
  */
 const updateProduct = async (productId, userId, shopId, updateData) => {
+    // SECURITY: strip shop_id/id/timestamps from client input before they can
+    // reach product.update — otherwise a client could move a product it owns
+    // into a different shop, or overwrite its primary key, by including
+    // shop_id/id in the PATCH body. See SERVER_OWNED_PRODUCT_FIELDS above.
+    updateData = stripServerOwnedFields(updateData);
+
     // Verify shop access
     await verifyShopAccess(userId, shopId);
 
