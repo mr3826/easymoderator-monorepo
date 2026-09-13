@@ -117,3 +117,158 @@ DEFERRED_ITEMS=
 
 NEXT_PHASE=Phase 1 (Foundation: Expo scaffold, native auth backend M-004/M-005/M-010, mobile-ci.yml) — begins after this receipt and the Phase 0 PR are reviewed. Track D's four fix PRs are opened next, in parallel with Phase 1 start, each requiring explicit user confirmation before merge.
 ```
+
+### Phase 1 — Foundation (Expo scaffold, native auth backend, CI isolation)
+
+```text
+PHASE=1 (Foundation)
+STATUS=PASS
+
+BRANCH=mobile/p1-foundation (merging into feature/mobile-app)
+HEAD_SHA=f91012fc08ac15895bd8e1f2f990414f2243b334
+
+FEATURES_COMPLETED=
+- EasyMod-mobile/: standalone Expo SDK 57 app (Router, TypeScript, New Architecture) per ADR M-001;
+  app.config.ts dev/preview/production variants; eas.json profiles (never auto-submitting); tab
+  shell (Home/Inbox/+/Orders/More placeholders); native-auth client (SecureStore refresh token,
+  in-memory access token, single-flight refresh guard); typed API client with a zod-validated,
+  6-envelope error normalizer (ADR M-003); TanStack Query; offline banner, no mutation queue (ADR
+  M-011); i18next extending the web app's real bn/en key namespace; web app's brand tokens/Hind
+  Siliguri/lucide icons; BD phone/currency utils; inert Sentry interface.
+- EasyMod-backend/: five MOBILE_* flags (ADR M-010); additive modules/auth/native/* routes (signin,
+  2FA verify, refresh with rotation + reuse-detection, logout, switch-shop, session list/revoke),
+  flag-gated 404-when-off (ADR M-004); additive sid-revocation branch in `authenticate`; additive
+  CSRF exemption for Bearer-only/zero-cookie requests; the previously-dead user_sessions table
+  repaired and given its first real caller (surfaced and fixed two latent, never-triggered bugs in
+  session.service.js as a result); one additive migration for refresh-token rotation lineage
+  columns; X-EM-Client attribution wired into native audit calls (ADR M-005).
+- .github/workflows/mobile-ci.yml (ADR M-009): isolation-guard + protected-paths + gitleaks +
+  mobile typecheck/lint/unit/audit + conditional backend-regression (Node 20, real Postgres/Redis)
+  jobs. Two dependency-free guard scripts, both locally verified against 8 deliberately broken
+  variants each (before AND after a mid-phase strengthening pass — see SECURITY_REVIEW below).
+- Independent adversarial code review of the full backend diff (auth.middleware.js,
+  csrf-middleware.js, auth.service.js refactor, session.service.js, native/* module, and both guard
+  scripts) — found one real bug (a refresh-rotation race condition) and two CI-guard gaps, both
+  fixed and re-verified before this receipt.
+
+ARCHITECTURE_DECISIONS=Implements M-001, M-003, M-004, M-005, M-009, M-010, M-011 as designed in
+Phase 0; no new ADRs required.
+
+FILES_CHANGED=
+- EasyMod-mobile/** (new — standalone package, ~60 files)
+- .github/workflows/mobile-ci.yml, .github/scripts/verify-mobile-{ci-isolation,protected-paths}.js (new)
+- EasyMod-backend/src/config/config.js (+5 flags, additive keys)
+- EasyMod-backend/src/middleware/auth.middleware.js (+1 additive branch, inert without a `sid` claim)
+- EasyMod-backend/src/middleware/csrf-middleware.js (+1 additive exemption, inert without the flag
+  and any cookie present)
+- EasyMod-backend/src/modules/auth/auth.service.js (behavior-preserving extraction:
+  resolveAuthenticatedUser)
+- EasyMod-backend/src/modules/auth/session.service.js (2 latent bug fixes: `sequelize.Op` reference,
+  missing User-Agent null-check — both dead until this phase gave the file its first caller)
+- EasyMod-backend/src/modules/auth/session.entity.js (+2 nullable columns)
+- EasyMod-backend/src/modules/auth/native/** (new module, 6 files)
+- EasyMod-backend/src/middleware/mobile-client-context.middleware.js (new)
+- EasyMod-backend/src/database/migrations/20260914_001_native_session_refresh_lineage.js (new,
+  additive, reversible)
+- EasyMod-backend/src/modules/entities.js (+1 export, no behavior change)
+- Test files: 4 new/updated across EasyMod-backend, 5 new in EasyMod-mobile
+No file outside this list changed; root package.json/lockfile, EasyMod-frontend/, EasyMod-growth/,
+Dockerfiles, docker-compose*.yml, Caddyfile, and every pre-existing workflow are byte-identical to
+origin/main (git diff origin/main..HEAD --stat scoped to those paths: empty).
+
+API_CHANGES=New, flag-gated: POST /api/auth/native/{signin,2fa/verify,refresh,logout,switch-shop},
+GET/DELETE /api/auth/native/sessions[/:id]. No existing endpoint's contract changed.
+
+DB_CHANGES=One additive migration (20260914_001_native_session_refresh_lineage): two
+nullable/defaulted columns + an index on the already-empty user_sessions table. Verified against a
+local disposable database only; reversible.
+
+SECURITY_REVIEW=Independent adversarial review completed 2026-09-13/14 against the full backend
+diff, tracing (1) the sid-revocation branch's inertness for non-native tokens, (2) the CSRF
+exemption's exact Bearer+zero-cookie+flag condition including the required hybrid-cookie
+non-exemption case, (3) the authenticateUser/resolveAuthenticatedUser refactor's behavior
+preservation, (4) refresh rotation + reuse-detection correctness, (5) flag-gating completeness, (6)
+the two session.service.js bug fixes' correctness and blast radius, (7) the CI guard scripts'
+actual robustness, (8) general concerns. Verdict: safe with one real bug (item 4: an unconditional
+update let two concurrent refreshes of the same not-yet-rotated token race and corrupt the session
+row, causing a false reuse-detected/session-revoked outcome for the losing, legitimate caller) and
+two minor CI-guard gaps (a literal `\bmain\b` substring check missing a triggerless `push:` or a
+bare wildcard branch entry; guard-script changes not flagged for extra review attention). All three
+fixed: the refresh update is now an atomic compare-and-swap that fails closed with a clean 409 on a
+lost race instead of mutating the session (new test fires two concurrent refreshes, asserts exactly
+one 200/one 409, no false revocation — verified to actually fail without the fix and pass with it
+by temporarily reverting and restoring it); the isolation guard now requires an explicit,
+non-wildcard branches: list on every trigger (re-verified against 8 deliberately broken variants,
+including the 2 new checks, all correctly caught); the protected-paths guard now prints a loud,
+non-blocking warning when the guard scripts/workflow themselves change, without hard-blocking the
+program's own ability to fix its CI tooling.
+
+UNIT_TESTS=EasyMod-mobile: 5 suites, 44 tests, all passing; tsc --noEmit clean; ESLint clean.
+EasyMod-backend full suite: 225 suites, 2809 tests, all passing (includes test:security's 49
+suites/450 tests).
+INTEGRATION_TESTS=EasyMod-backend, real disposable Postgres/Redis: 15 suites, 82+10 tests (the
+original integration suite plus the native-auth module's own 10 integration tests — signin body
+tokens, refresh rotation + reuse-detection + family revocation + audit log, the new concurrent-
+refresh race test, sid revocation vs. an unaffected web token, concurrent multi-device
+independence, non-interference with the web refresh slot, switch-shop membership check, session
+list/revoke, 2FA + X-EM-Client attribution, flag-off 404s), all passing. One pre-existing, unrelated
+timing-sensitive flake in conversation.attachment-durability.integration.test.js, confirmed passing
+on isolated retry.
+E2E_TESTS=Not yet run (Maestro deferred; no device/emulator flow tests written this phase beyond
+the manual Android smoke test below).
+ANDROID_BUILD=PASS. `npx expo prebuild --platform android` + `gradlew.bat assembleDebug` succeeded
+(1h 3m 32s first-time cold-cache build — investigated mid-build and confirmed genuine NDK/CMake
+native compilation across 4 ABIs, not a hang: log advanced continuously, Gradle daemon at ~83% CPU
+throughout, no download/timeout/retry pattern in the log). Debug APK (~234 MB, expected for an
+unstripped universal debug build) installed and launched cleanly on a booted emulator
+(`tech.easymod.merchant.dev`, confirmed running with no crash signature in logcat). Discrepancy
+found and flagged: DEV_SETUP.md/CURRENT_STATE.md §13 claimed an API 24 AVD already existed on this
+workstation; only API 37.x AVDs actually exist (an API 24 system image is present but no AVD was
+ever built from it) — correction needed in those docs before Phase 2 relies on that claim; recorded
+here as a known risk below rather than silently corrected, since it affects the low-end-hardware
+perf-budget testing plan in MOBILE_PRODUCT_SPEC.md §4.
+EXPO_DOCTOR=Not yet run — scheduled for Phase 7 per the program plan; no blocking issue expected
+given the clean tsc/ESLint/test results this phase.
+
+WEB_REGRESSION_STATUS=UNCHANGED — csrf-middleware.test.js + auth.security.test.js (the two suites
+that exist specifically to catch a regression in shared auth/CSRF behavior): 28/28 passing, exact
+same count as the pre-change baseline on origin/main. EasyMod-frontend/ untouched entirely.
+BACKEND_REGRESSION_STATUS=UNCHANGED — full 225-suite/2809-test backend unit suite passing at the
+same counts; full integration suite passing with the one pre-existing, unrelated flake noted above.
+
+PILOT_PRODUCTION_IMPACT=NONE. Verified live, not just by diff: production `/health/ready` still
+reports the pre-program baseline SHA (77790a833da372a03899686a365d7a40b2a95a67); no new GitHub
+deployment was created; `main`'s own Actions history has nothing from this program in it;
+`mobile-ci.yml` fired correctly on every push/PR to feature/mobile-app and mobile/** during this
+phase (4 runs, all green) and never once on main.
+
+KNOWN_RISKS=
+- No real API 24 AVD exists on this workstation (see ANDROID_BUILD above) — Phase 2+'s low-end
+  perf-budget testing needs one built from the already-present API 24 system image before it can
+  run as originally planned.
+- The debug APK is large (~234 MB); no size budget has been set or measured against yet (deferred
+  to Phase 7 hardening per the product spec's perf-budget section, but flagged here so it isn't
+  forgotten).
+- Native auth's refresh-rotation grace window is zero — a lost compare-and-swap race now fails
+  closed (409) rather than corrupting state, but the losing legitimate caller still needs to retry
+  from a full re-login in the rare case its own single-flight guard failed to prevent the race
+  client-side; acceptable for Phase 1, worth revisiting if real usage shows this firing often.
+- Track D's four fixes remain unmerged (human gate, unchanged from Phase 0) — mobile's own
+  behavior doesn't yet benefit from them in any live environment, only in the disposable test
+  databases each was verified against.
+
+DEFERRED_ITEMS=
+- Maestro E2E flows (login/logout/restart) — planned for this phase per the original plan sketch,
+  not written; the manual Android smoke test (install + launch, no crash) substitutes for this
+  phase's gate but does not replace it. Owner: Phase 2, alongside the Firebase human gate.
+- ~~Correcting the API 24 AVD claim in DEV_SETUP.md/CURRENT_STATE.md §13~~ — done in this phase.
+  Still deferred: actually creating the API 24 AVD itself (owner: whoever first runs low-end perf
+  budget testing, Phase 2+).
+- expo-doctor run (Phase 7, as originally planned).
+- The two Bangladesh UX principles and M-012's write-path ADR remain deferred exactly as recorded
+  in the Phase 0 receipt above — unchanged this phase.
+
+NEXT_PHASE=Phase 2 (Home/Attention + Push — ADR M-007/M-008). Human gate: Firebase project +
+google-services.json (never committed). Track D PR review/merge remains entirely the user's own
+decision, independent of phase sequencing.
+```

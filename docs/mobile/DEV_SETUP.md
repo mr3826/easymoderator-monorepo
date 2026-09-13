@@ -31,9 +31,15 @@ equivalent) first; nothing here is installed into Windows' system environment va
 
 ## 2. Emulator
 
-Use the existing API 24 (Android 7) AVD as the primary low-end test target
-(`MOBILE_PRODUCT_SPEC.md` §4's perf budgets are measured against it). A higher API-level AVD
-(30 or 37) is used only for verifying nothing regresses on newer Android, not as the primary target.
+**Correction from Phase 1 (2026-09-14):** no API 24 AVD actually exists on this workstation yet —
+only `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro` (all API 37.x). The API 24 system image is
+present under the SDK; create an AVD from it (`avdmanager create avd -n <name> -k
+"system-images;android-24;..."`) before relying on the plan below.
+
+Use an API 24 (Android 7) AVD as the primary low-end test target (`MOBILE_PRODUCT_SPEC.md` §4's
+perf budgets are measured against it). A higher API-level AVD (30 or 37 — `Medium_Phone` etc.,
+already present) is used only for verifying nothing regresses on newer Android, not as the primary
+target.
 
 ## 3. Dev backend
 

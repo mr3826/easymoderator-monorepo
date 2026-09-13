@@ -287,13 +287,18 @@ treat their line numbers as approximate until a phase that touches that file re-
   **Node ≥ 22.13**, targets Android 7+ (API 24) at runtime with compile/target SDK 36, and needs
   JDK 17 for local Gradle builds. `[discovery, verified against Expo's published SDK 57 changelog]`
 - Workstation has Android SDK at `D:/Android/Sdk` (platforms 36 + build-tools 36 + NDK + emulator
-  images for API 24/30/37, with AVDs already created), JDK 17 at
+  images for API 24/30/37), JDK 17 at
   `C:/Program Files/Java/jdk-17` (`JAVA_HOME` currently points elsewhere — must be set per-session,
   not globally, see ADR M-001/§5 of the program plan), global Node is v25.6.1 (too new for the
   root workspace's Node 20 pin and not what Expo SDK 57 was validated against), Docker 29, GitHub
   CLI 2.88, `LongPathsEnabled=1` (needed for `node_modules` depth under Android/Gradle tooling).
   Missing and to be provisioned session-locally (never globally): a pinned Node 22 LTS, a pinned
   Node 20 LTS for backend parity, Maestro, and `ANDROID_HOME`/`adb` on `PATH`. `[discovery]`
+- **Correction from Phase 1 (2026-09-14):** no AVD had actually been built from the API 24 system
+  image despite the image itself being present — only `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro`
+  AVDs exist, all API 37.x. An API 24 AVD must be created from the already-present system image
+  before any low-end-hardware perf-budget testing (`MOBILE_PRODUCT_SPEC.md` §4) can run as
+  originally planned. `[re-verified P1]`
 
 ## 14. Meta / production-safety constraint (applies to every phase with an authenticated-write test)
 
