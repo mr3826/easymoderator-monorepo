@@ -219,11 +219,34 @@ const refresh = async (refreshTokenBody, req) => {
         generation: newGeneration,
     });
 
-    await session.update({
-        refresh_token_hash: hashToken(newRefreshToken),
-        refresh_token_generation: newGeneration,
-        last_activity_at: new Date(),
-    });
+    // Atomic compare-and-swap: the row is only rotated if it still holds the
+    // exact hash/generation we just read. Two near-simultaneous refreshes
+    // presenting the same not-yet-rotated token (a client-side retry after an
+    // apparent timeout, or a single-flight guard failing across processes)
+    // would otherwise both pass the isCurrentToken check above and then race
+    // to overwrite each other's row — the loser's own new token would then
+    // look like a replay on its NEXT use and wrongly revoke the whole
+    // session. Losing the CAS here instead fails closed immediately, with no
+    // session mutation and no reuse-detected audit entry, since we cannot
+    // tell a benign race apart from a real replay from this state alone.
+    const [affectedCount] = await Session.update(
+        {
+            refresh_token_hash: hashToken(newRefreshToken),
+            refresh_token_generation: newGeneration,
+            last_activity_at: new Date(),
+        },
+        {
+            where: {
+                id: sid,
+                refresh_token_hash: session.refresh_token_hash,
+                refresh_token_generation: generation,
+            },
+        },
+    );
+
+    if (affectedCount === 0) {
+        throw new AppError('Refresh already in progress for this session. Please retry.', 409);
+    }
 
     const newAccessToken = signNativeAccessToken({
         userId,

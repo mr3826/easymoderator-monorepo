@@ -156,6 +156,50 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(afterRevokeRes.status).toBe(401);
     });
 
+    test('two concurrent refreshes of the same not-yet-rotated token fail closed on the loser, without revoking the session or logging reuse-detected', async () => {
+        const fixture = await makeUserWithShop('concurrent-refresh');
+        track(fixture);
+        const { user } = fixture;
+
+        const signinRes = await request(app)
+            .post('/api/auth/native/signin')
+            .send({ email: user.email, password: PASSWORD });
+        const { refreshToken: token1, sid } = signinRes.body.data;
+
+        // Fire both requests concurrently with the identical, still-current
+        // token — simulating a client-side retry-after-timeout race rather
+        // than an attacker replaying an already-rotated link.
+        const [resA, resB] = await Promise.all([
+            request(app).post('/api/auth/native/refresh').send({ refresh_token: token1 }),
+            request(app).post('/api/auth/native/refresh').send({ refresh_token: token1 }),
+        ]);
+        const statuses = [resA.status, resB.status].sort();
+
+        // Exactly one wins (200, with a real new token pair) and one loses
+        // the compare-and-swap (409) — never both succeeding (which would
+        // silently corrupt the stored hash) and never a 401
+        // reuse-detected/session-revoked outcome for a benign race.
+        expect(statuses).toEqual([200, 409]);
+
+        const winner = resA.status === 200 ? resA : resB;
+        expect(winner.body.data.refreshToken).not.toBe(token1);
+
+        const session = await Session.findByPk(sid);
+        expect(session.is_active).toBe(true);
+        expect(session.metadata?.deactivated_reason).toBeUndefined();
+
+        const auditRow = await AuditLog.findOne({
+            where: { user_id: user.id, action: 'NATIVE_REFRESH_TOKEN_REUSE_DETECTED' },
+        });
+        expect(auditRow).toBeNull();
+
+        // The winning token pair is fully usable afterward.
+        const followUp = await request(app)
+            .post('/api/auth/native/refresh')
+            .send({ refresh_token: winner.body.data.refreshToken });
+        expect(followUp.status).toBe(200);
+    });
+
     test('sid revocation on native logout rejects that access token; an existing web token with no sid is completely unaffected', async () => {
         const fixture = await makeUserWithShop('sid-revoke');
         track(fixture);

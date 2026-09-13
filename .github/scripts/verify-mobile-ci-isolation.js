@@ -25,15 +25,31 @@ const code = raw
   .filter((line) => line.trim().length > 0)
   .join('\n');
 
+// Finds `key:` at ANY indentation level and returns its nested block (the
+// lines more indented than the key itself), stopping at the first line whose
+// indentation is less-or-equal to the key's own — i.e. a sibling or
+// higher-level key, at whatever depth the key was found at. Returns the
+// inline value instead if the key has one (e.g. `permissions: read-all`).
 function extractTopLevelBlock(text, key) {
   const lines = text.split('\n');
-  const idx = lines.findIndex((line) => new RegExp(`^${key}\\s*:`).test(line));
+  const keyPattern = new RegExp(`^(\\s*)${key}\\s*:`);
+  let idx = -1;
+  let indent = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(keyPattern);
+    if (match) {
+      idx = i;
+      indent = match[1].length;
+      break;
+    }
+  }
   if (idx === -1) return null;
-  const inline = lines[idx].replace(new RegExp(`^${key}\\s*:\\s*`), '').trim();
+  const inline = lines[idx].replace(new RegExp(`^\\s*${key}\\s*:\\s*`), '').trim();
   if (inline) return inline;
   const blockLines = [];
   for (let i = idx + 1; i < lines.length; i += 1) {
-    if (/^\S/.test(lines[i])) break; // dedent to a new top-level key
+    const lineIndent = lines[i].match(/^\s*/)[0].length;
+    if (lineIndent <= indent) break; // dedent to a sibling or higher-level key
     blockLines.push(lines[i]);
   }
   return blockLines.join('\n');
@@ -69,10 +85,32 @@ if (/permissions\s*:[\s\S]{0,200}?:\s*write\b/.test(code)) {
   failures.push('a `*: write` permission is forbidden anywhere in mobile-ci.yml');
 }
 
-// 5. No trigger may reference `main`.
+// 5. Every push/pull_request trigger must carry an explicit, non-wildcard
+// `branches:` list that does not include `main`. This is stricter than a
+// literal "no `main` substring" check: a `branches:` list is REQUIRED (an
+// absent one defaults to "every branch", which includes main) and a bare
+// `'*'`/`'**'` entry is rejected even though it never spells out "main",
+// because it matches main too.
 const onBlock = extractTopLevelBlock(code, 'on') || '';
 if (/\bmain\b/.test(onBlock)) {
   failures.push('a trigger referencing `main` is forbidden in mobile-ci.yml — this workflow must never run against main');
+}
+for (const triggerName of ['push', 'pull_request']) {
+  const triggerBlock = extractTopLevelBlock(onBlock, triggerName);
+  if (triggerBlock === null) continue; // trigger not used
+  const branchesBlock = extractTopLevelBlock(triggerBlock, 'branches');
+  if (branchesBlock === null) {
+    failures.push(`the \`${triggerName}:\` trigger must specify an explicit \`branches:\` list in mobile-ci.yml (an absent list defaults to every branch, including main)`);
+    continue;
+  }
+  const branchEntries = branchesBlock
+    .split('\n')
+    .map((l) => l.trim().replace(/^-\s*/, '').trim())
+    .filter(Boolean);
+  const wildcardEntries = branchEntries.filter((entry) => /^['"]?\*+['"]?$/.test(entry));
+  if (wildcardEntries.length > 0) {
+    failures.push(`the \`${triggerName}:\` trigger's \`branches:\` list contains a bare wildcard (${wildcardEntries.join(', ')}), which also matches main`);
+  }
 }
 
 // 6. No SSH / registry-push / deploy/dispatch-shaped step content anywhere.

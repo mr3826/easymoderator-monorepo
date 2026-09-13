@@ -48,6 +48,19 @@ if (hardFailures.length > 0) {
   process.exit(1);
 }
 
+// Not a hard failure — the mobile program legitimately needs to be able to
+// fix and extend its own CI tooling — but a change to the isolation guards
+// themselves is exactly the kind of diff a reviewer should read line-by-line
+// rather than skim, so it's called out loudly here instead of silently
+// passing alongside everything else.
+const guardFilesTouched = changedPaths.filter(
+  (p) => p === '.github/workflows/mobile-ci.yml' || p.startsWith('.github/scripts/'),
+);
+if (guardFilesTouched.length > 0) {
+  console.warn('\n⚠ This diff changes the isolation guard(s) themselves — review these line-by-line, not just the aggregate pass/fail:');
+  guardFilesTouched.forEach((p) => console.warn(`  - ${p}`));
+}
+
 const backendTouched = changedPaths.some((p) => p.startsWith('EasyMod-backend/'));
 console.log(`\nbackend_touched=${backendTouched}`);
 
