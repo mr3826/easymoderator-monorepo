@@ -1,20 +1,41 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { GrowthAuthProvider } from '@/auth/GrowthAuthProvider';
+import { GrowthAuthProvider, useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { RequirePermission } from '@/components/RequirePermission';
+import { PROSPECT_READ_PERMISSIONS } from '@/auth/usePermission';
 import { GrowthShell } from '@/layout/GrowthShell';
-import { GrowthUnavailablePage } from '@/pages/GrowthUnavailablePage';
 import { AccessDeniedPage } from '@/pages/AccessDeniedPage';
-import { DashboardPage } from '@/pages/DashboardPage';
+import { AnalyticsPage } from '@/pages/AnalyticsPage';
+import { CapturePage } from '@/pages/CapturePage';
+import { EnrollMfaPage } from '@/pages/EnrollMfaPage';
+import { FollowUpsPage } from '@/pages/FollowUpsPage';
+import { GrowthUsersPage } from '@/pages/GrowthUsersPage';
+import { AccessControlPage } from '@/pages/AccessControlPage';
+import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
+import { MerchantsPage } from '@/pages/MerchantsPage';
+import { MerchantDetailPage } from '@/pages/MerchantDetailPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { OperationsPage } from '@/pages/OperationsPage';
+import { AuditTrailPage } from '@/pages/AuditTrailPage';
+import { PipelinePage } from '@/pages/PipelinePage';
 import { ProspectDetailPage } from '@/pages/ProspectDetailPage';
 import { ProspectFormPage } from '@/pages/ProspectFormPage';
 import { ProspectListPage } from '@/pages/ProspectListPage';
+import { QuickAddPage } from '@/pages/QuickAddPage';
+import { SearchPage } from '@/pages/SearchPage';
 import { SessionExpiredPage } from '@/pages/SessionExpiredPage';
-import { UnauthorizedPage } from '@/pages/UnauthorizedPage';
-import { RequirePermission } from '@/components/RequirePermission';
-import { PROSPECT_READ_PERMISSIONS } from '@/auth/usePermission';
+import { SourcesPage } from '@/pages/SourcesPage';
+import { GrowthUnavailablePage } from '@/pages/GrowthUnavailablePage';
+import { LoadingState } from '@/components/states';
+
+function MfaSetupRoute() {
+  const { status } = useGrowthAuth();
+  if (status === 'mfa-required' || status === 'authenticated') return <EnrollMfaPage />;
+  if (status === 'loading') return <LoadingState />;
+  return <Navigate to="/login" replace />;
+}
 
 export function App() {
   return (
@@ -23,19 +44,27 @@ export function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/unauthorized" element={<UnauthorizedPage />} />
             <Route path="/access-denied" element={<AccessDeniedPage />} />
             <Route path="/session-expired" element={<SessionExpiredPage />} />
             <Route path="/unavailable" element={<GrowthUnavailablePage />} />
+            <Route path="/enroll-mfa" element={<MfaSetupRoute />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<GrowthShell />}>
-                <Route index element={<DashboardPage />} />
+                <Route index element={<HomePage />} />
+                <Route path="my-work" element={<FollowUpsPage scope="mine" />} />
+                <Route path="follow-ups" element={<FollowUpsPage scope="all" />} />
+                <Route element={<RequirePermission permission={['growth_os.followups.manage']} />}>
+                  <Route path="pipeline" element={<PipelinePage />} />
+                </Route>
                 <Route element={<RequirePermission permission={PROSPECT_READ_PERMISSIONS} />}>
                   <Route path="prospects" element={<ProspectListPage />} />
                   <Route path="prospects/:prospectId" element={<ProspectDetailPage />} />
+                  <Route path="sources" element={<SourcesPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="growth_os.prospects.manage_all" />}>
                   <Route path="prospects/new" element={<ProspectFormPage />} />
+                  <Route path="quick-add" element={<QuickAddPage />} />
+                  <Route path="capture" element={<CapturePage />} />
                 </Route>
                 <Route
                   element={(
@@ -45,6 +74,30 @@ export function App() {
                   )}
                 >
                   <Route path="prospects/:prospectId/edit" element={<ProspectFormPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.prospects.read_all" />}>
+                  <Route path="analytics" element={<AnalyticsPage />} />
+                </Route>
+                <Route
+                  element={(
+                    <RequirePermission
+                      permission={['growth_os.merchants.read_insight', 'growth_os.admin.merchants.read']}
+                    />
+                  )}
+                >
+                  <Route path="merchants" element={<MerchantsPage />} />
+                  <Route path="merchants/:shopId" element={<MerchantDetailPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.search.read" />}>
+                  <Route path="search" element={<SearchPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.admin.operations.read" />}>
+                  <Route path="operations" element={<OperationsPage />} />
+                  <Route path="audit" element={<AuditTrailPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.admin.users.read" />}>
+                  <Route path="growth-users" element={<GrowthUsersPage />} />
+                  <Route path="access-control" element={<AccessControlPage />} />
                 </Route>
               </Route>
             </Route>

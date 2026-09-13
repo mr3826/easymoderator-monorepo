@@ -43,8 +43,6 @@ const prospect: ProspectListItem = {
   metadata: {},
   createdAt: '2026-08-20T00:00:00.000Z',
   updatedAt: '2026-08-20T00:00:00.000Z',
-  eligibleForNextPhase: true,
-  redacted: true,
 };
 
 const result: ProspectListResponse = {
@@ -55,9 +53,9 @@ const result: ProspectListResponse = {
   totalPages: 1,
 };
 
-function renderPage() {
+function renderPage(route = '/prospects') {
   return render(
-    <MemoryRouter initialEntries={['/prospects']}>
+    <MemoryRouter initialEntries={[route]}>
       <ProspectListPage />
     </MemoryRouter>,
   );
@@ -69,7 +67,7 @@ describe('ProspectListPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders permission-scoped rows and hides redacted contact fields', async () => {
+  it('renders permission-scoped rows without a next-phase column', async () => {
     permissionMock.mockReturnValue(true);
     vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);
 
@@ -77,10 +75,38 @@ describe('ProspectListPage', () => {
 
     expect(await screen.findByRole('link', { name: 'North Star Retail' })).toBeInTheDocument();
     expect(screen.getAllByText('manual entry')).toHaveLength(2);
-    expect(screen.getAllByText('Hidden for your role')).toHaveLength(2);
-    expect(screen.queryByText('owner@example.test')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Not provided')).toHaveLength(2);
+    expect(screen.queryByText('Hidden for your role')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'New prospect' })).toHaveAttribute('href', '/prospects/new');
-    expect(screen.getByText('Eligible')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Next phase' })).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument();
+    expect(screen.getByText('owner-1')).toBeInTheDocument();
+    expect(screen.getAllByText('Not linked').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('preloads status and source filters from URL search params', async () => {
+    permissionMock.mockReturnValue(true);
+    const getProspects = vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);
+
+    renderPage('/prospects?status=qualified&source=manual_entry');
+
+    await waitFor(() => expect(getProspects).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 20,
+      status: 'qualified',
+      source: 'manual_entry',
+    }));
+    expect(screen.getByLabelText('Lifecycle status')).toHaveValue('qualified');
+    expect(screen.getByLabelText('Source')).toHaveValue('manual_entry');
+  });
+
+  it('ignores unknown search param values', async () => {
+    permissionMock.mockReturnValue(true);
+    const getProspects = vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);
+
+    renderPage('/prospects?status=bogus&source=not_a_source');
+
+    await waitFor(() => expect(getProspects).toHaveBeenCalledWith({ page: 1, pageSize: 20 }));
   });
 
   it('serializes lower-case list filters after applying the filter form', async () => {

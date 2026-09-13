@@ -1,7 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, growthApi, type GrowthSession, type SigninPayload } from '@/api/client';
 
-type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'two-factor' | 'access-denied' | 'session-expired' | 'unavailable' | 'error';
+type AuthStatus =
+  | 'loading'
+  | 'authenticated'
+  | 'unauthenticated'
+  | 'two-factor'
+  | 'mfa-required'
+  | 'access-denied'
+  | 'session-expired'
+  | 'unavailable'
+  | 'error';
+
+const MFA_REQUIRED_CODE = 'GROWTH_OS_MFA_REQUIRED';
 
 interface GrowthAuthState {
   status: AuthStatus;
@@ -22,6 +33,11 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<GrowthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tempToken, setTempToken] = useState<string | null>(null);
+
+  const resolveForbidden = useCallback((err: ApiError) => {
+    if (err.code === MFA_REQUIRED_CODE) return 'mfa-required' as const;
+    return 'access-denied' as const;
+  }, []);
 
   const refreshSession = useCallback(async () => {
     const hadSession = Boolean(session);
@@ -50,7 +66,7 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (err instanceof ApiError && err.status === 403) {
-        setStatus('access-denied');
+        setStatus(resolveForbidden(err));
         return;
       }
       if (err instanceof ApiError && err.status === 503) {
@@ -61,7 +77,7 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
       setError(err instanceof Error ? err.message : 'Unable to load Growth OS.');
       setStatus('error');
     }
-  }, [session]);
+  }, [session, resolveForbidden]);
 
   const reportApiError = useCallback((requestError: unknown) => {
     if (!(requestError instanceof ApiError)) return false;
@@ -101,7 +117,7 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setSession(null);
       if (err instanceof ApiError && err.status === 403) {
-        setStatus('access-denied');
+        setStatus(resolveForbidden(err));
         return;
       }
       if (err instanceof ApiError && err.status === 503) {
@@ -113,7 +129,7 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
       setError(err instanceof Error ? err.message : 'Sign in failed.');
       throw err;
     }
-  }, []);
+  }, [resolveForbidden]);
 
   const verifyTwoFactor = useCallback(async (token: string) => {
     if (!tempToken) {
