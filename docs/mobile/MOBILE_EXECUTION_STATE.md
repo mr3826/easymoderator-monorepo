@@ -65,7 +65,7 @@ PHASE=0 (Discovery, Isolation, Architecture)
 STATUS=PASS
 
 BRANCH=mobile/p0-discovery (merging into feature/mobile-app)
-HEAD_SHA=<set at commit time, see PR>
+HEAD_SHA=d1e79e5571d551e22598778467d81c5c58acc8f0
 
 FEATURES_COMPLETED=
 - docs/mobile/{CURRENT_STATE,MOBILE_PRODUCT_SPEC,MOBILE_ARCHITECTURE,MOBILE_API_CAPABILITY_MATRIX,DEV_SETUP,MOBILE_EXECUTION_STATE}.md written
