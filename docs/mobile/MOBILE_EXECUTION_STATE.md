@@ -24,12 +24,17 @@ single place to check off each row as it lands.
 
 ## Track D — pre-existing production defect fixes (tracked separately from phase receipts)
 
-| # | Branch | Status | Merge to `main` |
-|---|---|---|---|
-| 1 | `fix/backend-product-tenant-mass-assignment` | Not started | Human gate — requires explicit user approval before merge |
-| 2 | `fix/delivery-prepaid-cod-amount` | Not started | Human gate — requires explicit user approval before merge |
-| 3 | `fix/delivery-cross-provider-double-booking` | Not started | Human gate — requires explicit user approval before merge |
-| 4 | `fix/notification-push-membership-targeting` | Not started | Human gate — requires explicit user approval before merge |
+| # | Branch | PR | Status | Merge to `main` |
+|---|---|---|---|---|
+| 1 | `fix/backend-product-tenant-mass-assignment` | [#117](https://github.com/mr3826/easymoderator-monorepo/pull/117) | Open, mergeable, failing→passing tests verified (74/74 product suite, 115/115 module) | Human gate — requires explicit user approval before merge |
+| 2 | `fix/delivery-prepaid-cod-amount` | [#116](https://github.com/mr3826/easymoderator-monorepo/pull/116) | Open, mergeable, failing→passing tests verified (208/208 order+delivery) | Human gate — requires explicit user approval before merge |
+| 3 | `fix/delivery-cross-provider-double-booking` | [#118](https://github.com/mr3826/easymoderator-monorepo/pull/118) | Open, mergeable, failing→passing tests verified (275 unit + 67 integration incl. race test); ships an additive migration with a non-destructive conflict-audit table — **human merger must check `courier_dispatch_order_scope_conflicts` after running it against real data, especially any COMMITTED rows, before treating this as closed** | Human gate — requires explicit user approval before merge |
+| 4 | `fix/notification-push-membership-targeting` | [#119](https://github.com/mr3826/easymoderator-monorepo/pull/119) | Open, mergeable, failing→passing tests verified (249 notification+shop suite, 2804 full backend unit suite) | Human gate — requires explicit user approval before merge |
+
+All four PRs were built test-first (each has a verified failing-test-on-baseline → passing-after-fix
+transition), in isolated worktrees off `origin/main`, touching only the files their own defect
+required. None has been merged. None will be merged without the user reviewing and approving each
+one individually — see `MOBILE_ARCHITECTURE.md` §2.
 
 Each PR, once opened, is left unmerged. Opening a PR is program work; merging it into `main` is
 never self-authorized (see `MOBILE_ARCHITECTURE.md` §2 and the Phase 0 review finding below).
