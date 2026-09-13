@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "March 18, 2026";
-const LAST_UPDATED = "August 8, 2026";
+const LAST_UPDATED = "September 13, 2026";
 const CONTACT_EMAIL = "privacy@easymod.tech";
 const APP_NAME = "EasyModerator";
 const COMPANY_NAME = "Hexabyte Technologies";
@@ -215,7 +215,7 @@ export default function PrivacyPolicy() {
               <li>We do <strong>not</strong> sell or share Meta platform data with data brokers or advertisers</li>
               <li>We do <strong>not</strong> use Meta data for any purpose beyond providing and improving the {APP_NAME} service</li>
               <li>We do <strong>not</strong> transfer Meta data to unauthorised third parties</li>
-              <li>We do <strong>not</strong> retain Meta platform data after a business disconnects their account, except where required by law or for financial compliance purposes</li>
+              <li>When a business disconnects a Page, we revoke and remove the stored Page access token and stop further processing. Previously received conversation and customer data may remain until the business requests deletion, closes its account, or a Meta/manual deletion request is completed, subject to legal and financial-retention requirements</li>
               <li>We do <strong>not</strong> use Meta platform data — including message content — to train or improve AI or machine learning models</li>
             </ul>
 
@@ -586,10 +586,10 @@ export default function PrivacyPolicy() {
               </li>
               <li>
                 <strong>Meta / Facebook data deletion:</strong> If you connected a Facebook Page
-                to {APP_NAME} and later disconnect or remove the app from your Facebook settings,
-                Meta automatically triggers our Data Deletion Request Callback
-                and we delete all associated message data within 30 days. You can verify or re-request
-                deletion by emailing{" "}
+                to {APP_NAME} and later disconnect or remove the app from your Facebook settings:
+                if Meta sends a valid data deletion callback for this app, we process it and delete
+                associated data within 30 days, subject to legal and financial-retention requirements. You can
+                request or verify deletion by emailing{" "}
                 <a href={`mailto:${CONTACT_EMAIL}`} className="text-blue-600 hover:underline">{CONTACT_EMAIL}</a>{" "}
                 with subject <em>"Facebook Data Deletion Request"</em>. We will reply with a deletion
                 confirmation code.
@@ -598,7 +598,7 @@ export default function PrivacyPolicy() {
             <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
               <p className="font-semibold mb-1">Meta Data Deletion Callback URL</p>
               <p className="leading-relaxed">
-                Our app is registered with Meta to receive automatic data deletion notifications at:<br />
+                If Meta sends a valid callback, it is received at:<br />
                 <span className="font-mono text-xs break-all">POST https://api.easymod.tech/webhooks/meta/data-deletion</span>
               </p>
               <p className="mt-2 leading-relaxed">

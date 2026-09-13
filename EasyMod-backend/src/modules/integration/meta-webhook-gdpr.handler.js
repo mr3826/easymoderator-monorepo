@@ -51,6 +51,23 @@ function publicBaseUrl() {
     return getOrigins().api;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderDeletionStatus(code, status) {
+    const state = String(status?.status || 'pending').replace(/_/g, ' ');
+    const retryMessage = status?.retryable
+        ? '<p>This request requires another processing attempt. Contact privacy@easymod.tech if it remains unresolved.</p>'
+        : '';
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EasyModerator Data Deletion Status</title></head><body><main><h1>EasyModerator Data Deletion Status</h1><p>Confirmation code: <code>${escapeHtml(code)}</code></p><p>Status: <strong>${escapeHtml(state)}</strong></p>${retryMessage}<p>For assistance, email <a href="mailto:privacy@easymod.tech">privacy@easymod.tech</a>.</p></main></body></html>`;
+}
+
 router.get('/data-deletion', (req, res) => {
     res.json({
         message: 'EasyModerator Facebook Data Deletion',
@@ -69,7 +86,18 @@ router.get('/data-deletion/status/:confirmationCode', async (req, res) => {
         const status = await metaComplianceService.getDeletionStatus(
             req.params.confirmationCode,
         );
-        if (!status) return res.status(404).json({ error: 'Deletion request not found' });
+        if (!status) {
+            if (req.get('accept')?.includes('text/html')) {
+                return res.status(404).type('html').send(renderDeletionStatus(req.params.confirmationCode, {
+                    status: 'not found',
+                    retryable: false,
+                }));
+            }
+            return res.status(404).json({ error: 'Deletion request not found' });
+        }
+        if (req.get('accept')?.includes('text/html')) {
+            return res.status(200).type('html').send(renderDeletionStatus(req.params.confirmationCode, status));
+        }
         return res.status(200).json(status);
     } catch (err) {
         logger.error('Data deletion status lookup failed', { error: err.message });
