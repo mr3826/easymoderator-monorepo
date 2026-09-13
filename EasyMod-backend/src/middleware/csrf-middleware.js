@@ -16,6 +16,62 @@ const isTrustedAuthOrigin = (
     growthOrigin = config.origins?.growth,
 ) => environment !== 'production' || [appOrigin, growthOrigin].includes(origin);
 
+/**
+ * ADR M-004: native auth endpoints that issue tokens before a client holds
+ * any credential at all (signin, the 2FA step, and refresh — which rotates a
+ * body-supplied refresh token rather than reading a cookie). These carry no
+ * Authorization header yet, so they cannot be covered by the Bearer-based
+ * exemption below; they are exempted by exact path instead, and — per the
+ * ADR's Consequences section — WITHOUT the isTrustedAuthOrigin check, since a
+ * client with no cookie jar has no Origin-spoofing surface to protect
+ * against in the first place.
+ */
+const NATIVE_ANONYMOUS_AUTH_PATHS = new Set([
+    '/api/auth/native/signin',
+    '/api/auth/native/2fa/verify',
+    '/api/auth/native/refresh',
+]);
+
+/**
+ * True when the request carries none of the cookies a browser session would
+ * ever attach automatically (session cookie, access_token, refresh_token —
+ * in fact, checked here as "no cookies at all", which is a strict superset
+ * of that list and therefore never under-protects). CSRF's threat model
+ * requires an ambient credential a cross-site request can ride; a request
+ * with zero cookies has none, regardless of what other headers it carries.
+ */
+const hasNoCookies = (req) => {
+    const cookies = req.cookies;
+    return !cookies || Object.keys(cookies).length === 0;
+};
+
+/**
+ * ADR M-004 decision, restated precisely: CSRF is skipped for a request only
+ * when it carries `Authorization: Bearer`, it carries NO cookies of any kind,
+ * and MOBILE_API_ENABLED is on — a request that also carries a cookie is
+ * deliberately NOT exempted and still runs the normal check below, even if it
+ * also has a Bearer header. Native's own pre-credential endpoints (signin,
+ * 2fa/verify, refresh) are exempted by exact path instead, under the exact
+ * same "no cookies at all" guard, since they have no Bearer token yet either.
+ *
+ * Exported as a pure, request-shape function (mirrors isTrustedAuthOrigin)
+ * so the hybrid Bearer+cookie case the ADR calls out as most likely to
+ * regress silently can be asserted directly, without needing a live session/
+ * CSRF-secret stack — see csrf-middleware.test.js.
+ */
+const isNativeCsrfExempt = (
+    req,
+    mobileApiEnabled = config.mobileApiEnabled,
+) => {
+    if (!mobileApiEnabled) return false;
+    if (!hasNoCookies(req)) return false;
+
+    if (NATIVE_ANONYMOUS_AUTH_PATHS.has(req.path)) return true;
+
+    const authHeader = req.get ? req.get('Authorization') : req.headers?.authorization;
+    return typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+};
+
 // Enhanced CSRF configuration with better error handling
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.csrfSecret,
@@ -84,6 +140,14 @@ const csrfProtectionMiddleware = (req, res, next) => {
         '/api/partner/apply',
     ]);
     if (publicWritePaths.has(req.path)) {
+        return next();
+    }
+
+    // ADR M-004: mobile native auth (body/header token transport, zero
+    // cookies). See isNativeCsrfExempt above for the exact condition — a
+    // request that also carries any cookie is NOT exempted and falls through
+    // to the normal check below, even with a Bearer header present.
+    if (isNativeCsrfExempt(req)) {
         return next();
     }
 
@@ -191,4 +255,5 @@ module.exports = {
     csrfProtectionMiddleware,
     csrfDebugHandler,
     isTrustedAuthOrigin,
+    isNativeCsrfExempt,
 };

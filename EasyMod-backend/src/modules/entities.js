@@ -2,7 +2,7 @@ const User = require('./user/user.entity');
 const Tenant = require('./tenant/tenant.entity');
 const Shop = require('./shop/shop.entity');
 const UserShop = require('./user-shop/user-shop.entity');
-const Session = require('./auth/session.entity');
+const Session = require('./auth/session.entity'); // ADR M-004: now exported below too (was previously wired for associations only)
 const PasswordResetToken = require('./auth/password-reset-token.entity');
 const Category = require('./category/category.entity');
 const Product = require('./product/product.entity');
@@ -542,6 +542,7 @@ module.exports = {
     Tenant,
     Shop,
     UserShop,
+    Session,
     Category,
     Product,
     ProductVariant,

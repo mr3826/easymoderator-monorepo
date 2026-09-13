@@ -3,6 +3,9 @@ const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 const { User } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
+// ADR M-004: native tokens carry a `sid` claim referencing a user_sessions
+// row, looked up below only when that claim is present.
+const Session = require('../modules/auth/session.entity');
 
 /**
  * Authentication middleware
@@ -63,6 +66,20 @@ const authenticate = async (req, res, next) => {
             throw new AppError('Token has been invalidated. Please login again.', 401);
         }
 
+        // 4b. ADR M-004: additive branch, only reached for tokens carrying a
+        // `sid` claim (native-issued tokens). Every existing web-issued
+        // token has no `sid` claim and skips this block entirely — proven
+        // unchanged by auth-token-version.security.test.js and the new
+        // native-sid-revocation.test.js regression case.
+        if (decoded.sid) {
+            const session = await Session.findByPk(decoded.sid, {
+                attributes: ['id', 'is_active'],
+            });
+            if (!session || !session.is_active) {
+                throw new AppError('Session has been revoked. Please login again.', 401);
+            }
+        }
+
         // 5. Attach user data to request
         req.user = {
             userId: decoded.userId,
@@ -73,6 +90,9 @@ const authenticate = async (req, res, next) => {
             // token without it is intentionally not sufficient for privileged
             // Growth roles.
             mfaVerified: decoded.mfaVerified === true,
+            // ADR M-004: present only for native-issued tokens; undefined for
+            // every existing (web) token, exactly like decoded.sid itself.
+            sid: decoded.sid || undefined,
         };
 
         next();
