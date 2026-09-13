@@ -37,6 +37,7 @@ const RouteError = lazy(() => import("./components/RouteError"));
 const Subscription = lazy(() => import("./components/Subscription"));
 const PrivacyPolicy = lazy(() => import("./components/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./components/TermsOfService"));
+const DataDeletion = lazy(() => import("./components/DataDeletion"));
 const LandingPage = lazy(() => import("./components/LandingPage"));
 const Pricing = lazy(() => import("./components/Pricing"));
 const UsersPage = lazy(() => import("./features/users/components/UsersPage"));
@@ -130,6 +131,11 @@ export const router = createBrowserRouter([
 	{
 		path: "/terms",
 		Component: withSuspense(TermsOfService),
+		errorElement: createElement(RouteError),
+	},
+	{
+		path: "/data-deletion",
+		Component: withSuspense(DataDeletion),
 		errorElement: createElement(RouteError),
 	},
 	{

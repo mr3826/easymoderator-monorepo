@@ -106,6 +106,26 @@ describe('Meta GDPR signed requests and callback truthfulness', () => {
             .expect(404);
     });
 
+    test('renders human-readable HTML for browser status requests without changing API JSON', async () => {
+        mockGetDeletionStatus.mockResolvedValueOnce({ status: 'identity_not_resolved', retryable: true });
+        const response = await request(app)
+            .get(`/api/webhooks/meta/data-deletion/status/DEL-${'d'.repeat(32)}`)
+            .set('Accept', 'text/html')
+            .expect(200);
+
+        expect(response.type).toBe('text/html');
+        expect(response.text).toContain('EasyModerator Data Deletion Status');
+        expect(response.text).toContain('identity not resolved');
+        expect(response.text).toContain('privacy@easymod.tech');
+
+        mockGetDeletionStatus.mockResolvedValueOnce(null);
+        await request(app)
+            .get(`/api/webhooks/meta/data-deletion/status/DEL-${'e'.repeat(32)}`)
+            .set('Accept', 'text/html')
+            .expect(404)
+            .expect('Content-Type', /html/);
+    });
+
     test('deauthorization validates the callback before recovery', async () => {
         mockProcessDeauthorization.mockResolvedValue({ channelsDisabled: 2 });
         await request(app)
