@@ -1,4 +1,4 @@
-const { User, Shop, UserShop, Tenant } = require('../entities');
+const { User, Shop, UserShop, Tenant, PushSubscription } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
@@ -281,8 +281,27 @@ const removeUserFromShop = async (shopId, requestingUserId, targetUserId) => {
         throw new AppError('Cannot remove shop owner', 400);
     }
 
-    // Deactivate user access
-    await targetUserShop.update({ is_active: false });
+    const transaction = await sequelize.transaction();
+    try {
+        // Deactivate user access
+        await targetUserShop.update({ is_active: false }, { transaction });
+
+        // A removed user must stop receiving push notifications for this shop
+        // immediately. Deactivating the membership alone left their
+        // push_subscriptions rows standing, so order/customer notifications
+        // kept reaching a staff member who no longer has access — delete
+        // them outright, matching the existing DELETE /subscriptions/:id
+        // behavior rather than introducing a new soft-delete pattern.
+        await PushSubscription.destroy({
+            where: { shop_id: shopId, user_id: targetUserId },
+            transaction
+        });
+
+        await transaction.commit();
+    } catch (error) {
+        await transaction.rollback();
+        throw error;
+    }
 
     return { message: 'User removed from shop successfully' };
 };
