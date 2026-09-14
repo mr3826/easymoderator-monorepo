@@ -41,6 +41,23 @@ Both are gated by `MOBILE_API_ENABLED` (ADR M-010) and return 404 when the flag 
   are trustworthy as merchant-entered thresholds and do not need backfilling or validation before
   this endpoint reads them for the first time — verified with a spot data check in Phase 2, not assumed.
 
+  **Phase 2 Lane 0 spot check (2026-09-15):** the assumption above is only partly closed. The
+  column (`product.entity.js`, migration `20260522_002_fix_products_schema.js`) defaults to `5`
+  and `product.validator.js`'s `createProduct`/`updateProduct` schemas accept any non-negative
+  integer with no upper bound, so it genuinely is merchant-editable, not hardcoded. But every
+  concrete value actually observed in this repo — the product test fixture (`10`), the Meta-review
+  demo seed (`5`), and this lane's own `seed-mobile-dev.js` (`5` and `10`) — is synthetic, not real
+  merchant data; nothing in this codebase has ever read the column before M-008, so there is no
+  existing query, dashboard, or export of the pilot merchants' actual configured values to sample.
+  Reading the pilot production database to get a real distribution is out of scope for this lane
+  (mobile dev-env work never touches the pilot DB — see `CURRENT_STATE.md` §14) and was not done.
+  **Net: the default of `5` is unverified against real merchant behavior — not confirmed realistic,
+  not confirmed wrong.** Before `/api/mobile/attention`'s low-stock tier ships to real merchants,
+  whoever has authorized read access to the pilot database (or an anonymized export) should run a
+  one-line distribution check (e.g. `SELECT low_stock_threshold, COUNT(*) FROM products WHERE
+  track_quantity = true GROUP BY 1 ORDER BY 2 DESC`) to confirm the column holds merchant-meaningful
+  values rather than every row sitting on the untouched schema default.
+
 ## Alternatives Rejected
 
 - **Extend `GET /api/dashboard` and `/api/dashboard/queue` in place.** Rejected: `/queue` is

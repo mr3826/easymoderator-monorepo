@@ -18,28 +18,69 @@ D:/easymod/.tools/
 └── maestro/         Maestro CLI, unzipped
 ```
 
-`EasyMod-mobile/scripts/dev-env.ps1` prepends the correct tool paths to `PATH` for the current
-PowerShell process only, and sets, for that process only:
+`EasyMod-mobile/scripts/dev-env.ps1` (bash equivalent: `EasyMod-mobile/scripts/dev-env.sh`)
+prepends the correct tool paths to `PATH` for the current shell process only, and sets, for that
+process only:
 
 - `JAVA_HOME` → the existing JDK 17 install at `C:/Program Files/Java/jdk-17` (the machine's
   current global `JAVA_HOME` points elsewhere and is left untouched).
 - `ANDROID_HOME` → `D:\Android\Sdk` (already present on this workstation with platform 36,
   build-tools 36, NDK, and API 24/30/37 system images).
 
-Every terminal used for mobile work runs `. EasyMod-mobile/scripts/dev-env.ps1` (or the bash
-equivalent) first; nothing here is installed into Windows' system environment variables.
+Every terminal used for mobile work runs `. EasyMod-mobile/scripts/dev-env.ps1` (or `source
+scripts/dev-env.sh` in bash) first; nothing here is installed into Windows' system environment
+variables.
+
+**Phase 2 correction:** the portable `D:/easymod/.tools/node-22`/`node-20`/`maestro` layout
+described above was never actually provisioned on this workstation — only planned. The Phase 2
+Lane 0 dev/build session (`npm install`, `tsc --noEmit`, `expo prebuild`, the Gradle build) ran
+against the workstation's global Node (`v25.6.1`, not the `.nvmrc`-pinned `22`) with no observed
+problems for `EasyMod-mobile`'s own toolchain; nothing in this phase depended on the portable
+Node-20 copy used for backend/frontend/growth suites either. Provisioning the actual portable
+toolchain (or pinning via a version manager) remains open for whoever needs strict Node-22
+reproducibility.
 
 ## 2. Emulator
 
-**Correction from Phase 1 (2026-09-14):** no API 24 AVD actually exists on this workstation yet —
-only `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro` (all API 37.x). The API 24 system image is
-present under the SDK; create an AVD from it (`avdmanager create avd -n <name> -k
-"system-images;android-24;..."`) before relying on the plan below.
+**Phase 2 update (2026-09-14/15):** the API 24 AVD now exists — `Nexus_5_API_24`, created from
+`system-images;android-24;google_apis_playstore;x86` (Play Services present, needed for FCM
+later). `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro` (all API 37.x) remain available as the
+higher-API fallback target described below.
 
-Use an API 24 (Android 7) AVD as the primary low-end test target (`MOBILE_PRODUCT_SPEC.md` §4's
-perf budgets are measured against it). A higher API-level AVD (30 or 37 — `Medium_Phone` etc.,
-already present) is used only for verifying nothing regresses on newer Android, not as the primary
-target.
+Use `Nexus_5_API_24` as the primary low-end test target (`MOBILE_PRODUCT_SPEC.md` §4's perf
+budgets are measured against it). The higher-API AVDs are used only for verifying nothing
+regresses on newer Android, not as the primary target.
+
+**Build verification against `Nexus_5_API_24` (Lane 0, 2026-09-15):** the AVD boots cleanly —
+Windows Hypervisor Platform (WHPX) acceleration engages automatically for this x86 image
+(confirmed in the emulator log: "Windows Hypervisor Platform accelerator is operational"), so cold
+boot is hardware-accelerated, not emulated in software, and `adb`/`getprop sys.boot_completed`
+confirmed a full boot to Android 7.0 in a few minutes. `npx expo prebuild --platform android`
+against the current `app.config.ts` was already present in `EasyMod-mobile/android/` from this
+lane's earlier interrupted session and was spot-checked, not regenerated: `AndroidManifest.xml`
+carries `android:usesCleartextTraffic="true"` and `build.gradle` carries `applicationId
+'tech.easymod.merchant.dev'`, both matching the `.dev`-variant config exactly — no drift.
+
+`./gradlew assembleDebug` was then run against the booted emulator (min/target/compile SDK
+24/36/36, NDK 27.1.12297006, no ABI restriction encountered). **This did not reach a pass/fail
+result within this lane's time-boxed session.** The build was not stuck or crashed — the Gradle
+worker JVM's CPU time and heap kept climbing over the whole run (confirmed via repeated
+`Get-Process` samples) — it was simply slower than the ~20-minute budget this lane allotted for
+AVD/build verification, most plausibly because this workstation runs the shared repo across ~10
+concurrent git worktrees (`easymod-worktrees` note) and several other active sessions were doing
+their own disk-heavy work (npm installs, other test runs) at the same time; unrelated filesystem
+scans in this same session (`rg`, `find`) were independently timing out during this window, pointing
+at host-level disk I/O contention rather than an RN 0.86-on-x86 incompatibility. **Net: the emulator
+itself is proven good (boots, hardware-accelerated, correct `.dev` manifest/package), but a full
+native compile against it was not completed, so the cold-start perf budget in
+`MOBILE_PRODUCT_SPEC.md` §4 is explicitly UNVERIFIED — not confirmed passing, not confirmed
+failing.** Whoever picks this up next should re-run `./gradlew assembleDebug` (from
+`EasyMod-mobile/android`, with `scripts/dev-env.sh`/`.ps1` sourced first) on a less contended
+machine/window; if RN 0.86 turns out to genuinely reject the 32-bit x86 image, fall back to one of
+the already-present API-37 AVDs (`Medium_Phone`, `Medium_Phone_2`, or `Pixel_8_Pro`) as the
+higher-API target and re-document the perf budget against that instead. This is the first time
+this program has attempted a native build against the API-24 target rather than assuming RN
+0.86/New Architecture would accept it, and that attempt is still open.
 
 ## 3. Dev backend
 
@@ -66,6 +107,23 @@ of what the JS-level config says, and this app's target SDK is 36. Making the `.
 `expo-build-properties`'s `android.usesCleartextTraffic` option or a network-security-config XML —
 neither is wired up yet, since Phase 1 does no device/emulator run. Whoever first does a real
 `.dev` build against `adb reverse` (Phase 2+) should expect to add this.
+
+**Phase 2 Lane 0 verification (2026-09-15):** `EasyMod-backend/scripts/seed-mobile-dev.js` was run
+end to end against a real, freshly-migrated disposable Postgres 16 container (all 34 migrations
+applied cleanly) rather than only reviewed by reading the source. Result: `MOBILE_DEV_SEED=PASS`,
+and a direct query of the seeded rows confirmed every Phase-2 attention tier the Home screen (Lane
+3) needs to render against is present — two draft orders at different ages/values (৳450 / 30h old,
+৳3200 / 3h old), a messenger conversation needing a reply and a separate `hitl:true` Instagram
+handoff, one `courier_dispatch` row with `status='FAILED'` (steadfast) and one with
+`status='INDETERMINATE'` (pathao), a third confirmed order left undispatchable because the shop
+has zero `DeliveryIntegration` rows (`courier-readiness.service.js` correctly reports
+`status=SETUP_INCOMPLETE, missing=[provider_not_connected]`), two tracked/active/low-stock products
+plus one untracked+inactive decoy that correctly does **not** qualify, and one customer whose phone
+`RtoShieldService.checkPhone()` classifies `tier=verify` (`risk_score=55`). No gaps found; no
+changes were needed to the seed script itself. See ADR `M-008-attention-and-today.md`'s Assumptions
+section for a related open finding on whether `low_stock_threshold`'s default value of `5` reflects
+real merchant behavior (spot-checked against code/fixtures only — the pilot production database was
+correctly not touched by this lane).
 
 ## 4. What this environment is never used for
 
