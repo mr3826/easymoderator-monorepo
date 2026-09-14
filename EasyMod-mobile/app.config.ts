@@ -97,13 +97,14 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
         monochromeImage: './assets/images/android-icon-monochrome.png',
         backgroundColor: '#F9FAF8',
       },
-      // NOTE: `resolveApiBaseUrl` above is the actual enforcement point — only the "development"
-      // variant is ever allowed an http:// API URL. Android 9+ (API 28+, and this app targets 36)
-      // blocks cleartext traffic by default at the OS level regardless of that JS-level check, so
-      // a local dev *build* additionally needs either `expo-build-properties`'s
-      // `android.usesCleartextTraffic` option or a network-security-config XML to let the
-      // `adb reverse` dev-backend workflow (docs/mobile/DEV_SETUP.md §3) reach localhost.
-      // Deferred: no dev build/device run happens in this phase, so it isn't wired up yet.
+      // `resolveApiBaseUrl` above is the actual traffic-shape enforcement point — only the
+      // "development" variant is ever allowed an http:// API URL. Android 9+ (API 28+, and this
+      // app targets 36) additionally blocks cleartext traffic by default at the OS level
+      // regardless of that JS-level check, so the `expo-build-properties` plugin below sets
+      // `usesCleartextTraffic` for the "development" variant only, letting the `adb reverse`
+      // dev-backend workflow (docs/mobile/DEV_SETUP.md §3) actually reach localhost. Left
+      // unset (Android's secure default) for "preview"/"production", which are HTTPS-only per
+      // `resolveApiBaseUrl` and must never be able to fall back to cleartext.
     },
     ios: {
       ...config.ios,
@@ -124,6 +125,19 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
         },
       ],
       'expo-secure-store',
+      // ADR M-002 addendum / DEV_SETUP.md §3: only the "development" variant needs cleartext
+      // HTTP (the `adb reverse` dev-backend workflow talks to http://localhost). Android 9+
+      // blocks cleartext at the OS level by default regardless of the JS-level check in
+      // `resolveApiBaseUrl` above, so this is the actual enforcement point for that variant —
+      // and it is never enabled for "preview"/"production", which are HTTPS-only.
+      [
+        'expo-build-properties',
+        {
+          android: {
+            usesCleartextTraffic: variant === 'development',
+          },
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,

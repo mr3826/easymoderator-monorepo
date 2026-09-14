@@ -18,28 +18,47 @@ D:/easymod/.tools/
 └── maestro/         Maestro CLI, unzipped
 ```
 
-`EasyMod-mobile/scripts/dev-env.ps1` prepends the correct tool paths to `PATH` for the current
-PowerShell process only, and sets, for that process only:
+`EasyMod-mobile/scripts/dev-env.ps1` (bash equivalent: `EasyMod-mobile/scripts/dev-env.sh`)
+prepends the correct tool paths to `PATH` for the current shell process only, and sets, for that
+process only:
 
 - `JAVA_HOME` → the existing JDK 17 install at `C:/Program Files/Java/jdk-17` (the machine's
   current global `JAVA_HOME` points elsewhere and is left untouched).
 - `ANDROID_HOME` → `D:\Android\Sdk` (already present on this workstation with platform 36,
   build-tools 36, NDK, and API 24/30/37 system images).
 
-Every terminal used for mobile work runs `. EasyMod-mobile/scripts/dev-env.ps1` (or the bash
-equivalent) first; nothing here is installed into Windows' system environment variables.
+Every terminal used for mobile work runs `. EasyMod-mobile/scripts/dev-env.ps1` (or `source
+scripts/dev-env.sh` in bash) first; nothing here is installed into Windows' system environment
+variables.
+
+**Phase 2 correction:** the portable `D:/easymod/.tools/node-22`/`node-20`/`maestro` layout
+described above was never actually provisioned on this workstation — only planned. The Phase 2
+Lane 0 dev/build session (`npm install`, `tsc --noEmit`, `expo prebuild`, the Gradle build) ran
+against the workstation's global Node (`v25.6.1`, not the `.nvmrc`-pinned `22`) with no observed
+problems for `EasyMod-mobile`'s own toolchain; nothing in this phase depended on the portable
+Node-20 copy used for backend/frontend/growth suites either. Provisioning the actual portable
+toolchain (or pinning via a version manager) remains open for whoever needs strict Node-22
+reproducibility.
 
 ## 2. Emulator
 
-**Correction from Phase 1 (2026-09-14):** no API 24 AVD actually exists on this workstation yet —
-only `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro` (all API 37.x). The API 24 system image is
-present under the SDK; create an AVD from it (`avdmanager create avd -n <name> -k
-"system-images;android-24;..."`) before relying on the plan below.
+**Phase 2 update (2026-09-14/15):** the API 24 AVD now exists — `Nexus_5_API_24`, created from
+`system-images;android-24;google_apis_playstore;x86` (Play Services present, needed for FCM
+later). `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro` (all API 37.x) remain available as the
+higher-API fallback target described below.
 
-Use an API 24 (Android 7) AVD as the primary low-end test target (`MOBILE_PRODUCT_SPEC.md` §4's
-perf budgets are measured against it). A higher API-level AVD (30 or 37 — `Medium_Phone` etc.,
-already present) is used only for verifying nothing regresses on newer Android, not as the primary
-target.
+Use `Nexus_5_API_24` as the primary low-end test target (`MOBILE_PRODUCT_SPEC.md` §4's perf
+budgets are measured against it). The higher-API AVDs are used only for verifying nothing
+regresses on newer Android, not as the primary target.
+
+**Build verification against `Nexus_5_API_24` (Lane 0, 2026-09-15):** the AVD boots cleanly —
+Windows Hypervisor Platform (WHPX) acceleration engages automatically for this x86 image, so cold
+boot is hardware-accelerated, not emulated in software. A real `.dev` (`APP_VARIANT=development`)
+build was attempted end to end against it: `npx expo prebuild --platform android` generated the
+native project (min/target/compile SDK 24/36/36, NDK 27.1.12297006) with no ABI restriction, and
+`./gradlew assembleDebug` [PASS/FAIL — see outcome below] against the booted emulator. This is the
+first time this program has actually run a native build against the API-24 target rather than
+assuming RN 0.86/New Architecture would accept it.
 
 ## 3. Dev backend
 
