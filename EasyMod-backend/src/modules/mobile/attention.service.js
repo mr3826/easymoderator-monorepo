@@ -102,7 +102,15 @@ async function collectCourierSetupBlocked(shopId, now) {
             order_status: { [Op.notIn]: READY_TO_SHIP_EXCLUDED_STATUSES },
         },
         order: [['created_at', 'ASC']],
-        attributes: ['id', 'order_number', 'created_at'],
+        // Order's timestamp attribute is `createdAt` (no explicit rename —
+        // see the accessor-trap note below); requesting the raw column name
+        // 'created_at' here instead of the real attribute name silently
+        // fails to populate the value on the returned instance at all,
+        // which is a *stricter* failure mode than the read-side trap
+        // `readTimestamp()` guards against (there is nothing for it to find
+        // under either key). ORDER BY is unaffected — raw column names work
+        // there regardless of the JS attribute name.
+        attributes: ['id', 'order_number', 'createdAt'],
     });
     if (!candidateOrders.length) return [];
 
@@ -211,7 +219,9 @@ async function collectDraftOrders(shopId, now) {
     const draftOrders = await Order.findAll({
         where: { shop_id: shopId, order_status: 'draft' },
         order: [['created_at', 'ASC']],
-        attributes: ['id', 'order_number', 'total', 'created_at'],
+        // See the comment in collectCourierSetupBlocked: Order's real
+        // attribute name is `createdAt`, not `created_at`.
+        attributes: ['id', 'order_number', 'total', 'createdAt'],
     });
 
     return draftOrders.map((order) => {
@@ -245,7 +255,9 @@ async function collectRtoVerifyOrders(shopId, now) {
             customer_phone: { [Op.ne]: null },
         },
         order: [['created_at', 'ASC']],
-        attributes: ['id', 'order_number', 'customer_phone', 'created_at'],
+        // See the comment in collectCourierSetupBlocked: Order's real
+        // attribute name is `createdAt`, not `created_at`.
+        attributes: ['id', 'order_number', 'customer_phone', 'createdAt'],
     });
     if (!pendingOrders.length) return [];
 
@@ -287,7 +299,9 @@ async function collectLowStockProducts(shopId, now) {
                 sequelizeWhere(col('quantity'), Op.lte, col('low_stock_threshold')),
             ],
         },
-        attributes: ['id', 'name', 'quantity', 'low_stock_threshold', 'created_at'],
+        // Product's real attribute name is `createdAt`, not `created_at` —
+        // see the comment in collectCourierSetupBlocked.
+        attributes: ['id', 'name', 'quantity', 'low_stock_threshold', 'createdAt'],
     });
 
     return products

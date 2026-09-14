@@ -123,10 +123,21 @@ Two additional implementation notes not required by D1-D6 but load-bearing for c
   explicit rename), while `CourierDispatch` and `Message` expose `.created_at` (both explicitly
   rename the timestamp attribute to `created_at`). Rather than reasoning about this per call site,
   `mobile-day-window.util.js` exports a single `readTimestamp(row, key)` helper that tries both keys,
-  used uniformly by every collector. `WHERE`/`ORDER BY`/`attributes` clauses are unaffected by this
-  trap (snake_case column names work there regardless of the JS accessor name, matching existing
-  precedent — e.g. `dashboard.service.js:46-47`, `invoice.service.js:482`) — only *reading a
-  loaded instance's property in JS* is affected.
+  used uniformly by every collector. `WHERE`/`ORDER BY` clauses are unaffected by this trap
+  (snake_case column names work there regardless of the JS accessor name, matching existing
+  precedent — e.g. `dashboard.service.js:46-47`).
+  **Correction from the initial Phase 2 draft of this ADR**: a Sequelize `attributes:` array *is*
+  affected, and more severely than a plain property read — it is keyed by attribute name, not column
+  name. Requesting the literal string `'created_at'` on `Order`/`Product` (whose real attribute name
+  is `createdAt`) silently omits the timestamp from the returned instance under *either* key, so
+  `readTimestamp()` has nothing to find and returns `null` (surfacing as a urgency score of exactly
+  `0`, caught by `mobile-attention.integration.test.js`'s `courierSetup.urgency_score` assertion
+  during Phase 2 verification). The four affected queries (`collectCourierSetupBlocked`,
+  `collectDraftOrders`, `collectRtoVerifyOrders`, `collectLowStockProducts`) now request `'createdAt'`
+  by its real attribute name instead. `invoice.service.js:482`, cited in the original draft as a
+  working precedent, is not actually one — it selects `Order.created_at` inside an `include:`
+  association block, whose result is never read as a timestamp (only serialized), so the same defect
+  there has simply never been observed.
 - **RTO tier scope**: tier 4 fires only for `RtoShieldService.checkPhone(...)` results with
   `tier === TIERS.TIER_VERIFY`, not `TIER_BLOCK`. A `TIER_BLOCK` customer is already refused COD at
   the order-creation gate (a different, earlier point in the flow) — "awaiting verification" in the
