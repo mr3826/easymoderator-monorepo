@@ -39,7 +39,28 @@ describe('mobile attention/today routes when MOBILE_API_ENABLED is off (default,
     test('is indistinguishable from a genuinely unknown route', async () => {
         const known = await request(app).get('/api/mobile/attention');
         const unknown = await request(app).get('/api/mobile/this-route-does-not-exist');
+
+        // NOTE: known.body.message and unknown.body.message are NOT expected
+        // to be byte-equal — both the mobile flag-gate (mobile.routes.js:29)
+        // and app.js's global catch-all (app.js:217) embed the caller's own
+        // req.originalUrl in the message, so two different paths necessarily
+        // produce two different strings. That is not an information leak
+        // (the client already knows the path it requested) and comparing the
+        // literal strings across two different paths was simply a bug in
+        // this test — every request to a genuinely unknown path already gets
+        // this same per-path message, asserted for /attention and /today
+        // above.
+        //
+        // What "indistinguishable" actually requires — and what this
+        // asserts — is that a flag-gated mobile route and a route that never
+        // existed produce the exact same response *shape* (status, success
+        // flag, error code) and the exact same message *template*, so
+        // nothing here could tell a caller "this route exists but is
+        // disabled" apart from "this route was never registered".
         expect(known.status).toBe(unknown.status);
-        expect(known.body.message).toBe(unknown.body.message);
+        expect(known.body.success).toBe(unknown.body.success);
+        expect(known.body.code).toBe(unknown.body.code);
+        expect(known.body.message).toBe(`Can't find /api/mobile/attention on this server!`);
+        expect(unknown.body.message).toBe(`Can't find /api/mobile/this-route-does-not-exist on this server!`);
     });
 });
