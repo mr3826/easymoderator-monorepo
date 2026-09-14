@@ -70,6 +70,26 @@
       "rateLimited": "Too many attempts. Please wait a moment and try again.",
       "server": "Something went wrong on our end. Please try again shortly.",
       "unknown": "Something unexpected happened. Please try again."
+    },
+    "deeplink": {
+      "loading": "Opening…",
+      "unavailable": {
+        "title": "Not available",
+        "message": "This isn't available. It may not exist, may have been removed, or you may not have access to it."
+      },
+      "error": {
+        "title": "Couldn't open this",
+        "message": "Something went wrong. Please try again.",
+        "retry": "Retry"
+      },
+      "order": {
+        "foundTitle": "Order",
+        "foundBody": "Order #{{id}} — full details are coming in a later update."
+      },
+      "conversation": {
+        "foundTitle": "Conversation",
+        "foundBody": "Conversation #{{id}} — full details are coming in a later update."
+      }
     }
   }
 }
