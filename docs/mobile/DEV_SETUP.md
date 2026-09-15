@@ -62,25 +62,53 @@ carries `android:usesCleartextTraffic="true"` and `build.gradle` carries `applic
 'tech.easymod.merchant.dev'`, both matching the `.dev`-variant config exactly — no drift.
 
 `./gradlew assembleDebug` was then run against the booted emulator (min/target/compile SDK
-24/36/36, NDK 27.1.12297006, no ABI restriction encountered). **This did not reach a pass/fail
-result within this lane's time-boxed session.** The build was not stuck or crashed — the Gradle
-worker JVM's CPU time and heap kept climbing over the whole run (confirmed via repeated
-`Get-Process` samples) — it was simply slower than the ~20-minute budget this lane allotted for
-AVD/build verification, most plausibly because this workstation runs the shared repo across ~10
-concurrent git worktrees (`easymod-worktrees` note) and several other active sessions were doing
-their own disk-heavy work (npm installs, other test runs) at the same time; unrelated filesystem
-scans in this same session (`rg`, `find`) were independently timing out during this window, pointing
-at host-level disk I/O contention rather than an RN 0.86-on-x86 incompatibility. **Net: the emulator
-itself is proven good (boots, hardware-accelerated, correct `.dev` manifest/package), but a full
-native compile against it was not completed, so the cold-start perf budget in
-`MOBILE_PRODUCT_SPEC.md` §4 is explicitly UNVERIFIED — not confirmed passing, not confirmed
-failing.** Whoever picks this up next should re-run `./gradlew assembleDebug` (from
-`EasyMod-mobile/android`, with `scripts/dev-env.sh`/`.ps1` sourced first) on a less contended
-machine/window; if RN 0.86 turns out to genuinely reject the 32-bit x86 image, fall back to one of
-the already-present API-37 AVDs (`Medium_Phone`, `Medium_Phone_2`, or `Pixel_8_Pro`) as the
-higher-API target and re-document the perf budget against that instead. This is the first time
-this program has attempted a native build against the API-24 target rather than assuming RN
-0.86/New Architecture would accept it, and that attempt is still open.
+24/36/36, NDK 27.1.12297006). It ran for 28m 43s and **BUILD FAILED** — a definitive result, not a
+timeout. The failure has nothing to do with API 24, x86, the emulator, or RN 0.86/New Architecture
+rejecting anything: it's a Windows path-length limit in `react-native-reanimated`'s native
+(CMake/ninja) build, independent of which AVD or ABI is targeted. The log shows repeated CMake
+warnings for the `arm64-v8a` variant:
+
+```
+CMake Warning in CMakeLists.txt:
+  The object file directory
+    D:/.../.claude/worktrees/wf_029f7387-dd1-1/EasyMod-mobile/node_modules/react-native-reanimated/android/.cxx/Debug/724n3c55/arm64-v8a/CMakeFiles/reanimated.dir/./
+  has 180 characters. The maximum full path to an object file is 250
+  characters (see CMAKE_OBJECT_PATH_MAX). Object file
+    .../Common/cpp/reanimated/CSS/interpolation/styles/AnimationStyleInterpolatorFactory.cpp.o
+  cannot be safely placed under this directory.
+...
+ninja: error: manifest 'build.ninja' still dirty after 100 tries
+```
+
+**Root cause: the git worktree checkout path itself is too deep for Windows' path-length limits
+once `reanimated`'s `.cxx`/CMake object-file paths are appended on top of it.** This workstation
+checks every branch out under `D:/easymod/easy-moderator/.claude/worktrees/<worktree-id>/...`
+(`easymod-worktrees` note) — that prefix alone is long before `EasyMod-mobile/node_modules/...` is
+even appended, and `reanimated`'s native build nests several more nested directory levels
+(`android/.cxx/Debug/<hash>/<abi>/CMakeFiles/reanimated.dir/...`) on top of that. Gradle's default
+`assembleDebug` also builds all four ABIs (`arm64-v8a`/`armeabi-v7a`/`x86`/`x86_64`) rather than
+just the emulator's `x86`, so this is not gated by API level or emulator choice at all — the same
+failure would very likely reproduce against the API-37 AVDs too, and switching AVDs is **not** a
+fix for this specific failure (unlike the ABI-incompatibility scenario this doc originally
+anticipated). **Net: the emulator itself is proven good (boots, hardware-accelerated, correct
+`.dev` manifest/package), but no debug APK was ever produced, so nothing was installed, and the
+cold-start perf budget in `MOBILE_PRODUCT_SPEC.md` §4 is explicitly UNVERIFIED — confirmed blocked
+by this path-length issue, not confirmed passing or failing on its own merits.**
+
+Whoever picks this up next has three independent remediation paths, none attempted in this
+time-boxed lane: (1) enable Windows NTFS long-path support machine-wide
+(`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled=1`, requires admin + reboot)
+and confirm CMake/ninja actually honor it on this Windows build (not guaranteed — `CMAKE_OBJECT_PATH_MAX`
+is a CMake-level guard, not just an OS one); (2) build from a shallower checkout path for local
+Android dev work instead of the nested `.claude/worktrees/<id>/` layout (e.g. a short-path clone
+dedicated to mobile native builds); or (3) restrict the build to one ABI via
+`-PreactNativeArchitectures=x86` (matching the emulator) to shave a few path-length characters and
+skip compiling the other three ABIs — worth trying first since it's the cheapest, but may not be
+sufficient on its own given how much of the 250-character budget the worktree prefix alone
+consumes. This is the first time this program has attempted a native build against the API-24
+target, and it surfaced a real Windows-worktree environment constraint that will affect every
+future native Android build from this checkout layout, not just this AVD — worth flagging to
+whoever owns workstation/CI environment setup, independent of this lane.
 
 ## 3. Dev backend
 
