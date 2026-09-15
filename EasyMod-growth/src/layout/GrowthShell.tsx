@@ -138,7 +138,7 @@ export function GrowthShell() {
                   event.preventDefault();
                   const input = event.currentTarget.elements.namedItem('q');
                   const value = input instanceof HTMLInputElement ? input.value.trim() : '';
-                  if (value) navigate(`/search?q=${encodeURIComponent(value)}`);
+                  if (value) navigate('/search', { state: { query: value } });
                 }}
               >
                 <input

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { KeyRound, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import {
   growthUsersApi,
   type GrowthRole,
@@ -231,19 +232,18 @@ function UserRowActions({
   );
 }
 
-// Deep-link entry from the internal search results: /growth-users?search=…
-function initialSearchFromUrl(): string {
-  try {
-    return new URLSearchParams(window.location.search).get('search')?.slice(0, MAX_USER_SEARCH_LENGTH) ?? '';
-  } catch (_error) {
-    return '';
-  }
+function initialSearchFromNavigation(state: unknown): string {
+  if (typeof state !== 'object' || state === null || !('search' in state)) return '';
+  const search = state.search;
+  return typeof search === 'string' ? search.slice(0, MAX_USER_SEARCH_LENGTH) : '';
 }
 
 export function GrowthUsersPage() {
+  const location = useLocation();
   const { reportApiError } = useGrowthAuth();
-  const [searchDraft, setSearchDraft] = useState(initialSearchFromUrl());
-  const [searchApplied, setSearchApplied] = useState(initialSearchFromUrl());
+  const initialSearch = initialSearchFromNavigation(location.state);
+  const [searchDraft, setSearchDraft] = useState(initialSearch);
+  const [searchApplied, setSearchApplied] = useState(initialSearch);
   const [users, setUsers] = useState<GrowthUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

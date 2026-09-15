@@ -735,3 +735,51 @@ frontend changes remain untouched.
 - `PRODUCTION_CHANGED`: `NO`; no production connection, mutation, deployment,
   Meta review configuration, OAuth configuration, webhook configuration, or
   secret was changed.
+
+## Independent re-verification receipt (2026-09-15)
+
+- `ACTUAL_START`: the supplied dirty snapshot was already superseded in this
+  worktree. The actual start was clean at `1332005e4b7031e39dfa135a49bb6e81b82c20d2`,
+  with zero staged, modified, deleted, or standard untracked paths. The full
+  feature diff against `origin/main` contains 186 classified paths: 97 feature,
+  74 test, 7 migration, and 8 documentation paths; zero artifact, accidental,
+  unrelated, or unknown paths.
+- `BASELINE`: the first Growth run had one suite-load timeout in
+  `ChangePasswordPage` (`132/133`); the isolated test, one-worker suite, and two
+  subsequent canonical runs passed. An unisolated aggregate also hit the known
+  grounding timeout while inheriting local Redis. These were classified as
+  environment/resource failures, not feature assertions.
+- `STABILIZATION_FIX`: removed search-term email, phone, and page-URL exposure
+  from SPA query parameters. Global search and user-result navigation now use
+  router state, and the affected unit and browser assertions verify that the
+  address bar stays on the route without a sensitive query string.
+- `FULL_REGRESSION`: after the privacy fix and with the unit environment
+  explicitly isolated, the root
+  aggregate passed backend `229/229` suites and `2819/2819` tests, merchant
+  frontend `68/68` files and `575/575` tests, Growth `23/23` files and `133/133`
+  tests, and extension `38/38` tests. Backend security passed `49/49` suites and
+  `452/452` tests; backend syntax, test discovery, Growth TypeScript, and both
+  production build checks passed.
+- `DISPOSABLE_INTEGRATION`: final fresh PostgreSQL/Redis verification passed
+  `14/14`
+  suites and `87/87` tests. A separate fresh schema audit found no drift across
+  62 models and 71 tables. The Meta-shaped disposable E2E passed `43/43` tests.
+- `MIGRATION_BOOTSTRAP`: final fresh loopback-only PostgreSQL verification ran the full
+  migration chain, ran it a second time with every migration skipped, seeded
+  five users and nine Growth prospects, started the backend, returned health
+  `200`, and denied an unauthenticated Growth session with `401`.
+- `PLAYWRIGHT_EXTENSION`: the full Growth browser gate passed `32/32` tests with
+  the opt-in headed Chromium extension flow enabled. Automated extension source
+  validation and manifest tests passed; release permissions remain
+  `activeTab`, `scripting`, and `storage`, with no extension package produced.
+- `CLEAN_CHECKOUT`: a `git archive` checkout installed successfully from the
+  root lockfile and passed the Growth suite, TypeScript, Growth build, backend
+  build, extension tests, and extension validation. Node `25.6.1` emitted the
+  expected repository engine warning because the project requires Node `20.x`.
+- `CI`: draft PR #127 already points at this head; Security Scan, Test & Build
+  Gate, integration, Meta-shaped E2E, Growth build/browser gates, frontend
+  Playwright, deployment dry run, Docker no-push validation, and PR Merge Gate
+  are green. Image publication and production deployment are skipped.
+- `PRODUCTION_CHANGED`: `NO`; no production database, Redis, Qdrant, service,
+  deployment, Meta review configuration, OAuth configuration, webhook
+  configuration, or secret was changed.

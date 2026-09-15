@@ -170,11 +170,16 @@ test('the created user is server-enforced GROWTH_USER; suspend and revoke deny f
 test('internal search finds a Growth user and the seeded merchant for super admins', async ({ page }) => {
   const searchableUser = fixtures.users.growth.email;
 
-  await page.goto(`/search?q=${encodeURIComponent(searchableUser)}`);
+  await page.goto('/');
+  await page.getByLabel('Global internal search').fill(searchableUser);
+  await page.getByLabel('Global internal search').press('Enter');
+  await expect(page).toHaveURL(/\/search$/);
   const usersGroup = page.locator('section[aria-label="Platform user results"]');
   await expect(usersGroup.getByText(searchableUser, { exact: true })).toBeVisible();
 
-  await page.goto(`/search?q=${encodeURIComponent(fixtures.shop.uniqueCode)}`);
+  await page.getByLabel('Search query').fill(fixtures.shop.uniqueCode);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page).toHaveURL(/\/search$/);
   const merchantGroup = page.locator('section[aria-label="Merchant results"]');
   await expect(merchantGroup.getByRole('link', { name: fixtures.shop.shopName })).toBeVisible();
 });

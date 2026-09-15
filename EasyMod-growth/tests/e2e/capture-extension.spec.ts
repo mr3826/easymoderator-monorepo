@@ -50,7 +50,10 @@ test.describe('browser extension capture hand-off', () => {
     await expect(page.getByRole('heading', { name: 'Captured prospect saved' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Captured Salon', exact: true })).toBeVisible();
 
-    await page.goto('/search?q=Captured+Salon');
+    await page.goto('/search');
+    await page.getByLabel('Search query').fill('Captured Salon');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page).toHaveURL(/\/search$/);
     const prospectResults = page.locator('section[aria-label="Prospect results"]');
     await expect(prospectResults.getByRole('link', { name: 'Captured Salon' }).first()).toBeVisible();
   });

@@ -11,9 +11,9 @@ vi.mock('@/auth/GrowthAuthProvider', () => ({
   useGrowthAuth: () => ({ reportApiError, session: { role: sessionRole, permissions: [] } }),
 }));
 
-function renderAt(url: string) {
+function renderAt(query: string) {
   return render(
-    <MemoryRouter initialEntries={[url]}>
+    <MemoryRouter initialEntries={[{ pathname: '/search', state: { query } }]}>
       <SearchPage />
     </MemoryRouter>,
   );
@@ -43,12 +43,13 @@ describe('SearchPage', () => {
     };
     const search = vi.spyOn(workspaceApi, 'search').mockResolvedValue(results);
 
-    renderAt('/search?q=north');
+    renderAt('north');
 
     expect(await screen.findByText('North Star Retail')).toBeInTheDocument();
     expect(screen.getByText(/ana@m\.example/)).toBeInTheDocument();
     expect(screen.getByText('Growth Ops')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'North Star' })).toHaveAttribute('href', '/merchants/s-1');
+    expect(screen.getByRole('link', { name: 'Growth Ops' })).toHaveAttribute('href', '/growth-users');
     await waitFor(() => expect(search).toHaveBeenCalledWith('north'));
   });
 
@@ -63,7 +64,7 @@ describe('SearchPage', () => {
       users: [{ userId: 'u-secret', email: 'hidden@easymod.tech', displayName: 'Hidden' }],
     });
 
-    renderAt('/search?q=comet');
+    renderAt('comet');
 
     expect(await screen.findByText('Comet Shop')).toBeInTheDocument();
     expect(screen.getByText(/not activated/)).toBeInTheDocument();
@@ -76,7 +77,7 @@ describe('SearchPage', () => {
   it('does not call the API for queries shorter than two characters', async () => {
     const search = vi.spyOn(workspaceApi, 'search');
 
-    renderAt('/search?q=a');
+    renderAt('a');
 
     expect(await screen.findByText('Enter at least 2 characters.')).toBeInTheDocument();
     expect(search).not.toHaveBeenCalled();
@@ -84,7 +85,7 @@ describe('SearchPage', () => {
 
   it('caps queries at the backend validation length and describes searchable fields', async () => {
     const search = vi.spyOn(workspaceApi, 'search').mockResolvedValue({ prospects: [], merchants: [], users: [] });
-    renderAt(`/search?q=${'x'.repeat(120)}`);
+    renderAt('x'.repeat(120));
 
     expect(screen.getByLabelText('Search query')).toHaveAttribute('placeholder', 'Business, contact, phone, email, page URL, or code');
     expect(screen.getByLabelText('Search query')).toHaveAttribute('maxLength', '100');
@@ -95,19 +96,19 @@ describe('SearchPage', () => {
     vi.spyOn(workspaceApi, 'search').mockRejectedValue(
       new ApiError('query must be 100 characters or fewer.', 400, 'GROWTH_OS_SEARCH_QUERY_INVALID'),
     );
-    renderAt('/search?q=shop');
+    renderAt('shop');
     expect(await screen.findByRole('alert')).toHaveTextContent('100 characters');
 
     reportApiError.mockReturnValue(true);
     vi.mocked(workspaceApi.search).mockRejectedValue(new ApiError('Expired', 401));
-    renderAt('/search?q=store');
+    renderAt('store');
     await waitFor(() => expect(reportApiError).toHaveBeenCalledWith(expect.objectContaining({ status: 401 })));
   });
 
   it('shows the empty-scoped feedback when no group has results', async () => {
     vi.spyOn(workspaceApi, 'search').mockResolvedValue({ prospects: [], merchants: [], users: [] });
 
-    renderAt('/search?q=zzzz');
+    renderAt('zzzz');
 
     expect(await screen.findByText('Nothing matched within your access scope. Try an exact email, phone digits, or unique shop code.')).toBeInTheDocument();
   });

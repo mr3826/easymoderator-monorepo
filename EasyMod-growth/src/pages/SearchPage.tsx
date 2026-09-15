@@ -1,22 +1,34 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ApiError, workspaceApi, type SearchResults } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 const EMPTY_FEEDBACK = 'Nothing matched within your access scope. Try an exact email, phone digits, or unique shop code.';
 const MAX_SEARCH_QUERY_LENGTH = 100;
 
+function readNavigationQuery(state: unknown): string {
+  if (typeof state !== 'object' || state === null || !('query' in state)) return '';
+  const query = state.query;
+  return typeof query === 'string' ? query.trim().slice(0, MAX_SEARCH_QUERY_LENGTH) : '';
+}
+
 const sourceLabel = (source: string) => source.replace(/_/g, ' ');
 
 export function SearchPage() {
-  const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const { reportApiError, session } = useGrowthAuth();
-  const query = (params.get('q') ?? '').trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
-  const [input, setInput] = useState(query);
+  const navigationQuery = readNavigationQuery(location.state);
+  const [query, setQuery] = useState(navigationQuery);
+  const [input, setInput] = useState(navigationQuery);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isSuperAdmin = session?.role === 'SUPER_ADMIN';
+
+  useEffect(() => {
+    setInput(navigationQuery);
+    setQuery(navigationQuery);
+  }, [navigationQuery]);
 
   useEffect(() => {
     setInput(query);
@@ -60,8 +72,8 @@ export function SearchPage() {
         role="search"
         onSubmit={(event) => {
           event.preventDefault();
-           const term = input.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
-           if (term) setParams({ q: term });
+          const term = input.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+          if (term) setQuery(term);
         }}
       >
         <label className="sr-only" htmlFor="search-page-q">Search query</label>
@@ -146,7 +158,7 @@ export function SearchPage() {
                 {results.users.map((user) => (
                   <li key={user.userId} className="work-item content-card">
                     <div>
-                      <Link to={`/growth-users?search=${encodeURIComponent(user.email)}`}>
+                      <Link to="/growth-users" state={{ search: user.email }}>
                         {user.displayName || user.email}
                       </Link>
                       <p className="table-subtext">{user.email}</p>

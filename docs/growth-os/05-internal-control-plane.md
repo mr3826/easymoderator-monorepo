@@ -246,9 +246,10 @@ email, and page URL; the response contains only matching prospect ID, business
 name, status, and matched fields. Create and update paths also enforce the
 database uniqueness checks, so preflight is advisory and a race can still
 return `GROWTH_OS_PROSPECT_DUPLICATE` (`409`). PII stays in the POST body rather
-than an API URL. The Search page still keeps the entered term in its SPA
-`/search?q=...` browser URL; avoid putting email, phone, or page URL into that
-term until the UI removes this residual URL-history/referrer exposure.
+than an API URL. Search terms are passed between Growth OS views through router
+state, not URL query parameters, so the SPA does not expose email, phone, or
+page URL searches through normal URL history, referrer headers, or server access
+logs.
 
 `EasyMod-backend/scripts/import-growth-prospects.js` is a legacy one-off
 compatibility importer, not a bounded production ingestion service. It loads
