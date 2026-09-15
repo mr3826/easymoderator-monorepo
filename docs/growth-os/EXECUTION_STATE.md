@@ -714,7 +714,7 @@ frontend changes remain untouched.
 - `GROWTH`: frontend `23/23` files and `133/133` tests, TypeScript, and
   production build passed. Main frontend passed `68/68` files and `575/575`
   tests plus its production build.
-- `PLAYWRIGHT`: full Growth browser run passed `31/31` tests with the opt-in
+- `PLAYWRIGHT`: full Growth browser run passed `32/32` tests with the opt-in
   headed Chromium extension check enabled. It includes access, lifecycle,
   duplicate prevention, follow-up, activation, administration, Merchant 360,
   stale-session, and real extension relay coverage.
