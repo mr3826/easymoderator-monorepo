@@ -1484,7 +1484,10 @@ jobs:
     secrets: inherit
     permissions:
       contents: read
-      packages: none
+      # The called workflow declares a main/manual-only publish job requiring
+      # package write permission. Its pull_request condition still skips that
+      # job; this ceiling is required for reusable-workflow validation.
+      packages: write
 
   # ── 5. The one required PR context ─────────────────────────────────────────
   # Branch protection requires exactly this job plus "Security Scan". It has no
