@@ -61,6 +61,8 @@ router.use('/sentiment', sentimentRoutes);
 router.use('/templates', require('./template/response-template.routes'));
 router.use('/internal/growth-os', growthOsRoutes);
 router.use('/admin/failed-jobs', require('./admin/failed-jobs.routes'));
+// ADR M-008 (Phase 2): flag-gated on MOBILE_API_ENABLED inside the router itself.
+router.use('/mobile', require('./mobile/mobile.routes'));
 // Phase 1 — EasyModerator operations admin panel (platform-admin guarded inside the router).
 // Mounted AFTER /admin/partner and /admin/failed-jobs so those specific routers win first.
 router.use('/admin', require('./admin/admin.routes'));
