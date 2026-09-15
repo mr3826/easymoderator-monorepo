@@ -1,8 +1,5 @@
-import { useTranslation } from 'react-i18next';
+import { HomeScreen } from '@/components/home/HomeScreen';
 
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
-
-export default function HomeScreen() {
-  const { t } = useTranslation();
-  return <PlaceholderScreen label={t('mobile.placeholder.phase2', { screen: t('mobile.tabs.home') })} />;
+export default function Home() {
+  return <HomeScreen />;
 }

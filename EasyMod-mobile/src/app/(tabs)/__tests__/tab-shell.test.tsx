@@ -1,14 +1,41 @@
 import path from 'node:path';
+import React from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 
 import i18n from '@/i18n';
 import { renderRouter, screen } from 'expo-router/testing-library';
+import { AuthProvider } from '@/auth/AuthProvider';
+import { queryClient } from '@/lib/queryClient';
+import { __resetTokenStoreForTests } from '@/auth/token-store';
+
+/**
+ * Phase 2 Home lane: `(tabs)/index.tsx` now renders the real `HomeScreen` (previously
+ * `PlaceholderScreen`). `HomeScreen` calls `useAuth()` (directly, and via `useAttention`/
+ * `useToday`) and `useQuery` — this file renders only the `(tabs)` subtree (no root
+ * `app/_layout.tsx`, so no `AuthProvider`/`QueryClientProvider` from there), so both must be
+ * supplied here instead or mounting Home throws "useAuth must be used within an AuthProvider".
+ */
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>{children}</AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+beforeEach(() => {
+  __resetTokenStoreForTests();
+  queryClient.clear();
+});
 
 describe('tab shell', () => {
-  it('renders all five tabs and defaults to the Home placeholder', async () => {
-    renderRouter(path.resolve(__dirname, '..'), { initialUrl: '/' });
+  it('renders all five tabs and defaults to the real Home screen', async () => {
+    renderRouter(path.resolve(__dirname, '..'), { initialUrl: '/', wrapper: Wrapper });
 
-    // The Home screen's placeholder body renders immediately (it's the active tab).
-    expect(await screen.findByText(i18n.t('mobile.placeholder.phase2', { screen: i18n.t('mobile.tabs.home') }))).toBeTruthy();
+    // This bare render has no signed-in session (no root `_layout.tsx` auth bootstrap ran), so
+    // `user`/`shopId` are null — Home correctly renders its real "no shop" state rather than a
+    // spinner or a crash. Full attention/today rendering is covered by `HomeScreen.test.tsx`.
+    expect(await screen.findByText(i18n.t('mobile.home.noShop.title'))).toBeTruthy();
 
     // All five tab bar labels are present in the tab bar itself, even though only the active
     // tab's screen body is mounted (MOBILE_ARCHITECTURE.md §3: Home · Inbox · + · Orders · More).
@@ -20,7 +47,7 @@ describe('tab shell', () => {
   });
 
   it('renders the Inbox placeholder after navigating to the Inbox tab', async () => {
-    renderRouter(path.resolve(__dirname, '..'), { initialUrl: '/inbox' });
+    renderRouter(path.resolve(__dirname, '..'), { initialUrl: '/inbox', wrapper: Wrapper });
 
     expect(
       await screen.findByText(i18n.t('mobile.placeholder.phase2', { screen: i18n.t('mobile.tabs.inbox') })),

@@ -90,6 +90,46 @@
         "foundTitle": "Conversation",
         "foundBody": "Conversation #{{id}} — full details are coming in a later update."
       }
+    },
+    "home": {
+      "today": {
+        "title": "Today",
+        "orders": "Orders",
+        "revenue": "Revenue",
+        "delivered": "Delivered",
+        "unavailable": "Couldn't load today's summary"
+      },
+      "attention": {
+        "title": "Needs Attention",
+        "priority": "Priority {{tier}}",
+        "unavailable": "Couldn't load the list",
+        "overflow": "+{{count}} more need attention"
+      },
+      "entity": {
+        "order": "Order",
+        "conversation": "Conversation",
+        "product": "Product"
+      },
+      "empty": {
+        "idle": {
+          "title": "All quiet today",
+          "message": "No orders yet, and nothing needs your attention."
+        },
+        "caughtUp": {
+          "title": "You're all caught up!",
+          "message": "Nothing needs your attention right now."
+        }
+      },
+      "offline": {
+        "message": "Your data will show here once you're back online."
+      },
+      "error": {
+        "title": "Couldn't load Home"
+      },
+      "noShop": {
+        "title": "No shop selected",
+        "message": "Your account has no shop linked yet. Please contact support."
+      }
     }
   }
 }
