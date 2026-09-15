@@ -29,6 +29,22 @@ async function parseJsonSafe(res: { json: () => Promise<unknown> }): Promise<unk
   }
 }
 
+/**
+ * Every successful EasyMod-backend response is wrapped as
+ * `{ success, message, data }` (e.g. `native-auth.controller.js`'s
+ * `res.json({ success, message, data: {...} })`). Error envelopes are NOT
+ * wrapped this way (see `errors.ts`'s six documented shapes, all flat), so
+ * this only ever needs to run on the `res.ok` path, before schema
+ * validation. A body with no `data` key falls back to itself, so this stays
+ * harmless if it is ever pointed at a genuinely unenveloped response.
+ */
+function unwrapEnvelope(body: unknown): unknown {
+  if (body && typeof body === 'object' && 'data' in (body as Record<string, unknown>)) {
+    return (body as Record<string, unknown>).data;
+  }
+  return body;
+}
+
 export async function apiRequest<T>(
   path: string,
   schema: ZodType<T>,
@@ -46,8 +62,10 @@ export async function apiRequest<T>(
   }
 
   if (res.status === 401 && !options.skipAuth) {
-    const newToken = await refreshAccessToken({ transport });
-    if (newToken) {
+    // `refreshAccessToken` now resolves a `{ accessToken, user } | null` (Phase 2: refresh also
+    // restores session context) — this call site only needs the truthiness check.
+    const refreshed = await refreshAccessToken({ transport });
+    if (refreshed) {
       try {
         res = await transport.request(path, options);
       } catch {
@@ -62,7 +80,7 @@ export async function apiRequest<T>(
     return { ok: false, error: normalizeApiError({ status: res.status, body }) };
   }
 
-  const parsed = schema.safeParse(body);
+  const parsed = schema.safeParse(unwrapEnvelope(body));
   if (!parsed.success) {
     return {
       ok: false,

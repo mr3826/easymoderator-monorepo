@@ -13,6 +13,8 @@
  */
 process.env.MOBILE_API_ENABLED = 'true';
 
+const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
@@ -443,5 +445,109 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         });
         expect(auditRow).not.toBeNull();
         expect(auditRow.metadata?.source).toBeUndefined();
+    });
+
+    /**
+     * ADR M-003 drift prevention (Phase 2, mobile/p2-contract).
+     *
+     * Phase 1 shipped a mobile client and this backend module that were never tested against each
+     * other: this suite asserted against `res.body.data.*` (internally consistent with itself) and
+     * the mobile client's tests used a fake `Transport` returning whatever shape the client's OWN
+     * zod schema expected. Nothing crossed the real boundary, so three real shape drifts (envelope
+     * wrapping, refresh_token field naming, shopId location) shipped unnoticed.
+     *
+     * This test captures the REAL response bodies this Express app actually returns — against a
+     * real disposable Postgres/Redis, not a mock — for signin, refresh, and 2fa/verify, and writes
+     * them to a committed JSON fixture. `EasyMod-mobile/src/auth/native-auth-contract.test.ts` loads
+     * that exact file and parses it with the production zod schemas from `auth-client.ts`. If either
+     * side's shape drifts in the future, one of these two suites fails immediately and mechanically
+     * — no more silent divergence.
+     *
+     * `accessToken`/`refreshToken`/`tempToken` are overwritten with fixed, low-entropy placeholder
+     * strings before the fixture is written (see `withPlaceholderTokens` below) — everything else
+     * (shopId, user.*, sid, success, message) is the real captured value. The real tokens this test
+     * run actually produces are genuine signed JWTs, needed internally so the signin -> refresh
+     * chain above can complete against the real session-rotation logic, but nothing downstream ever
+     * needs them to parse as JWTs: `auth-client.ts`'s schemas assert only `z.string()` on these
+     * fields, never JWT structure. Committing the real bytes bought no drift-detection value while
+     * permanently tripping secret scanners on every commit that touches this file (gitleaks' `jwt`
+     * and `generic-api-key` rules match real signed-JWT-shaped strings by pattern, not by whether
+     * they are exploitable) — so this test only ever writes the placeholders to disk.
+     */
+    function withPlaceholderTokens(responseBody, replacements) {
+        return { ...responseBody, data: { ...responseBody.data, ...replacements } };
+    }
+    test('drift-prevention fixture (ADR M-003): captures real signin/refresh/2fa-verify response bodies for the mobile contract test', async () => {
+        const plain = await makeUserWithShop('fixture-plain');
+        track(plain);
+
+        const plainSignin = await request(app)
+            .post('/api/auth/native/signin')
+            .send({ email: plain.user.email, password: PASSWORD });
+        expect(plainSignin.status).toBe(200);
+        expect(typeof plainSignin.body.data.accessToken).toBe('string');
+
+        const plainRefresh = await request(app)
+            .post('/api/auth/native/refresh')
+            .send({ refresh_token: plainSignin.body.data.refreshToken });
+        expect(plainRefresh.status).toBe(200);
+        expect(plainRefresh.body.data.shopId).toBe(plain.shop.id);
+        expect(plainRefresh.body.data.user.id).toBe(plain.user.id);
+
+        const twofa = await makeUserWithShop('fixture-2fa');
+        track(twofa);
+        const step = 30;
+        const secretResult = await totpService.generateTotpSecret(twofa.user.id);
+        const setupCode = totpService.hotp(secretResult.secret, Math.floor(Date.now() / 1000 / step));
+        await totpService.enableTotp(twofa.user.id, setupCode);
+
+        const twofaSignin = await request(app)
+            .post('/api/auth/native/signin')
+            .send({ email: twofa.user.email, password: PASSWORD });
+        expect(twofaSignin.status).toBe(200);
+        expect(twofaSignin.body.data.requires2fa).toBe(true);
+
+        const verifyCode = totpService.hotp(secretResult.secret, Math.floor(Date.now() / 1000 / step));
+        const twofaVerify = await request(app)
+            .post('/api/auth/native/2fa/verify')
+            .send({ tempToken: twofaSignin.body.data.tempToken, token: verifyCode });
+        expect(twofaVerify.status).toBe(200);
+        expect(typeof twofaVerify.body.data.accessToken).toBe('string');
+
+        const fixturePayload = {
+            _generatedBy:
+                'EasyMod-backend/src/modules/auth/native/__tests__/native-auth.integration.test.js (re-run this suite to regenerate; do not hand-edit)',
+            _purpose:
+                "ADR M-003 drift prevention. EasyMod-mobile/src/auth/native-auth-contract.test.ts loads this file and parses it with the PRODUCTION zod schemas from auth-client.ts. If either side's response shape drifts, one of the two suites fails immediately.",
+            _redaction:
+                'accessToken/refreshToken/tempToken below are fixed, low-entropy placeholder strings, never the ' +
+                'real signed JWTs this test run actually produced — see withPlaceholderTokens above for why. ' +
+                'Every other field (shopId, user.*, sid, success, message) is the real value this Express app ' +
+                'returned against a disposable, throwaway Postgres/Redis stack created for this test run.',
+            capturedAt: new Date().toISOString(),
+            signin: withPlaceholderTokens(plainSignin.body, {
+                accessToken: 'test-fixture-signin-access-token-do-not-use',
+                refreshToken: 'test-fixture-signin-refresh-token-do-not-use',
+            }),
+            refresh: withPlaceholderTokens(plainRefresh.body, {
+                accessToken: 'test-fixture-refresh-access-token-do-not-use',
+                refreshToken: 'test-fixture-refresh-refresh-token-do-not-use',
+            }),
+            signin2faRequired: withPlaceholderTokens(twofaSignin.body, {
+                tempToken: 'test-fixture-2fa-temp-token-do-not-use',
+            }),
+            twoFactorVerify: withPlaceholderTokens(twofaVerify.body, {
+                accessToken: 'test-fixture-2fa-verify-access-token-do-not-use',
+                refreshToken: 'test-fixture-2fa-verify-refresh-token-do-not-use',
+            }),
+        };
+
+        const fixtureDir = path.join(__dirname, '__fixtures__');
+        fs.mkdirSync(fixtureDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(fixtureDir, 'native-auth-responses.json'),
+            `${JSON.stringify(fixturePayload, null, 2)}\n`,
+            'utf8',
+        );
     });
 });
