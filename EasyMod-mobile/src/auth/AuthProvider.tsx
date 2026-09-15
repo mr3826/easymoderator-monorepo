@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { getAccessToken, subscribeAccessToken } from './token-store';
 import { getRefreshToken } from './secure-store';
 import { signIn as signInRequest, logout as logoutRequest, refreshAccessToken, type AuthUser } from './auth-client';
+import { queryClient } from '@/lib/queryClient';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
 
@@ -62,6 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const doLogout = useCallback(async () => {
     await logoutRequest();
     setUser(null);
+    // Phase 2 Home lane: this is the first lane to put real per-shop server data (attention/today)
+    // into the query cache, keyed by `shopId` (`@/api/mobile/queryKeys.ts`). Clearing the whole
+    // cache on logout is defense line 1 against a later sign-in on the same device (potentially to
+    // a DIFFERENT shop) ever serving a previous shop's cached data before its own first fetch
+    // completes — the per-shop key is defense line 2, but must not be the only one, since a cache
+    // entry for a shop this device is no longer signed into should not simply sit there unbounded.
+    queryClient.clear();
   }, []);
 
   const value = useMemo<AuthContextValue>(
