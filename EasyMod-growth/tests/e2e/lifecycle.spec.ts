@@ -119,6 +119,25 @@ test('walks a new prospect through contacted, qualifying, qualified, the unlinke
   await expect(columnLocator(page, 'onboarding').getByRole('link', { name: businessName })).toHaveCount(0);
 });
 
+test('creates a prospect through the full form', async ({ page }) => {
+  const businessName = `E2E Full Form Prospect ${runStamp()}`;
+  await page.goto('/prospects/new');
+  await expect(page.getByRole('heading', { name: 'Capture a prospect', exact: true })).toBeVisible();
+  await page.getByLabel('Business name').fill(businessName);
+  await page.getByLabel('Contact name').fill('Full Form Contact');
+  await page.getByLabel('Contact email').fill(`full-form-${Date.now()}@example.test`);
+
+  const createResponse = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response.url().endsWith('/api/internal/growth-os/prospects')
+    && response.status() === 201
+  ));
+  await page.getByRole('button', { name: 'Create prospect', exact: true }).click();
+  await createResponse;
+  await expect(page).toHaveURL(/\/prospects\/[^/]+$/);
+  await expect(page.getByText(businessName, { exact: true })).toBeVisible();
+});
+
 test('edits through the full form, reassigns ownership, shows linkage suggestions, and merges with tombstones', async ({ page }) => {
   test.setTimeout(120_000);
   const stamp = runStamp();
