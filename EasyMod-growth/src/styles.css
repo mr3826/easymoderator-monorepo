@@ -84,8 +84,7 @@ textarea {
 .brand-name,
 .brand-subtitle,
 .eyebrow,
-.state-copy p,
-.status-panel p {
+.state-copy p {
   margin: 0;
 }
 
@@ -95,7 +94,6 @@ textarea {
 
 .brand-subtitle,
 .eyebrow,
-.status-panel p,
 .state-copy,
 .user-strip span {
   color: #60716b;
@@ -208,7 +206,6 @@ textarea {
 
 .nav-item svg,
 .user-strip svg,
-.status-panel svg,
 .state-icon,
 .primary-button svg,
 .icon-button svg {
@@ -238,7 +235,6 @@ textarea {
 }
 
 .topbar h1,
-.status-panel h2,
 .message-panel h1,
 .login-panel h1 {
   margin: 0;
@@ -275,46 +271,6 @@ textarea {
   color: #1f5d57;
 }
 
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  padding: 28px;
-}
-
-.status-panel {
-  min-height: 164px;
-  display: flex;
-  gap: 18px;
-  align-items: flex-start;
-  justify-content: space-between;
-  border: 1px solid #d4ded7;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 22px;
-}
-
-.status-panel h2 {
-  margin-top: 8px;
-  font-size: 1.16rem;
-}
-
-.status-panel p:last-child {
-  margin-top: 10px;
-  line-height: 1.55;
-}
-
-.primary-panel {
-  grid-column: 1 / -1;
-  min-height: 220px;
-  background: #f9faf6;
-}
-
-.primary-panel h2 {
-  font-size: 1.75rem;
-}
-
-.status-panel svg,
 .state-icon {
   color: #c36b35;
 }
@@ -359,15 +315,6 @@ textarea {
     padding: 18px;
   }
 
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    padding: 18px;
-  }
-
-  .status-panel,
-  .primary-panel {
-    min-height: 0;
-  }
 }
 
 .page-content {
@@ -687,19 +634,6 @@ a:focus-visible {
   border-color: #c9c3df;
   color: #584c86;
   background: #f1eff9;
-}
-
-.eligible-yes,
-.eligible-no {
-  font-weight: 800;
-}
-
-.eligible-yes {
-  color: #286036;
-}
-
-.eligible-no {
-  color: #60716b;
 }
 
 .overdue-text {

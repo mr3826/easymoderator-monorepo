@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, ClipboardCheck, Puzzle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -11,6 +11,10 @@ import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { MessageState } from '@/components/states';
 
 const CAPTURE_STORAGE_KEY = 'growth-os.capture-payload.v1';
+const CAPTURE_BRIDGE_CHANNEL = 'growth-os.capture-bridge.v1';
+const CAPTURE_PAGE_PATH = '/capture';
+const CAPTURE_NONCE_PARAM = 'captureNonce';
+const CAPTURE_NONCE_RE = /^[a-f0-9]{32}$/;
 
 interface CapturePayload {
   businessName?: string;
@@ -34,6 +38,37 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function stripUrlCredentials(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) return '';
+  try {
+    const url = new URL(normalized);
+    if (!url.username && !url.password) return normalized;
+    url.username = '';
+    url.password = '';
+    return url.href;
+  } catch {
+    return normalized;
+  }
+}
+
+function parsePayload(value: unknown): CapturePayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const pageUrl = readString(record.pageUrl);
+  const payload: CapturePayload = {
+    businessName: readString(record.businessName),
+    pageUrl: pageUrl ? stripUrlCredentials(pageUrl) : undefined,
+    sourceWebsite: readString(record.sourceWebsite),
+    selectedText: readString(record.selectedText),
+    contactPhone: readString(record.contactPhone),
+    contactEmail: readString(record.contactEmail),
+    note: readString(record.note),
+  };
+  const hasContent = Object.values(payload).some((value) => value !== undefined);
+  return hasContent ? payload : null;
+}
+
 function parseStoredPayload(): CapturePayload | null {
   let raw: string | null = null;
   try {
@@ -43,23 +78,35 @@ function parseStoredPayload(): CapturePayload | null {
   }
   if (!raw) return null;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const record = parsed as Record<string, unknown>;
-    const payload: CapturePayload = {
-      businessName: readString(record.businessName),
-      pageUrl: readString(record.pageUrl),
-      sourceWebsite: readString(record.sourceWebsite),
-      selectedText: readString(record.selectedText),
-      contactPhone: readString(record.contactPhone),
-      contactEmail: readString(record.contactEmail),
-      note: readString(record.note),
-    };
-    const hasContent = Object.values(payload).some((value) => value !== undefined);
-    return hasContent ? payload : null;
+    return parsePayload(JSON.parse(raw));
   } catch {
     return null;
   }
+}
+
+function captureTargetFromLocation() {
+  if (window.location.pathname !== CAPTURE_PAGE_PATH) return null;
+  const url = new URL(window.location.href);
+  const queryKeys = Array.from(url.searchParams.keys());
+  const nonces = url.searchParams.getAll(CAPTURE_NONCE_PARAM);
+  if (queryKeys.length !== 1 || queryKeys[0] !== CAPTURE_NONCE_PARAM || nonces.length !== 1 || url.hash) return null;
+  const nonce = nonces[0].trim().toLowerCase();
+  if (!CAPTURE_NONCE_RE.test(nonce)) return null;
+  return { origin: url.origin, pathname: url.pathname, nonce };
+}
+
+function parseBridgeMessage(event: MessageEvent<unknown>): CapturePayload | null {
+  const target = captureTargetFromLocation();
+  if (!target || event.source !== window || event.origin !== target.origin) return null;
+  if (!event.data || typeof event.data !== 'object' || Array.isArray(event.data)) return null;
+  const message = event.data as Record<string, unknown>;
+  if (
+    message.channel !== CAPTURE_BRIDGE_CHANNEL ||
+    message.nonce !== target.nonce ||
+    message.targetOrigin !== target.origin ||
+    message.targetPath !== target.pathname
+  ) return null;
+  return parsePayload(message.payload);
 }
 
 function valuesFromPayload(payload: CapturePayload): ReviewValues {
@@ -91,6 +138,14 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'The captured prospect could not be saved.';
 }
 
+function discardStoredCapture() {
+  try {
+    window.sessionStorage.removeItem(CAPTURE_STORAGE_KEY);
+  } catch {
+    // Private-mode storage failures do not make the record writable.
+  }
+}
+
 function validate(values: ReviewValues): string | null {
   if (!values.businessName.trim()) return 'Business name is required.';
   const hasChannel = [values.contactPhone, values.contactEmail, values.pageUrl]
@@ -104,7 +159,7 @@ function validate(values: ReviewValues): string | null {
 
 export function CapturePage() {
   const { reportApiError } = useGrowthAuth();
-  const [payload] = useState<CapturePayload | null>(() => parseStoredPayload());
+  const [payload, setPayload] = useState<CapturePayload | null>(() => parseStoredPayload());
   const [values, setValues] = useState<ReviewValues>(() => valuesFromPayload(payload ?? {}));
   const [validationError, setValidationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +168,28 @@ export function CapturePage() {
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<ProspectListItem | null>(null);
+
+  useEffect(() => {
+    function handleBridgeMessage(event: MessageEvent<unknown>) {
+      const nextPayload = parseBridgeMessage(event);
+      if (!nextPayload) return;
+      setPayload(nextPayload);
+      setValues(valuesFromPayload(nextPayload));
+      setValidationError(null);
+      setError(null);
+      setDuplicates([]);
+      setConflictId(null);
+      setConflictMessage(null);
+    }
+
+    window.addEventListener('message', handleBridgeMessage);
+    const storedPayload = parseStoredPayload();
+    if (storedPayload) {
+      setPayload(storedPayload);
+      setValues(valuesFromPayload(storedPayload));
+    }
+    return () => window.removeEventListener('message', handleBridgeMessage);
+  }, []);
 
   function update(field: keyof ReviewValues, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -127,7 +204,7 @@ export function CapturePage() {
     const identity = {
       contactPhone: trimmed(values.contactPhone),
       contactEmail: trimmed(values.contactEmail),
-      pageUrl: trimmed(values.pageUrl),
+      pageUrl: trimmed(stripUrlCredentials(values.pageUrl)),
     };
     if (!identity.contactPhone && !identity.contactEmail && !identity.pageUrl) return [];
     try {
@@ -152,12 +229,12 @@ export function CapturePage() {
         businessName: values.businessName.trim(),
         contactPhone: trimmed(values.contactPhone),
         contactEmail: trimmed(values.contactEmail),
-        pageUrl: trimmed(values.pageUrl),
+        pageUrl: trimmed(stripUrlCredentials(values.pageUrl)),
         notes: composeNotes(payload, values.note),
         source: 'browser_extension',
         sourceDetail: payload.sourceWebsite,
       });
-      window.sessionStorage.removeItem(CAPTURE_STORAGE_KEY);
+      discardStoredCapture();
       setCreated(saved);
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -197,7 +274,7 @@ export function CapturePage() {
       <main className="page-content" aria-labelledby="capture-created-title">
         <div className="page-heading">
           <div>
-            <Link className="back-link" to="/prospects">
+            <Link className="back-link" to="/prospects" onClick={discardStoredCapture}>
               <ArrowLeft aria-hidden="true" />
               <span>All prospects</span>
             </Link>
@@ -247,7 +324,7 @@ export function CapturePage() {
     <main className="page-content" aria-labelledby="capture-review-title">
       <div className="page-heading">
         <div>
-          <Link className="back-link" to="/prospects">
+          <Link className="back-link" to="/prospects" onClick={discardStoredCapture}>
             <ArrowLeft aria-hidden="true" />
             <span>All prospects</span>
           </Link>
@@ -354,7 +431,7 @@ export function CapturePage() {
         {duplicates.length > 0 ? (
           <section className="duplicate-warning" aria-labelledby="capture-duplicate-title">
             <strong id="capture-duplicate-title">Possible duplicate prospect</strong>
-            <p>Review the existing record. Continue only if this capture is a genuinely separate prospect.</p>
+            <p>Creation is blocked while the identity matches an existing record. Review it or update the details before trying again.</p>
             <ul>
               {duplicates.map((duplicate) => (
                 <li key={duplicate.prospectId}>
@@ -366,9 +443,6 @@ export function CapturePage() {
               ))}
             </ul>
             <div className="button-row">
-              <button className="primary-button" type="button" onClick={() => { setDuplicates([]); void createProspect(); }}>
-                Create anyway
-              </button>
               <button className="secondary-button" type="button" onClick={() => setDuplicates([])}>
                 Update details
               </button>
@@ -377,7 +451,7 @@ export function CapturePage() {
         ) : null}
 
         <div className="form-footer">
-          <Link className="secondary-button" to="/prospects">Cancel</Link>
+          <Link className="secondary-button" to="/prospects" onClick={discardStoredCapture}>Cancel</Link>
           <button className="primary-button" type="submit" disabled={submitting}>
             <ClipboardCheck aria-hidden="true" />
             <span>{submitting ? 'Checking and creating' : 'Create prospect'}</span>

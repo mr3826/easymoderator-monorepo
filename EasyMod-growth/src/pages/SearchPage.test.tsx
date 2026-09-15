@@ -82,16 +82,25 @@ describe('SearchPage', () => {
     expect(search).not.toHaveBeenCalled();
   });
 
+  it('caps queries at the backend validation length and describes searchable fields', async () => {
+    const search = vi.spyOn(workspaceApi, 'search').mockResolvedValue({ prospects: [], merchants: [], users: [] });
+    renderAt(`/search?q=${'x'.repeat(120)}`);
+
+    expect(screen.getByLabelText('Search query')).toHaveAttribute('placeholder', 'Business, contact, phone, email, page URL, or code');
+    expect(screen.getByLabelText('Search query')).toHaveAttribute('maxLength', '100');
+    await waitFor(() => expect(search).toHaveBeenCalledWith('x'.repeat(100)));
+  });
+
   it('surfaces server validation messages and routes auth failures through the provider', async () => {
     vi.spyOn(workspaceApi, 'search').mockRejectedValue(
       new ApiError('query must be 100 characters or fewer.', 400, 'GROWTH_OS_SEARCH_QUERY_INVALID'),
     );
-    renderAt(`/search?q=${'x'.repeat(120)}`);
+    renderAt('/search?q=shop');
     expect(await screen.findByRole('alert')).toHaveTextContent('100 characters');
 
     reportApiError.mockReturnValue(true);
     vi.mocked(workspaceApi.search).mockRejectedValue(new ApiError('Expired', 401));
-    renderAt('/search?q=shop');
+    renderAt('/search?q=store');
     await waitFor(() => expect(reportApiError).toHaveBeenCalledWith(expect.objectContaining({ status: 401 })));
   });
 

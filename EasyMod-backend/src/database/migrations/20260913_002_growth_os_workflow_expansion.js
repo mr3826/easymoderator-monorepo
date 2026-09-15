@@ -91,7 +91,7 @@ const quote = (values) => values.map((value) => `'${value}'`).join(', ');
 
 async function replaceCheck(sequelize, table, constraintName, column, values) {
   await sequelize.query(
-    `ALTER TABLE ${table} DROP CONSTRAINT ${constraintName}`,
+    `ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${constraintName}`,
   );
   await sequelize.query(
     `ALTER TABLE ${table} ADD CONSTRAINT ${constraintName} CHECK (${column} IN (${quote(values)}))`,
@@ -111,6 +111,7 @@ async function assertNoValuesInUse( sequelize, table, column, allowed, label) {
 }
 
 module.exports = {
+  name: '20260913_002_growth_os_workflow_expansion',
   async up(sequelize) {
     if (sequelize.getDialect() !== 'postgres') {
       console.log('[20260913_002] named CHECK replacement skipped on non-PostgreSQL dialect');

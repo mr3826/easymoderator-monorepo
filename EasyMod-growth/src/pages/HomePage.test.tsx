@@ -8,7 +8,10 @@ import { HomePage } from './HomePage';
 const reportApiError = vi.fn(() => false);
 
 vi.mock('@/auth/GrowthAuthProvider', () => ({
-  useGrowthAuth: () => ({ reportApiError }),
+  useGrowthAuth: () => ({
+    reportApiError,
+    session: { permissions: ['growth_os.followups.manage'] },
+  }),
 }));
 
 function makeHome(overrides: Partial<HomeResponse> = {}): HomeResponse {
@@ -60,7 +63,7 @@ describe('HomePage', () => {
     expect(screen.getByText('Onboarding stalled (15+ days)')).toBeInTheDocument();
     expect(screen.getByText('Overdue follow-ups in scope')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review in My Work' })).toHaveAttribute('href', '/my-work');
-    expect(screen.getByRole('link', { name: 'Open assigned work' })).toHaveAttribute('href', '/my-work');
+    expect(screen.getByRole('link', { name: 'Open prospects' })).toHaveAttribute('href', '/prospects');
   });
 
   it('keeps super-admin sections hidden when the payload has no privileged fields', async () => {

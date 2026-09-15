@@ -210,21 +210,6 @@ describe('Growth OS prospect lifecycle', () => {
     expect(row.disqualified_reason).toBeNull();
   });
 
-  it('derives next-phase eligibility only for qualified owned records with a channel', () => {
-    const base = makeProspect({ status: 'qualified', owner_user_id: 'owner-1' });
-    expect(prospectService.toApiProspect(base, { redacted: false }).eligibleForNextPhase).toBe(true);
-
-    for (const overrides of [
-      { status: 'new' },
-      { owner_user_id: null },
-      { normalized_phone: null, normalized_email: null, normalized_page: null },
-      { status: 'merged', merged_into_id: 'target-1' },
-    ]) {
-      expect(prospectService.toApiProspect(makeProspect({ ...base, ...overrides }), { redacted: false })
-        .eligibleForNextPhase).toBe(false);
-    }
-  });
-
   it('redacts notes, metadata, event reasons, and event metadata in source scope', async () => {
     const row = makeProspect({ notes: 'private note', metadata: { campaign: 'secret' } });
     mockRepository.findProspectById.mockResolvedValue(row);

@@ -53,7 +53,7 @@ const releaseTopupCheckoutLease = async (topupId, shopId, leaseId) => {
 const recordFunnelEventSafe = (event, values) => {
     try {
         return require('../analytics/funnel-events.service')
-            .recordFunnelEvent({ event, ...values })
+            .recordInternalFunnelEvent({ event, ...values })
             .catch(() => {});
     } catch (_) {
         return Promise.resolve();

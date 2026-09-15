@@ -42,6 +42,8 @@ jest.mock('src/utils/cache.service', () => ({
     get: jest.fn(async (key) => mockCacheStore.get(key) ?? null),
     set: jest.fn(async (key, value) => { mockCacheStore.set(key, value); return true; }),
     delete: jest.fn(async (key) => mockCacheStore.delete(key)),
+    getStrict: jest.fn(async (key) => mockCacheStore.get(key) ?? null),
+    setStrict: jest.fn(async (key, value) => { mockCacheStore.set(key, value); return true; }),
     getForShop: jest.fn(async (shopId, key) => mockCacheStore.get(`${shopId}:${key}`) ?? null),
     setForShop: jest.fn(async (shopId, key, value) => { mockCacheStore.set(`${shopId}:${key}`, value); return true; }),
     deleteForShop: jest.fn(async (shopId, key) => mockCacheStore.delete(`${shopId}:${key}`)),
@@ -87,6 +89,8 @@ const mockUser = {
     refresh_token: null,
     last_logged_shop_id: 'shop-1',
     token_version: 1,
+    must_change_password: false,
+    temporary_password_expires_at: null,
     update: jest.fn(() => Promise.resolve()),
     shops: [{
         id: 'shop-1',
@@ -187,6 +191,9 @@ describe('Auth API', () => {
         mockRedis.expire.mockClear();
         mockRedis.ttl.mockClear();
         mockUser.update.mockClear();
+        mockUser.update.mockImplementation(() => Promise.resolve());
+        mockUser.must_change_password = false;
+        mockUser.temporary_password_expires_at = null;
     });
 
     // ── Signup ──────────────────────────────────────────────────────────
@@ -290,6 +297,92 @@ describe('Auth API', () => {
                 .send({ password: 'test123' });
 
             expect(res.status).toBe(400);
+        });
+
+        it('allows a valid temporary password only into the forced-change flow', async () => {
+            const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+            const temporaryUser = {
+                ...mockUser,
+                must_change_password: true,
+                temporary_password_expires_at: expiresAt,
+                update: jest.fn(() => Promise.resolve()),
+            };
+            User.findOne.mockResolvedValue(temporaryUser);
+
+            const login = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: temporaryUser.email, password: 'correct-password' });
+
+            expect(login.status).toBe(200);
+            expect(login.body.data).toMatchObject({
+                requiresPasswordChange: true,
+                temporaryPasswordExpiresAt: expiresAt.toISOString(),
+            });
+
+            const accessToken = login.headers['set-cookie']
+                .find((cookie) => cookie.startsWith('access_token='))
+                .split(';')[0]
+                .replace('access_token=', '');
+            User.findByPk.mockResolvedValue(temporaryUser);
+            const blocked = await request(app)
+                .get('/api/auth/me')
+                .set('Authorization', `Bearer ${accessToken}`);
+
+            expect(blocked.status).toBe(403);
+            expect(blocked.body.code).toBe('AUTH_PASSWORD_CHANGE_REQUIRED');
+        });
+
+        it('rejects a temporary password after its expiry', async () => {
+            User.findOne.mockResolvedValue({
+                ...mockUser,
+                must_change_password: true,
+                temporary_password_expires_at: new Date(Date.now() - 1000),
+            });
+
+            const res = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: mockUser.email, password: 'correct-password' });
+
+            expect(res.status).toBe(401);
+            expect(res.body.code).toBe('AUTH_TEMPORARY_PASSWORD_EXPIRED');
+        });
+
+        it('changes the temporary password, clears its state, and revokes the temporary session', async () => {
+            const temporaryUser = {
+                ...mockUser,
+                must_change_password: true,
+                temporary_password_expires_at: new Date(Date.now() + 60 * 60 * 1000),
+                update: jest.fn(async (attributes) => {
+                    Object.assign(temporaryUser, attributes);
+                }),
+            };
+            User.findOne.mockResolvedValue(temporaryUser);
+
+            const login = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: temporaryUser.email, password: 'correct-password' });
+            const accessToken = login.headers['set-cookie']
+                .find((cookie) => cookie.startsWith('access_token='))
+                .split(';')[0]
+                .replace('access_token=', '');
+
+            User.findByPk.mockResolvedValue(temporaryUser);
+            const changed = await request(app)
+                .post('/api/auth/change-password')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ currentPassword: 'correct-password', newPassword: 'New-password-123!' });
+
+            expect(changed.status).toBe(200);
+            expect(temporaryUser.must_change_password).toBe(false);
+            expect(temporaryUser.temporary_password_expires_at).toBeNull();
+            expect(temporaryUser.token_version).toBe(2);
+            expect(changed.headers['set-cookie'].some((cookie) => cookie.startsWith('access_token=;'))).toBe(true);
+
+            const blocked = await request(app)
+                .get('/api/auth/me')
+                .set('Authorization', `Bearer ${accessToken}`);
+            expect(blocked.status).toBe(401);
+            expect(blocked.body.message).toContain('invalidated');
         });
     });
 

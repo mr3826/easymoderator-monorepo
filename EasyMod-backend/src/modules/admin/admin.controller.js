@@ -2,6 +2,7 @@
 
 const adminService = require('./admin.service');
 const AuditService = require('../audit/audit.service');
+const { AppError } = require('../../utils/AppError');
 
 const ok = (res, data) => res.json({ success: true, data });
 
@@ -60,11 +61,21 @@ exports.setShopStatus = async (req, res, next) => {
 exports.addCredits = async (req, res, next) => {
   try {
     const { shopId } = req.params;
-    const { before, after } = await adminService.addCredits(shopId, req.body.amount, req.body.reason);
-    await AuditService.logOperation({
-      userId: req.user.userId, shopId, action: 'admin:add_credits',
-      resourceType: 'SUBSCRIPTION', resourceId: shopId,
-      oldValues: before, newValues: after, ...auditCtx(req),
+    const idempotencyKey = req.get('Idempotency-Key');
+    if (!idempotencyKey) throw new AppError('Idempotency-Key header is required for credit grants.', 400, 'ADMIN_IDEMPOTENCY_REQUIRED');
+    const { sequelize } = require('../../utils/database/database-setup');
+    const after = await sequelize.transaction(async (transaction) => {
+      const { before, after: next } = await adminService.addCredits(shopId, req.body.amount, req.body.reason, {
+        idempotencyKey,
+        actorUserId: req.user.userId,
+        transaction,
+      });
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId, action: 'admin:add_credits',
+        resourceType: 'SUBSCRIPTION', resourceId: shopId,
+        oldValues: before, newValues: next, ...auditCtx(req),
+      }, { transaction, required: true });
+      return next;
     });
     ok(res, after);
   } catch (e) { next(e); }

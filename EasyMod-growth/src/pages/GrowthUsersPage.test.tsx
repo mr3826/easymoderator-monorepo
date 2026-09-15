@@ -76,6 +76,7 @@ describe('GrowthUsersPage', () => {
     const create = vi.spyOn(growthUsersApi, 'create').mockResolvedValue({
       user: { userId: 'user-new', email: 'new@easymod.test', displayName: 'New Person', role: 'GROWTH_USER', status: 'active' },
       initialPassword: 'Zk9-pass-secret-42',
+      temporaryPasswordExpiresAt: '2026-09-15T12:00:00.000Z',
     });
     vi.spyOn(growthUsersApi, 'list').mockResolvedValue([adminUser]);
     renderPage();
@@ -85,7 +86,7 @@ describe('GrowthUsersPage', () => {
     await user.type(screen.getByLabelText('Email'), 'new@easymod.test');
     await user.type(screen.getByLabelText('Display name'), 'New Person');
     await user.click(screen.getByLabelText('Growth user'));
-    await user.type(screen.getByLabelText('Reason (required)'), 'Onboarding new marketer');
+    await user.type(screen.getByLabelText('Reason (required, max 200 chars)'), 'Onboarding new marketer');
     await user.click(screen.getByRole('button', { name: 'Create user' }));
 
     await waitFor(() => expect(create).toHaveBeenCalledWith({
@@ -97,6 +98,7 @@ describe('GrowthUsersPage', () => {
     const reveal = document.querySelector('.password-reveal');
     expect(reveal).not.toBeNull();
     expect(reveal).toHaveTextContent('Zk9-pass-secret-42');
+    expect(screen.getByText(/This password is shown once, expires/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Done — I copied the password' }));
     expect(document.querySelector('.password-reveal')).toBeNull();
@@ -113,7 +115,7 @@ describe('GrowthUsersPage', () => {
     await screen.findByText('Ada Mensah');
 
     await user.click(screen.getByRole('button', { name: 'Suspend' }));
-    await user.type(screen.getByLabelText('Reason for this action (required)'), 'Offboarding check');
+    await user.type(screen.getByLabelText('Reason for this action (required, max 200 chars)'), 'Offboarding check');
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(setStatus).not.toHaveBeenCalled();
 
@@ -142,5 +144,21 @@ describe('GrowthUsersPage', () => {
     renderPage();
 
     expect(await screen.findByText('No Growth OS users match this search.')).toBeInTheDocument();
+  });
+
+  it('matches the user search contract and caps the query at 120 characters', async () => {
+    const user = userEvent.setup();
+    const list = vi.spyOn(growthUsersApi, 'list').mockResolvedValue([adminUser]);
+    renderPage();
+    await screen.findByText('Ada Mensah');
+
+    const search = screen.getByLabelText('Search users');
+    expect(search).toHaveAttribute('placeholder', 'Name or email');
+    expect(search).toHaveAttribute('maxLength', '120');
+
+    await user.type(search, 'x'.repeat(130));
+    await user.click(screen.getByRole('button', { name: 'Apply search' }));
+
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith('x'.repeat(120)));
   });
 });

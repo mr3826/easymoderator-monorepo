@@ -66,7 +66,7 @@ const listProspects = {
 };
 
 const duplicateCheck = {
-  query: Joi.object({
+  body: Joi.object({
     ...prospectFields,
     excludeId: uuid,
     exclude_id: uuid,

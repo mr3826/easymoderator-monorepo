@@ -1,6 +1,9 @@
 'use strict';
 
 const { Op } = require('sequelize');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { AuditLog, GrowthOsProspect, GrowthOsProspectEvent, PartnerApplication, User } = require('../../entities');
 const { run } = require('../../../../scripts/import-growth-prospects');
@@ -9,8 +12,14 @@ const prospectService = require('../growth-os.prospect.service');
 let sourceUser;
 let crmLead;
 let partnerApplication;
+let duplicatePartnerApplication;
 let tombstonePartnerApplication;
 let sourceReferences;
+const receiptDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'growth-import-'));
+
+function receiptRows(result) {
+  return JSON.parse(fs.readFileSync(result.receipt, 'utf8')).rows;
+}
 
 function suffix() {
   return uuidv4().replace(/-/g, '').slice(0, 12);
@@ -45,6 +54,7 @@ async function removeImportedFixtures() {
   }
   if (crmLead) await AuditLog.destroy({ where: { id: crmLead.id } });
   if (partnerApplication) await PartnerApplication.destroy({ where: { id: partnerApplication.id } });
+  if (duplicatePartnerApplication) await PartnerApplication.destroy({ where: { id: duplicatePartnerApplication.id } });
   if (tombstonePartnerApplication) await PartnerApplication.destroy({ where: { id: tombstonePartnerApplication.id } });
   if (sourceUser) await User.destroy({ where: { id: sourceUser.id } });
 }
@@ -82,9 +92,17 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
       status: 'pending',
       notes: 'Partner source fixture',
     });
+    duplicatePartnerApplication = await PartnerApplication.create({
+      business_name: `Duplicate Imported Partner ${id}`,
+      phone: partnerApplication.phone,
+      page_link: `https://facebook.com/duplicate-imported-partner-${id}`,
+      status: 'pending',
+      notes: 'Duplicate partner source fixture',
+    });
     sourceReferences = [
       crmLead.idempotency_key,
       `partner_application:${partnerApplication.id}`,
+      `partner_application:${duplicatePartnerApplication.id}`,
     ];
   });
 
@@ -97,30 +115,43 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
     const crmBefore = await AuditLog.findByPk(crmLead.id, { raw: true });
     const partnerBefore = await PartnerApplication.findByPk(partnerApplication.id, { raw: true });
 
-    const dryRun = await run({ apply: false });
-    const dryRunFixtures = dryRun.results.filter((result) => sourceReferences.includes(result.sourceReference));
+    const dryRun = await run({ apply: false, runId: `dry-${suffix()}`, receipt: path.join(receiptDirectory, 'dry.json') });
+    const dryRunFixtures = receiptRows(dryRun).filter((result) => sourceReferences.includes(result.sourceReference));
     expect(dryRun.dryRun).toBe(true);
-    expect(dryRunFixtures).toHaveLength(2);
-    expect(dryRunFixtures.every((result) => result.outcome === 'would-create')).toBe(true);
+    expect(dryRunFixtures).toHaveLength(3);
+    expect(dryRunFixtures.filter((result) => result.outcome === 'would-create')).toHaveLength(2);
+    expect(dryRunFixtures.filter((result) => result.outcome === 'skipped-duplicate')).toHaveLength(1);
     expect(await GrowthOsProspect.count({
       where: { source_reference: { [Op.in]: sourceReferences } },
     })).toBe(0);
 
-    const firstApply = await run({ apply: true });
-    const firstFixtures = firstApply.results.filter((result) => sourceReferences.includes(result.sourceReference));
-    expect(firstFixtures).toHaveLength(2);
-    expect(firstFixtures.every((result) => result.outcome === 'created')).toBe(true);
+    const firstApply = await run({ apply: true, runId: `apply-${suffix()}`, receipt: path.join(receiptDirectory, 'first.json') });
+    const firstFixtures = receiptRows(firstApply).filter((result) => sourceReferences.includes(result.sourceReference));
+    expect(firstFixtures).toHaveLength(3);
+    expect(firstFixtures.filter((result) => result.outcome === 'created')).toHaveLength(2);
+    expect(firstFixtures.filter((result) => result.outcome === 'skipped-duplicate')).toHaveLength(1);
     expect(await GrowthOsProspect.count({
       where: { source_reference: { [Op.in]: sourceReferences } },
     })).toBe(2);
 
-    const secondApply = await run({ apply: true });
-    const secondFixtures = secondApply.results.filter((result) => sourceReferences.includes(result.sourceReference));
-    expect(secondFixtures).toHaveLength(2);
+    const secondApply = await run({ apply: true, runId: `repeat-${suffix()}`, receipt: path.join(receiptDirectory, 'second.json') });
+    const secondFixtures = receiptRows(secondApply).filter((result) => sourceReferences.includes(result.sourceReference));
+    expect(secondFixtures).toHaveLength(3);
     expect(secondFixtures.every((result) => result.outcome === 'skipped-duplicate')).toBe(true);
     expect(await GrowthOsProspect.count({
       where: { source_reference: { [Op.in]: sourceReferences } },
     })).toBe(2);
+
+    const importedEvent = await GrowthOsProspectEvent.findOne({
+      where: { prospect_id: { [Op.in]: await GrowthOsProspect.findAll({
+        where: { source_reference: crmLead.idempotency_key }, attributes: ['id'], raw: true,
+      }).then((rows) => rows.map((row) => row.id)) } },
+    });
+    expect(importedEvent.metadata).toMatchObject({ import_run_id: expect.any(String) });
+    const importedAudit = await AuditLog.findOne({
+      where: { resource_type: 'growth_os_prospect', resource_id: importedEvent.prospect_id },
+    });
+    expect(importedAudit.metadata).toMatchObject({ import_run_id: expect.any(String) });
 
     const crmAfter = await AuditLog.findByPk(crmLead.id, { raw: true });
     const partnerAfter = await PartnerApplication.findByPk(partnerApplication.id, { raw: true });
@@ -184,8 +215,8 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
       merged_at: new Date(),
     });
 
-    const applied = await run({ apply: true });
-    const replacement = applied.results.find((result) => result.sourceReference === sourceReference);
+    const applied = await run({ apply: true, runId: `tombstone-${suffix()}`, receipt: path.join(receiptDirectory, 'tombstone.json') });
+    const replacement = receiptRows(applied).find((result) => result.sourceReference === sourceReference);
 
     expect(replacement).toMatchObject({ sourceReference, outcome: 'created' });
     expect(applied.counts.failed).toBe(0);

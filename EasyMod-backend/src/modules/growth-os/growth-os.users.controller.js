@@ -31,6 +31,7 @@ async function createGrowthUser(req, res, next) {
       role: req.body.role,
       reason: req.body.reason,
     });
+    res.set('Cache-Control', 'no-store');
     res.status(201).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -85,6 +86,7 @@ async function resetUserPassword(req, res, next) {
       targetUserId: req.params.userId,
       reason: req.body.reason,
     });
+    res.set('Cache-Control', 'no-store');
     res.json({ success: true, data });
   } catch (error) {
     next(error);

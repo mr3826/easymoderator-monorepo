@@ -29,6 +29,7 @@ function renderShell(permissions: string[]) {
   vi.mocked(useAuthSession).session = {
     displayName: 'Test User',
     role: permissions === SUPER_ADMIN_PERMISSIONS ? 'SUPER_ADMIN' : 'GROWTH_USER',
+    legacyRole: null,
     permissions,
   };
   return render(
@@ -39,7 +40,7 @@ function renderShell(permissions: string[]) {
 }
 
 // Mutable module-level session used by the hoisted provider mock below.
-const useAuthSession: { session: { displayName: string; role: string; permissions: string[] } | null } = {
+const useAuthSession: { session: { displayName: string; role: string; legacyRole: string | null; permissions: string[] } | null } = {
   session: null,
 };
 
@@ -87,12 +88,29 @@ describe('GrowthShell navigation', () => {
     expect(screen.getByRole('link', { name: 'Access Control' })).toHaveAttribute('href', '/access-control');
   });
 
-  it('hides the whole Growth group when no prospect read permission exists', () => {
+  it('hides navigation entries when the session has no route permissions', () => {
     renderShell(['growth_os.session.read']);
 
     expect(screen.queryByRole('link', { name: 'Prospects' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Merchants' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
+  });
+
+  it('only exposes the prospect surface for a legacy assigned-reader permission set', () => {
+    renderShell([
+      'growth_os.session.read',
+      'growth_os.prospects.read_assigned',
+      'growth_os.prospects.update_assigned',
+    ]);
+
+    expect(screen.getByRole('link', { name: 'Prospects' })).toHaveAttribute('href', '/prospects');
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'My Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Pipeline' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Follow-ups' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Sources' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Analytics' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Search' })).not.toBeInTheDocument();
   });
 
   it('renders no navigation groups until the session resolves', () => {

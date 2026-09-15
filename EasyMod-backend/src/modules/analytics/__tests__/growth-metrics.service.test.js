@@ -32,7 +32,7 @@ describe('growth-metrics.service', () => {
     });
 
     describe('recordActivation', () => {
-        it('records activation on first NX claim and preserves existing settings', async () => {
+        it('records first AI reply as an operational milestone and preserves existing settings', async () => {
             mockCache.set.mockResolvedValue('OK');
             mockCache.persist.mockResolvedValue(1);
             const update = jest.fn().mockResolvedValue();
@@ -40,13 +40,13 @@ describe('growth-metrics.service', () => {
 
             await recordActivation('shop-1', 'conv-9');
 
-            expect(mockCache.set).toHaveBeenCalledWith('shop:activated:shop-1', '1', 'EX', 300, 'NX');
+            expect(mockCache.set).toHaveBeenCalledWith('shop:first-ai-reply:shop-1', '1', 'EX', 300, 'NX');
             expect(update).toHaveBeenCalledTimes(1);
             const arg = update.mock.calls[0][0];
-            expect(arg.settings.activation.activated_at).toBeTruthy();
-            expect(arg.settings.activation.first_conversation_id).toBe('conv-9');
+            expect(arg.settings.first_ai_reply.occurred_at).toBeTruthy();
+            expect(arg.settings.first_ai_reply.first_conversation_id).toBe('conv-9');
             expect(arg.settings.businessInfo).toEqual({ x: 1 }); // not clobbered
-            expect(mockCache.persist).toHaveBeenCalledWith('shop:activated:shop-1');
+            expect(mockCache.persist).toHaveBeenCalledWith('shop:first-ai-reply:shop-1');
             expect(mockCache.del).not.toHaveBeenCalled();
         });
 
@@ -63,11 +63,11 @@ describe('growth-metrics.service', () => {
             await recordActivation('shop-1', 'conv-9');
 
             expect(mockShop.update).toHaveBeenCalledTimes(1);
-            expect(mockShop.update.mock.calls[0][0].settings.value).toContain('jsonb_build_object');
+            expect(mockShop.update.mock.calls[0][0].settings.value).toContain("'first_ai_reply'");
             expect(mockShop.update.mock.calls[0][1].where[Op.and][0]).toEqual({ id: 'shop-1' });
-            expect(mockShop.update.mock.calls[0][1].where[Op.and][1].value).toContain('activated_at');
+            expect(mockShop.update.mock.calls[0][1].where[Op.and][1].value).toContain('first_ai_reply');
             expect(update).not.toHaveBeenCalled();
-            expect(mockCache.persist).toHaveBeenCalledWith('shop:activated:shop-1');
+            expect(mockCache.persist).toHaveBeenCalledWith('shop:first-ai-reply:shop-1');
         });
 
         it('skips entirely when the NX claim was already taken', async () => {
@@ -80,12 +80,12 @@ describe('growth-metrics.service', () => {
             mockCache.set.mockResolvedValue('OK');
             const update = jest.fn();
             mockShop.findByPk.mockResolvedValue({
-                settings: { activation: { activated_at: '2026-01-01T00:00:00Z' } },
+                settings: { first_ai_reply: { occurred_at: '2026-01-01T00:00:00Z' } },
                 update,
             });
             await recordActivation('shop-1');
             expect(update).not.toHaveBeenCalled();
-            expect(mockCache.persist).toHaveBeenCalledWith('shop:activated:shop-1');
+            expect(mockCache.persist).toHaveBeenCalledWith('shop:first-ai-reply:shop-1');
         });
 
         it('releases a temporary claim when the DB write fails', async () => {
@@ -96,7 +96,7 @@ describe('growth-metrics.service', () => {
 
             await expect(recordActivation('shop-1')).resolves.toBeUndefined();
 
-            expect(mockCache.del).toHaveBeenCalledWith('shop:activated:shop-1');
+            expect(mockCache.del).toHaveBeenCalledWith('shop:first-ai-reply:shop-1');
             expect(mockCache.persist).not.toHaveBeenCalled();
         });
 
@@ -114,7 +114,7 @@ describe('growth-metrics.service', () => {
     describe('getGrowthMetrics', () => {
         it('computes activation + retention and sorts by recent orders', async () => {
             mockShop.findAll.mockResolvedValue([
-                { id: 's1', shop_name: 'Shop One', settings: { activation: { activated_at: '2026-05-20T00:00:00Z' } }, created_at: new Date('2026-05-18T00:00:00Z') },
+                { id: 's1', shop_name: 'Shop One', settings: { first_ai_reply: { occurred_at: '2026-05-20T00:00:00Z' } }, created_at: new Date('2026-05-18T00:00:00Z') },
                 { id: 's2', shop_name: 'Shop Two', settings: {}, created_at: new Date('2026-05-25T00:00:00Z') },
             ]);
             // One grouped count per time window, regardless of shop count.
@@ -125,24 +125,24 @@ describe('growth-metrics.service', () => {
             const result = await getGrowthMetrics({ now: new Date('2026-05-31T00:00:00Z') });
 
             expect(result.totals.shops).toBe(2);
-            expect(result.totals.activated).toBe(1);
-            expect(result.totals.activationRate).toBe(50);
+            expect(result.totals.firstAiReplies).toBe(1);
+            expect(result.totals.firstAiReplyRate).toBe(50);
             expect(result.totals.retainedThisWeek).toBe(1);
             expect(result.totals.retentionRate).toBe(100); // 1 of 1 activated shops retained
 
             // Sorted by ordersLast7d desc → s1 (3 orders) first
             expect(result.shops[0].shopId).toBe('s1');
-            expect(result.shops[0].activated).toBe(true);
-            expect(result.shops[0].daysToActivation).toBe(2); // May 18 → May 20
+            expect(result.shops[0].firstAiReplyRecorded).toBe(true);
+            expect(result.shops[0].daysToFirstAiReply).toBe(2); // May 18 → May 20
             expect(result.shops[1].shopId).toBe('s2');
-            expect(result.shops[1].activated).toBe(false);
+            expect(result.shops[1].firstAiReplyRecorded).toBe(false);
             expect(result.shops[1].retainedThisWeek).toBe(false);
             expect(mockOrder.count).toHaveBeenCalledTimes(2);
         });
 
         it('calculates retention only from the activated cohort', async () => {
             mockShop.findAll.mockResolvedValue([
-                { id: 'activated', shop_name: 'Activated', settings: { activation: { activated_at: '2026-05-20T00:00:00Z' } }, created_at: new Date('2026-05-18T00:00:00Z') },
+                { id: 'activated', shop_name: 'Activated', settings: { first_ai_reply: { occurred_at: '2026-05-20T00:00:00Z' } }, created_at: new Date('2026-05-18T00:00:00Z') },
                 { id: 'not-activated', shop_name: 'Not Activated', settings: {}, created_at: new Date('2026-05-18T00:00:00Z') },
             ]);
             mockOrder.count
@@ -151,7 +151,7 @@ describe('growth-metrics.service', () => {
 
             const result = await getGrowthMetrics({ now: new Date('2026-05-31T00:00:00Z') });
 
-            expect(result.totals.activated).toBe(1);
+            expect(result.totals.firstAiReplies).toBe(1);
             expect(result.totals.retainedThisWeek).toBe(0);
             expect(result.totals.retentionRate).toBe(0);
         });
@@ -160,7 +160,7 @@ describe('growth-metrics.service', () => {
             mockShop.findAll.mockResolvedValue([]);
             const result = await getGrowthMetrics();
             expect(result.totals.shops).toBe(0);
-            expect(result.totals.activationRate).toBe(0);
+            expect(result.totals.firstAiReplyRate).toBe(0);
             expect(result.totals.retentionRate).toBe(0);
             expect(result.shops).toEqual([]);
             expect(mockOrder.count).not.toHaveBeenCalled();

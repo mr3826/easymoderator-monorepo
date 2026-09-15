@@ -20,7 +20,17 @@ on:
     branches: [main]
     paths:
       - "EasyMod-growth/**"
+      - "EasyMod-extension/**"
+      - "EasyMod-backend/src/modules/growth-os/**"
+      - "EasyMod-backend/src/modules/entities.js"
+      # Auth sign-in/refresh and activation tracking are exercised by the
+      # browser gate (internal users, onboarding -> activation).
+      - "EasyMod-backend/src/modules/auth/auth.service.js"
+      - "EasyMod-backend/src/modules/auth/totp.controller.js"
+      - "EasyMod-backend/src/modules/analytics/growth-metrics.service.js"
       - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
+      - "EasyMod-backend/src/scripts/grant-growth-role.js"
+      - "EasyMod-backend/scripts/import-growth-prospects.js"
       # The browser gate runs the migration chain against its disposable
       # PostgreSQL before seeding fixtures, so a migration change can break it
       # without touching a single Growth file.
@@ -28,6 +38,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/run-growth-e2e.js"
+      - "Caddyfile"
+      - "docker-compose.prod.yml"
       - "docker-compose.test.yml"
       - ".github/workflows/growth-os.yml"
   # No pull_request trigger. A workflow-level paths filter means the workflow
@@ -45,7 +57,7 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
+  packages: none
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/easymoderator-growth-os
@@ -54,8 +66,13 @@ jobs:
   verify:
     name: Growth OS build gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -70,6 +87,12 @@ jobs:
       # — the Dockerfile copies it into an isolated build stage with no root.
       - name: Install workspace dependencies
         run: npm ci
+
+      - name: Browser extension source validation
+        run: npm run validate:extension
+
+      - name: Browser extension tests
+        run: npm run test:extension
 
       # tsc --noEmit. The old JSX app's "test" was an alias for its build, which
       # proved nothing the build step below did not already prove.
@@ -86,6 +109,9 @@ jobs:
     name: Growth OS browser E2E gate
     runs-on: ubuntu-latest
     needs: verify
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -111,6 +137,8 @@ jobs:
           - 6379:6379
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -146,8 +174,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [verify, browser-e2e]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 

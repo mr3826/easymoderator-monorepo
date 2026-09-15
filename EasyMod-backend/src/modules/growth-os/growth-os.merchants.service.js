@@ -6,9 +6,11 @@
 // tables directly. The two view builders are separated on purpose: growth
 // insight output must not absorb admin diagnostics.
 
+const crypto = require('crypto');
 const { Op, fn, col, literal } = require('sequelize');
 const { AppError } = require('../../utils/AppError');
 const adminService = require('../admin/admin.service');
+const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
 
 const LIKE_WILDCARDS = /[\\%_]/g;
 
@@ -28,15 +30,18 @@ function clampPage(value, fallback) {
 async function writeGrowthAudit({ actorUserId, shopId = null, action, resourceType, resourceId, oldValues, newValues, metadata = {}, ipAddress, userAgent }, transaction) {
   try {
     const { AuditLog } = require('../entities');
+    const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? metadata
+      : {};
     await AuditLog.create({
       user_id: actorUserId,
       shop_id: shopId,
       action,
       resource_type: resourceType,
       resource_id: resourceId,
-      old_values: oldValues || null,
-      new_values: newValues || null,
-      metadata: { source: 'growth_os_admin_plane', ...metadata },
+      old_values: redactSecretiveValues(oldValues || null),
+      new_values: redactSecretiveValues(newValues || null),
+      metadata: redactSecretiveValues({ source: 'growth_os_admin_plane', ...safeMetadata }),
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
     }, { transaction });
@@ -82,7 +87,7 @@ async function listMerchantsAsInsight({ search = '', page = 1, pageSize = 20 } =
 
   const { rows, count } = await Shop.findAndCountAll({
     where,
-    attributes: ['id', 'shop_name', 'name', 'created_at'],
+      attributes: ['id', 'shop_name', 'name', 'created_at', 'settings'],
     include: [
       { model: Subscription, as: 'subscription', required: false, attributes: ['plan_name', 'status'] },
     ],
@@ -101,27 +106,30 @@ async function listMerchantsAsInsight({ search = '', page = 1, pageSize = 20 } =
       group: ['shop_id'],
     }),
     GrowthOsProspect.findAll({
-      attributes: ['linked_shop_id', 'business_name'],
-      where: { linked_shop_id: { [Op.in]: shopIds } },
+       attributes: ['linked_shop_id', 'business_name', 'status', 'status_changed_at', 'merged_into_id'],
+       where: { linked_shop_id: { [Op.in]: shopIds }, status: 'converted', merged_into_id: null },
     }),
   ]) : [[], []];
   const connectedSet = new Set(connected.map((c) => c.shop_id));
   const prospectsByShop = new Map();
+  const activationByShop = new Map();
   for (const p of linked) {
     if (!prospectsByShop.has(p.linked_shop_id)) prospectsByShop.set(p.linked_shop_id, []);
     prospectsByShop.get(p.linked_shop_id).push(p.business_name);
+    const current = activationByShop.get(p.linked_shop_id);
+    if (!current || (p.status_changed_at && new Date(p.status_changed_at) < new Date(current))) {
+      activationByShop.set(p.linked_shop_id, p.status_changed_at || null);
+    }
   }
 
   return {
     items: rows.map((shop) => {
-      const settings = shop.settings || {};
-      const activation = settings.activation || {};
       return {
         shopId: shop.id,
         merchantName: shop.shop_name || shop.name,
         signupDate: shop.created_at,
         planName: shop.subscription?.plan_name || null,
-        activatedAt: activation.activated_at || null,
+        activatedAt: activationByShop.get(shop.id) || null,
         facebookConnected: connectedSet.has(shop.id),
         linkedProspects: prospectsByShop.get(shop.id) || [],
       };
@@ -143,29 +151,30 @@ async function getMerchant360(shopId) {
     adminService.getShopOverview(shopId),
     adminService.getShopChannels(shopId).catch(() => []),
     adminService.getShopBilling(shopId).catch(() => null),
-    GrowthOsProspect.findAll({
+     GrowthOsProspect.findAll({
       where: { linked_shop_id: shopId },
-      attributes: ['id', 'business_name', 'status', 'source', 'owner_user_id', 'linked_at'],
+       attributes: ['id', 'business_name', 'status', 'source', 'owner_user_id', 'linked_at', 'status_changed_at'],
       limit: 10,
     }),
   ]);
 
   const shop = await Shop.findByPk(shopId, { attributes: ['settings'] });
-  const settings = shop?.settings || {};
+   const settings = shop?.settings || {};
+   const activatedProspect = prospects.find((prospect) => prospect.status === 'converted');
 
   return {
     overview: {
       ...overview,
       activation: {
-        activatedAt: settings.activation?.activated_at || null,
-        firstConversationId: settings.activation?.first_conversation_id || null,
+         activatedAt: activatedProspect?.status_changed_at || null,
+         firstConversationId: settings.first_ai_reply?.first_conversation_id || null,
       },
       ai: {
         configured: Boolean(settings.ai),
         automationMode: settings.ai?.automation_mode ?? null,
-        draftModeEnabled: settings.ai?.draft_mode ?? null,
+        draftModeEnabled: settings.ai?.automation_mode === 'DRAFT',
       },
-      lastActivityAt: await Session.max('updated_at', { where: { shop_id: shopId } }).catch(() => null),
+      lastActivityAt: await Session.max('last_activity_at', { where: { shop_id: shopId } }),
     },
     growth: {
       linkedProspects: prospects.map((p) => ({
@@ -222,7 +231,7 @@ async function getMerchantInsight(shopId) {
   const { Shop, Subscription, MetaChannel, GrowthOsProspect, UserShop } = require('../entities');
 
   const shop = await Shop.findByPk(shopId, {
-    attributes: ['id', 'shop_name', 'name', 'created_at', 'settings'],
+    attributes: ['id', 'shop_name', 'name', 'created_at', 'settings', 'is_active'],
   });
   if (!shop) {
     throw new AppError('Merchant was not found.', 404, 'GROWTH_OS_MERCHANT_NOT_FOUND');
@@ -246,7 +255,7 @@ async function getMerchantInsight(shopId) {
           ...(ownerIds.length ? [{ linked_user_id: { [Op.in]: ownerIds } }] : []),
         ],
       },
-      attributes: ['id', 'business_name', 'status', 'source', 'created_at'],
+       attributes: ['id', 'business_name', 'status', 'source', 'created_at', 'status_changed_at', 'merged_into_id'],
       limit: 10,
     }),
   ]);
@@ -258,8 +267,11 @@ async function getMerchantInsight(shopId) {
     planName: subscription?.plan_name || null,
     subscriptionStatus: subscription?.status || null,
     activation: {
-      activatedAt: settings.activation?.activated_at || null,
-      state: settings.activation?.activated_at ? 'activated' : 'not_activated',
+       activatedAt: shop.is_active && linked.some((prospect) => prospect.status === 'converted' && !prospect.merged_into_id)
+         ? linked.find((prospect) => prospect.status === 'converted' && !prospect.merged_into_id)?.status_changed_at || null
+         : null,
+       state: shop.is_active && linked.some((prospect) => prospect.status === 'converted' && !prospect.merged_into_id)
+         ? 'activated' : 'not_activated',
     },
     facebook: { connected: channelCount > 0 },
     linkedProspects: linked.map((p) => ({
@@ -289,24 +301,89 @@ function assertReason(reason) {
 }
 
 async function mutateVia({
-  actorUserId, shopId, action, reason, resourceType, run, ipAddress, userAgent, metadata = {},
+  actorUserId, shopId, action, reason, resourceType, run, ipAddress, userAgent, metadata = {}, idempotency = null,
 }) {
-  const normalizedReason = assertReason(reason);
+  const normalizedReason = redactSecretiveValues(assertReason(reason));
   const { sequelize } = require('../../utils/database/database-setup');
-  const result = await run();
-  await sequelize.transaction((transaction) => writeGrowthAudit({
-    actorUserId,
-    shopId,
-    action,
-    resourceType,
-    resourceId: shopId,
-    oldValues: result?.before || null,
-    newValues: result?.after || null,
-    metadata: { reason, ...metadata },
-    ipAddress,
-    userAgent,
-  }, transaction));
-  return result;
+  const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? metadata
+    : {};
+  return sequelize.transaction(async (transaction) => {
+    let idempotencyRecord = null;
+    if (idempotency) {
+      const { IdempotencyKey } = require('../entities');
+      const [record, created] = await IdempotencyKey.findOrCreate({
+        where: { idempotency_key: idempotency.key, shop_id: shopId },
+        defaults: {
+          user_id: actorUserId,
+          endpoint: idempotency.endpoint,
+          method: idempotency.method,
+          request_hash: idempotency.requestHash,
+          response_data: null,
+          status_code: null,
+        },
+        transaction,
+      });
+      if (!created) {
+        if (
+          record.user_id !== actorUserId
+          || record.endpoint !== idempotency.endpoint
+          || record.method !== idempotency.method
+          || record.request_hash !== idempotency.requestHash
+        ) {
+          throw new AppError(
+            'The idempotency key was already used for a different credit request.',
+            409,
+            'GROWTH_OS_IDEMPOTENCY_CONFLICT',
+          );
+        }
+        if (record.response_data === null || record.response_data === undefined) {
+          throw new AppError(
+            'The credit request with this idempotency key is still being processed.',
+            409,
+            'GROWTH_OS_IDEMPOTENCY_IN_PROGRESS',
+          );
+        }
+        return record.response_data;
+      }
+      idempotencyRecord = record;
+    }
+    const result = await run(transaction);
+    await writeGrowthAudit({
+      actorUserId,
+      shopId,
+      action,
+      resourceType,
+      resourceId: shopId,
+      oldValues: result?.before || null,
+      newValues: result?.after || null,
+      metadata: { ...safeMetadata, reason: normalizedReason },
+      ipAddress,
+      userAgent,
+    }, transaction);
+    if (idempotencyRecord) {
+      await idempotencyRecord.update({ response_data: result, status_code: 200 }, { transaction });
+    }
+    return result;
+  });
+}
+
+function assertIdempotencyKey(value) {
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key || key.length > 255 || !/^[\x21-\x7E]+$/.test(key)) {
+    throw new AppError(
+      'Idempotency-Key header is required for credit grants.',
+      400,
+      'GROWTH_OS_IDEMPOTENCY_REQUIRED',
+    );
+  }
+  return key;
+}
+
+function creditRequestHash({ shopId, amount, reason }) {
+  return crypto.createHash('sha256')
+    .update(JSON.stringify({ shopId, amount, reason }), 'utf8')
+    .digest('hex');
 }
 
 async function setMerchantStatus({ actorUserId, shopId, active, reason, ipAddress, userAgent }) {
@@ -318,7 +395,11 @@ async function setMerchantStatus({ actorUserId, shopId, active, reason, ipAddres
     resourceType: 'GROWTH_OS_ADMIN_MERCHANT',
     ipAddress,
     userAgent,
-    run: () => adminService.setShopStatus(shopId, active ? 'active' : 'suspended'),
+    run: (transaction) => adminService.setShopStatus(
+      shopId,
+      active ? 'active' : 'suspended',
+      { transaction },
+    ),
   });
 }
 
@@ -328,17 +409,30 @@ async function setMerchantStatus({ actorUserId, shopId, active, reason, ipAddres
 // control. Plan visibility remains read-only in Merchant 360. If support
 // needs plan changes, a dedicated billing domain service must land first.
 
-async function grantMerchantCredits({ actorUserId, shopId, amount, reason, ipAddress, userAgent }) {
+async function grantMerchantCredits({ actorUserId, shopId, amount, reason, ipAddress, userAgent, idempotencyKey }) {
+  const rawReason = assertReason(reason);
+  const normalizedReason = redactSecretiveValues(rawReason);
   return mutateVia({
     actorUserId,
     shopId,
     action: 'growth_os:merchant_credits_granted',
-    reason,
+    reason: normalizedReason,
     resourceType: 'GROWTH_OS_ADMIN_MERCHANT',
     ipAddress,
     userAgent,
     metadata: { amount },
-    run: () => adminService.addCredits(shopId, amount, `growth_os: ${assertReason(reason).slice(0, 120)}`),
+    idempotency: {
+      key: assertIdempotencyKey(idempotencyKey),
+      endpoint: '/api/internal/growth-os/admin/merchants/:shopId/grant-credits',
+      method: 'POST',
+      requestHash: creditRequestHash({ shopId, amount, reason: rawReason }),
+    },
+    run: (transaction) => adminService.addCredits(
+      shopId,
+      amount,
+      `growth_os: ${normalizedReason.slice(0, 120)}`,
+      { transaction },
+    ),
   });
 }
 
@@ -354,22 +448,12 @@ async function requestChannelReconnect({
     ipAddress,
     userAgent,
     metadata: { channelId },
-    run: () => adminService.markChannelReconnect(shopId, channelId),
+    run: (transaction) => adminService.markChannelReconnect(shopId, channelId, { transaction }),
   });
 }
 
-async function emergencyDisableMerchantAi({ actorUserId, shopId, reason, ipAddress, userAgent }) {
-  return mutateVia({
-    actorUserId,
-    shopId,
-    action: 'growth_os:merchant_ai_disabled',
-    reason,
-    resourceType: 'GROWTH_OS_ADMIN_MERCHANT',
-    ipAddress,
-    userAgent,
-    run: () => adminService.emergencyDisableAi(shopId, actorUserId),
-  });
-}
+// Deferred: the shop AI domain service does not accept transaction propagation,
+// so Growth OS must not expose this mutation until that domain is transaction-safe.
 
 // ── Platform operations queues (SUPER_ADMIN) ────────────────────────────────
 
@@ -434,23 +518,6 @@ const PRIVILEGED_RESOURCE_TYPES = Object.freeze([
   'GROWTH_OS_ADMIN_MERCHANT',
 ]);
 
-function redactSecretiveValues(value) {
-  if (!value) return value;
-  const SENSITIVE_KEY = /(password|token|secret|otp|totp|authorization|cookie|credential)/i;
-  const walk = (node) => {
-    if (Array.isArray(node)) return node.map(walk);
-    if (node && typeof node === 'object') {
-      const out = {};
-      for (const [key, child] of Object.entries(node)) {
-        out[key] = SENSITIVE_KEY.test(key) ? '[redacted]' : walk(child);
-      }
-      return out;
-    }
-    return node;
-  };
-  return walk(value);
-}
-
 // Bounded, allowlisted view over AuditLog for growth/ops actions only. This
 // reuses the existing cross-shop audit read service and additionally hides
 // credential-bearing payload keys (§35: audit must not become a data dump).
@@ -488,7 +555,7 @@ async function listPrivilegedAuditLogs({
       newValueCount: r.new_values ? Object.keys(r.new_values).length : 0,
       oldValues: redactSecretiveValues(r.old_values),
       newValues: redactSecretiveValues(r.new_values),
-      reason: r.metadata?.reason || null,
+      reason: redactSecretiveValues(r.metadata?.reason || null),
     })),
     total: count,
     page: safePage,
@@ -504,7 +571,6 @@ module.exports = {
   setMerchantStatus,
   grantMerchantCredits,
   requestChannelReconnect,
-  emergencyDisableMerchantAi,
   getOperations,
   listPrivilegedAuditLogs,
   writeGrowthAudit,

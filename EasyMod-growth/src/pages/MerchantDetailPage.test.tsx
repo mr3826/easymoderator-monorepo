@@ -102,7 +102,7 @@ function makeMerchant360(): Merchant360 {
       id: 'note-1',
       targetType: 'shop',
       targetId: SHOP_ID,
-      authorUserId: 'user-9',
+      author: { userId: 'user-9', name: 'Jordan Mensah' },
       body: 'Onboarding incident reviewed with merchant.',
       createdAt: '2026-09-02T10:00:00.000Z',
       updatedAt: '2026-09-02T10:00:00.000Z',
@@ -158,6 +158,7 @@ describe('MerchantDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Suspend merchant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Grant credits' })).toBeInTheDocument();
     expect(screen.getByText('Onboarding incident reviewed with merchant.')).toBeInTheDocument();
+    expect(screen.getByText(/By Jordan Mensah/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'North Star Retail' })).toHaveAttribute('href', '/prospects/prospect-1');
   });
 
@@ -191,38 +192,6 @@ describe('MerchantDetailPage', () => {
     expect(screen.getByText('Before')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View audit trail' })).toHaveAttribute('href', '/audit');
     await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
-  });
-
-  it('enforces the typed DISABLE_AI confirmation before the emergency action', async () => {
-    const user = userEvent.setup();
-    permissionMock.mockReturnValue(true);
-    vi.spyOn(merchantsApi, 'detail').mockResolvedValue(makeMerchant360());
-    const emergency = vi.spyOn(adminApi, 'emergencyDisableMerchantAi').mockResolvedValue({ ok: true });
-
-    renderPage();
-    await screen.findByRole('heading', { name: 'Emergency disable AI' });
-
-    await user.click(screen.getByRole('button', { name: 'Disable AI now' }));
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'A reason is required to emergency-disable this merchant AI.',
-    );
-
-    await user.type(
-      screen.getByLabelText('Emergency disable reason (required, max 300 chars)'),
-      'Out-of-control replies',
-    );
-    await user.type(screen.getByLabelText('Type DISABLE_AI to confirm'), 'disable');
-    await user.click(screen.getByRole('button', { name: 'Disable AI now' }));
-    expect(emergency).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert')).toHaveTextContent('Type DISABLE_AI exactly to confirm.');
-
-    await user.clear(screen.getByLabelText('Type DISABLE_AI to confirm'));
-    await user.type(screen.getByLabelText('Type DISABLE_AI to confirm'), 'DISABLE_AI');
-    await user.click(screen.getByRole('button', { name: 'Disable AI now' }));
-    await waitFor(() => expect(emergency).toHaveBeenCalledWith(SHOP_ID, {
-      reason: 'Out-of-control replies',
-      confirm: 'DISABLE_AI',
-    }));
   });
 
   it('renders the masked insight view for growth users with no mutation controls at all', async () => {

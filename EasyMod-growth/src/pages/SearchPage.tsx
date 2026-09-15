@@ -4,13 +4,14 @@ import { ApiError, workspaceApi, type SearchResults } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 const EMPTY_FEEDBACK = 'Nothing matched within your access scope. Try an exact email, phone digits, or unique shop code.';
+const MAX_SEARCH_QUERY_LENGTH = 100;
 
 const sourceLabel = (source: string) => source.replace(/_/g, ' ');
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
   const { reportApiError, session } = useGrowthAuth();
-  const query = (params.get('q') ?? '').trim();
+  const query = (params.get('q') ?? '').trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
   const [input, setInput] = useState(query);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
@@ -59,8 +60,8 @@ export function SearchPage() {
         role="search"
         onSubmit={(event) => {
           event.preventDefault();
-          const term = input.trim();
-          if (term) setParams({ q: term });
+           const term = input.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+           if (term) setParams({ q: term });
         }}
       >
         <label className="sr-only" htmlFor="search-page-q">Search query</label>
@@ -69,8 +70,9 @@ export function SearchPage() {
           name="q"
           type="search"
           value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Business, prospect, merchant name, email, code…"
+          onChange={(event) => setInput(event.target.value.slice(0, MAX_SEARCH_QUERY_LENGTH))}
+          placeholder="Business, contact, phone, email, page URL, or code"
+          maxLength={MAX_SEARCH_QUERY_LENGTH}
           minLength={2}
         />
         <button type="submit" className="primary-button" disabled={loading || input.trim().length < 2}>

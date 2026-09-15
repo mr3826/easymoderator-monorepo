@@ -24,6 +24,9 @@ export interface SigninPayload {
 export interface SigninResult {
   requires2fa?: boolean;
   tempToken?: string;
+  authenticated?: boolean;
+  requiresPasswordChange?: boolean;
+  temporaryPasswordExpiresAt?: string;
 }
 
 export const PROSPECT_STATUSES = [
@@ -170,6 +173,7 @@ export interface ProspectDuplicateCheckPayload {
   contactEmail?: string;
   pageUrl?: string;
   excludeId?: string;
+  exclude_id?: string;
 }
 
 export interface ProspectDuplicateMatch {
@@ -335,13 +339,22 @@ export const growthApi = {
     return payload.data;
   },
 
-  async verifyTwoFactor(tempToken: string, token: string): Promise<void> {
-    await request('/api/auth/2fa/verify', {
+  async verifyTwoFactor(tempToken: string, token: string): Promise<SigninResult> {
+    const payload = await request<{ data: SigninResult }>('/api/auth/2fa/verify', {
       method: 'POST',
       body: JSON.stringify({ tempToken, token }),
     });
     csrfToken = null;
     await initCsrfToken().catch(() => undefined);
+    return payload.data;
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await request('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    csrfToken = null;
   },
 
   async refresh(): Promise<void> {
@@ -421,14 +434,9 @@ export const growthApi = {
   async checkProspectDuplicates(
     data: ProspectDuplicateCheckPayload,
   ): Promise<ProspectDuplicateCheckResponse> {
-    const params = new URLSearchParams();
-    addQueryValue(params, 'contactPhone', data.contactPhone);
-    addQueryValue(params, 'contactEmail', data.contactEmail);
-    addQueryValue(params, 'pageUrl', data.pageUrl);
-    addQueryValue(params, 'excludeId', data.excludeId);
-    const query = params.toString();
     const payload = await request<{ success: true; data: ProspectDuplicateCheckResponse }>(
-      `/api/internal/growth-os/prospects/duplicate-check${query ? `?${query}` : ''}`,
+      '/api/internal/growth-os/prospects/duplicate-check',
+      { method: 'POST', body: JSON.stringify(data) },
     );
     return payload.data;
   },
@@ -521,10 +529,16 @@ export interface GrowthAnalyticsResponse {
   byStatus: Partial<Record<ProspectStatus, number>>;
   bySource: Partial<Record<ProspectSource, number>>;
   activatedBySource: Partial<Record<ProspectSource, number>>;
+  sourceToActivation: Partial<Record<ProspectSource, number | null>>;
+  lostReasons: Record<string, number>;
   timing: {
     medianHoursToFirstContact: number | null;
+    medianHoursToQualification: number | null;
+    medianHoursToFirstFollowup: number | null;
     medianHoursCreatedToActivated: number | null;
   };
+  leadToActivation: number | null;
+  cohort: { basis: 'source_recorded_at'; importedAt: 'created_at'; eventAt: 'prospect_events.created_at' };
   notAvailable: string[];
 }
 
@@ -634,7 +648,8 @@ export const workspaceApi = {
 
   async search(q: string): Promise<SearchResults> {
     const payload = await request<{ success: true; data: SearchResults }>(
-      `/api/internal/growth-os/search?q=${encodeURIComponent(q.trim())}`,
+      '/api/internal/growth-os/search',
+      { method: 'POST', body: JSON.stringify({ q: q.trim() }) },
     );
     return payload.data;
   },
@@ -788,7 +803,17 @@ export interface Merchant360 {
       connectedAt: string | null;
     }>;
   };
-  notes: InternalNote[];
+  notes: Merchant360Note[];
+}
+
+export interface Merchant360Note {
+  id: string;
+  targetType: 'prospect' | 'user' | 'shop';
+  targetId: string;
+  author: { userId: string; name: string | null } | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MerchantInsight {
@@ -871,10 +896,14 @@ export const adminApi = {
     return payload.data;
   },
 
-  async grantMerchantCredits(shopId: string, data: { amount: number; reason: string }): Promise<unknown> {
+  async grantMerchantCredits(shopId: string, data: { amount: number; reason: string }, idempotencyKey: string): Promise<unknown> {
     const payload = await request<{ success: true; data: unknown }>(
       `/api/internal/growth-os/admin/merchants/${encodeURIComponent(shopId)}/grant-credits`,
-      { method: 'POST', body: JSON.stringify(data) },
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+        headers: { 'Idempotency-Key': idempotencyKey },
+      },
     );
     return payload.data;
   },
@@ -882,14 +911,6 @@ export const adminApi = {
   async requestChannelReconnect(shopId: string, channelId: string, data: { reason: string; confirm: 'RECONNECT' }): Promise<unknown> {
     const payload = await request<{ success: true; data: unknown }>(
       `/api/internal/growth-os/admin/merchants/${encodeURIComponent(shopId)}/channels/${encodeURIComponent(channelId)}/reconnect-request`,
-      { method: 'POST', body: JSON.stringify(data) },
-    );
-    return payload.data;
-  },
-
-  async emergencyDisableMerchantAi(shopId: string, data: { reason: string; confirm: 'DISABLE_AI' }): Promise<unknown> {
-    const payload = await request<{ success: true; data: unknown }>(
-      `/api/internal/growth-os/admin/merchants/${encodeURIComponent(shopId)}/ai/emergency-off`,
       { method: 'POST', body: JSON.stringify(data) },
     );
     return payload.data;
@@ -931,6 +952,7 @@ export interface GrowthUserRow {
 export interface GrowthUserCreateResponse {
   user: { userId: string; email: string; displayName: string; role: GrowthRole; status: string };
   initialPassword: string;
+  temporaryPasswordExpiresAt: string;
 }
 
 export const growthUsersApi = {
@@ -974,8 +996,8 @@ export const growthUsersApi = {
     return payload.data;
   },
 
-  async resetPassword(userId: string, reason: string): Promise<{ userId: string; email: string; initialPassword: string }> {
-    const payload = await request<{ success: true; data: { userId: string; email: string; initialPassword: string } }>(
+  async resetPassword(userId: string, reason: string): Promise<{ userId: string; email: string; initialPassword: string; temporaryPasswordExpiresAt: string }> {
+    const payload = await request<{ success: true; data: { userId: string; email: string; initialPassword: string; temporaryPasswordExpiresAt: string } }>(
       `/api/internal/growth-os/admin/users/${encodeURIComponent(userId)}/reset-password`,
       { method: 'POST', body: JSON.stringify({ reason }) },
     );

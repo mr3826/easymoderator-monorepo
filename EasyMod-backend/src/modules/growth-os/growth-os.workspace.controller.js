@@ -11,7 +11,7 @@ function actor(req) {
   return {
     access: req.growthOs,
     userId: req.user.userId,
-    isSuperAdmin: req.growthOs?.role === 'SUPER_ADMIN',
+    isSuperAdmin: req.growthOs?.rawRole === 'SUPER_ADMIN',
     ipAddress: req.ip,
     userAgent: req.get('User-Agent'),
   };
@@ -41,9 +41,10 @@ async function analytics(req, res, next) {
 async function search(req, res, next) {
   try {
     const { access, userId, isSuperAdmin } = actor(req);
+    res.set('Cache-Control', 'no-store');
     res.json({
       success: true,
-      data: await workspace.globalSearch({ access, userId, query: req.query.q, isSuperAdmin }),
+      data: await workspace.globalSearch({ access, userId, query: req.body.q, isSuperAdmin }),
     });
   } catch (error) {
     next(error);
@@ -90,9 +91,11 @@ async function listFollowups(req, res, next) {
 
 async function updateFollowup(req, res, next) {
   try {
-    const { userId, ipAddress, userAgent } = actor(req);
+    const { access, userId, isSuperAdmin, ipAddress, userAgent } = actor(req);
     const data = await work.updateFollowup({
       actorUserId: userId,
+      access,
+      actorIsSuperAdmin: isSuperAdmin,
       followupId: req.params.id,
       ownerUserId: req.body.ownerUserId,
       dueAt: req.body.dueAt,
@@ -109,9 +112,11 @@ async function updateFollowup(req, res, next) {
 
 async function transitionFollowup(req, res, next) {
   try {
-    const { userId, ipAddress, userAgent } = actor(req);
+    const { access, userId, isSuperAdmin, ipAddress, userAgent } = actor(req);
     const data = await work.transitionFollowup({
       actorUserId: userId,
+      access,
+      actorIsSuperAdmin: isSuperAdmin,
       followupId: req.params.id,
       toStatus: req.body.status,
       ipAddress,

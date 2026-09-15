@@ -19,7 +19,11 @@ function makeAnalytics(overrides: Partial<GrowthAnalyticsResponse> = {}): Growth
     byStatus: {},
     bySource: {},
     activatedBySource: {},
-    timing: { medianHoursToFirstContact: null, medianHoursCreatedToActivated: null },
+    sourceToActivation: {},
+    lostReasons: {},
+    timing: { medianHoursToFirstContact: null, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
+    leadToActivation: null,
+    cohort: { basis: 'source_recorded_at', importedAt: 'created_at', eventAt: 'prospect_events.created_at' },
     notAvailable: [],
     ...overrides,
   };

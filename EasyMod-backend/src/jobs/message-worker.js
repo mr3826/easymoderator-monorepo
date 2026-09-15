@@ -3137,10 +3137,11 @@ async function processMessageJob(job) {
             .recordActivation(shopId, conversationId)
             .catch(() => {});
         require('../modules/analytics/funnel-events.service')
-            .recordFunnelEvent({
+            .recordInternalFunnelEvent({
                 event: 'first_ai_reply_sent',
-                shopId,
-                onceKey: shopId,
+                    shopId,
+                    onceKey: shopId,
+                    oncePerEntity: true,
                 metadata: {
                     conversation_id: conversationId,
                     channel_id: channel?.id || null,

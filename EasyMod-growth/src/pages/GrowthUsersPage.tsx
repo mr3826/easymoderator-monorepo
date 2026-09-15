@@ -9,10 +9,14 @@ import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 type PendingAction = 'activate' | 'suspend' | 'sessions' | 'reset' | 'role' | 'revoke' | null;
 
+const MAX_ADMIN_REASON_LENGTH = 200;
+const MAX_USER_SEARCH_LENGTH = 120;
+
 interface RevealState {
   subject: string;
   email: string | null;
   password: string;
+  expiresAt: string | null;
 }
 
 function codeLabel(value: string) {
@@ -90,6 +94,10 @@ function UserRowActions({
       setError('A reason is required for every user-administration action.');
       return;
     }
+    if (reason.trim().length > MAX_ADMIN_REASON_LENGTH) {
+      setError(`Reasons must stay within ${MAX_ADMIN_REASON_LENGTH} characters.`);
+      return;
+    }
     if (open === 'role' && roleDraft === user.role) {
       setError('Choose a different role to record a change.');
       return;
@@ -122,6 +130,7 @@ function UserRowActions({
           subject: resetResult.email || user.displayName || 'Growth OS user',
           email: resetResult.email,
           password: resetResult.initialPassword,
+          expiresAt: resetResult.temporaryPasswordExpiresAt,
         });
       }
       cancel();
@@ -166,7 +175,7 @@ function UserRowActions({
       {open ? (
         <form className="action-form" onSubmit={submit}>
           <label htmlFor={`user-reason-${open}-${user.userId}`}>
-            Reason for this action (required)
+            Reason for this action (required, max 200 chars)
             <textarea
               id={`user-reason-${open}-${user.userId}`}
               value={reason}
@@ -175,7 +184,7 @@ function UserRowActions({
                 setArmed(false);
               }}
               rows={2}
-              maxLength={300}
+              maxLength={MAX_ADMIN_REASON_LENGTH}
               required
             />
           </label>
@@ -225,7 +234,7 @@ function UserRowActions({
 // Deep-link entry from the internal search results: /growth-users?search=…
 function initialSearchFromUrl(): string {
   try {
-    return new URLSearchParams(window.location.search).get('search')?.slice(0, 120) ?? '';
+    return new URLSearchParams(window.location.search).get('search')?.slice(0, MAX_USER_SEARCH_LENGTH) ?? '';
   } catch (_error) {
     return '';
   }
@@ -284,9 +293,9 @@ export function GrowthUsersPage() {
             <KeyRound aria-hidden="true" />
           </div>
           <p className="state-copy">
-            Select the text to copy it. This password is shown once and never displayed again by
-            Growth OS. Share it over a trusted channel. If it is lost, run a password reset from
-            this row.
+            Select the text to copy it. This password is shown once, expires {reveal.expiresAt ? formatDateTime(reveal.expiresAt) : 'within 24 hours'},
+            and never displayed again by Growth OS. Share it over a trusted channel. If it is lost,
+            run a password reset from this row.
           </p>
           <div className="password-reveal" aria-live="polite">{reveal.password}</div>
           <div className="button-row">
@@ -309,7 +318,7 @@ export function GrowthUsersPage() {
           className="filter-form"
           onSubmit={(event: FormEvent<HTMLFormElement>) => {
             event.preventDefault();
-            setSearchApplied(searchDraft.trim());
+            setSearchApplied(searchDraft.trim().slice(0, MAX_USER_SEARCH_LENGTH));
           }}
         >
           <label htmlFor="user-query">
@@ -320,8 +329,9 @@ export function GrowthUsersPage() {
                 id="user-query"
                 type="search"
                 value={searchDraft}
-                onChange={(event) => setSearchDraft(event.target.value)}
-                placeholder="Name, email, or role"
+                onChange={(event) => setSearchDraft(event.target.value.slice(0, MAX_USER_SEARCH_LENGTH))}
+                maxLength={MAX_USER_SEARCH_LENGTH}
+                placeholder="Name or email"
               />
             </span>
           </label>
@@ -455,6 +465,10 @@ function CreateUserPanel({
       setError('A reason is required when granting Growth OS access.');
       return;
     }
+    if (reason.trim().length > MAX_ADMIN_REASON_LENGTH) {
+      setError(`Reasons must stay within ${MAX_ADMIN_REASON_LENGTH} characters.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -468,6 +482,7 @@ function CreateUserPanel({
         subject: created.user.displayName || created.user.email,
         email: created.user.email,
         password: created.initialPassword,
+        expiresAt: created.temporaryPasswordExpiresAt,
       });
       setEmail('');
       setFullName('');
@@ -541,13 +556,13 @@ function CreateUserPanel({
           </label>
         </fieldset>
         <label htmlFor="create-reason">
-          Reason (required)
+          Reason (required, max 200 chars)
           <textarea
             id="create-reason"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
-            maxLength={300}
+            maxLength={MAX_ADMIN_REASON_LENGTH}
             required
           />
         </label>

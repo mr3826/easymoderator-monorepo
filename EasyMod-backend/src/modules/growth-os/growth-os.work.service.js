@@ -9,6 +9,7 @@ const { AppError } = require('../../utils/AppError');
 const repository = require('./growth-os.prospect.repository');
 const { resolveProspectScope } = require('./growth-os.prospect.scope');
 const { NOTE_TARGET_TYPES } = require('./growth-os-note.entity');
+const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
 
 const FOLLOWUP_STATUSES = Object.freeze(['open', 'completed', 'cancelled']);
 const MAX_PAGE_SIZE = 100;
@@ -26,9 +27,9 @@ async function writeWorkAudit({ actorUserId, action, resourceType, resourceId, s
       action,
       resource_type: resourceType,
       resource_id: resourceId,
-      old_values: oldValues || null,
-      new_values: newValues || null,
-      metadata: { source: 'growth_os_work', ...metadata },
+      old_values: redactSecretiveValues(oldValues || null),
+      new_values: redactSecretiveValues(newValues || null),
+      metadata: redactSecretiveValues({ source: 'growth_os_work', ...metadata }),
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
     }, { transaction });
@@ -50,6 +51,52 @@ function getModels() {
   return { GrowthOsFollowup, GrowthOsNote, GrowthOsProspectEvent };
 }
 
+function forbidden(message = 'Forbidden.') {
+  throw new AppError(message, 403, 'GROWTH_OS_FORBIDDEN');
+}
+
+function assertFollowupAccess({ access, actorUserId, actorIsSuperAdmin = false }) {
+  // Follow-up mutations must never fall back to an unscoped service call. The
+  // route middleware supplies this context, but direct callers are denied too.
+  if (!access || !actorUserId) {
+    forbidden('Forbidden: Growth OS access required.');
+  }
+  const scope = resolveProspectScope(access, actorUserId);
+  if (scope.kind === 'none') {
+    forbidden('Forbidden: follow-up access required.');
+  }
+  return {
+    scope,
+    canManageAny: actorIsSuperAdmin === true || scope.kind === 'all',
+  };
+}
+
+async function assertActiveGrowthOwner(ownerUserId, transaction) {
+  const growthRole = await repository.findActiveGrowthRoleForUser(ownerUserId, {
+    transaction,
+    lock: true,
+  });
+  if (!growthRole) {
+    throw new AppError(
+      'Owner user must have an active Growth OS role.',
+      400,
+      'GROWTH_OS_PROSPECT_INVALID_OWNER',
+    );
+  }
+}
+
+function assertCanManageFollowup({ row, actorUserId, canManageAny }) {
+  if (!canManageAny && row.owner_user_id !== actorUserId && row.created_by !== actorUserId) {
+    forbidden('Forbidden: follow-up ownership is required.');
+  }
+}
+
+function assertFollowupOwnerPermission({ ownerUserId, currentOwnerUserId, actorUserId, canManageAny }) {
+  if (!canManageAny && ownerUserId !== actorUserId && ownerUserId !== currentOwnerUserId) {
+    forbidden('Forbidden: scoped users may only assign follow-ups to themselves or retain the current owner.');
+  }
+}
+
 function toApiFollowup(row) {
   const now = Date.now();
   return {
@@ -69,13 +116,15 @@ function toApiFollowup(row) {
   };
 }
 
-async function assertAccessibleProspect(prospectId, access, userId, { transaction } = {}) {
+async function assertAccessibleProspect(prospectId, access, userId, { transaction, lock = false } = {}) {
   const scope = resolveProspectScope(access, userId);
-  const prospect = await repository.findProspectById(prospectId, {
+  const options = {
     scope,
     transaction,
     include: false,
-  });
+  };
+  if (lock) options.lock = true;
+  const prospect = await repository.findProspectById(prospectId, options);
   if (!prospect) {
     throw new AppError('Prospect was not found within your scope.', 404, 'GROWTH_OS_PROSPECT_NOT_FOUND');
   }
@@ -96,10 +145,23 @@ async function createFollowup({
     invalidInput('dueAt must be a valid date/time.');
   }
   if (note && String(note).length > 2000) invalidInput('note must be 2000 characters or fewer.');
-  const resolvedOwner = ownerUserId || actorUserId;
+  const { canManageAny } = assertFollowupAccess({
+    access,
+    actorUserId,
+    actorIsSuperAdmin: access?.role === 'SUPER_ADMIN',
+  });
+  const resolvedOwner = ownerUserId === undefined ? actorUserId : ownerUserId;
+  if (!resolvedOwner) invalidInput('ownerUserId must identify an active Growth OS user.');
   const db = getSequelize();
   return db.transaction(async (transaction) => {
-    await assertAccessibleProspect(prospectId, access, actorUserId, { transaction });
+    await assertAccessibleProspect(prospectId, access, actorUserId, { transaction, lock: true });
+    await assertActiveGrowthOwner(resolvedOwner, transaction);
+    assertFollowupOwnerPermission({
+      ownerUserId: resolvedOwner,
+      currentOwnerUserId: null,
+      actorUserId,
+      canManageAny,
+    });
     const { GrowthOsFollowup } = getModels();
     const row = await GrowthOsFollowup.create({
       prospect_id: prospectId,
@@ -115,7 +177,7 @@ async function createFollowup({
       action: 'growth_os:followup_created',
       resourceType: 'growth_os_followup',
       resourceId: row.id,
-      newValues: { prospect_id: prospectId, owner_user_id: resolvedOwner, due_at: row.due_at, action: row.action },
+       newValues: redactSecretiveValues({ prospect_id: prospectId, owner_user_id: resolvedOwner, due_at: row.due_at, action: row.action }),
       ipAddress,
       userAgent,
     }, transaction);
@@ -126,7 +188,7 @@ async function createFollowup({
       event_type: 'followup_created',
       to_value: row.due_at.toISOString(),
       changed_fields: [],
-      metadata: { followup_id: row.id, action: row.action, owner_user_id: resolvedOwner },
+       metadata: redactSecretiveValues({ followup_id: row.id, action: row.action, owner_user_id: resolvedOwner }),
     }, { transaction });
     return toApiFollowup(row);
   });
@@ -140,6 +202,11 @@ async function listFollowups({
   }
   const resolvedPageSize = Math.min(Math.max(parseInt(pageSize, 10) || 50, 1), MAX_PAGE_SIZE);
   const resolvedPage = Math.max(parseInt(page, 10) || 1, 1);
+  assertFollowupAccess({
+    access,
+    actorUserId,
+    actorIsSuperAdmin: access?.rawRole === 'SUPER_ADMIN',
+  });
   const scope = resolveProspectScope(access, actorUserId);
   const where = {};
   if (prospectId) where.prospect_id = prospectId;
@@ -182,17 +249,26 @@ async function listFollowups({
 }
 
 async function transitionFollowup({
-  actorUserId, followupId, toStatus, ipAddress, userAgent,
+  actorUserId, access, actorIsSuperAdmin = false, followupId, toStatus, ipAddress, userAgent,
 }) {
+  const { canManageAny } = assertFollowupAccess({ access, actorUserId, actorIsSuperAdmin });
   if (!FOLLOWUP_STATUSES.includes(toStatus)) invalidInput('target status is invalid.');
   const db = getSequelize();
   return db.transaction(async (transaction) => {
     const { GrowthOsFollowup, GrowthOsProspectEvent } = getModels();
     const row = await GrowthOsFollowup.findByPk(followupId, {
       transaction,
-      include: [{ model: repository.getModels().GrowthOsProspect, as: 'prospect', attributes: ['id', 'status'], required: true }],
+      lock: transaction.LOCK?.UPDATE,
     });
     if (!row) throw new AppError('Follow-up was not found.', 404, 'GROWTH_OS_FOLLOWUP_NOT_FOUND');
+    // Lock the related prospect and authorize it in this transaction. This
+    // keeps scoped ownership checks and the status write in one locked view.
+    await assertAccessibleProspect(row.prospect_id, access, actorUserId, { transaction, lock: true });
+    assertCanManageFollowup({
+      row,
+      actorUserId,
+      canManageAny,
+    });
     if (row.status === 'completed') {
       throw new AppError('Completed follow-ups cannot be reopened. Create a new one.', 409, 'GROWTH_OS_FOLLOWUP_DONE');
     }
@@ -225,18 +301,41 @@ async function transitionFollowup({
 }
 
 async function updateFollowup({
-  actorUserId, followupId, ownerUserId, dueAt, action, note, ipAddress, userAgent,
+  actorUserId, access, actorIsSuperAdmin = false, followupId, ownerUserId, dueAt, action, note, ipAddress, userAgent,
 }) {
+  const { canManageAny } = assertFollowupAccess({ access, actorUserId, actorIsSuperAdmin });
   const db = getSequelize();
   return db.transaction(async (transaction) => {
     const { GrowthOsFollowup } = getModels();
-    const row = await GrowthOsFollowup.findByPk(followupId, { transaction });
+    const row = await GrowthOsFollowup.findByPk(followupId, {
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
     if (!row) throw new AppError('Follow-up was not found.', 404, 'GROWTH_OS_FOLLOWUP_NOT_FOUND');
+    // The prospect is re-checked and locked after the follow-up row so the
+    // authorization decision cannot race a prospect reassignment.
+    await assertAccessibleProspect(row.prospect_id, access, actorUserId, { transaction, lock: true });
+    assertCanManageFollowup({
+      row,
+      actorUserId,
+      canManageAny,
+    });
     if (row.status !== 'open') {
       throw new AppError('Only open follow-ups can be edited.', 409, 'GROWTH_OS_FOLLOWUP_DONE');
     }
     const values = {};
-    if (ownerUserId !== undefined) values.owner_user_id = ownerUserId || row.owner_user_id;
+    if (ownerUserId !== undefined) {
+      const nextOwner = ownerUserId;
+      if (!nextOwner) invalidInput('ownerUserId must identify an active Growth OS user.');
+      await assertActiveGrowthOwner(nextOwner, transaction);
+      assertFollowupOwnerPermission({
+        ownerUserId: nextOwner,
+        currentOwnerUserId: row.owner_user_id,
+        actorUserId,
+        canManageAny,
+      });
+      values.owner_user_id = nextOwner;
+    }
     if (dueAt !== undefined) {
       if (!dueAt || Number.isNaN(new Date(dueAt).getTime())) invalidInput('dueAt must be a valid date/time.');
       values.due_at = new Date(dueAt);
@@ -250,6 +349,8 @@ async function updateFollowup({
     if (note !== undefined) values.note = note === null ? null : String(note).slice(0, 2000);
     if (Object.keys(values).length === 0) invalidInput('At least one field is required.');
     const oldValues = { due_at: row.due_at, action: row.action, owner_user_id: row.owner_user_id };
+    const auditValues = { ...values };
+    delete auditValues.note;
     await row.update(values, { transaction });
     await writeWorkAudit({
       actorUserId,
@@ -257,7 +358,7 @@ async function updateFollowup({
       resourceType: 'growth_os_followup',
       resourceId: row.id,
       oldValues,
-      newValues: values,
+      newValues: auditValues,
       ipAddress,
       userAgent,
     }, transaction);

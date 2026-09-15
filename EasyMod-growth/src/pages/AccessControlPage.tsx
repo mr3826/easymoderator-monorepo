@@ -71,7 +71,7 @@ export function AccessControlPage() {
               <li>Everything a Growth user can do inside the growth workspace.</li>
               <li>Admin merchant records: full 360 view, owner identity, and usage limits.</li>
               <li>Main-app mutations via approved services: merchant status, conversation
-                credit grants, Meta reconnect requests, and emergency AI disable — each
+                credit grants and Meta reconnect requests — each
                 reason-required and audit-logged.</li>
               <li>Growth user management: grants, role changes, suspension, revocation,
                 password resets, and session revocation.</li>

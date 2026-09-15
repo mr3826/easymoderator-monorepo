@@ -57,7 +57,8 @@ exports.listProspects = async (req, res, next) => {
 
 exports.checkDuplicates = async (req, res, next) => {
   try {
-    const data = await service.checkDuplicates({ ...context(req), data: req.query });
+    res.set('Cache-Control', 'no-store');
+    const data = await service.checkDuplicates({ ...context(req), data: req.body });
     res.json({ success: true, data });
   } catch (error) {
     handleError(error, req, res, next);

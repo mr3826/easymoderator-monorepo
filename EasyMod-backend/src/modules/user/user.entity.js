@@ -48,6 +48,16 @@ const User = sequelize.define('User', {
         allowNull: false,
         defaultValue: 1
     },
+    must_change_password: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    temporary_password_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: null
+    },
     settings: {
         type: DataTypes.JSON,
         allowNull: true,

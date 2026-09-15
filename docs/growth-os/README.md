@@ -45,3 +45,12 @@ PostgreSQL/Redis integration uses `npm run test:backend:integration:docker`.
 Growth frontend tests use Vitest with jsdom and Testing Library. Browser E2E,
 live Growth-origin delivery, operator bootstrap, and production deployment
 remain separate release gates.
+
+## Current Implementation
+
+The current internal control-plane and capture contracts are documented in
+[`05-internal-control-plane.md`](05-internal-control-plane.md) and
+[`06-browser-extension.md`](06-browser-extension.md). They describe the
+canonical two-role model, server-selected Merchant 360 masking, current
+workspace/admin routes, and release versus local extension manifests; current
+code remains authoritative over historical documents.

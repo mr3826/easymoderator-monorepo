@@ -92,9 +92,13 @@ const growthMutationLimiter = rateLimit({
 });
 
 router.use(authenticate, requireGrowthOsAccess());
+router.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 router.get('/session', ctrl.getSession);
-router.post('/roles', requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.grantRole);
-router.delete('/roles/:userId', requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.revokeRole);
+router.post('/roles', growthMutationLimiter, requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.grantRole);
+router.delete('/roles/:userId', growthMutationLimiter, requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.revokeRole);
 
 router.get(
   '/prospects',
@@ -111,7 +115,7 @@ router.post(
   prospectCtrl.createProspect,
 );
 
-router.get(
+router.post(
   '/prospects/duplicate-check',
   prospectLookupLimiter,
   requireGrowthOsAccess(hasProspectReadAccess),
@@ -184,16 +188,16 @@ router.get(
 
 router.get(
   '/analytics/growth',
-  requireGrowthOsAccess('growth_os.prospects.read_all'),
+  requireGrowthOsAccess(['growth_os.reports.read_all', 'growth_os.reports.read_source_scope']),
   validateWork(workValidator.workspace.analytics),
   workspaceCtrl.analytics,
 );
 
-router.get(
+router.post(
   '/search',
   prospectLookupLimiter,
   requireGrowthOsAccess('growth_os.search.read'),
-  validateWork(workValidator.workspace.search),
+  validateWork({ body: workValidator.workspace.search.query }),
   workspaceCtrl.search,
 );
 
@@ -348,14 +352,6 @@ router.post(
   requireGrowthOsAccess('growth_os.admin.merchants.mutate'),
   validateWork(workValidator.merchantsAdmin.channelReconnect),
   adminCtrl.requestChannelReconnect,
-);
-
-router.post(
-  '/admin/merchants/:shopId/ai/emergency-off',
-  growthMutationLimiter,
-  requireGrowthOsAccess('growth_os.admin.merchants.mutate'),
-  validateWork(workValidator.merchantsAdmin.aiEmergencyOff),
-  adminCtrl.emergencyDisableMerchantAi,
 );
 
 router.get(

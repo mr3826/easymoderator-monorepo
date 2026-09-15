@@ -30,7 +30,8 @@ function AttentionCard({ label, value, warn = false }: { label: string; value: n
 }
 
 export function HomePage() {
-  const { reportApiError } = useGrowthAuth();
+  const { reportApiError, session } = useGrowthAuth();
+  const canManageFollowups = session?.permissions.includes('growth_os.followups.manage') ?? false;
   const [home, setHome] = useState<HomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export function HomePage() {
               <strong>{myWork.followupsOverdueMine.toLocaleString()}</strong>
               <span className="table-subtext"> overdue follow-ups assigned to you</span>
             </div>
-            <Link className="secondary-button" to="/my-work">Review in My Work</Link>
+            {canManageFollowups ? <Link className="secondary-button" to="/my-work">Review in My Work</Link> : null}
           </div>
           <div className="work-item">
             <div>
@@ -114,7 +115,7 @@ export function HomePage() {
               <strong>{myWork.prospectsAssignedToMe.toLocaleString()}</strong>
               <span className="table-subtext"> prospects assigned to you</span>
             </div>
-            <Link className="secondary-button" to="/my-work">Open assigned work</Link>
+            <Link className="secondary-button" to="/prospects">Open prospects</Link>
           </div>
         </div>
       </section>

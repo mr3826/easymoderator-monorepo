@@ -5,7 +5,7 @@ const { v5: uuidv5, validate: uuidValidate } = require('uuid');
 const recordFunnelEventSafe = (event, values) => {
     try {
         return require('../analytics/funnel-events.service')
-            .recordFunnelEvent({ event, ...values })
+            .recordInternalFunnelEvent({ event, ...values })
             .catch(() => {});
     } catch (_) {
         return Promise.resolve();
@@ -915,16 +915,20 @@ const incrementRateLimit = async (shopId, userId, customerId) => {
  * @param {string} shopId - Shop UUID
  * @param {number} amount - Conversations to add (must be > 0)
  * @param {string} [reason] - Audit reason for structured logging
+ * @param {object} [options]
+ * @param {object} [options.transaction] - Existing Sequelize transaction
  * @returns {Promise<{ granted: boolean, amount: number }>}
  */
-const grantBonusConversations = async (shopId, amount, reason = 'bonus') => {
+const grantBonusConversations = async (shopId, amount, reason = 'bonus', { transaction = null } = {}) => {
     if (!shopId || !Number.isInteger(amount) || amount <= 0) {
         return { granted: false, amount: 0 };
     }
 
+    const incrementOptions = { where: { shop_id: shopId } };
+    if (transaction) incrementOptions.transaction = transaction;
     const [affected] = await Subscription.increment(
         { topup_balance: amount },
-        { where: { shop_id: shopId } }
+        incrementOptions
     );
 
     // Sequelize returns affectedCount differently per dialect; treat falsy as no-op

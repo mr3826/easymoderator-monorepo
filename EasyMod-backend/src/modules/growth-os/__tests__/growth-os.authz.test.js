@@ -44,8 +44,8 @@ jest.mock('../../../utils/cache.service', () => ({
 }));
 
 jest.mock('../growth-os.roles.service', () => ({
-  grantRole: jest.fn(async () => ({ id: 'role-1', userId: 'target-1', role: 'READ_ONLY_ANALYST' })),
-  revokeRole: jest.fn(async () => ({ id: 'role-1', userId: 'target-1', role: 'READ_ONLY_ANALYST' })),
+  grantRole: jest.fn(async () => ({ id: 'role-1', userId: 'target-1', role: 'GROWTH_USER' })),
+  revokeRole: jest.fn(async () => ({ id: 'role-1', userId: 'target-1', role: 'GROWTH_USER' })),
 }));
 
 jest.mock('../../entities', () => ({
@@ -193,7 +193,11 @@ describe('Growth OS session authorization', () => {
       legacyRole: 'FOUNDER',
     });
     expect(res.body.data.permissions).toContain('growth_os.roles.manage');
-    expect(res.body.data.permissions).toContain('growth_os.admin.users.manage');
+    expect(res.body.data.permissions).toContain('growth_os.prospects.read_all');
+    expect(res.body.data.permissions).toContain('growth_os.prospects.manage_all');
+    expect(res.body.data.permissions).toContain('growth_os.reports.read_all');
+    expect(res.body.data.permissions).not.toContain('growth_os.admin.users.manage');
+    expect(res.body.data.permissions).not.toContain('growth_os.followups.manage');
     expect(res.body.data).not.toHaveProperty('token');
     expect(res.body.data).not.toHaveProperty('password');
   });
@@ -207,8 +211,11 @@ describe('Growth OS session authorization', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.role).toBe('GROWTH_USER');
     expect(res.body.data.legacyRole).toBe('BUSINESS_EXECUTIVE');
-    expect(res.body.data.permissions).toContain('growth_os.prospects.read_all');
-    expect(res.body.data.permissions).toContain('growth_os.followups.manage');
+    expect(res.body.data.permissions).toContain('growth_os.prospects.read_assigned');
+    expect(res.body.data.permissions).toContain('growth_os.prospects.update_assigned');
+    expect(res.body.data.permissions).not.toContain('growth_os.prospects.read_all');
+    expect(res.body.data.permissions).not.toContain('growth_os.prospects.manage_all');
+    expect(res.body.data.permissions).not.toContain('growth_os.followups.manage');
     expect(res.body.data.permissions).not.toContain('growth_os.roles.manage');
     expect(res.body.data.permissions).not.toContain('growth_os.admin.users.manage');
     expect(res.body.data.permissions).not.toContain('growth_os.admin.merchants.mutate');
@@ -220,7 +227,16 @@ describe('Growth OS session authorization', () => {
 
     const session = await request(app).get('/api/internal/growth-os/session');
     expect(session.status).toBe(200);
+    expect(session.body.data.permissions).toEqual(expect.arrayContaining([
+      'growth_os.home.read',
+      'growth_os.prospects.read_all',
+      'growth_os.prospects.manage_all',
+      'growth_os.followups.manage',
+      'growth_os.notes.manage',
+      'growth_os.search.read',
+    ]));
     expect(session.body.data.permissions).toContain('growth_os.merchants.read_insight');
+    expect(session.body.data.permissions).not.toContain('growth_os.roles.manage');
     expect(session.body.data.permissions).not.toContain('growth_os.admin.merchants.read');
 
     const adminUsers = await request(app).get('/api/internal/growth-os/admin/users');
@@ -230,6 +246,21 @@ describe('Growth OS session authorization', () => {
       .send({ email: 'new@easymod.tech', fullName: 'Nope', role: 'SUPER_ADMIN', reason: 'x' });
     expect(adminGrantRole.status).toBe(403);
     expect(growthRoleService.grantRole).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Growth request that carries merchant shop context', async () => {
+    roleHolder.user = {
+      userId: 'growth-merchant-mix-1',
+      email: 'growth-mixed@easymod.tech',
+      shopId: 'shop-1',
+      mfaVerified: false,
+    };
+    roleHolder.growthRole = 'GROWTH_USER';
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_MERCHANT_CONTEXT_FORBIDDEN');
   });
 
   it('requires MFA assurance for the canonical SUPER_ADMIN role too', async () => {
@@ -267,13 +298,13 @@ describe('Growth OS session authorization', () => {
 
     const res = await request(app)
       .post('/api/internal/growth-os/roles')
-      .send({ userId: 'target-1', role: 'READ_ONLY_ANALYST', reason: 'Access review' });
+      .send({ userId: 'target-1', role: 'GROWTH_USER', reason: 'Access review' });
 
     expect(res.status).toBe(201);
     expect(growthRoleService.grantRole).toHaveBeenCalledWith(expect.objectContaining({
       actorUserId: 'founder-1',
       targetUserId: 'target-1',
-      role: 'READ_ONLY_ANALYST',
+      role: 'GROWTH_USER',
       reason: 'Access review',
     }));
   });

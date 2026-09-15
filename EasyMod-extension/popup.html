@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>EasyModerator Lead Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Lead capture</h1>
+      <p class="lede">
+        Preview what was read from the current page. Everything below is editable
+        and nothing is sent until you continue.
+      </p>
+      <p class="privacy-note">
+        Nothing is sent until you choose <strong>Continue in Growth OS</strong>. The capture
+        starts only when you click this toolbar button &mdash; this extension never browses,
+        scrapes, or reads cookies, storage, or history on visited pages. The hand-off URL contains
+        only a short-lived random nonce, never the preview data.
+      </p>
+
+      <div id="status" class="status error" role="alert" aria-live="assertive" hidden></div>
+
+      <form id="capture-form" hidden novalidate>
+        <label for="field-businessName">
+          Business / person name <span aria-hidden="true">*</span><span class="sr-only">(required)</span>
+          <input id="field-businessName" name="businessName" type="text" maxlength="255" autocomplete="off" />
+        </label>
+        <label for="field-pageUrl">
+          Page URL
+          <input id="field-pageUrl" name="pageUrl" type="url" maxlength="2048" autocomplete="off" dir="ltr" />
+        </label>
+        <label for="field-sourceWebsite">
+          Source website
+          <input id="field-sourceWebsite" name="sourceWebsite" type="text" maxlength="255" autocomplete="off" dir="ltr" />
+        </label>
+        <label for="field-selectedText">
+          Selected text
+          <textarea id="field-selectedText" name="selectedText" rows="4" maxlength="8000"></textarea>
+        </label>
+        <label for="field-contactPhone">
+          Phone <span class="hint">(from tel: links)</span>
+          <input id="field-contactPhone" name="contactPhone" type="tel" maxlength="64" autocomplete="off" dir="ltr" />
+        </label>
+        <label for="field-contactEmail">
+          Email <span class="hint">(from mailto: links and visible text)</span>
+          <input id="field-contactEmail" name="contactEmail" type="email" maxlength="320" autocomplete="off" dir="ltr" />
+        </label>
+        <label for="field-note">
+          Note
+          <textarea id="field-note" name="note" rows="3" maxlength="4000"></textarea>
+        </label>
+
+        <p id="email-candidates" class="hint" hidden></p>
+
+        <div class="actions">
+          <button type="submit" id="continue-button" class="primary">Continue in Growth OS</button>
+          <button type="button" id="clear-button">Clear all fields</button>
+        </div>
+        <p class="next-step">
+          Growth OS opens its review page, pre-checks duplicates, and creates the prospect
+          only after you explicitly confirm there.
+        </p>
+      </form>
+    </main>
+    <script src="lib/capture.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

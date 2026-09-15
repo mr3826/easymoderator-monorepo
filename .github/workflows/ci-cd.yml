@@ -97,11 +97,7 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
-  # Required by the dorny/paths-filter step in the `changes` job: on
-  # pull_request events it reads the PR's changed files via the GitHub API.
-  # Without this the `changes` job fails and the whole PR gate skips.
-  pull-requests: read
+  packages: none
 
 env:
   GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymoderator-backend
@@ -115,6 +111,10 @@ jobs:
   changes:
     name: Detect changed services
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: none
+      pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend == 'true' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' }}
@@ -123,6 +123,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect changed service paths locally
         id: filter
@@ -172,10 +173,10 @@ jobs:
                   frontend=true
                   ;;
               esac
-              # Mirrors growth-os.yml's own push paths, plus this workflow:
-              # editing the gate must exercise everything the gate gates.
+              # Any backend change can affect a server-backed Growth OS
+              # contract, so the reusable Growth verification must run too.
               case "$path" in
-                EasyMod-growth/*|EasyMod-backend/src/scripts/seed-growth-e2e.js|EasyMod-backend/src/database/*|scripts/run-growth-e2e.js|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
+                EasyMod-growth/*|EasyMod-extension/*|EasyMod-backend/*|scripts/run-growth-e2e.js|Caddyfile|docker-compose.prod.yml|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
                   growth=true
                   ;;
               esac
@@ -195,8 +196,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -254,8 +260,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -302,6 +313,9 @@ jobs:
     # Same condition as `test` so the deploy graph stays simple; the heavy steps
     # below are skipped when only the frontend changed.
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -325,6 +339,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: needs.changes.outputs.backend == 'true'
@@ -366,8 +382,13 @@ jobs:
           (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
         )
       )
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -573,8 +594,13 @@ jobs:
     if: |
       github.ref != 'refs/heads/main' &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -624,6 +650,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -650,6 +679,8 @@ jobs:
       # arrived from the branch on floating @v6 tags and were the only
       # unpinned actions in .github/workflows.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: needs.changes.outputs.backend == 'true'
@@ -715,6 +746,9 @@ jobs:
       github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    permissions:
+      contents: read
+      packages: write
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
       frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
@@ -726,6 +760,8 @@ jobs:
       EXISTING_CANDIDATE_SHA: ${{ inputs.existing_candidate_sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -814,9 +850,14 @@ jobs:
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
       github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)
+    permissions:
+      contents: read
+      packages: read
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Render and validate .env.prod without shell interpolation
         run: node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod
@@ -1443,7 +1484,7 @@ jobs:
     secrets: inherit
     permissions:
       contents: read
-      packages: write
+      packages: none
 
   # ── 5. The one required PR context ─────────────────────────────────────────
   # Branch protection requires exactly this job plus "Security Scan". It has no
@@ -1469,10 +1510,14 @@ jobs:
       - deployment-config
       - docker-build-validation
       - growth-os
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate documentation and diff hygiene
         env:

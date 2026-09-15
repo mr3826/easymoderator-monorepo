@@ -85,13 +85,34 @@ const resetPasswordValidator = Joi.object({
             'string.min': 'Password must be at least 8 characters long',
             'string.pattern.name': 'Password must contain at least one {{#name}} character',
             'any.required': 'Password is required'
-        })
+    })
 });
+
+const changePasswordValidator = Joi.object({
+    currentPassword: Joi.string()
+        .required()
+        .messages({
+            'any.required': 'Current password is required',
+            'string.empty': 'Current password is required'
+        }),
+    newPassword: Joi.string()
+        .min(8)
+        .pattern(/[A-Z]/, 'uppercase')
+        .pattern(/[0-9]/, 'digit')
+        .pattern(/[^A-Za-z0-9]/, 'special')
+        .required()
+        .messages({
+            'string.min': 'Password must be at least 8 characters long',
+            'string.pattern.name': 'Password must contain at least one {{#name}} character',
+            'any.required': 'New password is required'
+        })
+}).unknown(false);
 
 module.exports = {
     signupValidator,
     signinValidator,
     refreshTokenValidator,
     forgotPasswordValidator,
-    resetPasswordValidator
+    resetPasswordValidator,
+    changePasswordValidator
 };

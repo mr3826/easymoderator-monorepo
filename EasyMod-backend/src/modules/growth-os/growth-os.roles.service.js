@@ -9,6 +9,8 @@ const {
   LEGACY_GROWTH_OS_ROLES,
   isGrantableGrowthOsRole,
 } = require('./growth-os.permissions');
+const { invalidateUserSessions } = require('../auth/session-invalidation.service');
+const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
 
 const SUPER_ADMIN_ROLE_VALUES = Object.freeze([
   GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN,
@@ -24,6 +26,16 @@ function assertUuid(value, fieldName) {
   }
 }
 
+function assertNotSelfLockout(actorUserId, targetUserId) {
+  if (actorUserId === targetUserId) {
+    throw new AppError(
+      'A Super Admin cannot lock out their own Growth OS account.',
+      403,
+      'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+    );
+  }
+}
+
 function normalizeReason(reason) {
   const normalized = typeof reason === 'string' ? reason.trim() : '';
   if (!normalized || normalized.length > MAX_REASON_LENGTH) {
@@ -33,11 +45,27 @@ function normalizeReason(reason) {
       'GROWTH_OS_INVALID_REASON',
     );
   }
-  return normalized;
+  return redactSecretiveValues(normalized);
 }
 
 function roleCacheKey(userId) {
   return `growth-os:user:${userId}:role`;
+}
+
+async function assertNoActiveMerchantMembership(targetUserId, transaction) {
+  const { UserShop } = require('../entities');
+  const activeMembership = await UserShop.findOne({
+    attributes: ['id'],
+    where: { user_id: targetUserId, is_active: true },
+    transaction,
+  });
+  if (activeMembership) {
+    throw new AppError(
+      'The target user has an active merchant membership. Use an internal account without an active merchant membership for Growth OS access.',
+      409,
+      'GROWTH_OS_MERCHANT_ROLE_CONFLICT',
+    );
+  }
 }
 
 async function invalidateRoleCache(userId, transaction) {
@@ -70,11 +98,11 @@ async function writeAudit({ actorUserId, roleRecord, oldValues, newValues, reaso
       action,
       resource_type: 'GROWTH_OS_ROLE',
       resource_id: roleRecord.id,
-      old_values: oldValues,
-      new_values: newValues,
+      old_values: redactSecretiveValues(oldValues),
+      new_values: redactSecretiveValues(newValues),
       metadata: {
         source: 'growth_os_role_admin',
-        reason,
+        reason: redactSecretiveValues(reason),
         target_user_id: roleRecord.user_id,
       },
       ip_address: ipAddress || null,
@@ -124,10 +152,13 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
     const target = await User.findByPk(targetUserId, {
       attributes: ['id'],
       transaction,
+      lock: transaction.LOCK?.UPDATE,
     });
     if (!target) {
       throw new AppError('Growth OS role target was not found.', 404, 'GROWTH_OS_ROLE_TARGET_NOT_FOUND');
     }
+
+    await assertNoActiveMerchantMembership(targetUserId, transaction);
 
     const existing = await GrowthOsUserRole.findOne({
       where: {
@@ -163,22 +194,15 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
       ipAddress,
       userAgent,
     }, transaction);
+    await invalidateInternalSessions(targetUserId, transaction);
     await invalidateRoleCache(targetUserId, transaction);
 
     return safeRole(roleRecord);
   });
 }
 
-async function invalidateInternalSessionsBestEffort(userId) {
-  try {
-    const { invalidateUserSessions } = require('../auth/auth.service');
-    await invalidateUserSessions(userId);
-  } catch (_error) {
-    // The role/cache revocation above already ended Growth access. Session
-    // invalidation is defence-in-depth; surface it operationally instead of
-    // pretending the revoke failed after it committed.
-    console.error('[growth-os] session invalidation failed for revoked internal user');
-  }
+async function invalidateInternalSessions(userId, transaction) {
+  await invalidateUserSessions(userId, { transaction });
 }
 
 async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAgent }) {
@@ -192,17 +216,17 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
     const roleRecord = await GrowthOsUserRole.findOne({
       where: {
         user_id: targetUserId,
-        is_active: true,
         revoked_at: { [Op.is]: null },
       },
       transaction,
+      order: [['is_active', 'DESC'], ['granted_at', 'DESC']],
       lock: transaction.LOCK?.UPDATE,
     });
     if (!roleRecord) {
       throw new AppError('The target user has no active Growth OS role.', 404, 'GROWTH_OS_ROLE_NOT_FOUND');
     }
 
-    if (SUPER_ADMIN_ROLE_VALUES.includes(roleRecord.role)) {
+    if (roleRecord.is_active && SUPER_ADMIN_ROLE_VALUES.includes(roleRecord.role)) {
       // PostgreSQL rejects FOR UPDATE on aggregate queries. Lock the active
       // Super Admin (including legacy Founder) rows first, then count the
       // locked result inside this transaction so concurrent revocations
@@ -217,6 +241,7 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
         transaction,
         lock: transaction.LOCK?.UPDATE,
       });
+      assertNotSelfLockout(actorUserId, targetUserId);
       if (activeSuperAdmins.length <= 1) {
         throw new AppError(
           'The last active Growth OS Super Admin cannot be revoked.',
@@ -243,12 +268,12 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
       ipAddress,
       userAgent,
     }, transaction);
+    await invalidateInternalSessions(targetUserId, transaction);
     await invalidateRoleCache(targetUserId, transaction);
 
     return safeRole(roleRecord);
   });
 
-  await invalidateInternalSessionsBestEffort(targetUserId);
   return result;
 }
 
@@ -261,9 +286,18 @@ async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAd
   assertUuid(targetUserId, 'targetUserId');
   const normalizedReason = normalizeReason(reason);
   const { sequelize } = require('../../utils/database/database-setup');
-  const { GrowthOsUserRole } = require('../entities');
+  const { GrowthOsUserRole, User } = require('../entities');
 
   const result = await sequelize.transaction(async (transaction) => {
+    const target = await User.findByPk(targetUserId, {
+      attributes: ['id'],
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!target) {
+      throw new AppError('Growth OS role target was not found.', 404, 'GROWTH_OS_ROLE_TARGET_NOT_FOUND');
+    }
+
     const activeRow = await GrowthOsUserRole.findOne({
       where: {
         user_id: targetUserId,
@@ -307,6 +341,7 @@ async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAd
           'GROWTH_OS_ROLE_ALREADY_ASSIGNED',
         );
       }
+      await assertNoActiveMerchantMembership(targetUserId, transaction);
       await inactiveRow.update({ is_active: true }, { transaction });
       await writeAudit({
         actorUserId,
@@ -341,6 +376,7 @@ async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAd
           transaction,
           lock: transaction.LOCK?.UPDATE,
         });
+        assertNotSelfLockout(actorUserId, targetUserId);
         if (activeSuperAdmins.length <= 1) {
           throw new AppError(
             'The last active Growth OS Super Admin cannot be suspended.',
@@ -360,6 +396,7 @@ async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAd
         ipAddress,
         userAgent,
       }, transaction);
+      await invalidateInternalSessions(targetUserId, transaction);
       await invalidateRoleCache(targetUserId, transaction);
       return safeRole(activeRow);
     }
@@ -372,9 +409,6 @@ async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAd
     );
   });
 
-  if (!active) {
-    await invalidateInternalSessionsBestEffort(targetUserId);
-  }
   return result;
 }
 
@@ -395,9 +429,18 @@ async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, 
   }
   const normalizedReason = normalizeReason(reason);
   const { sequelize } = require('../../utils/database/database-setup');
-  const { GrowthOsUserRole } = require('../entities');
+  const { GrowthOsUserRole, User } = require('../entities');
 
   return sequelize.transaction(async (transaction) => {
+    const target = await User.findByPk(targetUserId, {
+      attributes: ['id'],
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!target) {
+      throw new AppError('Growth OS role target was not found.', 404, 'GROWTH_OS_ROLE_TARGET_NOT_FOUND');
+    }
+
     const activeRow = await GrowthOsUserRole.findOne({
       where: {
         user_id: targetUserId,
@@ -414,6 +457,8 @@ async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, 
         'GROWTH_OS_ROLE_NOT_FOUND',
       );
     }
+    await assertNoActiveMerchantMembership(targetUserId, transaction);
+
     if (activeRow.role === role) {
       throw new AppError(
         'The target user already holds that Growth OS role.',
@@ -433,6 +478,7 @@ async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, 
         transaction,
         lock: transaction.LOCK?.UPDATE,
       });
+      assertNotSelfLockout(actorUserId, targetUserId);
       if (activeSuperAdmins.length <= 1) {
         throw new AppError(
           'The last active Growth OS Super Admin cannot be demoted.',
@@ -469,6 +515,7 @@ async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, 
       ipAddress,
       userAgent,
     }, transaction);
+    await invalidateInternalSessions(targetUserId, transaction);
     await invalidateRoleCache(targetUserId, transaction);
 
     return safeRole(nextRow);

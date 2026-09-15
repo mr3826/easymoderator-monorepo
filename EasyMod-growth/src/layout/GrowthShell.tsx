@@ -17,66 +17,63 @@ import {
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
-import { PROSPECT_READ_PERMISSIONS } from '@/auth/usePermission';
+import { PROSPECT_READ_PERMISSIONS, type PermissionInput } from '@/auth/usePermission';
 
-type NavEntry = { to: string; label: string; icon: typeof Home; end?: boolean };
-type NavGroup = { id: string; label: string; permission?: string | readonly string[]; entries: NavEntry[] };
+type NavEntry = { to: string; label: string; icon: typeof Home; end?: boolean; permission?: PermissionInput };
+type NavGroup = { id: string; label: string; entries: NavEntry[] };
 
 const NAV_GROUPS: NavGroup[] = [
   {
     id: 'workspace',
     label: 'Workspace',
     entries: [
-      { to: '/', label: 'Home', icon: Home, end: true },
-      { to: '/my-work', label: 'My Work', icon: ListChecks },
+      { to: '/', label: 'Home', icon: Home, end: true, permission: 'growth_os.prospects.read_all' },
+      { to: '/my-work', label: 'My Work', icon: ListChecks, permission: 'growth_os.followups.manage' },
     ],
   },
   {
     id: 'growth',
     label: 'Growth',
-    permission: PROSPECT_READ_PERMISSIONS,
     entries: [
-      { to: '/prospects', label: 'Prospects', icon: UsersRound },
-      { to: '/pipeline', label: 'Pipeline', icon: Workflow },
-      { to: '/follow-ups', label: 'Follow-ups', icon: PlusCircle },
-      { to: '/sources', label: 'Sources', icon: Tags },
-      { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+      { to: '/prospects', label: 'Prospects', icon: UsersRound, permission: PROSPECT_READ_PERMISSIONS },
+      { to: '/pipeline', label: 'Pipeline', icon: Workflow, permission: 'growth_os.followups.manage' },
+      { to: '/follow-ups', label: 'Follow-ups', icon: PlusCircle, permission: 'growth_os.followups.manage' },
+      { to: '/sources', label: 'Sources', icon: Tags, permission: 'growth_os.prospects.read_all' },
+      { to: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'growth_os.prospects.read_all' },
     ],
   },
   {
     id: 'merchant-insights',
-    // Merchants renders a masked read-only view for GROWTH_USER and the full
-    // admin list for SUPER_ADMIN; the backend chooses the response shape per
-    // request. Navigation visibility mirrors that: both roles see the group,
-    // the data depth is enforced server-side.
     label: 'Merchant Insights',
-    permission: ['growth_os.merchants.read_insight', 'growth_os.admin.merchants.read'],
     entries: [
-      { to: '/merchants', label: 'Merchants', icon: Building2 },
-      { to: '/search', label: 'Search', icon: Search },
+      {
+        to: '/merchants',
+        label: 'Merchants',
+        icon: Building2,
+        permission: ['growth_os.merchants.read_insight', 'growth_os.admin.merchants.read'],
+      },
+      { to: '/search', label: 'Search', icon: Search, permission: 'growth_os.search.read' },
     ],
   },
   {
     id: 'platform',
     label: 'Platform',
-    permission: 'growth_os.admin.operations.read',
     entries: [
-      { to: '/operations', label: 'Operations', icon: Gauge },
-      { to: '/audit', label: 'Audit', icon: ScrollText },
+      { to: '/operations', label: 'Operations', icon: Gauge, permission: 'growth_os.admin.operations.read' },
+      { to: '/audit', label: 'Audit', icon: ScrollText, permission: 'growth_os.admin.audit.read' },
     ],
   },
   {
     id: 'system',
     label: 'System',
-    permission: 'growth_os.admin.users.read',
     entries: [
-      { to: '/growth-users', label: 'Growth Users', icon: UserCog },
-      { to: '/access-control', label: 'Access Control', icon: KeyRound },
+      { to: '/growth-users', label: 'Growth Users', icon: UserCog, permission: 'growth_os.admin.users.read' },
+      { to: '/access-control', label: 'Access Control', icon: KeyRound, permission: 'growth_os.admin.users.read' },
     ],
   },
 ];
 
-function toList(permission?: string | readonly string[]): string[] {
+function toList(permission?: PermissionInput): string[] {
   if (!permission) return [];
   if (typeof permission === 'string') return [permission];
   return permission.slice();
@@ -86,14 +83,18 @@ export function GrowthShell() {
   const { session, error, logout, status } = useGrowthAuth();
   const navigate = useNavigate();
   const granted = new Set(session?.permissions ?? []);
-  // Hide groups whose permissions the account lacks; the server remains the
+  // Hide entries whose permissions the account lacks; the server remains the
   // authorization authority no matter what renders here.
   const visibleGroups = status === 'authenticated'
-    ? NAV_GROUPS.filter((group) => {
-      const required = toList(group.permission);
-      return required.length === 0 || required.some((permission) => granted.has(permission));
-    })
+    ? NAV_GROUPS.map((group) => ({
+      ...group,
+      entries: group.entries.filter((entry) => {
+        const required = toList(entry.permission);
+        return required.length === 0 || required.some((permission) => granted.has(permission));
+      }),
+    })).filter((group) => group.entries.length > 0)
     : [];
+  const canSearch = granted.has('growth_os.search.read');
 
   return (
     <div className="app-frame">
@@ -128,25 +129,27 @@ export function GrowthShell() {
 
       <div className="work-area">
         <header className="topbar">
-          <div className="topbar-search">
-            <form
-              className="global-search-form"
-              role="search"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const input = event.currentTarget.elements.namedItem('q');
-                const value = input instanceof HTMLInputElement ? input.value.trim() : '';
-                if (value) navigate(`/search?q=${encodeURIComponent(value)}`);
-              }}
-            >
-              <input
-                name="q"
-                type="search"
-                placeholder="Search prospects, merchants…"
-                aria-label="Global internal search"
-              />
-            </form>
-          </div>
+          {canSearch ? (
+            <div className="topbar-search">
+              <form
+                className="global-search-form"
+                role="search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const input = event.currentTarget.elements.namedItem('q');
+                  const value = input instanceof HTMLInputElement ? input.value.trim() : '';
+                  if (value) navigate(`/search?q=${encodeURIComponent(value)}`);
+                }}
+              >
+                <input
+                  name="q"
+                  type="search"
+                  placeholder="Search prospects, merchants…"
+                  aria-label="Global internal search"
+                />
+              </form>
+            </div>
+          ) : null}
           <div>
             <p className="eyebrow">Internal workspace</p>
             <h1>Growth OS</h1>

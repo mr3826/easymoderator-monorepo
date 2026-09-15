@@ -40,6 +40,29 @@ describe('Growth API security contract', () => {
     );
   });
 
+  it('CSRF-protects the forced temporary-password change', async () => {
+    vi.resetModules();
+    const { growthApi: freshGrowthApi } = await import('./client');
+    const fetchMock = vi.fn((url: string) => Promise.resolve(
+      url === '/api/csrf'
+        ? response(200, { csrfToken: 'csrf-for-password-change' })
+        : response(200, { success: true, message: 'Password changed successfully.' }),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await freshGrowthApi.changePassword('temporary-password', 'New-password-123!');
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit | undefined]>;
+    const changeCall = calls.find(([url]) => url === '/api/auth/change-password');
+    expect(changeCall).toBeDefined();
+    expect(changeCall?.[1]).toMatchObject({
+      credentials: 'include',
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: 'temporary-password', newPassword: 'New-password-123!' }),
+      headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf-for-password-change' }),
+    });
+  });
+
   it('serializes list filters with the Phase 3 query names and page-size limit', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(200, {
       success: true,
@@ -66,14 +89,17 @@ describe('Growth API security contract', () => {
     expect(requestOptions.headers).not.toHaveProperty('X-CSRF-Token');
   });
 
-  it('uses GET query parameters for duplicate preflight without CSRF', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response(200, {
-      success: true,
-      data: { matches: [] },
-    }));
+  it('uses a CSRF-protected POST body for duplicate preflight', async () => {
+    vi.resetModules();
+    const fetchMock = vi.fn((url: string) => Promise.resolve(
+      url === '/api/csrf'
+        ? response(200, { csrfToken: 'csrf-for-duplicate' })
+        : response(200, { success: true, data: { matches: [] } }),
+    ));
     vi.stubGlobal('fetch', fetchMock);
+    const { growthApi: freshGrowthApi } = await import('./client');
 
-    await growthApi.checkProspectDuplicates({
+    await freshGrowthApi.checkProspectDuplicates({
       contactPhone: '01700000000',
       contactEmail: 'owner@example.com',
       pageUrl: 'https://example.com/page',
@@ -81,13 +107,21 @@ describe('Growth API security contract', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/internal/growth-os/prospects/duplicate-check?contactPhone=01700000000&contactEmail=owner%40example.com&pageUrl=https%3A%2F%2Fexample.com%2Fpage&excludeId=prospect-1',
+      '/api/csrf',
       expect.objectContaining({ credentials: 'include' }),
     );
-    const requestOptions = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(requestOptions.method).toBeUndefined();
-    expect(requestOptions.body).toBeUndefined();
-    expect(requestOptions.headers).not.toHaveProperty('X-CSRF-Token');
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit | undefined]>;
+    const duplicateCall = calls.find(([url]) => url === '/api/internal/growth-os/prospects/duplicate-check');
+    expect(duplicateCall).toBeDefined();
+    const requestOptions = duplicateCall?.[1] as RequestInit;
+    expect(requestOptions.method).toBe('POST');
+    expect(requestOptions.body).toBe(JSON.stringify({
+      contactPhone: '01700000000',
+      contactEmail: 'owner@example.com',
+      pageUrl: 'https://example.com/page',
+      excludeId: 'prospect-1',
+    }));
+    expect(requestOptions.headers).toMatchObject({ 'X-CSRF-Token': 'csrf-for-duplicate' });
   });
 
   it('serializes bounded timeline pagination on prospect detail requests', async () => {
@@ -155,9 +189,9 @@ describe('Growth API security contract', () => {
     expect(calls.map(([url]) => url)).toEqual([
       '/api/internal/growth-os/prospects',
       '/api/internal/growth-os/prospects/prospect-1',
-      '/api/internal/growth-os/prospects/duplicate-check?contactEmail=owner%40example.com',
-      '/api/internal/growth-os/prospects/prospect-1/linkage-suggestions',
       '/api/csrf',
+      '/api/internal/growth-os/prospects/duplicate-check',
+      '/api/internal/growth-os/prospects/prospect-1/linkage-suggestions',
       '/api/internal/growth-os/prospects',
       '/api/internal/growth-os/prospects/prospect-1',
       '/api/internal/growth-os/prospects/prospect-1/assign',

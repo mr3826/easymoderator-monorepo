@@ -93,7 +93,7 @@ const usersAdmin = {
   },
   create: {
     body: Joi.object({
-      email: Joi.string().trim().email().max(255).required(),
+      email: Joi.string().trim().email({ tlds: { allow: false } }).max(255).required(),
       fullName: boundedText(1, 255).required(),
       role: Joi.string().valid(...CANONICAL_ROLES).required(),
       reason: reason(),
@@ -147,11 +147,6 @@ const merchantsAdmin = {
   channelReconnect: {
     params: Joi.object({ shopId: uuid().required(), channelId: uuid().required() }),
     body: Joi.object({ reason: reason(300), confirm: Joi.string().valid('RECONNECT').required() })
-      .unknown(false),
-  },
-  aiEmergencyOff: {
-    params: Joi.object({ shopId: uuid().required() }),
-    body: Joi.object({ reason: reason(300), confirm: Joi.string().valid('DISABLE_AI').required() })
       .unknown(false),
   },
   operations: {

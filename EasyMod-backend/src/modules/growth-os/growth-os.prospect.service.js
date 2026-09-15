@@ -19,6 +19,7 @@ const {
   canManageAll,
   canRead,
 } = require('./growth-os.prospect.scope');
+const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
 
 const logger = createLogger('GrowthOsProspectService');
 
@@ -289,6 +290,27 @@ function plain(record) {
   return typeof record?.toJSON === 'function' ? record.toJSON() : { ...record };
 }
 
+const AUDIT_SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp)/i;
+
+function sanitizeAuditValue(value, depth = 0) {
+  if (depth > 8) return '[redacted]';
+  if (typeof value === 'string') {
+    const redacted = redactSecretiveValues(value);
+    return redacted.length > 2000 ? `${redacted.slice(0, 2000)}…` : redacted;
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeAuditValue(item, depth + 1));
+  if (value && typeof value === 'object') {
+    const sanitized = {};
+    for (const [key, child] of Object.entries(value)) {
+      sanitized[key] = AUDIT_SENSITIVE_KEY.test(key)
+        ? '[redacted]'
+        : sanitizeAuditValue(child, depth + 1);
+    }
+    return sanitized;
+  }
+  return value;
+}
+
 function auditSnapshot(record) {
   if (!record) return null;
   const data = plain(record);
@@ -300,13 +322,12 @@ function auditSnapshot(record) {
   delete data.assignedBy;
   delete data.linkedUser;
   delete data.linkedShop;
-  return data;
+  return sanitizeAuditValue(data);
 }
 
 function toApiProspect(record, scope) {
   const data = plain(record);
   const redacted = scope?.redacted === true;
-  const anyChannel = Boolean(data.normalized_phone || data.normalized_email || data.normalized_page);
   const response = {
     id: data.id,
     businessName: data.business_name,
@@ -335,12 +356,6 @@ function toApiProspect(record, scope) {
     metadata: redacted ? null : (data.metadata || {}),
     createdAt: data.created_at,
     updatedAt: data.updated_at,
-    eligibleForNextPhase: Boolean(
-      data.status === 'qualified'
-      && data.status !== 'merged'
-      && data.owner_user_id
-      && anyChannel,
-    ),
   };
   if (redacted) response.redacted = true;
   return response;
@@ -403,9 +418,9 @@ async function writeProspectEvent({
       event_type: eventType,
       from_value: fromValue || null,
       to_value: toValue || null,
-      reason: reason || null,
+      reason: redactSecretiveValues(reason || null),
       changed_fields: changedFields,
-      metadata,
+      metadata: redactSecretiveValues(metadata),
     }, { transaction });
   } catch (_error) {
     logServiceError('Growth OS prospect event write failed', _error, {
@@ -434,9 +449,9 @@ async function writeAudit({
       action,
       resource_type: 'growth_os_prospect',
       resource_id: prospectId,
-      old_values: oldValues,
-      new_values: newValues,
-      metadata: { source: 'growth_os_prospect', ...metadata },
+      old_values: sanitizeAuditValue(oldValues),
+      new_values: sanitizeAuditValue(newValues),
+      metadata: sanitizeAuditValue({ source: 'growth_os_prospect', ...metadata }),
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
     }, { transaction });
@@ -625,7 +640,7 @@ class GrowthOsProspectService {
     return { data: toApiProspect(result.prospect, scope), created: result.created };
   }
 
-  async createImported({ data, source, sourceReference, dryRun = true }) {
+  async createImported({ data, source, sourceReference, dryRun = true, runId = null, reservations = null }) {
     const payload = {
       ...data,
       source,
@@ -638,6 +653,22 @@ class GrowthOsProspectService {
       normalized_email: values.normalized_email,
       normalized_page: values.normalized_page,
     };
+    const reservationKeys = [
+      identity.normalized_phone ? `phone:${identity.normalized_phone}` : null,
+      identity.normalized_email ? `email:${identity.normalized_email}` : null,
+      identity.normalized_page ? `page:${identity.normalized_page}` : null,
+    ].filter(Boolean);
+    const sourceReservations = reservations?.sourceReferences;
+    const identityReservations = reservations?.identityKeys;
+    if (dryRun && (sourceReservations?.has(sourceReference)
+      || reservationKeys.some((key) => identityReservations?.has(key)))) {
+      return {
+        created: false,
+        skippedDuplicate: true,
+        conflictingProspectId: null,
+        dryRun: true,
+      };
+    }
     const existing = await runWithDatabaseProtection(() => repository.findBySourceReference(
       values.source,
       values.source_reference,
@@ -659,8 +690,24 @@ class GrowthOsProspectService {
         dryRun,
       };
     }
-    if (dryRun) return { created: false, wouldCreate: true, skippedDuplicate: false, dryRun: true };
-    const result = await this._create({ data: payload, internal: true, importMode: true });
+    if (dryRun) {
+      sourceReservations?.add(sourceReference);
+      for (const key of reservationKeys) identityReservations?.add(key);
+      return { created: false, wouldCreate: true, skippedDuplicate: false, dryRun: true };
+    }
+    const result = await this._create({
+      data: payload,
+      internal: true,
+      importMode: true,
+      audit: {
+        metadata: {
+          source: values.source,
+          source_reference: values.source_reference,
+          import_run_id: runId,
+          importer: 'growth-prospect-import',
+        },
+      },
+    });
     return {
       created: result.created,
       skippedDuplicate: result.skippedDuplicate,
@@ -902,14 +949,13 @@ class GrowthOsProspectService {
       return toApiProspect(prospect, scope);
     }));
 
-    // Activation is the primary Growth success event: if the linked shop has
-    // already recorded its activation moment, entering onboarding converts
-    // immediately rather than waiting for a future reply.
+    // Canonical Growth activation is the prospect reaching a linked active
+    // merchant/shop outcome. A first AI reply is only an operational signal.
     if (status === 'onboarding' && linkedShopForActivation) {
       try {
         const { Shop } = require('../entities');
-        const shop = await Shop.findByPk(linkedShopForActivation, { attributes: ['settings'] });
-        if (shop?.settings?.activation?.activated_at) {
+         const shop = await Shop.findByPk(linkedShopForActivation, { attributes: ['settings', 'is_active'] });
+         if (shop?.is_active === true && shop.settings?.activation?.activated_at) {
           await this.markLinkedShopsActivated({ shopId: linkedShopForActivation });
           const fresh = await runWithDatabaseProtection(
             () => repository.findProspectById(prospectId, { scope }),
@@ -1125,24 +1171,24 @@ class GrowthOsProspectService {
   }
 
   /**
-   * System-driven activation completion (§23): when the merchant engine
-   * records a shop's first successful AI reply, any prospect already in
-   * onboarding for that linked shop is converted. Called from the analytics
-   * activation path with the same best-effort semantics — failures must
-   * never surface to merchant message processing.
+   * Complete canonical activation for prospects linked to an active shop.
+   * This is deliberately independent from the first successful AI reply
+   * operational milestone.
    */
   async markLinkedShopsActivated({ shopId, conversationId = null } = {}) {
     if (!shopId) return { activated: 0 };
     const db = getSequelize();
-    const { GrowthOsProspect } = repository.getModels();
+    const { GrowthOsProspect, Shop } = repository.getModels();
     const inOnboarding = await runWithDatabaseProtection(async () => GrowthOsProspect.findAll({
       attributes: ['id', 'status'],
       where: { linked_shop_id: shopId, status: 'onboarding' },
+      include: [{ model: Shop, as: 'linkedShop', required: true, attributes: ['is_active', 'settings'], where: { is_active: true } }],
     }), { operation: 'activation_lookup' });
     if (inOnboarding.length === 0) return { activated: 0 };
 
     let activated = 0;
     for (const candidate of inOnboarding) {
+      if (!candidate.linkedShop?.settings?.activation?.activated_at) continue;
       await runWithDatabaseProtection(() => db.transaction(async (transaction) => {
         const prospect = await repository.findProspectById(candidate.id, {
           scope: null,

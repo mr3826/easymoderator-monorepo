@@ -310,7 +310,7 @@ export function QuickAddPage() {
         <section className="duplicate-warning" aria-labelledby="quick-duplicate-title">
           <strong id="quick-duplicate-title">{duplicateNotice ? 'Duplicate check unavailable' : 'Possible duplicate prospect'}</strong>
           {duplicateNotice ? <p>{duplicateNotice}</p> : null}
-          {duplicates.length > 0 ? <p>Review the existing record. Continue only if this is a genuinely separate conversation.</p> : null}
+          {duplicates.length > 0 ? <p>Creation is blocked while the identity matches an existing record. Review it or update the details before trying again.</p> : null}
           <ul>
             {duplicates.map((duplicate) => (
               <li key={duplicate.prospectId}>
@@ -322,11 +322,6 @@ export function QuickAddPage() {
             ))}
           </ul>
           <div className="button-row">
-            {duplicates.length > 0 ? (
-              <button className="primary-button" type="button" disabled={submitting} onClick={() => void createProspect()}>
-                {submitting ? 'Creating' : 'Continue and create anyway'}
-              </button>
-            ) : null}
             <button className="secondary-button" type="button" onClick={() => { setDuplicates([]); setDuplicateNotice(null); }}>
               Update details
             </button>

@@ -59,7 +59,7 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
     targetToken = generateAccessToken({
       userId: target.id,
       email: target.email,
-      shopId: uuidv4(),
+      shopId: null,
       tokenVersion: 0,
       mfaVerified: true,
     });
@@ -98,13 +98,18 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
       .get('/api/analytics/growth')
       .set('Authorization', `Bearer ${merchantToken}`);
     expect(merchantGrowthReport.status).toBe(403);
+
+    const merchantAudit = await request(app)
+      .get('/api/internal/growth-os/admin/audit')
+      .set('Authorization', `Bearer ${merchantToken}`);
+    expect(merchantAudit.status).toBe(403);
   });
 
   test('rejects expired sessions without querying Growth authorization', async () => {
     const expiredToken = jwt.sign({
       userId: target.id,
       email: target.email,
-      shopId: uuidv4(),
+      shopId: null,
       tokenVersion: 0,
       mfaVerified: true,
     }, config.jwtAccessSecret, { algorithm: 'HS256', expiresIn: '-1s' });
@@ -125,12 +130,22 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
     const granted = await roleService.grantRole({
       actorUserId: actor.id,
       targetUserId: target.id,
-      role: 'FOUNDER',
+      // Canonical two-role model: legacy strings are no longer grantable.
+      role: 'SUPER_ADMIN',
       reason: 'Integration access-boundary proof',
       ipAddress: '127.0.0.1',
       userAgent: 'growth-os-integration',
     });
     auditResourceIds.push(granted.id);
+
+    const refreshedTarget = await User.findByPk(target.id, { attributes: ['token_version'] });
+    targetToken = generateAccessToken({
+      userId: target.id,
+      email: target.email,
+      shopId: null,
+      tokenVersion: refreshedTarget.token_version,
+      mfaVerified: true,
+    });
 
     const afterGrant = await request(app)
       .get('/api/internal/growth-os/session')
@@ -138,8 +153,26 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
     expect(afterGrant.status).toBe(200);
     expect(afterGrant.body.data).toMatchObject({
       internalUserId: target.id,
-      role: 'FOUNDER',
+      role: 'SUPER_ADMIN',
     });
+    expect(afterGrant.body.data.permissions).toContain('growth_os.admin.users.manage');
+
+    const internalAuthContext = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${targetToken}`);
+    expect(internalAuthContext.status).toBe(200);
+    expect(internalAuthContext.body.data).toMatchObject({
+      currentShop: null,
+      allShops: [],
+      user: { id: target.id },
+    });
+
+    const legacyGrant = await request(app)
+      .post('/api/internal/growth-os/roles')
+      .set('Authorization', `Bearer ${targetToken}`)
+      .send({ userId: merchant.id, role: 'FOUNDER', reason: 'must be rejected' });
+    expect(legacyGrant.status).toBe(400);
+    expect(legacyGrant.body.code).toBe('GROWTH_OS_INVALID_ROLE');
 
     const grantAudit = await AuditLog.findOne({
       where: { resource_id: granted.id, action: 'growth_os:role_granted' },
@@ -148,8 +181,10 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
     expect(grantAudit.shop_id).toBeNull();
     expect(grantAudit.metadata).toMatchObject({ reason: 'Integration access-boundary proof' });
 
-    // Cache the allow, then revoke. The transaction deletes the cache before
-    // commit; a failed deletion would roll the role mutation back.
+    // Cache the allow, then revoke. The transaction deletes the role cache and
+    // the post-commit session invalidation rotates token_version. A stale
+    // session therefore receives 401; a newly issued token would receive the
+    // role-level 403.
     const revoked = await roleService.revokeRole({
       actorUserId: actor.id,
       targetUserId: target.id,
@@ -162,7 +197,7 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
     const afterRevoke = await request(app)
       .get('/api/internal/growth-os/session')
       .set('Authorization', `Bearer ${targetToken}`);
-    expect(afterRevoke.status).toBe(403);
+    expect(afterRevoke.status).toBe(401);
 
     const revokeAudit = await AuditLog.findOne({
       where: { resource_id: granted.id, action: 'growth_os:role_revoked' },
@@ -170,14 +205,108 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
     expect(revokeAudit).not.toBeNull();
   });
 
-  test('does not allow removal of the last active Founder', async () => {
+  test('does not allow removal of the last active Super Admin (legacy FOUNDER inclusive)', async () => {
+    await GrowthOsUserRole.create({
+      user_id: merchant.id,
+      role: 'SUPER_ADMIN',
+      is_active: true,
+      granted_by: actor.id,
+      metadata: { source: 'self-lockout-fixture' },
+    });
     await expect(roleService.revokeRole({
       actorUserId: actor.id,
       targetUserId: actor.id,
-      reason: 'Last-founder guard proof',
+      reason: 'Last-super-admin guard proof',
+    })).rejects.toMatchObject({
+      status: 403,
+      code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+    });
+    await expect(roleService.revokeRole({
+      actorUserId: actor.id,
+      targetUserId: actor.id,
+      reason: 'Last-super-admin guard proof',
+    })).rejects.toMatchObject({
+      status: 403,
+      code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+    });
+    await expect(roleService.setActiveStatus({
+      actorUserId: actor.id,
+      targetUserId: actor.id,
+      active: false,
+      reason: 'Suspension guard proof',
+    })).rejects.toMatchObject({
+      status: 403,
+      code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+    });
+    await expect(roleService.changeRole({
+      actorUserId: actor.id,
+      targetUserId: actor.id,
+      role: 'GROWTH_USER',
+      reason: 'Demotion guard proof',
+    })).rejects.toMatchObject({
+      status: 403,
+      code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+    });
+
+    // A non-self actor may remove one of two Super Admins, but the remaining
+    // final Super Admin cannot then be removed.
+    await expect(roleService.revokeRole({
+      actorUserId: target.id,
+      targetUserId: actor.id,
+      reason: 'Reduce to final-super-admin fixture',
+    })).resolves.toBeTruthy();
+    await expect(roleService.revokeRole({
+      actorUserId: target.id,
+      targetUserId: merchant.id,
+      reason: 'Last-super-admin guard proof',
     })).rejects.toMatchObject({
       status: 409,
-      code: 'GROWTH_OS_LAST_FOUNDER',
+      code: 'GROWTH_OS_LAST_SUPER_ADMIN',
     });
+  });
+
+  test('prevents a Super Admin from locking out their own account', async () => {
+    const granted = await roleService.grantRole({
+      actorUserId: actor.id,
+      targetUserId: target.id,
+      role: 'SUPER_ADMIN',
+      reason: 'Self-lockout guard proof',
+    });
+    auditResourceIds.push(granted.id);
+
+    try {
+      await expect(roleService.revokeRole({
+        actorUserId: target.id,
+        targetUserId: target.id,
+        reason: 'Self-revoke guard proof',
+      })).rejects.toMatchObject({
+        status: 403,
+        code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+      });
+      await expect(roleService.setActiveStatus({
+        actorUserId: target.id,
+        targetUserId: target.id,
+        active: false,
+        reason: 'Self-suspend guard proof',
+      })).rejects.toMatchObject({
+        status: 403,
+        code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+      });
+      await expect(roleService.changeRole({
+        actorUserId: target.id,
+        targetUserId: target.id,
+        role: 'GROWTH_USER',
+        reason: 'Self-demotion guard proof',
+      })).rejects.toMatchObject({
+        status: 403,
+        code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+      });
+    } finally {
+      await roleService.revokeRole({
+        actorUserId: actor.id,
+        targetUserId: target.id,
+        reason: 'Clean up self-lockout fixture',
+      });
+    }
   });
 });

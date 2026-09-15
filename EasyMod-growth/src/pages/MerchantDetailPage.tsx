@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Share2,
   ShieldCheck,
-  Siren,
   Sparkles,
   Workflow,
 } from 'lucide-react';
@@ -22,7 +21,7 @@ import {
 import { usePermission } from '@/auth/usePermission';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
-type BusyAction = 'status' | 'credits' | 'reconnect' | 'emergency' | 'note' | null;
+type BusyAction = 'status' | 'credits' | 'reconnect' | 'note' | null;
 
 interface ResultSummary {
   label: string;
@@ -98,11 +97,10 @@ export function MerchantDetailPage() {
   const [creditAmount, setCreditAmount] = useState('');
   const [creditReason, setCreditReason] = useState('');
   const [creditArmed, setCreditArmed] = useState(false);
+  const [creditIdempotencyKey, setCreditIdempotencyKey] = useState<string | null>(null);
   const [channelId, setChannelId] = useState('');
   const [reconnectReason, setReconnectReason] = useState('');
   const [reconnectConfirm, setReconnectConfirm] = useState('');
-  const [emergencyReason, setEmergencyReason] = useState('');
-  const [emergencyConfirm, setEmergencyConfirm] = useState('');
   const [noteBody, setNoteBody] = useState('');
   const [noteError, setNoteError] = useState<string | null>(null);
 
@@ -195,9 +193,12 @@ export function MerchantDetailPage() {
     if (!validateReason(creditReason, 'grant conversation credits')) return;
     if (!creditArmed) {
       setCreditArmed(true);
+      setCreditIdempotencyKey((current) => current ?? crypto.randomUUID());
       setActionError(null);
       return;
     }
+    const requestKey = creditIdempotencyKey ?? crypto.randomUUID();
+    setCreditIdempotencyKey(requestKey);
     setBusy('credits');
     setActionError(null);
     setResult(null);
@@ -205,11 +206,12 @@ export function MerchantDetailPage() {
       const next = await adminApi.grantMerchantCredits(shopId, {
         amount,
         reason: creditReason.trim(),
-      });
+      }, requestKey);
       setResult({ label: `Granted ${formatNumber(amount)} conversation credits.`, data: next });
       setCreditAmount('');
       setCreditReason('');
       setCreditArmed(false);
+      setCreditIdempotencyKey(null);
       refreshDetails();
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -247,33 +249,6 @@ export function MerchantDetailPage() {
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
       setActionError(serverMessage(requestError, 'The reconnect request could not be submitted.'));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function handleEmergencyDisable() {
-    if (!shopId) return;
-    if (!validateReason(emergencyReason, 'emergency-disable this merchant AI')) return;
-    if (emergencyConfirm.trim() !== 'DISABLE_AI') {
-      setActionError('Type DISABLE_AI exactly to confirm.');
-      return;
-    }
-    setBusy('emergency');
-    setActionError(null);
-    setResult(null);
-    try {
-      const next = await adminApi.emergencyDisableMerchantAi(shopId, {
-        reason: emergencyReason.trim(),
-        confirm: 'DISABLE_AI',
-      });
-      setResult({ label: 'Merchant AI emergency-disabled. Automated replies are stopped.', data: next });
-      setEmergencyReason('');
-      setEmergencyConfirm('');
-      refreshDetails();
-    } catch (requestError: unknown) {
-      if (reportApiError(requestError)) return;
-      setActionError(serverMessage(requestError, 'The emergency AI disable could not be applied.'));
     } finally {
       setBusy(null);
     }
@@ -682,7 +657,7 @@ export function MerchantDetailPage() {
                     <div>
                       <strong>{note.body}</strong>
                       <span className="table-subtext">
-                        By {note.authorUserId || 'unknown'} · {formatDate(note.createdAt, true)}
+                        By {note.author?.name || note.author?.userId || 'unknown'} · {formatDate(note.createdAt, true)}
                       </span>
                     </div>
                   </li>
@@ -770,6 +745,7 @@ export function MerchantDetailPage() {
                   onChange={(event) => {
                     setCreditAmount(event.target.value);
                     setCreditArmed(false);
+                    setCreditIdempotencyKey(null);
                   }}
                   required
                 />
@@ -782,6 +758,7 @@ export function MerchantDetailPage() {
                   onChange={(event) => {
                     setCreditReason(event.target.value);
                     setCreditArmed(false);
+                    setCreditIdempotencyKey(null);
                   }}
                   rows={2}
                   maxLength={300}
@@ -848,51 +825,6 @@ export function MerchantDetailPage() {
             )}
           </section>
 
-          <section className="content-card danger-zone" aria-labelledby="emergency-title">
-            <div className="section-heading compact-heading">
-              <div>
-                <p className="eyebrow panel-heading">Danger zone</p>
-                <h3 id="emergency-title" className="panel-heading">Emergency disable AI</h3>
-              </div>
-              <Siren aria-hidden="true" />
-            </div>
-            <p className="state-copy">
-              Stops automated replies immediately for every channel of this merchant. Use only for
-              active abuse or incorrect-reply incidents and record the incident reference in the reason.
-            </p>
-            <div className="action-form">
-              <label htmlFor="emergency-reason">
-                Emergency disable reason (required, max 300 chars)
-                <textarea
-                  id="emergency-reason"
-                  value={emergencyReason}
-                  onChange={(event) => setEmergencyReason(event.target.value)}
-                  rows={2}
-                  maxLength={300}
-                  required
-                />
-              </label>
-              <label htmlFor="emergency-confirm">
-                Type DISABLE_AI to confirm
-                <input
-                  id="emergency-confirm"
-                  value={emergencyConfirm}
-                  onChange={(event) => setEmergencyConfirm(event.target.value)}
-                  autoComplete="off"
-                  required
-                />
-              </label>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={busy !== null}
-                onClick={() => void handleEmergencyDisable()}
-              >
-                {busy === 'emergency' ? 'Submitting' : 'Disable AI now'}
-              </button>
-              <p className="field-hint">stops automated replies immediately</p>
-            </div>
-          </section>
         </aside>
       </div>
     </main>

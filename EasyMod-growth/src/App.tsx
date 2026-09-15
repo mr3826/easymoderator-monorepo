@@ -8,6 +8,7 @@ import { GrowthShell } from '@/layout/GrowthShell';
 import { AccessDeniedPage } from '@/pages/AccessDeniedPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { CapturePage } from '@/pages/CapturePage';
+import { ChangePasswordPage } from '@/pages/ChangePasswordPage';
 import { EnrollMfaPage } from '@/pages/EnrollMfaPage';
 import { FollowUpsPage } from '@/pages/FollowUpsPage';
 import { GrowthUsersPage } from '@/pages/GrowthUsersPage';
@@ -44,21 +45,26 @@ export function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/change-password" element={<ChangePasswordPage />} />
             <Route path="/access-denied" element={<AccessDeniedPage />} />
             <Route path="/session-expired" element={<SessionExpiredPage />} />
             <Route path="/unavailable" element={<GrowthUnavailablePage />} />
             <Route path="/enroll-mfa" element={<MfaSetupRoute />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<GrowthShell />}>
-                <Route index element={<HomePage />} />
-                <Route path="my-work" element={<FollowUpsPage scope="mine" />} />
-                <Route path="follow-ups" element={<FollowUpsPage scope="all" />} />
-                <Route element={<RequirePermission permission={['growth_os.followups.manage']} />}>
+                <Route element={<RequirePermission permission="growth_os.prospects.read_all" />}>
+                  <Route index element={<HomePage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.followups.manage" />}>
+                  <Route path="my-work" element={<FollowUpsPage scope="mine" />} />
+                  <Route path="follow-ups" element={<FollowUpsPage scope="all" />} />
                   <Route path="pipeline" element={<PipelinePage />} />
                 </Route>
                 <Route element={<RequirePermission permission={PROSPECT_READ_PERMISSIONS} />}>
                   <Route path="prospects" element={<ProspectListPage />} />
                   <Route path="prospects/:prospectId" element={<ProspectDetailPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.prospects.read_all" />}>
                   <Route path="sources" element={<SourcesPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="growth_os.prospects.manage_all" />}>
@@ -93,6 +99,8 @@ export function App() {
                 </Route>
                 <Route element={<RequirePermission permission="growth_os.admin.operations.read" />}>
                   <Route path="operations" element={<OperationsPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="growth_os.admin.audit.read" />}>
                   <Route path="audit" element={<AuditTrailPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="growth_os.admin.users.read" />}>

@@ -176,7 +176,7 @@ async function getShopOverview(shopId) {
       { model: Subscription, as: 'subscription', required: false },
       {
         model: User, as: 'users', required: false,
-        through: { attributes: ['role'] },
+        through: { attributes: ['role'], where: { is_active: true } },
         attributes: ['id', 'full_name', 'email', 'phone'],
       },
     ],
@@ -215,8 +215,12 @@ async function getShopOverview(shopId) {
       },
     },
     onboarding: {
-      completed: Boolean(settings.onboarding?.completed ?? settings.onboardingCompleted ?? false),
-      raw: settings.onboarding || null,
+      completed: Boolean(
+        settings.onboarding_completed
+          ?? settings.onboarding?.completed
+          ?? settings.onboardingCompleted
+          ?? false,
+      ),
     },
   };
 }
@@ -335,26 +339,101 @@ async function bustSubscriptionStatusCache(shopId) {
   await cacheService.deleteForShop(shopId, SUBSCRIPTION_STATUS_CACHE_KEY).catch(() => {});
 }
 
-async function setShopStatus(shopId, status) {
+async function invalidateSubscriptionStatusCache(shopId, transaction = null) {
+  if (transaction && typeof transaction.afterCommit === 'function') {
+    // Cache is external to the database transaction; publish invalidation only
+    // after the status write has committed.
+    transaction.afterCommit(() => bustSubscriptionStatusCache(shopId));
+    return;
+  }
+  await bustSubscriptionStatusCache(shopId);
+}
+
+async function setShopStatus(shopId, status, { transaction = null } = {}) {
   if (!['suspended', 'active'].includes(status)) throw new AppError('status must be suspended|active', 400);
-  const sub = await Subscription.findOne({ where: { shop_id: shopId } });
+  const findOptions = { where: { shop_id: shopId } };
+  if (transaction) findOptions.transaction = transaction;
+  const sub = await Subscription.findOne(findOptions);
   if (!sub) throw new AppError('Subscription not found', 404);
   const before = { status: sub.status };
-  await sub.update({ status });
-  await bustSubscriptionStatusCache(shopId);
+  if (transaction) await sub.update({ status }, { transaction });
+  else await sub.update({ status });
+  await invalidateSubscriptionStatusCache(shopId, transaction);
   return { before, after: { status } };
 }
 
-async function addCredits(shopId, amount, reason = 'admin_grant') {
+function assertCreditIdempotencyKey(value) {
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key || key.length > 255 || !/^[\x21-\x7E]+$/.test(key)) {
+    throw new AppError('Idempotency-Key header is required for credit grants.', 400, 'ADMIN_IDEMPOTENCY_REQUIRED');
+  }
+  return key;
+}
+
+function creditRequestHash({ shopId, amount, reason }) {
+  return require('crypto').createHash('sha256')
+    .update(JSON.stringify({ shopId, amount, reason }), 'utf8')
+    .digest('hex');
+}
+
+async function addCredits(shopId, amount, reason = 'admin_grant', {
+  transaction = null, idempotencyKey = null, actorUserId = null,
+} = {}) {
   const n = parseInt(amount, 10);
   if (!Number.isInteger(n) || n <= 0 || n > 100000) throw new AppError('amount must be 1..100000', 400);
-  const beforeSub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['topup_balance'] });
-  await subscriptionService.grantBonusConversations(shopId, n, reason);
-  const afterSub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['topup_balance'] });
-  return {
-    before: { topup_balance: beforeSub?.topup_balance ?? null },
-    after: { topup_balance: afterSub?.topup_balance ?? null, granted: n },
+  const key = idempotencyKey ? assertCreditIdempotencyKey(idempotencyKey) : null;
+  const execute = async (activeTransaction) => {
+    let idempotencyRecord = null;
+    if (key) {
+      if (!actorUserId) throw new AppError('Authenticated actor is required for credit grants.', 401, 'AUTH_REQUIRED');
+      const { IdempotencyKey } = require('../entities');
+      const [record, created] = await IdempotencyKey.findOrCreate({
+        where: { idempotency_key: key, shop_id: shopId },
+        defaults: {
+          user_id: actorUserId,
+          endpoint: '/api/admin/shops/:shopId/add-credits',
+          method: 'POST',
+          request_hash: creditRequestHash({ shopId, amount: n, reason }),
+          response_data: null,
+          status_code: null,
+        },
+        transaction: activeTransaction,
+      });
+      if (!created) {
+        if (
+          record.user_id !== actorUserId
+          || record.endpoint !== '/api/admin/shops/:shopId/add-credits'
+          || record.method !== 'POST'
+          || record.request_hash !== creditRequestHash({ shopId, amount: n, reason })
+        ) {
+          throw new AppError('The idempotency key was already used for a different credit request.', 409, 'ADMIN_IDEMPOTENCY_CONFLICT');
+        }
+        if (record.response_data === null || record.response_data === undefined) {
+          throw new AppError('The credit request with this idempotency key is still being processed.', 409, 'ADMIN_IDEMPOTENCY_IN_PROGRESS');
+        }
+        return record.response_data;
+      }
+      idempotencyRecord = record;
+    }
+
+    const findOptions = { where: { shop_id: shopId }, attributes: ['topup_balance'] };
+    if (activeTransaction) findOptions.transaction = activeTransaction;
+    const beforeSub = await Subscription.findOne(findOptions);
+    if (!beforeSub) throw new AppError('Subscription not found', 404);
+    if (activeTransaction) await subscriptionService.grantBonusConversations(shopId, n, reason, { transaction: activeTransaction });
+    else await subscriptionService.grantBonusConversations(shopId, n, reason);
+    const afterSub = await Subscription.findOne(findOptions);
+    const result = {
+      before: { topup_balance: beforeSub?.topup_balance ?? null },
+      after: { topup_balance: afterSub?.topup_balance ?? null, granted: n },
+    };
+    if (idempotencyRecord) await idempotencyRecord.update({ response_data: result, status_code: 200 }, { transaction: activeTransaction });
+    return result;
   };
+
+  if (transaction || !key) return execute(transaction);
+  const { sequelize } = require('../../utils/database/database-setup');
+  return sequelize.transaction(execute);
 }
 
 async function changePlan(shopId, adminUserId, planData) {
@@ -364,12 +443,28 @@ async function changePlan(shopId, adminUserId, planData) {
   return { before, after: { plan_name: updated?.plan_name ?? planData.plan_name, plan_code: planData.plan_code } };
 }
 
-async function markChannelReconnect(shopId, channelId) {
-  const channels = await metaChannelService.listByShop(shopId);
-  const ch = channels.find((c) => c.id === channelId);
+async function markChannelReconnect(shopId, channelId, { transaction = null } = {}) {
+  const channels = transaction
+    ? await metaChannelService.listByShop(shopId, { transaction })
+    : await metaChannelService.listByShop(shopId);
+  const ch = channels.find((candidate) => (
+    String(candidate.id) === String(channelId)
+    && (candidate.shop_id === undefined
+      || candidate.shop_id === null
+      || String(candidate.shop_id) === String(shopId))
+  ));
   if (!ch) throw new AppError('Channel not found for this shop', 404);
   const before = { status: ch.status };
-  await metaChannelService.updateStatus(channelId, 'TOKEN_EXPIRED', 'Reconnect requested by admin');
+  if (transaction) {
+    await metaChannelService.updateStatus(
+      channelId,
+      'TOKEN_EXPIRED',
+      'Reconnect requested by admin',
+      { transaction, shopId },
+    );
+  } else {
+    await metaChannelService.updateStatus(channelId, 'TOKEN_EXPIRED', 'Reconnect requested by admin');
+  }
   return { before, after: { status: 'TOKEN_EXPIRED' } };
 }
 

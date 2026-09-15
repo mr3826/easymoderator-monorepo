@@ -17,6 +17,7 @@ const setup = async (req, res, next) => {
     try {
         const { userId } = req.user;
         const result = await totpService.generateTotpSecret(userId);
+        res.set('Cache-Control', 'no-store');
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);
@@ -34,6 +35,7 @@ const enable = async (req, res, next) => {
         const { token } = req.body;
         if (!token) throw new AppError('token is required', 400);
         const result = await totpService.enableTotp(userId, String(token));
+        res.set('Cache-Control', 'no-store');
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);
@@ -50,14 +52,22 @@ const verify = async (req, res, next) => {
         const { tempToken, token } = req.body;
         if (!tempToken || !token) throw new AppError('tempToken and token are required', 400);
 
-        const userId = await totpService.consumeTempToken(tempToken);
-        if (!userId) throw new AppError('Invalid or expired session. Please login again.', 401);
+        const challenge = await totpService.consumeTempTokenDetails(tempToken);
+        if (!challenge?.userId || !Number.isInteger(challenge.tokenVersion)) {
+            throw new AppError('Invalid or expired session. Please login again.', 401);
+        }
+        const { userId } = challenge;
 
         await totpService.verifyTotpToken(userId, String(token));
 
         // Token valid — issue full JWT
         const user = await User.findByPk(userId);
         if (!user) throw new AppError('User not found', 404);
+        if (Number(user.token_version) !== challenge.tokenVersion) {
+            throw new AppError('Invalid or expired session. Please login again.', 401);
+        }
+        const { getTemporaryPasswordAuthData } = require('./auth.service');
+        const temporaryPasswordAuthData = getTemporaryPasswordAuthData(user);
 
         // A null shopId is only acceptable for internal Growth OS staff
         // accounts (no shop membership required); everyone else must re-login.
@@ -78,11 +88,23 @@ const verify = async (req, res, next) => {
             shopId,
             tokenVersion: user.token_version,
             mfaVerified: true,
+            ...(temporaryPasswordAuthData
+                ? {
+                    passwordChangeRequired: true,
+                    temporaryPasswordExpiresAt: temporaryPasswordAuthData.temporaryPasswordExpiresAt,
+                }
+                : {}),
         });
         const refreshToken = generateRefreshToken({
             userId: user.id,
             tokenVersion: user.token_version,
             mfaVerified: true,
+            ...(temporaryPasswordAuthData
+                ? {
+                    passwordChangeRequired: true,
+                    temporaryPasswordExpiresAt: temporaryPasswordAuthData.temporaryPasswordExpiresAt,
+                }
+                : {}),
         });
 
         // Use SHA-256 for refresh token storage (not bcrypt - too expensive for high-entropy tokens)
@@ -92,9 +114,10 @@ const verify = async (req, res, next) => {
         // Set httpOnly cookies - never return tokens in response body
         setAuthCookies(res, accessToken, refreshToken, req);
 
+        res.set('Cache-Control', 'no-store');
         res.status(200).json({
             success: true,
-            data: { authenticated: true }
+            data: { authenticated: true, ...(temporaryPasswordAuthData || {}) }
         });
     } catch (error) {
         next(error);

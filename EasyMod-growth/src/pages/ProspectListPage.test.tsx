@@ -67,7 +67,7 @@ describe('ProspectListPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders permission-scoped rows without a next-phase column', async () => {
+  it('renders permission-scoped rows', async () => {
     permissionMock.mockReturnValue(true);
     vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);
 
@@ -78,7 +78,6 @@ describe('ProspectListPage', () => {
     expect(screen.getAllByText('Not provided')).toHaveLength(2);
     expect(screen.queryByText('Hidden for your role')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'New prospect' })).toHaveAttribute('href', '/prospects/new');
-    expect(screen.queryByRole('columnheader', { name: 'Next phase' })).not.toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument();
     expect(screen.getByText('owner-1')).toBeInTheDocument();
     expect(screen.getAllByText('Not linked').length).toBeGreaterThanOrEqual(1);

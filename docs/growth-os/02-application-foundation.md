@@ -40,7 +40,7 @@ npm run dev
 Default local URL:
 
 ```text
-http://localhost:5174
+http://127.0.0.1:5175
 ```
 
 The Vite dev server proxies `/api/*` to `http://localhost:3000`.
@@ -276,13 +276,13 @@ Founder:
 2. Run migrations.
 3. Bootstrap `FOUNDER` in `growth_os_user_roles`.
 4. Start Growth OS: `cd EasyMod-growth && npm run dev`.
-5. Open `http://localhost:5174`.
+5. Open `http://127.0.0.1:5175`.
 6. Sign in with the founder account.
 7. Expected: Growth OS shell opens and shows the founder role.
 
 Merchant:
 
-1. Open `http://localhost:5174`.
+1. Open `http://127.0.0.1:5175`.
 2. Sign in with a normal merchant account with no Growth OS role.
 3. Expected: access denied.
 4. Directly request `GET /api/internal/growth-os/session`.
@@ -290,7 +290,7 @@ Merchant:
 
 Unauthenticated:
 
-1. Open `http://localhost:5174` in a clean browser session.
+1. Open `http://127.0.0.1:5175` in a clean browser session.
 2. Expected: login page.
 3. Directly request `GET /api/internal/growth-os/session`.
 4. Expected: `401`.

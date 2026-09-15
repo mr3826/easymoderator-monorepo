@@ -1,4 +1,5 @@
-const { User, Shop, UserShop, Tenant } = require('../entities');
+const { Op } = require('sequelize');
+const { User, Shop, UserShop, Tenant, GrowthOsUserRole } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
@@ -9,8 +10,61 @@ const {
 } = require('./shop-settings.validator');
 const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 const { normalizeAiReplyMode, isAutoSendMode } = require('./ai-reply-mode');
+const { invalidateUserSessions } = require('../auth/session-invalidation.service');
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
+const distinctUserIds = (memberships) => [...new Set(
+    memberships.map((membership) => membership.user_id).filter(Boolean)
+)];
+
+const clearLastLoggedShop = async (userIds, shopId, transaction) => {
+    if (userIds.length === 0) return;
+
+    await User.update(
+        { last_logged_shop_id: null },
+        {
+            where: {
+                id: userIds,
+                last_logged_shop_id: shopId,
+            },
+            transaction,
+        }
+    );
+};
+
+const invalidateSessionsForUsers = async (userIds, transaction) => {
+    for (const userId of userIds) {
+        await invalidateUserSessions(userId, { transaction });
+    }
+};
+
+const assertNoActiveGrowthOsRole = async (userId, transaction) => {
+    const activeRole = await GrowthOsUserRole.findOne({
+        attributes: ['id'],
+        where: {
+            user_id: userId,
+            is_active: true,
+            revoked_at: { [Op.is]: null },
+        },
+        transaction,
+    });
+    if (activeRole) {
+        throw new AppError(
+            'The target user has an active Growth OS role. Use a merchant account without Growth OS access.',
+            409,
+            'GROWTH_OS_MERCHANT_ROLE_CONFLICT',
+        );
+    }
+};
+
+const assertSingleOwner = async (shopId, transaction) => {
+    const owners = await UserShop.count({
+        where: { shop_id: shopId, role: 'owner', is_active: true },
+        transaction,
+    });
+    if (owners > 1) throw new AppError('Shop cannot have multiple owners', 400);
+};
 
 /**
  * Get the single shop for a user.
@@ -74,6 +128,27 @@ const createShop = async (userId, shopData) => {
     const transaction = await sequelize.transaction();
 
     try {
+        const account = await User.findByPk(userId, {
+            attributes: ['id'],
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (!account) throw new AppError('User not found', 404);
+
+        // Repeat the one-shop check after locking the account row. The initial
+        // read is only a fast rejection; this locked check closes the race
+        // between two concurrent shop-creation requests.
+        const existingInTransaction = await UserShop.findOne({
+            where: { user_id: userId, role: 'owner', is_active: true },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (existingInTransaction) {
+            throw new AppError('Each account can only have one shop. Please manage your existing shop.', 409);
+        }
+
+        await assertNoActiveGrowthOsRole(userId, transaction);
+
         // Create shop
         const resolvedName = shopData.shop_name || shopData.name || 'My Shop';
         const shop = await Shop.create({
@@ -173,118 +248,169 @@ const updateShopById = async (shopId, userId, updateData) => {
  * Delete shop by ID (owner only)
  */
 const deleteShopById = async (shopId, userId) => {
-    // Verify user is owner
-    const userShop = await UserShop.findOne({
-        where: {
-            shop_id: shopId,
-            user_id: userId,
-            role: 'owner',
-            is_active: true
+    return sequelize.transaction(async (transaction) => {
+        // Verify user is owner
+        const userShop = await UserShop.findOne({
+            where: {
+                shop_id: shopId,
+                user_id: userId,
+                role: 'owner',
+                is_active: true
+            },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+
+        if (!userShop) {
+            throw new AppError('Only shop owners can delete the shop', 403);
         }
+
+        // Capture active members before the shop delete cascades its UserShop rows.
+        const activeMemberships = await UserShop.findAll({
+            attributes: ['user_id'],
+            where: { shop_id: shopId, is_active: true },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        const affectedUserIds = distinctUserIds(activeMemberships);
+
+        await clearLastLoggedShop(affectedUserIds, shopId, transaction);
+
+        // Delete shop (this will cascade delete UserShop records)
+        await Shop.destroy({ where: { id: shopId }, transaction });
+
+        // Keep invalidation last so cache/session failure rejects the transaction.
+        await invalidateSessionsForUsers(affectedUserIds, transaction);
+
+        return { message: 'Shop deleted successfully' };
     });
-
-    if (!userShop) {
-        throw new AppError('Only shop owners can delete the shop', 403);
-    }
-
-    // Delete shop (this will cascade delete UserShop records)
-    await Shop.destroy({ where: { id: shopId } });
-
-    return { message: 'Shop deleted successfully' };
 };
 
 /**
  * Add user to shop with role
  */
 const addUserToShop = async (shopId, requestingUserId, email, role) => {
-    // Verify requesting user is owner or admin
-    const requestingUserShop = await UserShop.findOne({
-        where: {
-            shop_id: shopId,
-            user_id: requestingUserId,
-            is_active: true
+    return sequelize.transaction(async (transaction) => {
+        // Verify requesting user is owner or admin
+        const requestingUserShop = await UserShop.findOne({
+            where: {
+                shop_id: shopId,
+                user_id: requestingUserId,
+                is_active: true
+            },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+
+        if (!requestingUserShop || (requestingUserShop.role !== 'owner' && requestingUserShop.role !== 'admin')) {
+            throw new AppError('Only shop owners or admins can add users', 403);
         }
-    });
 
-    if (!requestingUserShop || (requestingUserShop.role !== 'owner' && requestingUserShop.role !== 'admin')) {
-        throw new AppError('Only shop owners or admins can add users', 403);
-    }
+        // Lock the shop row to serialize owner-count validation for concurrent
+        // membership additions.
+        const shop = await Shop.findByPk(shopId, {
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (!shop) throw new AppError('Shop not found', 404);
 
-    // Find user by email
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-        throw new AppError('User not found with this email', 404);
-    }
-
-    // Check if user already has access to this shop
-    const existingUserShop = await UserShop.findOne({
-        where: {
-            shop_id: shopId,
-            user_id: user.id
+        // Lock the target user row so role grants/reactivation cannot race a
+        // merchant membership grant for the same account.
+        const user = await User.findOne({
+            where: { email },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (!user) {
+            throw new AppError('User not found with this email', 404);
         }
-    });
 
-    if (existingUserShop) {
-        if (existingUserShop.is_active) {
-            throw new AppError('User already has access to this shop', 400);
-        } else {
-            // Reactivate if previously deactivated
-            await existingUserShop.update({ is_active: true, role });
+        await assertNoActiveGrowthOsRole(user.id, transaction);
+
+        // Check if the user already has access to this shop
+        const existingUserShop = await UserShop.findOne({
+            where: {
+                shop_id: shopId,
+                user_id: user.id
+            },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+
+        if (existingUserShop) {
+            if (existingUserShop.is_active) {
+                throw new AppError('User already has access to this shop', 400);
+            }
+
+            // Reactivate if previously deactivated.
+            await existingUserShop.update({ is_active: true, role }, { transaction });
+            await assertSingleOwner(shop.id, transaction);
             return existingUserShop;
         }
-    }
 
-    // Create UserShop record
-    const userShop = await UserShop.create({
-        user_id: user.id,
-        shop_id: shopId,
-        role,
-        is_active: true
+        // Create UserShop record inside the same transaction as all checks.
+        const userShop = await UserShop.create({
+            user_id: user.id,
+            shop_id: shopId,
+            role,
+            is_active: true
+        }, { transaction });
+
+        await assertSingleOwner(shop.id, transaction);
+        return userShop;
     });
-
-        // Multi-owner safety validation
-        const owners = await UserShop.count({ where: { shop_id: shop.id, role: 'owner', is_active: true }, transaction });
-        if (owners > 1) throw new AppError('Shop cannot have multiple owners', 400);
-    return userShop;
 };
 
 /**
  * Remove user from shop
  */
 const removeUserFromShop = async (shopId, requestingUserId, targetUserId) => {
-    // Verify requesting user is owner or admin
-    const requestingUserShop = await UserShop.findOne({
-        where: {
-            shop_id: shopId,
-            user_id: requestingUserId,
-            is_active: true
+    return sequelize.transaction(async (transaction) => {
+        // Verify requesting user is owner or admin
+        const requestingUserShop = await UserShop.findOne({
+            where: {
+                shop_id: shopId,
+                user_id: requestingUserId,
+                is_active: true
+            },
+            transaction,
+        });
+
+        if (!requestingUserShop || (requestingUserShop.role !== 'owner' && requestingUserShop.role !== 'admin')) {
+            throw new AppError('Only shop owners or admins can remove users', 403);
         }
-    });
 
-    if (!requestingUserShop || (requestingUserShop.role !== 'owner' && requestingUserShop.role !== 'admin')) {
-        throw new AppError('Only shop owners or admins can remove users', 403);
-    }
+        // Cannot remove owner
+        const targetUserShop = await UserShop.findOne({
+            where: {
+                shop_id: shopId,
+                user_id: targetUserId
+            },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
 
-    // Cannot remove owner
-    const targetUserShop = await UserShop.findOne({
-        where: {
-            shop_id: shopId,
-            user_id: targetUserId
+        if (!targetUserShop) {
+            throw new AppError('User not found in this shop', 404);
         }
+
+        if (targetUserShop.role === 'owner') {
+            throw new AppError('Cannot remove shop owner', 400);
+        }
+
+        const wasActive = targetUserShop.is_active === true;
+
+        // Deactivate user access
+        await targetUserShop.update({ is_active: false }, { transaction });
+
+        if (wasActive) {
+            await clearLastLoggedShop([targetUserShop.user_id], shopId, transaction);
+            // Keep invalidation last so cache/session failure rejects the transaction.
+            await invalidateSessionsForUsers([targetUserShop.user_id], transaction);
+        }
+
+        return { message: 'User removed from shop successfully' };
     });
-
-    if (!targetUserShop) {
-        throw new AppError('User not found in this shop', 404);
-    }
-
-    if (targetUserShop.role === 'owner') {
-        throw new AppError('Cannot remove shop owner', 400);
-    }
-
-    // Deactivate user access
-    await targetUserShop.update({ is_active: false });
-
-    return { message: 'User removed from shop successfully' };
 };
 
 /**

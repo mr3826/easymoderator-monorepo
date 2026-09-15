@@ -7,6 +7,17 @@
 'use strict';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
+jest.mock('../../../config/redis', () => ({
+    cacheRedis: null,
+    sessionRedis: null,
+    rateLimitRedis: null,
+    legacyRedis: null,
+}));
+
+jest.mock('../../auth/session-invalidation.service', () => ({
+    invalidateUserSessions: jest.fn().mockResolvedValue(1),
+}));
+
 const mockShop = {
     id: 'shop-1',
     shop_name: 'My BD Shop',
@@ -18,7 +29,7 @@ const mockShop = {
 };
 
 jest.mock('../../entities', () => ({
-    User: { findByPk: jest.fn() },
+    User: { findByPk: jest.fn(), findOne: jest.fn(), update: jest.fn() },
     Shop: {
         findByPk: jest.fn(),
         create: jest.fn(),
@@ -28,19 +39,33 @@ jest.mock('../../entities', () => ({
         findAll: jest.fn(),
         findOne: jest.fn(),
         create: jest.fn(),
+        count: jest.fn(),
         update: jest.fn(),
         destroy: jest.fn(),
     },
     Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
+    GrowthOsUserRole: { findOne: jest.fn() },
 }));
+
+const mockTransaction = {
+    LOCK: { UPDATE: 'UPDATE' },
+    commit: jest.fn(),
+    rollback: jest.fn(),
+};
 
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
         transaction: jest.fn(async (cb) => {
-            const t = { commit: jest.fn(), rollback: jest.fn() };
-            if (typeof cb === 'function') return cb(t);
-            return t;
+            if (typeof cb !== 'function') return mockTransaction;
+            try {
+                const result = await cb(mockTransaction);
+                await mockTransaction.commit();
+                return result;
+            } catch (error) {
+                await mockTransaction.rollback();
+                throw error;
+            }
         })
     }
 }));
@@ -68,7 +93,7 @@ jest.mock('../../../utils/sse-manager', () => ({
     emit: jest.fn(),
 }));
 
-const { Shop, UserShop, Subscription } = require('../../entities');
+const { Shop, User, UserShop, Subscription, GrowthOsUserRole } = require('../../entities');
 const shopService = require('src/modules/shop/shop.service');
 const auditService = require('../../audit/audit.service');
 const sseManager = require('../../../utils/sse-manager');
@@ -88,12 +113,19 @@ const mockUserShop = {
 describe('Shop Service', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        Shop.findByPk.mockReset();
+        UserShop.findOne.mockReset();
         Shop.findByPk.mockResolvedValue({ ...mockShop, update: jest.fn().mockResolvedValue(true) });
         Shop.create.mockResolvedValue({ ...mockShop, toJSON: mockShop.toJSON });
         Shop.destroy.mockResolvedValue(1);
         UserShop.findOne.mockResolvedValue({ ...mockUserShop });
         UserShop.findAll.mockResolvedValue([{ ...mockUserShop }]);
         UserShop.create.mockResolvedValue({ id: 'us-1' });
+        UserShop.count.mockResolvedValue(1);
+        User.findByPk.mockResolvedValue({ id: 'user-1' });
+        User.findOne.mockResolvedValue({ id: 'user-2', email: 'invitee@example.com' });
+        User.update.mockResolvedValue([1]);
+        GrowthOsUserRole.findOne.mockResolvedValue(null);
     });
 
     // ── getShopsByUserId ───────────────────────────────────────────────────────
@@ -177,6 +209,91 @@ describe('Shop Service', () => {
             .rejects.toMatchObject({ status: 409 });
         expect(Shop.create).not.toHaveBeenCalled();
     });
+
+    it('createShop — rejects an active Growth OS user before creating a merchant shop', async () => {
+        GrowthOsUserRole.findOne.mockResolvedValue({ id: 'growth-role-1' });
+
+        await expect(shopService.createShop('user-1', { shop_name: 'Blocked Shop' }))
+            .rejects.toMatchObject({
+                status: 409,
+                code: 'GROWTH_OS_MERCHANT_ROLE_CONFLICT',
+            });
+        expect(Shop.create).not.toHaveBeenCalled();
+    });
+    });
+
+    // ── addUserToShop ──────────────────────────────────────────────────────────
+
+    describe('addUserToShop', () => {
+        it('adds a user and validates the owner count inside one transaction', async () => {
+            UserShop.findOne
+                .mockResolvedValueOnce({ ...mockUserShop, role: 'admin' })
+                .mockResolvedValueOnce(null);
+            User.findOne.mockResolvedValueOnce({ id: 'user-2', email: 'invitee@example.com' });
+            UserShop.create.mockResolvedValueOnce({ id: 'us-2', user_id: 'user-2' });
+
+            const result = await shopService.addUserToShop(
+                'shop-1',
+                'user-1',
+                'invitee@example.com',
+                'staff',
+            );
+
+            expect(result).toEqual(expect.objectContaining({ id: 'us-2' }));
+            expect(UserShop.create).toHaveBeenCalledWith(
+                { user_id: 'user-2', shop_id: 'shop-1', role: 'staff', is_active: true },
+                expect.objectContaining({ transaction: mockTransaction }),
+            );
+            expect(UserShop.count).toHaveBeenCalledWith(expect.objectContaining({
+                where: { shop_id: 'shop-1', role: 'owner', is_active: true },
+                transaction: mockTransaction,
+            }));
+            expect(mockTransaction.commit).toHaveBeenCalled();
+        });
+
+        it('rolls back the new membership when owner validation fails', async () => {
+            UserShop.findOne
+                .mockResolvedValueOnce({ ...mockUserShop, role: 'owner' })
+                .mockResolvedValueOnce(null);
+            User.findOne.mockResolvedValueOnce({ id: 'user-2', email: 'invitee@example.com' });
+            UserShop.create.mockResolvedValueOnce({ id: 'us-2' });
+            UserShop.count.mockResolvedValueOnce(2);
+
+            await expect(shopService.addUserToShop(
+                'shop-1',
+                'user-1',
+                'invitee@example.com',
+                'owner',
+            )).rejects.toMatchObject({ status: 400 });
+
+            expect(mockTransaction.rollback).toHaveBeenCalled();
+        });
+
+        it('rejects reactivation for a user with an active Growth OS role', async () => {
+            const inactiveMembership = {
+                id: 'us-2',
+                user_id: 'user-2',
+                shop_id: 'shop-1',
+                is_active: false,
+                update: jest.fn(),
+            };
+            UserShop.findOne
+                .mockResolvedValueOnce({ ...mockUserShop, role: 'owner' })
+                .mockResolvedValueOnce(inactiveMembership);
+            User.findOne.mockResolvedValueOnce({ id: 'user-2', email: 'invitee@example.com' });
+            GrowthOsUserRole.findOne.mockResolvedValueOnce({ id: 'growth-role-1' });
+
+            await expect(shopService.addUserToShop(
+                'shop-1',
+                'user-1',
+                'invitee@example.com',
+                'staff',
+            )).rejects.toMatchObject({
+                status: 409,
+                code: 'GROWTH_OS_MERCHANT_ROLE_CONFLICT',
+            });
+            expect(inactiveMembership.update).not.toHaveBeenCalled();
+        });
     });
 
     // ── updateShopById ─────────────────────────────────────────────────────────

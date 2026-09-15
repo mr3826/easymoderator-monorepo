@@ -3,13 +3,14 @@ const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 const { User } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
+const { isTemporaryPasswordExpired } = require('../modules/auth/temporary-password');
 
 /**
  * Authentication middleware
  * Checks Bearer header first, then falls back to httpOnly cookie.
  * Also verifies the token has not been blacklisted (logout revocation).
  */
-const authenticate = async (req, res, next) => {
+const authenticateRequest = async (req, res, next, { allowPasswordChange = false } = {}) => {
     try {
         // 1. Extract token — prefer Authorization header, fall back to cookie
         let token = null;
@@ -63,6 +64,30 @@ const authenticate = async (req, res, next) => {
             throw new AppError('Token has been invalidated. Please login again.', 401);
         }
 
+        const passwordChangeRequired = decoded.passwordChangeRequired === true;
+        if (passwordChangeRequired) {
+            if (isTemporaryPasswordExpired(decoded.temporaryPasswordExpiresAt)) {
+                throw new AppError(
+                    'Temporary password has expired. Request a new one.',
+                    401,
+                    'AUTH_TEMPORARY_PASSWORD_EXPIRED',
+                );
+            }
+            if (!allowPasswordChange) {
+                throw new AppError(
+                    'Password change required before continuing.',
+                    403,
+                    'AUTH_PASSWORD_CHANGE_REQUIRED',
+                );
+            }
+        } else if (allowPasswordChange) {
+            throw new AppError(
+                'Password change session is required.',
+                401,
+                'AUTH_PASSWORD_CHANGE_SESSION_REQUIRED',
+            );
+        }
+
         // 5. Attach user data to request
         req.user = {
             userId: decoded.userId,
@@ -73,6 +98,8 @@ const authenticate = async (req, res, next) => {
             // token without it is intentionally not sufficient for privileged
             // Growth roles.
             mfaVerified: decoded.mfaVerified === true,
+            passwordChangeRequired,
+            temporaryPasswordExpiresAt: decoded.temporaryPasswordExpiresAt || null,
         };
 
         next();
@@ -84,6 +111,15 @@ const authenticate = async (req, res, next) => {
         }
     }
 };
+
+const authenticate = (req, res, next) => authenticateRequest(req, res, next);
+
+const authenticateForPasswordChange = (req, res, next) => authenticateRequest(
+    req,
+    res,
+    next,
+    { allowPasswordChange: true },
+);
 
 /**
  * Block API access for suspended shops.
@@ -126,4 +162,4 @@ const checkSubscriptionStatus = async (req, res, next) => {
     }
 };
 
-module.exports = { authenticate, checkSubscriptionStatus };
+module.exports = { authenticate, authenticateForPasswordChange, checkSubscriptionStatus };

@@ -29,6 +29,7 @@ const LEGACY_ROLES = [
 const quote = (values) => values.map((value) => `'${value}'`).join(', ');
 
 module.exports = {
+  name: '20260913_001_growth_os_role_model',
   async up(sequelize) {
     if (sequelize.getDialect() !== 'postgres') {
       console.log('[20260913_001] named CHECK replacement skipped on non-PostgreSQL dialect');
@@ -36,7 +37,7 @@ module.exports = {
     }
     await sequelize.query(
       `ALTER TABLE growth_os_user_roles
-         DROP CONSTRAINT growth_os_user_roles_role_check`,
+         DROP CONSTRAINT IF EXISTS growth_os_user_roles_role_check`,
     );
     await sequelize.query(
       `ALTER TABLE growth_os_user_roles
@@ -59,7 +60,7 @@ module.exports = {
     }
     await sequelize.query(
       `ALTER TABLE growth_os_user_roles
-         DROP CONSTRAINT growth_os_user_roles_role_check`,
+         DROP CONSTRAINT IF EXISTS growth_os_user_roles_role_check`,
     );
     await sequelize.query(
       `ALTER TABLE growth_os_user_roles

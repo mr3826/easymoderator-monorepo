@@ -15,6 +15,9 @@ const {
   resolveCanonicalRole,
 } = require('./growth-os.permissions');
 const roles = require('./growth-os.roles.service');
+const { getTemporaryPasswordExpiry } = require('../auth/temporary-password');
+const { invalidateUserSessions } = require('../auth/session-invalidation.service');
+const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
 
 function badRequest(message, code) {
   throw new AppError(message, 400, code);
@@ -31,7 +34,7 @@ function normalizeReason(reason) {
   if (!normalized || normalized.length > 200) {
     badRequest('reason is required and must be 200 characters or fewer.', 'GROWTH_OS_INVALID_REASON');
   }
-  return normalized;
+  return redactSecretiveValues(normalized);
 }
 
 function generateTempPassword() {
@@ -50,9 +53,9 @@ async function writeUserAdminAudit({
       action,
       resource_type: 'GROWTH_OS_USER_ADMIN',
       resource_id: targetUserId,
-      old_values: oldValues || null,
-      new_values: newValues || null,
-      metadata: { source: 'growth_os_user_admin', reason, target_user_id: targetUserId },
+      old_values: redactSecretiveValues(oldValues || null),
+      new_values: redactSecretiveValues(newValues || null),
+      metadata: redactSecretiveValues({ source: 'growth_os_user_admin', reason, target_user_id: targetUserId }),
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
     }, { transaction });
@@ -128,7 +131,9 @@ async function listGrowthUsers({ search = '' } = {}) {
 function sequelizeLiteralIsActive() {
   const { literal } = require('sequelize');
   // 'active first' ordering without a raw string column injection surface.
-  return literal('CASE WHEN "is_active" AND "revoked_at" IS NULL THEN 1 ELSE 0 END');
+  return literal(
+    'CASE WHEN "GrowthOsUserRole"."is_active" AND "GrowthOsUserRole"."revoked_at" IS NULL THEN 1 ELSE 0 END',
+  );
 }
 
 async function createGrowthUser({
@@ -152,6 +157,7 @@ async function createGrowthUser({
 
   const tempPassword = generateTempPassword();
   const hashedPassword = await hashPassword(tempPassword);
+  const temporaryPasswordExpiresAt = getTemporaryPasswordExpiry();
 
   let created;
   try {
@@ -174,6 +180,8 @@ async function createGrowthUser({
         password: hashedPassword,
         full_name: displayName,
         phone: null,
+        must_change_password: true,
+        temporary_password_expires_at: temporaryPasswordExpiresAt,
         settings: { internal_growth_user: true },
       }, { transaction });
 
@@ -218,6 +226,7 @@ async function createGrowthUser({
     },
     // One-time credential delivery channel; never persisted in plaintext.
     initialPassword: tempPassword,
+    temporaryPasswordExpiresAt: temporaryPasswordExpiresAt.toISOString(),
   };
 }
 
@@ -266,45 +275,60 @@ async function resetGrowthUserPassword({
   const { sequelize } = require('../../utils/database/database-setup');
   const { User, GrowthOsUserRole } = require('../entities');
   const { hashPassword } = require('../../utils/password.util');
-  const { invalidateUserSessions } = require('../auth/auth.service');
-
-  const target = await User.findByPk(targetUserId, { attributes: ['id', 'email'] });
-  if (!target) {
-    throw new AppError('Growth OS user was not found.', 404, 'GROWTH_OS_USER_NOT_FOUND');
-  }
-
-  // Accidental self-lockout prevention: the password of the only active
-  // Super Admin cannot be reset until a second Super Admin exists.
-  const targetActiveRole = await GrowthOsUserRole.findOne({
-    attributes: ['role'],
-    where: { user_id: targetUserId, is_active: true, revoked_at: { [Op.is]: null } },
-  });
-  if (targetActiveRole && roles.isSuperAdminRoleValue(targetActiveRole.role)) {
-    const superAdmins = await GrowthOsUserRole.count({
-      where: {
-        role: { [Op.in]: roles.SUPER_ADMIN_ROLE_VALUES },
-        is_active: true,
-        revoked_at: { [Op.is]: null },
-      },
-    });
-    if (superAdmins <= 1) {
-      throw new AppError(
-        'The password of the only active Super Admin cannot be reset. Ensure another Super Admin exists first.',
-        409,
-        'GROWTH_OS_LAST_SUPER_ADMIN',
-      );
-    }
-  }
 
   const tempPassword = generateTempPassword();
   const hashedPassword = await hashPassword(tempPassword);
-  // Password write and its audit row commit together; sessions are bumped
-  // after commit so every prior token is rejected by the revocation check.
-  await sequelize.transaction(async (transaction) => {
-    await User.update(
-      { password: hashedPassword },
-      { where: { id: targetUserId }, transaction },
-    );
+  const temporaryPasswordExpiresAt = getTemporaryPasswordExpiry();
+  const reset = await sequelize.transaction(async (transaction) => {
+    const target = await User.findByPk(targetUserId, {
+      attributes: ['id', 'email'],
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!target) {
+      throw new AppError('Growth OS user was not found.', 404, 'GROWTH_OS_USER_NOT_FOUND');
+    }
+
+    const internalRole = await GrowthOsUserRole.findOne({
+      attributes: ['id', 'role', 'is_active', 'revoked_at'],
+      where: { user_id: targetUserId, revoked_at: { [Op.is]: null } },
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!internalRole) {
+      throw new AppError('The target account has no Growth OS access.', 404, 'GROWTH_OS_NOT_INTERNAL_USER');
+    }
+
+    // Accidental self-lockout prevention: the password of the only active
+    // Super Admin cannot be reset until a second Super Admin exists.
+    const targetActiveRole = await GrowthOsUserRole.findOne({
+      attributes: ['role'],
+      where: { user_id: targetUserId, is_active: true, revoked_at: { [Op.is]: null } },
+      transaction,
+    });
+    if (targetActiveRole && roles.isSuperAdminRoleValue(targetActiveRole.role)) {
+      const superAdmins = await GrowthOsUserRole.count({
+        where: {
+          role: { [Op.in]: roles.SUPER_ADMIN_ROLE_VALUES },
+          is_active: true,
+          revoked_at: { [Op.is]: null },
+        },
+        transaction,
+      });
+      if (superAdmins <= 1) {
+        throw new AppError(
+          'The password of the only active Super Admin cannot be reset. Ensure another Super Admin exists first.',
+          409,
+          'GROWTH_OS_LAST_SUPER_ADMIN',
+        );
+      }
+    }
+
+    await target.update({
+      password: hashedPassword,
+      must_change_password: true,
+      temporary_password_expires_at: temporaryPasswordExpiresAt,
+    }, { transaction });
     await writeUserAdminAudit({
       actorUserId,
       targetUserId,
@@ -315,9 +339,14 @@ async function resetGrowthUserPassword({
       ipAddress,
       userAgent,
     }, transaction);
+    await invalidateUserSessions(targetUserId, { transaction });
+    return { userId: target.id, email: target.email };
   });
-  await invalidateUserSessions(targetUserId);
-  return { userId: targetUserId, email: target.email, initialPassword: tempPassword };
+  return {
+    ...reset,
+    initialPassword: tempPassword,
+    temporaryPasswordExpiresAt: temporaryPasswordExpiresAt.toISOString(),
+  };
 }
 
 async function revokeGrowthUserSessions({
@@ -325,29 +354,41 @@ async function revokeGrowthUserSessions({
 }) {
   assertUuid(targetUserId, 'targetUserId');
   const normalizedReason = normalizeReason(reason);
-  const { invalidateUserSessions } = require('../auth/auth.service');
-  const { User } = require('../entities');
-  const target = await User.findByPk(targetUserId, { attributes: ['id'] });
-  if (!target) {
-    throw new AppError('Growth OS user was not found.', 404, 'GROWTH_OS_USER_NOT_FOUND');
-  }
-  await invalidateUserSessions(targetUserId);
-  await logAdminNote({
-    actorUserId,
-    targetUserId,
-    action: 'growth_os:user_sessions_revoked',
-    reason: normalizedReason,
-    ipAddress,
-    userAgent,
-  });
-  return { sessionsRevoked: true };
-}
-
-async function logAdminNote({ actorUserId, targetUserId, action, reason, ipAddress, userAgent }) {
   const { sequelize } = require('../../utils/database/database-setup');
-  await sequelize.transaction((transaction) => writeUserAdminAudit({
-    actorUserId, targetUserId, action, oldValues: null, newValues: null, reason, ipAddress, userAgent,
-  }, transaction));
+  const { User, GrowthOsUserRole } = require('../entities');
+  return sequelize.transaction(async (transaction) => {
+    const target = await User.findByPk(targetUserId, {
+      attributes: ['id'],
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!target) {
+      throw new AppError('Growth OS user was not found.', 404, 'GROWTH_OS_USER_NOT_FOUND');
+    }
+
+    const internalRole = await GrowthOsUserRole.findOne({
+      attributes: ['id'],
+      where: { user_id: targetUserId, revoked_at: { [Op.is]: null } },
+      transaction,
+      lock: transaction.LOCK?.UPDATE,
+    });
+    if (!internalRole) {
+      throw new AppError('The target account has no Growth OS access.', 404, 'GROWTH_OS_NOT_INTERNAL_USER');
+    }
+
+    await writeUserAdminAudit({
+      actorUserId,
+      targetUserId,
+      action: 'growth_os:user_sessions_revoked',
+      oldValues: null,
+      newValues: null,
+      reason: normalizedReason,
+      ipAddress,
+      userAgent,
+    }, transaction);
+    await invalidateUserSessions(targetUserId, { transaction });
+    return { sessionsRevoked: true };
+  });
 }
 
 module.exports = {

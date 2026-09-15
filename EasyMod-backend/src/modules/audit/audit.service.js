@@ -21,10 +21,10 @@ class AuditService {
         metadata = null,
         ipAddress = null,
         userAgent = null,
-        idempotencyKey = null
-    }) {
+         idempotencyKey = null
+    }, { transaction = null, required = false } = {}) {
         try {
-            await AuditLog.create({
+            const auditPayload = {
                 user_id: userId,
                 shop_id: shopId,
                 action,
@@ -36,8 +36,14 @@ class AuditService {
                 ip_address: ipAddress,
                 user_agent: userAgent,
                 idempotency_key: idempotencyKey
-            });
+            };
+            if (transaction) {
+                await AuditLog.create(auditPayload, { transaction });
+            } else {
+                await AuditLog.create(auditPayload);
+            }
         } catch (error) {
+            if (required) throw error;
             // Log audit failure but don't fail the operation
             console.error('Failed to create audit log:', error);
         }

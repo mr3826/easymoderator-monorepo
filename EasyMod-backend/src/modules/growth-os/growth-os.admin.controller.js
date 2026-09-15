@@ -14,7 +14,10 @@ function base(req) {
   };
 }
 
-const isSuper = (req) => req.growthOs?.role === 'SUPER_ADMIN';
+// Only a directly granted canonical SUPER_ADMIN receives the Admin Control
+// Plane. Legacy FOUNDER rows display as SUPER_ADMIN for compatibility but
+// retain their historical permission map until an audited migration.
+const isSuper = (req) => req.growthOs?.rawRole === 'SUPER_ADMIN';
 
 async function listMerchants(req, res, next) {
   try {
@@ -69,6 +72,7 @@ async function grantMerchantCredits(req, res, next) {
       shopId: req.params.shopId,
       amount: req.body.amount,
       reason: req.body.reason,
+      idempotencyKey: req.get('Idempotency-Key'),
     });
     res.json({ success: true, data });
   } catch (error) {
@@ -82,19 +86,6 @@ async function requestChannelReconnect(req, res, next) {
       ...base(req),
       shopId: req.params.shopId,
       channelId: req.params.channelId,
-      reason: req.body.reason,
-    });
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
-  }
-}
-
-async function emergencyDisableMerchantAi(req, res, next) {
-  try {
-    const data = await merchants.emergencyDisableMerchantAi({
-      ...base(req),
-      shopId: req.params.shopId,
       reason: req.body.reason,
     });
     res.json({ success: true, data });
@@ -131,7 +122,6 @@ module.exports = {
   setMerchantStatus,
   grantMerchantCredits,
   requestChannelReconnect,
-  emergencyDisableMerchantAi,
   operations,
   auditLogs,
 };

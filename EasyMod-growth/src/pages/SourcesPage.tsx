@@ -90,7 +90,7 @@ export function SourcesPage() {
         <div>
           <p className="eyebrow">Acquisition attribution</p>
           <h1 id="sources-title">Sources</h1>
-          <p className="page-lede">Leads and activations per controlled source over the last {WINDOW_DAYS} days.</p>
+  <p className="page-lede">Leads and Growth activations per controlled source over the last {WINDOW_DAYS} days.</p>
         </div>
         <div className="button-row">
           <button className="icon-button" type="button" aria-label="Refresh source analytics" title="Refresh source analytics" onClick={() => setReloadToken((current) => current + 1)}>
@@ -120,13 +120,13 @@ export function SourcesPage() {
         ) : (
           <div className="table-scroll">
             <table className="data-table">
-              <caption className="sr-only">Leads, activations, and activation rate by acquisition source</caption>
+           <caption className="sr-only">Leads, Growth activations, and activation rate by acquisition source</caption>
               <thead>
                 <tr>
                   <th scope="col">Source</th>
                   <th scope="col">Leads</th>
-                  <th scope="col">Activated</th>
-                  <th scope="col">Activation rate</th>
+                  <th scope="col">Growth activated</th>
+                  <th scope="col">Growth activation rate</th>
                 </tr>
               </thead>
               <tbody>

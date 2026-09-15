@@ -76,7 +76,7 @@ describe('QuickAddPage', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it('preflights duplicates on identity blur and allows continuing anyway', async () => {
+  it('preflights duplicates and blocks creation until the identity is changed', async () => {
     const user = userEvent.setup();
     vi.spyOn(growthApi, 'checkProspectDuplicates').mockResolvedValue({
       matches: [{ prospectId: 'existing-1', businessName: 'Existing Rahim', status: 'qualified', matchedFields: ['contactPhone'] }],
@@ -91,15 +91,11 @@ describe('QuickAddPage', () => {
     expect(await screen.findByText('Possible duplicate prospect')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Existing Rahim' })).toHaveAttribute('href', '/prospects/existing-1');
     expect(create).not.toHaveBeenCalled();
+    expect(screen.getByText(/Creation is blocked while the identity matches/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create anyway|continue and create/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Continue and create anyway' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      businessName: 'Rahim Fashion',
-      source: 'manual_entry',
-    })));
-
-    expect(await screen.findByRole('heading', { name: 'Prospect created' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open prospect record' })).toHaveAttribute('href', '/prospects/prospect-9');
+    await user.click(screen.getByRole('button', { name: 'Create prospect' }));
+    await waitFor(() => expect(create).not.toHaveBeenCalled());
   });
 
   it('captures a default source and schedules the first follow-up from the success panel', async () => {

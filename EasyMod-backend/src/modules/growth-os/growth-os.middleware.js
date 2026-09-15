@@ -64,14 +64,16 @@ async function resolveGrowthOsAccess(userId) {
   await assertGrowthOsRuntimeReady();
 
   const cacheKey = `growth-os:user:${userId}:role`;
-  const cached = await cacheService.getStrict(cacheKey);
+  const readRoleCache = config.env === 'development' ? cacheService.get : cacheService.getStrict;
+  const writeRoleCache = config.env === 'development' ? cacheService.set : cacheService.setStrict;
+  const cached = await readRoleCache.call(cacheService, cacheKey);
   if (cached !== null && cached !== undefined) {
     return cached === 'NONE' ? null : buildAccess(cached);
   }
 
   const roleRecord = await repository.findActiveRoleForUser(userId);
   const role = roleRecord?.role || null;
-  await cacheService.setStrict(cacheKey, role || 'NONE', ROLE_CACHE_TTL_SECONDS);
+  await writeRoleCache.call(cacheService, cacheKey, role || 'NONE', ROLE_CACHE_TTL_SECONDS);
 
   return role ? buildAccess(role) : null;
 }
@@ -99,12 +101,24 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
       }
 
       const access = await resolveGrowthOsAccess(userId);
+      const permissionRole = access?.rawRole || access?.role;
       const hasRequiredPermission = typeof requiredPermission === 'function'
         ? requiredPermission(access)
         : (Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission])
-          .some((permission) => hasPermission(access?.role, permission));
+          .some((permission) => hasPermission(permissionRole, permission));
       if (!access || !hasRequiredPermission) {
         throw new AppError('Forbidden: Growth OS access required.', 403, 'GROWTH_OS_FORBIDDEN');
+      }
+
+      // Internal Growth identities are global and must never carry a merchant
+      // shop session. Merchant context is authorized by the merchant stack,
+      // not by Growth OS role permissions.
+      if (req.user.shopId) {
+        throw new AppError(
+          'Growth OS requests cannot carry merchant shop context.',
+          403,
+          'GROWTH_OS_MERCHANT_CONTEXT_FORBIDDEN',
+        );
       }
 
       // Growth roles are global internal roles. Require an authentication

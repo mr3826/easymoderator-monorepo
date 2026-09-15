@@ -134,74 +134,115 @@ async function getHome({ access, userId, isSuperAdmin }) {
 
 // ── Growth funnel analytics ─────────────────────────────────────────────────
 
+const NOT_AVAILABLE_METRICS = Object.freeze([
+  'reply_rate',
+  'cac',
+  'cohort_retention',
+]);
+
+function medianHours(values) {
+  const seconds = medianSeconds(values);
+  return seconds === null ? null : Math.round((seconds / 3600) * 10) / 10;
+}
+
+function eventTimesByProspect(rows, eventType, toValue) {
+  const times = new Map();
+  for (const row of rows) {
+    if (row.event_type !== eventType || (toValue && row.to_value !== toValue)) continue;
+    const at = new Date(row.created_at).getTime();
+    if (!Number.isFinite(at)) continue;
+    const previous = times.get(row.prospect_id);
+    if (!previous || at < previous) times.set(row.prospect_id, at);
+  }
+  return times;
+}
+
+function durationHours(prospectRows, eventTimes, cohortField = 'source_recorded_at') {
+  return prospectRows.map((row) => {
+    const cohort = new Date(row[cohortField] || row.created_at).getTime();
+    const eventAt = eventTimes.get(row.id);
+    return Number.isFinite(cohort) && Number.isFinite(eventAt) && eventAt >= cohort
+      ? (eventAt - cohort) / 1000
+      : null;
+  }).filter((value) => value !== null);
+}
+
 async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
   const window = Math.min(Math.max(parseInt(windowDays, 10) || 90, 7), 365);
   const since = dayFloor(window);
-  const { GrowthOsProspect, GrowthOsProspectEvent } = getModels();
+  const { GrowthOsProspect, GrowthOsProspectEvent, Shop } = getModels();
   const scope = resolveProspectScope(access, userId);
-  const baseWhere = scope.where;
+  const baseWhere = { ...scope.where, status: { [Op.ne]: 'merged' } };
+  const cohortWhere = { ...baseWhere, source_recorded_at: { [Op.gte]: since } };
+  const eventInclude = [{
+    association: 'prospect',
+    required: true,
+    where: cohortWhere,
+    attributes: [],
+  }];
 
-  const [statusRows, sourceRows, convertedBySource, firstContactLags, activationLags, disqualifiedCount] = await Promise.all([
+  const [statusRows, sourceRows, activatedRows, prospectRows, eventRows, lostRows] = await Promise.all([
     GrowthOsProspect.findAll({
       attributes: ['status', literal('COUNT(*)::int AS count')],
-      where: { ...baseWhere, created_at: { [Op.gte]: since } },
+      where: cohortWhere,
       group: ['status'],
       raw: true,
     }),
     GrowthOsProspect.findAll({
       attributes: ['source', literal('COUNT(*)::int AS count')],
-      where: { ...baseWhere, created_at: { [Op.gte]: since } },
+      where: cohortWhere,
       group: ['source'],
       raw: true,
     }),
     GrowthOsProspect.findAll({
-      attributes: ['source', literal('COUNT(*)::int AS count')],
-      where: { ...baseWhere, status: 'converted', created_at: { [Op.gte]: since } },
-      group: ['source'],
+      attributes: ['id', 'source', 'source_recorded_at', 'created_at'],
+      where: { ...cohortWhere, status: 'converted', linked_shop_id: { [Op.ne]: null } },
+      include: [{ model: Shop, as: 'linkedShop', required: true, attributes: [], where: { is_active: true } }],
+      order: [['source_recorded_at', 'ASC'], ['id', 'ASC']],
       raw: true,
     }),
-    // Seconds between prospect creation and its first status-change event.
+    GrowthOsProspect.findAll({
+      attributes: ['id', 'source', 'source_recorded_at', 'created_at', 'status', 'disqualified_reason'],
+      where: cohortWhere,
+      order: [['source_recorded_at', 'ASC'], ['id', 'ASC']],
+      raw: true,
+    }),
+    // Ordered, uncapped event read. Aggregation below is deterministic and does
+    // not silently discard prospects after an arbitrary first 500 rows.
     GrowthOsProspectEvent.findAll({
-      attributes: [
-        [fn('MIN', col('GrowthOsProspectEvent.created_at')), 'first_change_at'],
-        [col('prospect.created_at'), 'prospect_created_at'],
-      ],
-      include: [{
-        association: 'prospect',
-        required: true,
-        where: { ...baseWhere, created_at: { [Op.gte]: since } },
-        attributes: [],
-      }],
-      where: {
-        event_type: 'status_changed',
-        to_value: { [Op.in]: ['contacted', 'qualifying', 'qualified', 'onboarding', 'converted'] },
-      },
-      group: ['prospect_id', 'prospect.created_at'],
-      limit: 500,
+      attributes: ['prospect_id', 'event_type', 'to_value', 'created_at'],
+      include: eventInclude,
+      where: { event_type: { [Op.in]: ['status_changed', 'followup_created'] } },
+      order: [['created_at', 'ASC'], ['id', 'ASC']],
       raw: true,
     }),
     GrowthOsProspect.findAll({
-      attributes: ['created_at', 'status_changed_at'],
-      where: { ...baseWhere, status: 'converted', created_at: { [Op.gte]: since } },
-      limit: 500,
+      attributes: ['status', 'disqualified_reason'],
+      where: { ...cohortWhere, status: { [Op.in]: ['disqualified', 'unreachable'] } },
       raw: true,
-    }),
-    GrowthOsProspect.count({
-      where: { ...baseWhere, status: { [Op.in]: ['disqualified', 'unreachable'] }, created_at: { [Op.gte]: since } },
     }),
   ]);
 
   const statusCounts = statusRows.reduce((acc, row) => { acc[row.status] = Number(row.count); return acc; }, {});
-  const converted = statusCounts.converted || 0;
-  const created = statusRows.reduce((sum, row) => sum + Number(row.count), 0);
-
-  const firstContactSeconds = firstContactLags
-    .map((row) => (new Date(row.first_change_at).getTime() - new Date(row.prospect_created_at).getTime()) / 1000)
-    .filter((seconds) => Number.isFinite(seconds) && seconds >= 0);
-
-  const activationSeconds = activationLags
-    .map((row) => (new Date(row.status_changed_at).getTime() - new Date(row.created_at).getTime()) / 1000)
-    .filter((seconds) => Number.isFinite(seconds) && seconds >= 0);
+  const created = prospectRows.length;
+  const activated = activatedRows.length;
+  const firstContact = eventTimesByProspect(eventRows, 'status_changed');
+  const qualification = eventTimesByProspect(eventRows, 'status_changed', 'qualified');
+  const followup = eventTimesByProspect(eventRows, 'followup_created');
+  const lostReasons = lostRows.reduce((acc, row) => {
+    const reason = row.disqualified_reason || (row.status === 'unreachable' ? 'unreachable' : 'unspecified');
+    acc[reason] = (acc[reason] || 0) + 1;
+    return acc;
+  }, {});
+  const sourceToActivation = activatedRows.reduce((acc, row) => {
+    acc[row.source] = (acc[row.source] || 0) + 1;
+    return acc;
+  }, {});
+  const sourceCounts = sourceRows.reduce((acc, row) => { acc[row.source] = Number(row.count); return acc; }, {});
+  const sourceRates = Object.fromEntries(Object.entries(sourceCounts).map(([source, count]) => [
+    source,
+    count > 0 ? Math.round(((sourceToActivation[source] || 0) / count) * 1000) / 10 : null,
+  ]));
 
   return {
     windowDays: window,
@@ -212,26 +253,26 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
         + (statusCounts.qualified || 0) + (statusCounts.onboarding || 0) + (statusCounts.converted || 0),
       qualified: (statusCounts.qualified || 0) + (statusCounts.onboarding || 0) + (statusCounts.converted || 0),
       onboarding: statusCounts.onboarding || 0,
-      activated: converted,
-      lost: disqualifiedCount,
+      activated,
+      lost: lostRows.length,
     },
     conversion: {
-      createdToActivated: created > 0 ? Math.round((converted / created) * 1000) / 10 : null,
+      createdToActivated: created > 0 ? Math.round((activated / created) * 1000) / 10 : null,
     },
     byStatus: statusCounts,
-    bySource: sourceRows.reduce((acc, row) => { acc[row.source] = Number(row.count); return acc; }, {}),
-    activatedBySource: convertedBySource.reduce((acc, row) => { acc[row.source] = Number(row.count); return acc; }, {}),
+    bySource: sourceCounts,
+    activatedBySource: sourceToActivation,
+    sourceToActivation: sourceRates,
+    lostReasons,
     timing: {
-      medianHoursToFirstContact: firstContactSeconds.length
-        ? Math.round((medianSeconds(firstContactSeconds) / 3600) * 10) / 10
-        : null,
-      medianHoursCreatedToActivated: activationSeconds.length
-        ? Math.round((medianSeconds(activationSeconds) / 3600) * 10) / 10
-        : null,
+      medianHoursToFirstContact: medianHours(durationHours(prospectRows, firstContact)),
+      medianHoursToQualification: medianHours(durationHours(prospectRows, qualification)),
+      medianHoursToFirstFollowup: medianHours(durationHours(prospectRows, followup)),
+      medianHoursCreatedToActivated: medianHours(durationHours(activatedRows, eventTimesByProspect(eventRows, 'status_changed', 'converted'))),
     },
-    // Metrics intentionally NOT shown: outreach volume, reply rate, CAC,
-    // cohort retention — their source events do not exist yet (§31).
-    notAvailable: ['outreach_volume', 'reply_rate', 'cac', 'cohort_retention'],
+    leadToActivation: created > 0 ? Math.round((activated / created) * 1000) / 10 : null,
+    notAvailable: NOT_AVAILABLE_METRICS,
+    cohort: { basis: 'source_recorded_at', importedAt: 'created_at', eventAt: 'prospect_events.created_at' },
   };
 }
 
@@ -246,15 +287,27 @@ async function globalSearch({ access, userId, query, isSuperAdmin }) {
     throw new AppError('query must be 100 characters or fewer.', 400, 'GROWTH_OS_SEARCH_QUERY_INVALID');
   }
   const pattern = likePattern(term);
+  const normalizedTerm = term.toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  const normalizedPattern = likePattern(normalizedTerm);
   const limit = 10;
   const { GrowthOsProspect, User, Shop, Subscription } = getModels();
 
   const out = { prospects: [], merchants: [], users: [] };
 
   const prospectScope = resolveProspectScope(access, userId);
-  const prospectOr = [
-    { normalized_business_name: { [Op.iLike]: pattern } },
-  ];
+  const prospectOr = [];
+  if (normalizedTerm) {
+    prospectOr.push({ normalized_business_name: { [Op.iLike]: normalizedPattern } });
+  }
+  prospectOr.push(
+        { contact_name: { [Op.iLike]: pattern } },
+        { contact_phone: { [Op.iLike]: pattern } },
+        { contact_email: { [Op.iLike]: pattern } },
+        { page_url: { [Op.iLike]: pattern } },
+  );
   if (term.includes('@')) {
     prospectOr.push({ normalized_email: term.toLowerCase() });
   }
@@ -360,7 +413,6 @@ async function globalSearch({ access, userId, query, isSuperAdmin }) {
       merchantName: shop.shop_name || shop.name,
       signupDate: shop.created_at,
       planName: shop.subscription?.plan_name || null,
-      activated: Boolean(shop.settings?.activation?.activated_at),
     }));
   }
 

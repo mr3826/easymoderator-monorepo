@@ -20,7 +20,11 @@ function makeAnalytics(overrides: Partial<GrowthAnalyticsResponse> = {}): Growth
     byStatus: { new: 40, contacted: 20, qualified: 5, onboarding: 8, converted: 5 },
     bySource: { facebook: 60 },
     activatedBySource: { facebook: 5 },
-    timing: { medianHoursToFirstContact: 6.5, medianHoursCreatedToActivated: null },
+    sourceToActivation: { facebook: 8.3 },
+    lostReasons: { price: 4 },
+    timing: { medianHoursToFirstContact: 6.5, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
+    leadToActivation: 5,
+    cohort: { basis: 'source_recorded_at', importedAt: 'created_at', eventAt: 'prospect_events.created_at' },
     notAvailable: ['outreach_volume', 'reply_rate', 'cac', 'cohort_retention'],
     ...overrides,
   };
@@ -88,7 +92,7 @@ describe('AnalyticsPage', () => {
   it('shows dashes for null conversion and timing values', async () => {
     vi.spyOn(workspaceApi, 'growthAnalytics').mockResolvedValue(makeAnalytics({
       conversion: { createdToActivated: null },
-      timing: { medianHoursToFirstContact: null, medianHoursCreatedToActivated: null },
+      timing: { medianHoursToFirstContact: null, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
     }));
 
     renderPage();

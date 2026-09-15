@@ -70,7 +70,7 @@ export function AnalyticsPage() {
     { label: 'Contacted or beyond', value: data.funnel.contactedOrBeyond },
     { label: 'Qualified', value: data.funnel.qualified },
     { label: 'Onboarding', value: data.funnel.onboarding },
-    { label: 'Activated', value: data.funnel.activated },
+    { label: 'Growth activated', value: data.funnel.activated },
   ];
   const funnelMax = Math.max(1, ...funnelSteps.map((step) => step.value));
   const statusRows = Object.entries(data.byStatus ?? {})
@@ -131,15 +131,15 @@ export function AnalyticsPage() {
         </div>
         <div className="content-card attention-card">
           <span className="metric">{data.conversion.createdToActivated === null ? '—' : `${data.conversion.createdToActivated}%`}</span>
-          <strong>Created to activated</strong>
+          <strong>Lead to Growth activation</strong>
         </div>
         <div className="content-card attention-card">
           <span className="metric">{hoursLabel(data.timing.medianHoursToFirstContact)}</span>
           <strong>Median hours to first contact</strong>
         </div>
         <div className="content-card attention-card">
-          <span className="metric">{hoursLabel(data.timing.medianHoursCreatedToActivated)}</span>
-          <strong>Median hours created to activated</strong>
+            <span className="metric">{hoursLabel(data.timing.medianHoursCreatedToActivated)}</span>
+            <strong>Median hours to Growth activation</strong>
         </div>
       </div>
 

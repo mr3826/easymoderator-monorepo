@@ -3,19 +3,15 @@
 // Canonical two-role model for Growth OS internal users.
 //
 // SUPER_ADMIN  — full Growth Workspace + Admin Control Plane + growth-user
-//                management. Legacy FOUNDER rows resolve here.
+//                management.
 // GROWTH_USER  — full Growth Workspace (prospects, follow-ups, notes,
 //                sources, analytics) + limited read-only merchant insight.
-//                Legacy BUSINESS_EXECUTIVE / MARKETER / CUSTOMER_SUCCESS /
-//                READ_ONLY_ANALYST rows resolve here. The legacy GROWTH_MANAGER
-//                rows also resolve here but keep their historical MFA
-//                assurance requirement (see growth-os.middleware).
 //
-// Legacy role strings remain part of the physical enum because historical
-// growth_os_user_roles rows still carry them; they are never grantable.
-// Permission names exist only for implemented routes — speculative
-// permissions (campaigns/tasks/customer-health/trials/retention/config/team)
-// were removed because no route, service, or UI consumed them.
+// Legacy role strings remain part of the physical enum because historical rows
+// still carry them; they are compatibility-only and never grantable. Their
+// permission maps remain separate below until an explicit audited migration
+// changes their scope. ROLE_ALIASES is for display/session compatibility only
+// and must never select a legacy row's permissions.
 
 const GROWTH_OS_CANONICAL_ROLES = Object.freeze({
   SUPER_ADMIN: 'SUPER_ADMIN',
@@ -36,6 +32,9 @@ const GROWTH_OS_ROLES = Object.freeze({
   ...LEGACY_GROWTH_OS_ROLES,
 });
 
+// These aliases preserve the canonical role shown in sessions and admin
+// displays. They are not authorization aliases; raw legacy roles keep their
+// historical least-privilege permissions until an audited migration runs.
 const ROLE_ALIASES = Object.freeze({
   [LEGACY_GROWTH_OS_ROLES.FOUNDER]: GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN,
   [LEGACY_GROWTH_OS_ROLES.GROWTH_MANAGER]: GROWTH_OS_CANONICAL_ROLES.GROWTH_USER,
@@ -63,6 +62,7 @@ const GROWTH_WORKSPACE_PERMISSIONS = Object.freeze([
   'growth_os.prospects.update_assigned',
   'growth_os.prospects.read_source_scope',
   'growth_os.reports.read_all',
+  'growth_os.reports.read_source_scope',
   'growth_os.followups.manage',
   'growth_os.notes.manage',
   'growth_os.search.read',
@@ -86,6 +86,36 @@ const PERMISSIONS_BY_ROLE = Object.freeze({
   ]),
   [GROWTH_OS_CANONICAL_ROLES.GROWTH_USER]: Object.freeze([
     ...GROWTH_WORKSPACE_PERMISSIONS,
+  ]),
+  // Compatibility-only legacy maps. Do not widen these maps by changing an
+  // alias; use an explicit audited migration to change historical scope.
+  [LEGACY_GROWTH_OS_ROLES.FOUNDER]: Object.freeze([
+    'growth_os.session.read',
+    'growth_os.roles.manage',
+    'growth_os.prospects.read_all',
+    'growth_os.prospects.manage_all',
+    'growth_os.reports.read_all',
+  ]),
+  [LEGACY_GROWTH_OS_ROLES.GROWTH_MANAGER]: Object.freeze([
+    'growth_os.session.read',
+    'growth_os.prospects.read_all',
+    'growth_os.prospects.manage_all',
+  ]),
+  [LEGACY_GROWTH_OS_ROLES.BUSINESS_EXECUTIVE]: Object.freeze([
+    'growth_os.session.read',
+    'growth_os.prospects.read_assigned',
+    'growth_os.prospects.update_assigned',
+  ]),
+  [LEGACY_GROWTH_OS_ROLES.MARKETER]: Object.freeze([
+    'growth_os.session.read',
+    'growth_os.prospects.read_source_scope',
+    'growth_os.reports.read_source_scope',
+  ]),
+  [LEGACY_GROWTH_OS_ROLES.CUSTOMER_SUCCESS]: Object.freeze([
+    'growth_os.session.read',
+  ]),
+  [LEGACY_GROWTH_OS_ROLES.READ_ONLY_ANALYST]: Object.freeze([
+    'growth_os.session.read',
   ]),
 });
 
@@ -114,17 +144,18 @@ function resolveCanonicalRole(role) {
 }
 
 function isLegacyGrowthOsRole(role) {
-  return Object.prototype.hasOwnProperty.call(ROLE_ALIASES, role);
+  return Object.prototype.hasOwnProperty.call(LEGACY_GROWTH_OS_ROLES, role);
 }
 
 function getRolePriority(role) {
-  return ROLE_PRIORITY[role] || 0;
+  return Object.prototype.hasOwnProperty.call(ROLE_PRIORITY, role)
+    ? ROLE_PRIORITY[role]
+    : 0;
 }
 
-function getPermissionsForRole(role) {
-  const canonical = resolveCanonicalRole(role);
-  if (!canonical) return [];
-  return [...PERMISSIONS_BY_ROLE[canonical]];
+function getPermissionsForRole(rawRole) {
+  if (!isGrowthOsRole(rawRole)) return [];
+  return [...PERMISSIONS_BY_ROLE[rawRole]];
 }
 
 function hasPermission(role, permission) {
