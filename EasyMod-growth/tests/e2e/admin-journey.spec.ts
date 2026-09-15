@@ -111,8 +111,8 @@ test('the created user is server-enforced GROWTH_USER; suspend and revoke deny f
     && response.status() === 200
   ));
   const refreshUsersResponse = page.waitForResponse((response) => (
-    response.request().method() === 'GET'
-    && response.url().includes('/api/internal/growth-os/admin/users')
+    response.request().method() === 'POST'
+    && response.url().endsWith('/api/internal/growth-os/admin/users/search')
     && response.status() === 200
   ));
   await suspendForm.getByRole('button', { name: 'Confirm suspend' }).click();

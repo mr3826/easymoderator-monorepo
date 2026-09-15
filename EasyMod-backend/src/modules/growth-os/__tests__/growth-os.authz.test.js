@@ -319,4 +319,14 @@ describe('Growth OS session authorization', () => {
     expect(res.status).toBe(403);
     expect(growthRoleService.grantRole).not.toHaveBeenCalled();
   });
+
+  it('protects the POST Growth user search endpoint with the read permission', async () => {
+    roleHolder.user = { userId: 'merchant-owner-1', email: 'owner@example.com', mfaVerified: false };
+
+    const res = await request(app)
+      .post('/api/internal/growth-os/admin/users/search')
+      .send({ search: 'owner@example.com' });
+
+    expect(res.status).toBe(403);
+  });
 });

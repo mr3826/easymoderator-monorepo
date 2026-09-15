@@ -124,6 +124,30 @@ describe('Growth API security contract', () => {
     expect(requestOptions.headers).toMatchObject({ 'X-CSRF-Token': 'csrf-for-duplicate' });
   });
 
+  it('keeps Growth user search terms out of API URLs', async () => {
+    vi.resetModules();
+    const { growthUsersApi: freshGrowthUsersApi } = await import('./client');
+    const fetchMock = vi.fn((url: string) => Promise.resolve(
+      url === '/api/csrf'
+        ? response(200, { csrfToken: 'csrf-for-user-search' })
+        : response(200, { success: true, data: [] }),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await freshGrowthUsersApi.list('owner@example.com');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/internal/growth-os/admin/users/search',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        body: JSON.stringify({ search: 'owner@example.com' }),
+        headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf-for-user-search' }),
+      }),
+    );
+  });
+
   it('serializes bounded timeline pagination on prospect detail requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(200, {
       success: true,

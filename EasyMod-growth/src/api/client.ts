@@ -957,9 +957,9 @@ export interface GrowthUserCreateResponse {
 
 export const growthUsersApi = {
   async list(search = ''): Promise<GrowthUserRow[]> {
-    const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
     const payload = await request<{ success: true; data: GrowthUserRow[] }>(
-      `/api/internal/growth-os/admin/users${query}`,
+      '/api/internal/growth-os/admin/users/search',
+      { method: 'POST', body: JSON.stringify({ search: search.trim() }) },
     );
     return payload.data;
   },

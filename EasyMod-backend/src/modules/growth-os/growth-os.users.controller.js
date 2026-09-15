@@ -15,7 +15,7 @@ function base(req) {
 
 async function listGrowthUsers(req, res, next) {
   try {
-    const data = await users.listGrowthUsers({ search: req.query.search || '' });
+    const data = await users.listGrowthUsers({ search: req.body?.search || '' });
     res.json({ success: true, data });
   } catch (error) {
     next(error);

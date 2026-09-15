@@ -89,7 +89,10 @@ const workspace = {
 
 const usersAdmin = {
   list: {
-    query: Joi.object({ search: boundedText(0, 120).allow('').default('') }),
+    query: Joi.object({}).unknown(false),
+  },
+  search: {
+    body: Joi.object({ search: boundedText(0, 120).allow('').default('') }).unknown(false),
   },
   create: {
     body: Joi.object({

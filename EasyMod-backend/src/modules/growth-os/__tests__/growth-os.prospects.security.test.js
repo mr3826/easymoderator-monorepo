@@ -423,6 +423,9 @@ describe('Growth OS prospect route security', () => {
     const canonicalAdmin = await request(app).get('/api/internal/growth-os/admin/users');
     expect(canonicalAdmin.status).toBe(200);
 
+    const querySearch = await request(app).get('/api/internal/growth-os/admin/users?search=owner%40example.com');
+    expect(querySearch.status).toBe(400);
+
     setIdentity({ id: FOUNDER_ID, role: 'FOUNDER' });
     const legacyRoleGrant = await request(app)
       .post('/api/internal/growth-os/roles')

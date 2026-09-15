@@ -283,6 +283,13 @@ router.get(
 );
 
 router.post(
+  '/admin/users/search',
+  requireGrowthOsAccess('growth_os.admin.users.read'),
+  validateWork(workValidator.usersAdmin.search),
+  usersCtrl.listGrowthUsers,
+);
+
+router.post(
   '/admin/users',
   growthMutationLimiter,
   requireGrowthOsAccess('growth_os.admin.users.manage'),

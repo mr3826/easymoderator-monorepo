@@ -751,8 +751,9 @@ frontend changes remain untouched.
   environment/resource failures, not feature assertions.
 - `STABILIZATION_FIX`: removed search-term email, phone, and page-URL exposure
   from SPA query parameters. Global search and user-result navigation now use
-  router state, and the affected unit and browser assertions verify that the
-  address bar stays on the route without a sensitive query string.
+  router state; Growth user search terms use a CSRF-protected POST body, and the
+  legacy query form is rejected. The affected unit, API, RBAC, and browser
+  assertions verify that sensitive terms stay out of URL and access-log paths.
 - `FULL_REGRESSION`: after the privacy fix and with the unit environment
   explicitly isolated, the root
   aggregate passed backend `229/229` suites and `2819/2819` tests, merchant
