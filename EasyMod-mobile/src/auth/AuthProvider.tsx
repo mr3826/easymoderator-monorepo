@@ -29,13 +29,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // On cold start, a refresh token may already exist in SecureStore from a previous session.
   // Attempt one silent refresh before deciding whether to show the login screen, so the merchant
-  // isn't bounced to login on every app relaunch.
+  // isn't bounced to login on every app relaunch. The backend's refresh response now returns the
+  // same user/shopId shape signin does (Phase 2 contract fix), so this restores `user` too —
+  // previously this discarded the refresh result entirely, leaving `user: null` forever after
+  // every relaunch even though `status` became `'signedIn'`.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const existingRefreshToken = await getRefreshToken();
       if (existingRefreshToken) {
-        await refreshAccessToken();
+        const refreshed = await refreshAccessToken();
+        if (!cancelled && refreshed) setUser(refreshed.user);
       }
       if (!cancelled) setBootstrapped(true);
     })();

@@ -272,3 +272,44 @@ NEXT_PHASE=Phase 2 (Home/Attention + Push — ADR M-007/M-008). Human gate: Fire
 google-services.json (never committed). Track D PR review/merge remains entirely the user's own
 decision, independent of phase sequencing.
 ```
+
+### Correction to the Phase 1 receipt (recorded 2026-09-14, during Phase 2 planning)
+
+The Phase 1 receipt above reports `UNIT_TESTS`, `INTEGRATION_TESTS`, and `ANDROID_BUILD` as PASS
+and describes a mobile client wired to the native-auth backend. That description was incomplete in
+one specific, material way, on the same pattern as the AVD correction in `CURRENT_STATE.md` §13:
+**neither suite, nor the manual Android smoke test, ever exercised a real HTTP round trip between
+the mobile client and the backend.** The backend's integration suite asserted only against its own
+`res.body.data.*` (internally consistent with itself, since it never checked what a real client
+would do with that body); the mobile client's tests validated only a fake `Transport` that returned
+whatever shape the client's own `zod` schema happened to expect. `apiRequest` had zero real call
+sites. Both suites were legitimately green while the two sides silently disagreed on the wire
+contract. Concretely, four real drifts shipped unnoticed:
+
+1. The backend wraps every response as `{ success, message, data: {...} }`
+   (`native-auth.controller.js`); the client's zod schemas parsed the raw body — every real parse
+   would have failed with "Unexpected sign-in response shape from server."
+2. The client posted `{ refreshToken }` to `POST /api/auth/native/refresh`; the Joi validator
+   (`native.validator.js`) requires `refresh_token` (snake_case) — a real call would get a 400.
+3. `shopId` is returned at the top level of `data`; the client's `userSchema` had no such field and
+   read (nonexistent) `user.shopId` elsewhere instead.
+4. `POST /api/auth/native/refresh` returned only `{ accessToken, refreshToken }` — no user at all —
+   so `AuthProvider.tsx`'s cold-start silent refresh restored a token but left `user: null` forever,
+   even though `status` became `'signedIn'`.
+
+This was found during Phase 2 pre-planning discovery (2026-09-14), not caught by either Phase 1
+review pass. It is fixed in Phase 2, lane `mobile/p2-contract`: the mobile client now unwraps the
+envelope before validating, posts `refresh_token`, and reads `shopId` from the unwrapped
+`data.shopId`; the backend's `/refresh` additively returns `shopId` + the same `safeUser(user)`
+shape signin/2fa-verify already return (no change to token rotation/reuse-detection, no change to
+any other field); and `AuthProvider` now stores the user a cold-start refresh returns instead of
+discarding it. A mechanical drift-prevention mechanism now exists specifically so this class of bug
+cannot silently recur: the backend integration suite writes its real response bodies for
+signin/refresh/2fa-verify to a committed fixture
+(`EasyMod-backend/src/modules/auth/native/__tests__/__fixtures__/native-auth-responses.json`), and
+a new mobile test (`EasyMod-mobile/src/auth/native-auth-contract.test.ts`) loads that exact fixture
+and parses it with the production zod schemas/functions from `auth-client.ts`. If either side
+drifts again, one of these two suites fails immediately instead of both staying green.
+
+The Phase 1 receipt's test/build counts above are left exactly as originally recorded — this entry
+does not rewrite that history, it documents what those numbers did not, in fact, prove.

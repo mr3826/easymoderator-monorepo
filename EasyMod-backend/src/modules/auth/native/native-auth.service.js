@@ -272,7 +272,17 @@ const refresh = async (refreshTokenBody, req) => {
         },
     });
 
-    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+    // ADR M-003/Phase 2 contract fix: a cold-start refresh must be able to
+    // fully restore session context (shop + user), not just a bare token
+    // pair — mirroring exactly what signin/2fa-verify already return. This
+    // is a response-shape addition only; every check and mutation above is
+    // unchanged.
+    return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        shopId,
+        user: safeUser(user),
+    };
 };
 
 /**
