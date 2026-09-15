@@ -727,8 +727,11 @@ frontend changes remain untouched.
   idempotency keys for same, concurrent, retry, conflict, and distinct-key
   cases; audit reason/value redaction is centralized; sensitive auth/Growth
   responses are `no-store`; self-lockout and shop-creation races are guarded.
-- `CI`: not yet run; no remote feature branch or PR was present during local
-  verification. Production deployment remains disabled/skipped by policy.
+- `CI`: `PASS` on draft PR #127 at the pushed checkpoint: Security Scan,
+  Test & Build Gate, backend integration, Meta-shaped E2E, Growth build and
+  browser gates, frontend Playwright, deployment dry run, Docker no-push
+  validation, and PR Merge Gate all passed. Image publication and production
+  deployment were skipped.
 - `PRODUCTION_CHANGED`: `NO`; no production connection, mutation, deployment,
   Meta review configuration, OAuth configuration, webhook configuration, or
   secret was changed.
