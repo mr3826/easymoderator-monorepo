@@ -20,11 +20,27 @@ import {
  * through Expo Router's own file-based matching — not a mock of the routing layer.
  *
  * There is no live push system yet (Phase 2b is gated — see ADR M-007's "Required follow-up").
- * Rather than fabricate a Firebase payload, each "notification tap" here is simulated the way a
+ * Rather than fabricate a Firebase payload, every "notification tap" below is simulated the way a
  * future tap handler actually would: build the same `order`/`conversation` + id pair ADR M-007's
  * `data.entity`/`data.id` payload carries, and drive it through `openDeepLink` — the exact
  * function `@/lib/deeplink.ts` documents as "the single place a future notification-tap handler
  * (Phase 2b) should call to open a deep link."
+ *
+ * Every test below renders the full app root at `/` and waits for the signed-in Home tab before
+ * simulating a tap — never a raw `initialUrl` straight into `order/[id]`/`conversation/[id]`.
+ * That is deliberate, not incidental: `_layout.tsx`'s signed-in-only screens don't exist in the
+ * navigator until `status` resolves from `'loading'`, so `renderRouter`'s one-shot `initialUrl`
+ * resolution — which runs before that — has nothing to attach a direct deep-link URL to and
+ * silently falls back to Home once the Stack finally mounts (a real "protected route direct deep
+ * link" race, not a test artifact — confirmed by reproducing it against the actual `_layout.tsx`).
+ * Fixing that race is a `_layout.tsx`/auth-bootstrap architecture change outside this lane's
+ * scope (and, worse, touching it surfaced a second, unrelated pre-existing issue: `renderRouter`'s
+ * test harness doesn't exclude `__tests__/*.test.ts(x)` files from its route discovery the way a
+ * real Metro build does, so making the Stack eagerly resolve every sibling route on mount ends up
+ * `require()`-ing test files as if they were screens). `openDeepLink` is the one real, working,
+ * already-wired entry point for a tap arriving after the app is up — exactly what Phase 2b's tap
+ * handler will call — so every test here drives through it, still against the real route files and
+ * real navigator, without depending on the separately-broken cold-launch path.
  */
 const APP_ROOT = path.resolve(__dirname, '..');
 
@@ -53,14 +69,24 @@ beforeEach(() => {
 
 describe('correct shop resolved', () => {
   it('opens normally for an entity belonging to the signed-in user\'s current shop', async () => {
-    renderRouter(APP_ROOT, { initialUrl: '/order/order-42' });
+    renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    await act(async () => {
+      openDeepLink('order', 'order-42');
+    });
 
     expect(await screen.findByText(i18n.t('mobile.deeplink.order.foundTitle'))).toBeTruthy();
     expect(screen.getByText(i18n.t('mobile.deeplink.order.foundBody', { id: 'order-42' }))).toBeTruthy();
   });
 
   it('opens normally for a conversation too', async () => {
-    renderRouter(APP_ROOT, { initialUrl: '/conversation/convo-42' });
+    renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    await act(async () => {
+      openDeepLink('conversation', 'convo-42');
+    });
 
     expect(await screen.findByText(i18n.t('mobile.deeplink.conversation.foundTitle'))).toBeTruthy();
     expect(
@@ -74,7 +100,12 @@ describe('unauthorized shop blocked', () => {
     const resolution: DeepLinkResolution = { kind: 'unavailable' };
     __setDeepLinkResolverForTests(async () => resolution);
 
-    renderRouter(APP_ROOT, { initialUrl: '/order/other-shops-order' });
+    renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    await act(async () => {
+      openDeepLink('order', 'other-shops-order');
+    });
 
     expect(await screen.findByText(i18n.t('mobile.deeplink.unavailable.title'))).toBeTruthy();
     expect(screen.getByText(i18n.t('mobile.deeplink.unavailable.message'))).toBeTruthy();
@@ -91,7 +122,12 @@ describe('stale/deleted entity handled safely', () => {
     const resolution: DeepLinkResolution = { kind: 'unavailable' };
     __setDeepLinkResolverForTests(async () => resolution);
 
-    renderRouter(APP_ROOT, { initialUrl: '/conversation/deleted-convo' });
+    renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    await act(async () => {
+      openDeepLink('conversation', 'deleted-convo');
+    });
 
     // Byte-identical to the wrong-shop case above (same i18n keys, same `UnavailableBody`
     // component, no kind/id ever threaded into that branch) — that identity, not merely "some
@@ -107,7 +143,12 @@ describe('stale/deleted entity handled safely', () => {
     // the screen must show the loading state, not throw or render nothing.
     __setDeepLinkResolverForTests(() => new Promise(() => {}));
 
-    renderRouter(APP_ROOT, { initialUrl: '/order/still-loading' });
+    renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    await act(async () => {
+      openDeepLink('order', 'still-loading');
+    });
 
     expect(await screen.findByTestId('deeplink-loading')).toBeTruthy();
   });
