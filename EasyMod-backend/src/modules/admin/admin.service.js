@@ -13,6 +13,7 @@ const { AI_REPLY_MODES } = require('../shop/ai-reply-mode');
 const { AppError } = require('../../utils/AppError');
 const { effectiveConversationLimit } = require('../subscription/subscription.access');
 const { countRecentDeliveredOrders } = require('../subscription/partner.service');
+const { redactSecretiveValues } = require('../growth-os/growth-os.audit-sanitizer');
 
 function startOfTodayUTC() {
   const d = new Date();
@@ -321,8 +322,8 @@ async function getAuditLogs({ adminUserId, shopId, action, startDate, endDate, p
       resourceId: r.resource_id,
       shopId: r.shop_id,
       admin: r.user ? { id: r.user.id, name: r.user.full_name, email: r.user.email } : null,
-      oldValues: r.old_values,
-      newValues: r.new_values,
+      oldValues: redactSecretiveValues(r.old_values),
+      newValues: redactSecretiveValues(r.new_values),
       ipAddress: r.ip_address,
       createdAt: r.created_at,
     })),
@@ -436,10 +437,15 @@ async function addCredits(shopId, amount, reason = 'admin_grant', {
   return sequelize.transaction(execute);
 }
 
-async function changePlan(shopId, adminUserId, planData) {
-  const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_name', 'plan_code'] });
+async function changePlan(shopId, adminUserId, planData, { transaction = null } = {}) {
+  const findOptions = { where: { shop_id: shopId }, attributes: ['plan_name', 'plan_code'] };
+  if (transaction) findOptions.transaction = transaction;
+  const sub = await Subscription.findOne(findOptions);
   const before = { plan_name: sub?.plan_name, plan_code: sub?.plan_code };
-  const updated = await subscriptionService.updatePlan(shopId, adminUserId, planData);
+  const updated = await subscriptionService.updatePlan(shopId, adminUserId, planData, {
+    transaction,
+    skipShopAccess: true,
+  });
   return { before, after: { plan_name: updated?.plan_name ?? planData.plan_name, plan_code: planData.plan_code } };
 }
 
@@ -472,12 +478,23 @@ async function markChannelReconnect(shopId, channelId, { transaction = null } = 
  * EMERGENCY: hard-stop a shop's AI through the business-level source of truth.
  * Channel-level reply-mode writes are intentionally not part of this path.
  */
-async function emergencyDisableAi(shopId, adminUserId) {
-  const currentSettings = await shopService.getShopAiSettings(shopId);
+async function emergencyDisableAi(shopId, adminUserId, { transaction = null } = {}) {
+  const currentSettings = transaction
+    ? await shopService.getShopAiSettings(shopId, { transaction })
+    : await shopService.getShopAiSettings(shopId);
   const before = { automation_mode: currentSettings?.automation_mode ?? null };
-  await shopService.updateShopAiSettings(shopId, adminUserId, {
-    automation_mode: AI_REPLY_MODES.MANUAL,
-  });
+  if (transaction) {
+    await shopService.updateShopAiSettings(
+      shopId,
+      adminUserId,
+      { automation_mode: AI_REPLY_MODES.MANUAL },
+      { transaction, auditRequired: true },
+    );
+  } else {
+    await shopService.updateShopAiSettings(shopId, adminUserId, {
+      automation_mode: AI_REPLY_MODES.MANUAL,
+    });
+  }
   return { before, after: { automation_mode: AI_REPLY_MODES.MANUAL } };
 }
 

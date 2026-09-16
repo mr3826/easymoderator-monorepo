@@ -235,83 +235,92 @@ const createDefaultSubscription = async (shopId, { transaction = null, emitEvent
 /**
  * Update plan
  */
-const updatePlan = async (shopId, userId, planData) => {
-    await verifyShopAccess(userId, shopId);
+const updatePlan = async (
+    shopId,
+    userId,
+    planData,
+    { transaction: externalTransaction = null, skipShopAccess = false } = {},
+) => {
+    if (!skipShopAccess) await verifyShopAccess(userId, shopId);
 
-    let subscription = await Subscription.findOne({
-        where: { shop_id: shopId }
-    });
+    const execute = async (transaction) => {
+        const findOptions = { where: { shop_id: shopId } };
+        if (transaction) findOptions.transaction = transaction;
+        let subscription = await Subscription.findOne(findOptions);
+        let createdDefault = false;
 
-    if (!subscription) {
-        subscription = await createDefaultSubscription(shopId);
-    }
+        if (!subscription) {
+            subscription = await createDefaultSubscription(shopId, {
+                transaction,
+                emitEvent: false,
+            });
+            createdDefault = true;
+        }
 
-    const requestedCode = String(planData?.plan_code || '').toUpperCase();
-    if (![PlanCode.SHURU, PlanCode.GROWTH].includes(requestedCode)) {
-        throw new AppError('Only Shuru and Growth can be selected from the merchant billing page', 403);
-    }
+        const requestedCode = String(planData?.plan_code || '').toUpperCase();
+        if (![PlanCode.SHURU, PlanCode.GROWTH].includes(requestedCode)) {
+            throw new AppError('Only Shuru and Growth can be selected from the merchant billing page', 403);
+        }
 
-    const selectedTier = PRICING_TIERS[requestedCode];
-    const billingCycle = planData.billing_cycle || 'monthly';
-    if (!['monthly', 'yearly'].includes(billingCycle)) {
-        throw new AppError('Invalid billing cycle', 400);
-    }
-    // Annual Growth remains readable and renewable for existing customers, but
-    // new plan selections are monthly-only because annual is retired from the
-    // marketing/signup flow.
-    if (billingCycle === 'yearly'
-        && !(subscription.plan_code === PlanCode.GROWTH && subscription.billing_cycle === 'yearly')) {
-        throw new AppError('Annual billing is available only to existing annual Growth subscribers', 400);
-    }
+        const selectedTier = PRICING_TIERS[requestedCode];
+        const billingCycle = planData.billing_cycle || 'monthly';
+        if (!['monthly', 'yearly'].includes(billingCycle)) {
+            throw new AppError('Invalid billing cycle', 400);
+        }
+        // Annual Growth remains readable and renewable for existing customers, but
+        // new plan selections are monthly-only because annual is retired from the
+        // marketing/signup flow.
+        if (billingCycle === 'yearly'
+            && !(subscription.plan_code === PlanCode.GROWTH && subscription.billing_cycle === 'yearly')) {
+            throw new AppError('Annual billing is available only to existing annual Growth subscribers', 400);
+        }
 
-    const currentPlanCode = String(subscription.plan_code || '').toUpperCase();
-    if (requestedCode === PlanCode.GROWTH) {
-        const isSameActivePlan = currentPlanCode === PlanCode.GROWTH
-            && subscription.status === 'active'
-            && billingCycle === subscription.billing_cycle;
-        if (isSameActivePlan) return subscription;
+        const currentPlanCode = String(subscription.plan_code || '').toUpperCase();
+        if (requestedCode === PlanCode.GROWTH) {
+            const isSameActivePlan = currentPlanCode === PlanCode.GROWTH
+                && subscription.status === 'active'
+                && billingCycle === subscription.billing_cycle;
+            if (isSameActivePlan) return { subscription, changed: false };
 
-        throw new AppError(
-            'Growth activation requires a successful bKash payment',
-            402,
-            'PAYMENT_REQUIRED',
-        );
-    }
+            throw new AppError(
+                'Growth activation requires a successful bKash payment',
+                402,
+                'PAYMENT_REQUIRED',
+            );
+        }
 
-    const now = new Date();
-    const nextPeriod = new Date(now);
+        const now = new Date();
+        const nextPeriod = new Date(now);
 
-    if (billingCycle === 'yearly') {
-        nextPeriod.setFullYear(nextPeriod.getFullYear() + 1);
-    } else {
-        nextPeriod.setMonth(nextPeriod.getMonth() + 1);
-    }
+        if (billingCycle === 'yearly') {
+            nextPeriod.setFullYear(nextPeriod.getFullYear() + 1);
+        } else {
+            nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+        }
 
-    const calculatedPlanPrice = billingCycle === 'yearly'
-        ? selectedTier.priceBdtYearly
-        : selectedTier.priceBdtMonthly;
+        const calculatedPlanPrice = billingCycle === 'yearly'
+            ? selectedTier.priceBdtYearly
+            : selectedTier.priceBdtMonthly;
 
-    const oldPrice = parseFloat(subscription.plan_price || 0);
-    const oldPlanCode = subscription.plan_code;
-    const newPrice = calculatedPlanPrice;
-    const newPlanName = selectedTier.name;
+        const oldPrice = parseFloat(subscription.plan_price || 0);
+        const oldPlanCode = subscription.plan_code;
+        const newPrice = calculatedPlanPrice;
+        const newPlanName = selectedTier.name;
 
-    // Proration: on upgrade mid-cycle, charge the difference for remaining days.
-    // Downgrade takes effect at the next billing date — no immediate charge.
-    const isUpgrade = newPrice > oldPrice;
-    const periodStart = subscription.current_period_start
-        ? new Date(subscription.current_period_start)
-        : now;
-    const periodEnd = subscription.current_period_end
-        ? new Date(subscription.current_period_end)
-        : nextPeriod;
+        // Proration: on upgrade mid-cycle, charge the difference for remaining days.
+        // Downgrade takes effect at the next billing date — no immediate charge.
+        const isUpgrade = newPrice > oldPrice;
+        const periodStart = subscription.current_period_start
+            ? new Date(subscription.current_period_start)
+            : now;
+        const periodEnd = subscription.current_period_end
+            ? new Date(subscription.current_period_end)
+            : nextPeriod;
 
-    const msPerDay = 1000 * 60 * 60 * 24;
-    const daysRemaining = Math.max(0, Math.ceil((periodEnd - now) / msPerDay));
-    const totalDays = Math.max(1, Math.ceil((periodEnd - periodStart) / msPerDay));
+        const msPerDay = 1000 * 60 * 60 * 24;
+        const daysRemaining = Math.max(0, Math.ceil((periodEnd - now) / msPerDay));
+        const totalDays = Math.max(1, Math.ceil((periodEnd - periodStart) / msPerDay));
 
-    const transaction = await sequelize.transaction();
-    try {
         // An open renewal belongs to the old plan snapshot. Cancel it in the
         // same transaction as the plan change so dunning cannot suspend the new plan.
         await cancelOpenRecurringInvoices(subscription.id, transaction);
@@ -340,7 +349,7 @@ const updatePlan = async (shopId, userId, planData) => {
                     addon_amount: 0,
                     status: 'pending',
                     due_date: dueDate,
-                    notes: `Prorated charge for ${daysRemaining} remaining days (${Math.round(fraction * 100)}% of billing period)`
+                    notes: `Prorated charge for ${daysRemaining} remaining days (${Math.round(fraction * 100)}% of billing period)`,
                 }, { transaction });
             }
         }
@@ -361,27 +370,38 @@ const updatePlan = async (shopId, userId, planData) => {
             usage_reset_at: null,
             current_period_start: now,
             current_period_end: nextPeriod,
-            next_billing_date: nextPeriod
+            next_billing_date: nextPeriod,
         }, { transaction });
-        await transaction.commit();
-    } catch (error) {
-        await Promise.resolve(transaction.rollback()).catch(() => {});
-        throw error;
+        return { subscription, changed: true, createdDefault, oldPlanCode, selectedTier, billingCycle };
+    };
+
+    const result = externalTransaction
+        ? await execute(externalTransaction)
+        : await sequelize.transaction(execute);
+    if (!result.changed) return result.subscription;
+
+    const event = () => {
+        recordFunnelEventSafe(result.createdDefault || result.selectedTier.code === PlanCode.SHURU
+            ? 'plan_assigned_shuru'
+            : 'plan_upgraded', {
+            shopId,
+            metadata: {
+                from_plan: result.oldPlanCode || null,
+                to_plan: result.selectedTier?.code || PlanCode.SHURU,
+                billing_cycle: result.billingCycle || 'monthly',
+            },
+        });
+    };
+    if (externalTransaction && typeof externalTransaction.afterCommit === 'function') {
+        externalTransaction.afterCommit(() => {
+            void cacheService.clearForShop(shopId).then(event).catch(() => {});
+        });
+    } else {
+        await cacheService.clearForShop(shopId);
+        event();
     }
 
-    // Invalidate cached subscription/limits so the next request reflects the new plan
-    await cacheService.clearForShop(shopId);
-
-    recordFunnelEventSafe(selectedTier.code === PlanCode.SHURU ? 'plan_assigned_shuru' : 'plan_upgraded', {
-        shopId,
-        metadata: {
-            from_plan: oldPlanCode,
-            to_plan: selectedTier.code,
-            billing_cycle: billingCycle,
-        },
-    });
-
-    return subscription;
+    return result.subscription;
 };
 
 /**

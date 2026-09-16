@@ -19,7 +19,7 @@ const {
   canManageAll,
   canRead,
 } = require('./growth-os.prospect.scope');
-const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
+const { redactSecretiveValues, redactSensitiveUrl } = require('./growth-os.audit-sanitizer');
 
 const logger = createLogger('GrowthOsProspectService');
 
@@ -233,6 +233,7 @@ function buildCreateValues(data = {}, { actorUserId = null, internal = false } =
   if (internal && data.source_recorded_at !== undefined && data.source_recorded_at !== null) {
     values.source_recorded_at = dateValue(data.source_recorded_at, 'sourceRecordedAt');
   }
+  if (values.page_url !== undefined) values.page_url = redactSensitiveUrl(values.page_url);
 
   const identity = assertIdentity(values);
   assertLifecycleValues({ ...values, ...identity });
@@ -268,6 +269,7 @@ function buildUpdateValues(current, data = {}) {
   assertStringLength(values.source_detail, 'sourceDetail', 160);
   assertStringLength(values.source_reference, 'sourceReference', 255);
   if (hasField(data, 'metadata')) values.metadata = assertMetadata(values.metadata);
+  if (values.page_url !== undefined) values.page_url = redactSensitiveUrl(values.page_url);
 
   const nextValues = {
     ...current,
@@ -291,6 +293,7 @@ function plain(record) {
 }
 
 const AUDIT_SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp)/i;
+const AUDIT_URL_KEY = /(?:page[_-]?url|source[_-]?url|redirect[_-]?uri|callback[_-]?url)/i;
 
 function sanitizeAuditValue(value, depth = 0) {
   if (depth > 8) return '[redacted]';
@@ -302,9 +305,11 @@ function sanitizeAuditValue(value, depth = 0) {
   if (value && typeof value === 'object') {
     const sanitized = {};
     for (const [key, child] of Object.entries(value)) {
-      sanitized[key] = AUDIT_SENSITIVE_KEY.test(key)
-        ? '[redacted]'
-        : sanitizeAuditValue(child, depth + 1);
+      sanitized[key] = AUDIT_URL_KEY.test(key)
+        ? redactSensitiveUrl(child)
+        : AUDIT_SENSITIVE_KEY.test(key)
+          ? '[redacted]'
+          : sanitizeAuditValue(child, depth + 1);
     }
     return sanitized;
   }
@@ -334,7 +339,7 @@ function toApiProspect(record, scope) {
     contactName: redacted ? null : data.contact_name,
     contactPhone: redacted ? null : data.contact_phone,
     contactEmail: redacted ? null : data.contact_email,
-    pageUrl: redacted ? null : data.page_url,
+    pageUrl: redacted ? null : redactSensitiveUrl(data.page_url),
     niche: data.niche,
     notes: redacted ? null : data.notes,
     source: data.source,
@@ -892,7 +897,6 @@ class GrowthOsProspectService {
     const scope = assertReadScope(access, userId);
     if (!isProspectStatus(status)) throw invalidInput('status is invalid.');
     const db = getSequelize();
-    let linkedShopForActivation = null;
     const result = await runWithDatabaseProtection(() => db.transaction(async (transaction) => {
       const prospect = await repository.findProspectById(prospectId, {
         scope,
@@ -944,30 +948,36 @@ class GrowthOsProspectService {
         ...mutationAudit(audit),
       }, transaction);
       if (status === 'onboarding' && prospect.linked_shop_id) {
-        linkedShopForActivation = prospect.linked_shop_id;
+        const { Shop } = repository.getModels();
+        const shop = await Shop.findByPk(prospect.linked_shop_id, {
+          attributes: ['settings', 'is_active'],
+          transaction,
+          lock: transaction.LOCK?.UPDATE,
+        });
+        if (shop?.is_active === true && shop.settings?.first_ai_reply?.occurred_at) {
+          const activationOldValues = auditSnapshot(prospect);
+          await prospect.update({
+            status: 'converted',
+            status_changed_at: new Date(),
+          }, { transaction });
+          await recordMutation({
+            prospectId: prospect.id,
+            actorUserId: userId,
+            eventType: 'activated',
+            fromValue: activationOldValues.status,
+            toValue: 'converted',
+            reason: 'first_successful_ai_reply',
+            changedFields: ['status', 'status_changed_at'],
+            metadata: { shop_id: prospect.linked_shop_id },
+            action: 'growth_os:prospect_activated',
+            oldValues: activationOldValues,
+            newValues: auditSnapshot(prospect),
+            ...mutationAudit(audit),
+          }, transaction);
+        }
       }
       return toApiProspect(prospect, scope);
     }));
-
-    // Canonical Growth activation is the prospect reaching a linked active
-    // merchant/shop outcome. A first AI reply is only an operational signal.
-    if (status === 'onboarding' && linkedShopForActivation) {
-      try {
-        const { Shop } = require('../entities');
-         const shop = await Shop.findByPk(linkedShopForActivation, { attributes: ['settings', 'is_active'] });
-         if (shop?.is_active === true && shop.settings?.activation?.activated_at) {
-          await this.markLinkedShopsActivated({ shopId: linkedShopForActivation });
-          const fresh = await runWithDatabaseProtection(
-            () => repository.findProspectById(prospectId, { scope }),
-            { operation: 'activation_reread' },
-          );
-          if (fresh) return toApiProspect(fresh, scope);
-        }
-      } catch (error) {
-        if (error instanceof AppError && error.statusCode !== 503) throw error;
-        logServiceError('Growth activation sync after onboarding failed', error, { prospectId });
-      }
-    }
     return result;
   }
 
@@ -1171,25 +1181,24 @@ class GrowthOsProspectService {
   }
 
   /**
-   * Complete canonical activation for prospects linked to an active shop.
-   * This is deliberately independent from the first successful AI reply
-   * operational milestone.
+   * Complete canonical activation for prospects linked to a shop after its
+   * first successful AI reply. An external transaction keeps the shop
+   * milestone, prospect transition, and audit row atomic.
    */
-  async markLinkedShopsActivated({ shopId, conversationId = null } = {}) {
+  async markLinkedShopsActivated({ shopId, conversationId = null, actorUserId = null, transaction: externalTransaction = null } = {}) {
     if (!shopId) return { activated: 0 };
     const db = getSequelize();
     const { GrowthOsProspect, Shop } = repository.getModels();
-    const inOnboarding = await runWithDatabaseProtection(async () => GrowthOsProspect.findAll({
-      attributes: ['id', 'status'],
-      where: { linked_shop_id: shopId, status: 'onboarding' },
-      include: [{ model: Shop, as: 'linkedShop', required: true, attributes: ['is_active', 'settings'], where: { is_active: true } }],
-    }), { operation: 'activation_lookup' });
-    if (inOnboarding.length === 0) return { activated: 0 };
-
-    let activated = 0;
-    for (const candidate of inOnboarding) {
-      if (!candidate.linkedShop?.settings?.activation?.activated_at) continue;
-      await runWithDatabaseProtection(() => db.transaction(async (transaction) => {
+    const activate = async (transaction) => {
+      const inOnboarding = await GrowthOsProspect.findAll({
+        attributes: ['id', 'status'],
+        where: { linked_shop_id: shopId, status: 'onboarding' },
+        include: [{ model: Shop, as: 'linkedShop', required: true, attributes: ['is_active', 'settings'], where: { is_active: true } }],
+        transaction,
+      });
+      let activated = 0;
+      for (const candidate of inOnboarding) {
+        if (!candidate.linkedShop?.settings?.first_ai_reply?.occurred_at) continue;
         const prospect = await repository.findProspectById(candidate.id, {
           scope: null,
           transaction,
@@ -1205,7 +1214,7 @@ class GrowthOsProspectService {
         }, { transaction });
         await recordMutation({
           prospectId: prospect.id,
-          actorUserId: null,
+          actorUserId,
           eventType: 'activated',
           fromValue: oldValues.status,
           toValue: 'converted',
@@ -1217,9 +1226,11 @@ class GrowthOsProspectService {
           newValues: auditSnapshot(prospect),
         }, transaction);
         activated += 1;
-      }), { operation: 'activation_transition' });
-    }
-    return { activated };
+      }
+      return { activated };
+    };
+    if (externalTransaction) return activate(externalTransaction);
+    return runWithDatabaseProtection(() => db.transaction(activate), { operation: 'activation_transition' });
   }
 }
 

@@ -54,6 +54,27 @@ describe('funnel-events.service', () => {
         expect(mockAuditLog.findOrCreate).not.toHaveBeenCalled();
     });
 
+    test('strips query strings and secret-bearing metadata from funnel audit rows', async () => {
+        mockAuditLog.create.mockResolvedValue({ id: 'row-safe' });
+
+        await recordFunnelEvent({
+            event: 'landing_view',
+            metadata: {
+                referer: 'https://growth.easymod.tech/search?q=owner%40example.com',
+                Authorization: 'Bearer jwt-token',
+            },
+            req: {
+                body: { path: 'https://growth.easymod.tech/search?q=owner%40example.com' },
+                headers: { referer: 'https://growth.easymod.tech/?email=owner%40example.com' },
+            },
+        });
+
+        const values = mockAuditLog.create.mock.calls[0][0];
+        expect(values.metadata.path).toBe('https://growth.easymod.tech/search');
+        expect(values.metadata.referer).toBe('https://growth.easymod.tech/search');
+        expect(values.metadata.Authorization).toBeUndefined();
+    });
+
     test('rejects privileged lifecycle events without a trusted server producer', async () => {
         await expect(recordFunnelEvent({ event: 'first_ai_reply_sent', userId: 'user-1' }))
             .rejects.toMatchObject({ statusCode: 403, code: 'FUNNEL_EVENT_SERVER_ONLY' });

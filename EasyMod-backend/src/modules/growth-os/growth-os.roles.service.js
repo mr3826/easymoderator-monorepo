@@ -127,7 +127,79 @@ function safeRole(roleRecord) {
   };
 }
 
-async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, userAgent }) {
+async function assertAuthorizedActor(actorUserId, transaction) {
+  const { GrowthOsUserRole } = require('../entities');
+  const actorRole = await GrowthOsUserRole.findOne({
+    attributes: ['id', 'role'],
+    where: {
+      user_id: actorUserId,
+      role: { [Op.in]: SUPER_ADMIN_ROLE_VALUES },
+      is_active: true,
+      revoked_at: { [Op.is]: null },
+    },
+    transaction,
+    lock: transaction.LOCK?.UPDATE,
+  });
+  if (!actorRole) {
+    throw new AppError(
+      'An active Growth OS Super Admin is required to change roles.',
+      403,
+      'GROWTH_OS_ROLE_ACTOR_FORBIDDEN',
+    );
+  }
+}
+
+async function assertBootstrapActor(actorUserId, transaction) {
+  const configuredEmail = String(process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL || '').trim().toLowerCase();
+  if (!configuredEmail) {
+    throw new AppError(
+      'Growth OS bootstrap actor is not configured.',
+      503,
+      'GROWTH_OS_BOOTSTRAP_NOT_CONFIGURED',
+    );
+  }
+
+  const { GrowthOsUserRole, User } = require('../entities');
+  const { sequelize: db } = require('../../utils/database/database-setup');
+  if (db.getDialect?.() === 'postgres' && typeof db.query === 'function') {
+    await db.query(
+      'SELECT pg_advisory_xact_lock(hashtext(:lockKey))',
+      { replacements: { lockKey: 'easymod:growth-os:first-super-admin' }, transaction },
+    );
+  }
+  const actor = await User.findByPk(actorUserId, {
+    attributes: ['id', 'email'],
+    transaction,
+    lock: transaction.LOCK?.UPDATE,
+  });
+  if (!actor || String(actor.email || '').trim().toLowerCase() !== configuredEmail) {
+    throw new AppError(
+      'The configured Growth OS bootstrap actor could not be verified.',
+      403,
+      'GROWTH_OS_BOOTSTRAP_ACTOR_FORBIDDEN',
+    );
+  }
+
+  const activeSuperAdmin = await GrowthOsUserRole.findOne({
+    attributes: ['id'],
+    where: {
+      role: { [Op.in]: SUPER_ADMIN_ROLE_VALUES },
+      is_active: true,
+      revoked_at: { [Op.is]: null },
+    },
+    transaction,
+    lock: transaction.LOCK?.UPDATE,
+  });
+  if (activeSuperAdmin) {
+    throw new AppError(
+      'Growth OS already has an active Super Admin; use the in-app role controls.',
+      409,
+      'GROWTH_OS_BOOTSTRAP_COMPLETE',
+    );
+  }
+}
+
+async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, userAgent, bootstrap = false }) {
   assertUuid(actorUserId, 'actorUserId');
   assertUuid(targetUserId, 'targetUserId');
   if (!isGrantableGrowthOsRole(role)) {
@@ -137,7 +209,7 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
       'GROWTH_OS_INVALID_ROLE',
     );
   }
-  if (role === GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN && targetUserId === actorUserId) {
+  if (!bootstrap && role === GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN && targetUserId === actorUserId) {
     throw new AppError(
       'A Super Admin cannot grant SUPER_ADMIN to themselves.',
       403,
@@ -149,6 +221,9 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
   const { GrowthOsUserRole, User } = require('../entities');
 
   return sequelize.transaction(async (transaction) => {
+    if (bootstrap) await assertBootstrapActor(actorUserId, transaction);
+    else await assertAuthorizedActor(actorUserId, transaction);
+
     const target = await User.findByPk(targetUserId, {
       attributes: ['id'],
       transaction,
@@ -213,6 +288,8 @@ async function revokeRole({ actorUserId, targetUserId, reason, ipAddress, userAg
   const { GrowthOsUserRole } = require('../entities');
 
   const result = await sequelize.transaction(async (transaction) => {
+    await assertAuthorizedActor(actorUserId, transaction);
+
     const roleRecord = await GrowthOsUserRole.findOne({
       where: {
         user_id: targetUserId,
@@ -289,6 +366,8 @@ async function setActiveStatus({ actorUserId, targetUserId, active, reason, ipAd
   const { GrowthOsUserRole, User } = require('../entities');
 
   const result = await sequelize.transaction(async (transaction) => {
+    await assertAuthorizedActor(actorUserId, transaction);
+
     const target = await User.findByPk(targetUserId, {
       attributes: ['id'],
       transaction,
@@ -432,6 +511,8 @@ async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, 
   const { GrowthOsUserRole, User } = require('../entities');
 
   return sequelize.transaction(async (transaction) => {
+    await assertAuthorizedActor(actorUserId, transaction);
+
     const target = await User.findByPk(targetUserId, {
       attributes: ['id'],
       transaction,
@@ -522,8 +603,20 @@ async function changeRole({ actorUserId, targetUserId, role, reason, ipAddress, 
   });
 }
 
+async function bootstrapRole({ role, ...args }) {
+  if (role !== GROWTH_OS_CANONICAL_ROLES.SUPER_ADMIN) {
+    throw new AppError(
+      'Bootstrap can only establish the first SUPER_ADMIN role.',
+      400,
+      'GROWTH_OS_INVALID_BOOTSTRAP_ROLE',
+    );
+  }
+  return grantRole({ ...args, role, bootstrap: true });
+}
+
 module.exports = {
   grantRole,
+  bootstrapRole,
   revokeRole,
   setActiveStatus,
   changeRole,

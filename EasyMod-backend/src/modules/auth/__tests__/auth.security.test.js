@@ -140,6 +140,7 @@ jest.mock('src/modules/entities', () => ({
         findOne: jest.fn(),
         create: jest.fn(),
     },
+    GrowthOsUserRole: { findOne: jest.fn() },
     Tenant: {
         create: jest.fn(),
     },
@@ -165,7 +166,7 @@ jest.mock('src/utils/email.service', () => ({
     sendEmail: jest.fn(() => Promise.resolve())
 }));
 
-const { User, PasswordResetToken } = require('src/modules/entities');
+const { User, PasswordResetToken, UserShop, GrowthOsUserRole } = require('src/modules/entities');
 const { generateAccessToken, generateRefreshToken } = require('src/utils/jwt.util');
 
 describe('Auth Security Fixes', () => {
@@ -182,6 +183,8 @@ describe('Auth Security Fixes', () => {
         mockUser.token_version = 1;
         mockUser.refresh_token = null;
         mockUser.last_logged_shop_id = 'shop-1';
+        UserShop.findOne.mockResolvedValue({ id: 'membership-1' });
+        GrowthOsUserRole.findOne.mockResolvedValue(null);
     });
 
     // ============================================================================

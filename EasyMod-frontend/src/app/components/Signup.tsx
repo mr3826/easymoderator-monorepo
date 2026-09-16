@@ -81,7 +81,6 @@ export default function Signup() {
         full_name: data.fullName,
         phone: data.phone.trim(),
       });
-       trackFunnelEvent("signup_completed", { selected_plan: "SHURU" }, { onceKey: "signup_completed" });
 
       navigate("/dashboard");
     } catch (err: any) {

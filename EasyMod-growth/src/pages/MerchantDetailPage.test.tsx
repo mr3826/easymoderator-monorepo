@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -143,6 +143,7 @@ describe('MerchantDetailPage', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it('renders the full 360 view with mutation controls for Super Admins', async () => {
@@ -192,6 +193,37 @@ describe('MerchantDetailPage', () => {
     expect(screen.getByText('Before')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View audit trail' })).toHaveAttribute('href', '/audit');
     await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  });
+
+  it('reuses a pending credit key after the page is reloaded', async () => {
+    const user = userEvent.setup();
+    permissionMock.mockReturnValue(true);
+    vi.spyOn(merchantsApi, 'detail').mockResolvedValue(makeMerchant360());
+    const grantCredits = vi.spyOn(adminApi, 'grantMerchantCredits').mockResolvedValue({
+      before: { topupBalance: 50 },
+      after: { topupBalance: 60 },
+    });
+
+    const firstRender = renderPage();
+    await screen.findByRole('button', { name: 'Grant credits' });
+    fireEvent.change(screen.getByLabelText('Amount (whole number, 1 to 100,000)'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Reason for the credit grant (required, max 300 chars)'), { target: { value: 'Recovery credit' } });
+    await user.click(screen.getByRole('button', { name: 'Grant credits' }));
+    const pending = JSON.parse(sessionStorage.getItem(`growth-os:pending-credit-operation:${SHOP_ID}`) || '{}');
+    expect(pending.key).toEqual(expect.any(String));
+    firstRender.unmount();
+
+    renderPage();
+    await screen.findByRole('button', { name: 'Grant credits' });
+    fireEvent.change(screen.getByLabelText('Amount (whole number, 1 to 100,000)'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Reason for the credit grant (required, max 300 chars)'), { target: { value: 'Recovery credit' } });
+    await user.click(screen.getByRole('button', { name: 'Grant credits' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm grant credits' }));
+
+    await waitFor(() => expect(grantCredits).toHaveBeenCalledWith(SHOP_ID, {
+      amount: 10,
+      reason: 'Recovery credit',
+    }, pending.key));
   });
 
   it('renders the masked insight view for growth users with no mutation controls at all', async () => {

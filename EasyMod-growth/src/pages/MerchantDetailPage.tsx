@@ -23,6 +23,53 @@ import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 type BusyAction = 'status' | 'credits' | 'reconnect' | 'note' | null;
 
+type PendingCreditOperation = {
+  shopId: string;
+  amount: number;
+  reason: string;
+  key: string;
+};
+
+const PENDING_CREDIT_OPERATION_KEY = 'growth-os:pending-credit-operation';
+
+function pendingCreditStorageKey(shopId: string) {
+  return `${PENDING_CREDIT_OPERATION_KEY}:${shopId}`;
+}
+
+function readPendingCreditOperation(shopId: string | undefined): PendingCreditOperation | null {
+  if (!shopId) return null;
+  try {
+    const raw = sessionStorage.getItem(pendingCreditStorageKey(shopId));
+    if (!raw) return null;
+    const pending = JSON.parse(raw) as Partial<PendingCreditOperation>;
+    return pending.shopId === shopId
+      && typeof pending.amount === 'number'
+      && typeof pending.reason === 'string'
+      && typeof pending.key === 'string'
+      ? pending as PendingCreditOperation
+      : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function savePendingCreditOperation(operation: PendingCreditOperation) {
+  try {
+    sessionStorage.setItem(pendingCreditStorageKey(operation.shopId), JSON.stringify(operation));
+  } catch (_error) {
+    // The server still enforces the key; storage is only for reload recovery.
+  }
+}
+
+function clearPendingCreditOperation(shopId: string | undefined) {
+  if (!shopId) return;
+  try {
+    sessionStorage.removeItem(pendingCreditStorageKey(shopId));
+  } catch (_error) {
+    // Ignore storage restrictions in private browsing/test environments.
+  }
+}
+
 interface ResultSummary {
   label: string;
   data: unknown;
@@ -68,6 +115,11 @@ function statusBadgeClass(status: string | null | undefined) {
   return `status-badge${status ? ` status-${status.toLowerCase().replace(/_/g, '-')}` : ''}`;
 }
 
+function isMerchantOperational(status: string | null | undefined, fallback: boolean) {
+  if (!status) return fallback;
+  return !['cancelled', 'canceled', 'expired', 'suspended'].includes(status.toLowerCase());
+}
+
 function changePairs(data: unknown): Array<[string, unknown]> {
   if (!data || typeof data !== 'object') return [];
   const record = data as Record<string, unknown>;
@@ -97,7 +149,9 @@ export function MerchantDetailPage() {
   const [creditAmount, setCreditAmount] = useState('');
   const [creditReason, setCreditReason] = useState('');
   const [creditArmed, setCreditArmed] = useState(false);
-  const [creditIdempotencyKey, setCreditIdempotencyKey] = useState<string | null>(null);
+  const [pendingCreditOperation, setPendingCreditOperation] = useState<PendingCreditOperation | null>(
+    () => readPendingCreditOperation(shopId),
+  );
   const [channelId, setChannelId] = useState('');
   const [reconnectReason, setReconnectReason] = useState('');
   const [reconnectConfirm, setReconnectConfirm] = useState('');
@@ -152,7 +206,7 @@ export function MerchantDetailPage() {
 
   async function handleStatusToggle() {
     if (!shopId || !data || !isMerchant360(data)) return;
-    const becomingActive = !data.overview.shop.isActive;
+    const becomingActive = !isMerchantOperational(data.subscription?.status, data.overview.shop.isActive);
     if (!validateReason(statusReason, becomingActive ? 'reactivate this merchant' : 'suspend this merchant')) return;
     if (!becomingActive && !statusArmed) {
       setStatusArmed(true);
@@ -192,13 +246,30 @@ export function MerchantDetailPage() {
     }
     if (!validateReason(creditReason, 'grant conversation credits')) return;
     if (!creditArmed) {
+      const normalizedReason = creditReason.trim();
+      const reusableOperation = pendingCreditOperation
+        && pendingCreditOperation.shopId === shopId
+        && pendingCreditOperation.amount === amount
+        && pendingCreditOperation.reason === normalizedReason
+        ? pendingCreditOperation
+        : {
+          shopId,
+          amount,
+          reason: normalizedReason,
+          key: crypto.randomUUID(),
+        };
+      savePendingCreditOperation(reusableOperation);
+      setPendingCreditOperation(reusableOperation);
       setCreditArmed(true);
-      setCreditIdempotencyKey((current) => current ?? crypto.randomUUID());
       setActionError(null);
       return;
     }
-    const requestKey = creditIdempotencyKey ?? crypto.randomUUID();
-    setCreditIdempotencyKey(requestKey);
+    const requestKey = pendingCreditOperation?.key ?? crypto.randomUUID();
+    if (!pendingCreditOperation) {
+      const operation = { shopId, amount, reason: creditReason.trim(), key: requestKey };
+      savePendingCreditOperation(operation);
+      setPendingCreditOperation(operation);
+    }
     setBusy('credits');
     setActionError(null);
     setResult(null);
@@ -211,7 +282,8 @@ export function MerchantDetailPage() {
       setCreditAmount('');
       setCreditReason('');
       setCreditArmed(false);
-      setCreditIdempotencyKey(null);
+      clearPendingCreditOperation(shopId);
+      setPendingCreditOperation(null);
       refreshDetails();
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -424,6 +496,7 @@ export function MerchantDetailPage() {
   const shop = view.overview.shop;
   const channels = view.facebook.channels;
   const subscription = view.subscription;
+  const merchantIsOperational = isMerchantOperational(subscription?.status, shop.isActive);
   const usage = subscription?.usage ?? view.overview.usage;
   const effectiveLimit = 'effectiveLimit' in usage ? usage.effectiveLimit : usage.effectiveConversationLimit;
 
@@ -476,7 +549,7 @@ export function MerchantDetailPage() {
             <dl className="detail-facts">
               <div><dt>Shop name</dt><dd>{shop.shopName || 'Unnamed shop'}</dd></div>
               <div><dt>Unique code</dt><dd>{shop.uniqueCode}</dd></div>
-              <div><dt>Active</dt><dd>{yesNo(shop.isActive)}</dd></div>
+              <div><dt>Active</dt><dd>{yesNo(merchantIsOperational)}</dd></div>
               <div><dt>Timezone</dt><dd>{shop.timezone}</dd></div>
               <div><dt>Created</dt><dd>{formatDate(shop.createdAt, true)}</dd></div>
               <div><dt>Owner</dt><dd>{view.overview.owner?.name || view.overview.owner?.email || 'No owner linked'}</dd></div>
@@ -721,7 +794,7 @@ export function MerchantDetailPage() {
               >
                 {busy === 'status'
                   ? 'Saving'
-                  : !shop.isActive
+                   : !merchantIsOperational
                     ? 'Reactivate merchant'
                     : statusArmed
                       ? 'Confirm suspend'
@@ -745,7 +818,6 @@ export function MerchantDetailPage() {
                   onChange={(event) => {
                     setCreditAmount(event.target.value);
                     setCreditArmed(false);
-                    setCreditIdempotencyKey(null);
                   }}
                   required
                 />
@@ -758,7 +830,6 @@ export function MerchantDetailPage() {
                   onChange={(event) => {
                     setCreditReason(event.target.value);
                     setCreditArmed(false);
-                    setCreditIdempotencyKey(null);
                   }}
                   rows={2}
                   maxLength={300}

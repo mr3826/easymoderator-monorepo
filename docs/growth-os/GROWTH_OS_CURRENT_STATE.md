@@ -283,7 +283,7 @@ Gate effect: closes `FIRST_GROWTH_ROLLOUT` and
 `PHASE_B_POST_DEPLOY_GATE`. The current deployment guard and bootstrap failure
 path are explicit in `.github/workflows/ci-cd.yml:668-669`, `:870-883`.
 
-#### P0-3 Bootstrap the first Founder through the audited workflow
+#### P0-3 Bootstrap the first Super Admin through the protected workflow
 
 **Status: `OPEN`.**
 
@@ -296,18 +296,21 @@ Files and surfaces:
 
 Acceptance criteria:
 
-1. Identify an existing production app user and an explicit operator actor.
-   The workflow must not create or mutate the user account
-   (`grant-growth-role.yml:11-13`).
-2. Dispatch `grant-growth-role.yml` with the target email, `FOUNDER`, and the
-   actor email or UUID. Do not execute the raw SQL in
-   `docs/growth-os/02-application-foundation.md:154-174`.
+1. Identify an existing production app user and configure the explicit
+   `GROWTH_BOOTSTRAP_ACTOR_EMAIL` secret in the protected `growth-bootstrap`
+   environment. The workflow must not accept an actor as dispatch input or
+   create/mutate the user account.
+2. Dispatch `grant-growth-role.yml` with the target email and canonical
+   `SUPER_ADMIN` role. Do not execute raw SQL; the old SQL procedure has been
+   removed from the supported runbook.
 3. Capture the role-service result and the `growth_os:role_granted` audit row.
-   The transaction must include role creation, audit, and cache invalidation.
+   The transaction must include role creation, audit, and cache invalidation,
+   and the one-time bootstrap must refuse to run after an active Super Admin
+   exists.
 4. Complete the existing TOTP step-up so the authenticated session has
-   `mfaVerified=true`; a password-only Founder session must remain denied.
-5. Verify the Founder can load the Growth session and prospect list from the
-   live host, while a merchant without the role receives `403`.
+   `mfaVerified=true`; a password-only Super Admin session must remain denied.
+5. Verify the Super Admin can load the Growth session and prospect list from
+   the live host, while a merchant without the role receives `403`.
 
 Gate effect: closes `OPERATOR_BOOTSTRAP_GATE`. The supported workflow delegates
 to the tested backend role service (`grant-growth-role.yml:3-9`, `:64-68`).

@@ -9,6 +9,8 @@
  */
 
 const platformRoleHolder = { value: null };
+const mockTransaction = { afterCommit: jest.fn() };
+const mockAuditService = { logOperation: jest.fn(async () => {}) };
 
 // Inject a fixed authenticated user; role is varied via the entities mock below.
 jest.mock('../../../middleware/auth.middleware', () => ({
@@ -29,9 +31,13 @@ jest.mock('../../entities', () => ({
 // Service + audit are exercised elsewhere; here we only care about authorization.
 jest.mock('../admin.service', () => ({
   getDashboard: jest.fn(async () => ({ ok: true })),
+  getAuditLogs: jest.fn(async () => ({ items: [], total: 0, page: 1, limit: 50 })),
   setShopStatus: jest.fn(async () => ({ before: { status: 'active' }, after: { status: 'suspended' } })),
 }));
-jest.mock('../../audit/audit.service', () => ({ logOperation: jest.fn(async () => {}) }));
+jest.mock('../../audit/audit.service', () => mockAuditService);
+jest.mock('../../../utils/database/database-setup', () => ({
+  sequelize: { transaction: jest.fn(async (callback) => callback(mockTransaction)) },
+}));
 
 const express = require('express');
 const request = require('supertest');
@@ -51,7 +57,11 @@ function buildApp() {
 
 describe('admin authorization (router-level)', () => {
   let app;
-  beforeEach(() => { app = buildApp(); platformRoleHolder.value = null; });
+  beforeEach(() => {
+    app = buildApp();
+    platformRoleHolder.value = null;
+    mockAuditService.logOperation.mockResolvedValue();
+  });
 
   it('403 for a normal user (no platform_role) on a read route', async () => {
     platformRoleHolder.value = null;
@@ -66,6 +76,19 @@ describe('admin authorization (router-level)', () => {
     expect(res.body.success).toBe(true);
   });
 
+  it('403 for SUPPORT_ADMIN on privileged audit reads', async () => {
+    platformRoleHolder.value = 'SUPPORT_ADMIN';
+    const res = await request(app).get('/api/admin/audit-logs');
+    expect(res.status).toBe(403);
+  });
+
+  it('200 for SUPER_ADMIN on privileged audit reads', async () => {
+    platformRoleHolder.value = 'SUPER_ADMIN';
+    const res = await request(app).get('/api/admin/audit-logs');
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toEqual([]);
+  });
+
   it('403 for SUPPORT_ADMIN on a mutation', async () => {
     platformRoleHolder.value = 'SUPPORT_ADMIN';
     const res = await request(app).patch('/api/admin/shops/shop-1/status').send({ status: 'suspended' });
@@ -77,5 +100,14 @@ describe('admin authorization (router-level)', () => {
     const res = await request(app).patch('/api/admin/shops/shop-1/status').send({ status: 'suspended' });
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ status: 'suspended' });
+  });
+
+  it('does not report a privileged mutation as successful when audit persistence fails', async () => {
+    platformRoleHolder.value = 'SUPER_ADMIN';
+    mockAuditService.logOperation.mockRejectedValueOnce(new Error('audit database unavailable'));
+
+    const res = await request(app).patch('/api/admin/shops/shop-1/status').send({ status: 'suspended' });
+
+    expect(res.status).toBe(500);
   });
 });

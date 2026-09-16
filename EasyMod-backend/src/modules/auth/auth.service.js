@@ -304,11 +304,11 @@ const createUserWithShop = async (userData) => {
  * lookup here returns false (deny), which only affects users who would
  * otherwise receive the existing "no associated shops" 403.
  */
-const hasActiveGrowthOsRole = async (userId) => {
+const getActiveGrowthOsRole = async (userId) => {
     if (!userId) return false;
     try {
         const { GrowthOsUserRole } = require('../entities');
-        const row = await GrowthOsUserRole.findOne({
+        return await GrowthOsUserRole.findOne({
             attributes: ['id'],
             where: {
                 user_id: userId,
@@ -316,11 +316,12 @@ const hasActiveGrowthOsRole = async (userId) => {
                 revoked_at: { [Op.is]: null },
             },
         });
-        return Boolean(row);
     } catch (_error) {
-        return false;
+        return undefined;
     }
 };
+
+const hasActiveGrowthOsRole = async (userId) => Boolean(await getActiveGrowthOsRole(userId));
 
 /**
  * Authenticate user (with lockout check)
@@ -357,6 +358,11 @@ const authenticateUser = async (email, password) => {
     // Successful login — clear any failed attempt counters
     await clearFailedLogins(email);
 
+    const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
+    if (activeGrowthOsRole === undefined) {
+        throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+    }
+    const isGrowthOsUser = Boolean(activeGrowthOsRole);
     const temporaryPasswordAuthData = getTemporaryPasswordAuthData(user);
 
     // 2FA check — if enabled, return a short-lived temp token instead of full JWT
@@ -376,15 +382,13 @@ const authenticateUser = async (email, password) => {
     // role; the token then carries a null shopId, which every shop-scoped
     // merchant route rejects on scope. Everyone else keeps the historical
     // 403 behaviour unchanged.
-    if (!user.shops || user.shops.length === 0) {
-        if (!(await hasActiveGrowthOsRole(user.id))) {
-            throw new AppError('User has no associated shops', 403);
-        }
+    if (!isGrowthOsUser && (!user.shops || user.shops.length === 0)) {
+        throw new AppError('User has no associated shops', 403);
     }
 
     // If user has last_logged_shop_id and it's still accessible, use it
     let loggedShopId = null;
-    if (user.shops && user.shops.length > 0) {
+    if (!isGrowthOsUser && user.shops && user.shops.length > 0) {
         if (user.last_logged_shop_id) {
             const hasAccessToLastShop = user.shops.some(shop => shop.id === user.last_logged_shop_id);
             if (hasAccessToLastShop) {
@@ -742,11 +746,15 @@ const getAuthContext = async (userId, shopIdFromToken) => {
 
     // Internal Growth users intentionally have no merchant shop membership.
     // Preserve the legacy auth shape while returning a null shop context.
-    if (!user.shops || user.shops.length === 0) {
-        if (!(await hasActiveGrowthOsRole(user.id))) {
-            throw new AppError('User has no associated shops', 403);
-        }
+    const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
+    if (activeGrowthOsRole === undefined) {
+        throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+    }
+    if (activeGrowthOsRole) {
         return { user: userResponse, currentShop: null, allShops: [] };
+    }
+    if (!user.shops || user.shops.length === 0) {
+        throw new AppError('User has no associated shops', 403);
     }
 
     let resolvedShopId = shopIdFromToken || user.last_logged_shop_id;
@@ -805,5 +813,6 @@ module.exports = {
     isTokenBlacklisted,
     generateUniqueShopCode,
     hasActiveGrowthOsRole,
+    getActiveGrowthOsRole,
     invalidateUserSessions
 };

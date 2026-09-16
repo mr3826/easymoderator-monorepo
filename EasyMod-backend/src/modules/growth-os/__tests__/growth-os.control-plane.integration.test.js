@@ -510,7 +510,7 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       await shop.update({
         settings: {
           ...(shop.settings || {}),
-          activation: { activated_at: new Date().toISOString(), first_conversation_id: null },
+           first_ai_reply: { occurred_at: new Date().toISOString(), first_conversation_id: null },
         },
       });
       const prospectService = require('../growth-os.prospect.service');

@@ -47,12 +47,16 @@ exports.setShopStatus = async (req, res, next) => {
   try {
     const { shopId } = req.params;
     const { status } = req.body;
-    const { before, after } = await adminService.setShopStatus(shopId, status);
-    await AuditService.logOperation({
-      userId: req.user.userId, shopId,
-      action: status === 'suspended' ? 'admin:suspend_shop' : 'admin:reactivate_shop',
-      resourceType: 'SUBSCRIPTION', resourceId: shopId,
-      oldValues: before, newValues: after, ...auditCtx(req),
+    const { sequelize } = require('../../utils/database/database-setup');
+    const after = await sequelize.transaction(async (transaction) => {
+      const { before, after: next } = await adminService.setShopStatus(shopId, status, { transaction });
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId,
+        action: status === 'suspended' ? 'admin:suspend_shop' : 'admin:reactivate_shop',
+        resourceType: 'SUBSCRIPTION', resourceId: shopId,
+        oldValues: before, newValues: next, ...auditCtx(req),
+      }, { transaction, required: true });
+      return next;
     });
     ok(res, after);
   } catch (e) { next(e); }
@@ -84,11 +88,20 @@ exports.addCredits = async (req, res, next) => {
 exports.changePlan = async (req, res, next) => {
   try {
     const { shopId } = req.params;
-    const { before, after } = await adminService.changePlan(shopId, req.user.userId, req.body);
-    await AuditService.logOperation({
-      userId: req.user.userId, shopId, action: 'admin:change_plan',
-      resourceType: 'SUBSCRIPTION', resourceId: shopId,
-      oldValues: before, newValues: after, ...auditCtx(req),
+    const { sequelize } = require('../../utils/database/database-setup');
+    const after = await sequelize.transaction(async (transaction) => {
+      const { before, after: next } = await adminService.changePlan(
+        shopId,
+        req.user.userId,
+        req.body,
+        { transaction },
+      );
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId, action: 'admin:change_plan',
+        resourceType: 'SUBSCRIPTION', resourceId: shopId,
+        oldValues: before, newValues: next, ...auditCtx(req),
+      }, { transaction, required: true });
+      return next;
     });
     ok(res, after);
   } catch (e) { next(e); }
@@ -97,11 +110,15 @@ exports.changePlan = async (req, res, next) => {
 exports.markChannelReconnect = async (req, res, next) => {
   try {
     const { shopId, channelId } = req.params;
-    const { before, after } = await adminService.markChannelReconnect(shopId, channelId);
-    await AuditService.logOperation({
-      userId: req.user.userId, shopId, action: 'admin:mark_reconnect',
-      resourceType: 'META_CHANNEL', resourceId: channelId,
-      oldValues: before, newValues: after, ...auditCtx(req),
+    const { sequelize } = require('../../utils/database/database-setup');
+    const after = await sequelize.transaction(async (transaction) => {
+      const { before, after: next } = await adminService.markChannelReconnect(shopId, channelId, { transaction });
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId, action: 'admin:mark_reconnect',
+        resourceType: 'META_CHANNEL', resourceId: channelId,
+        oldValues: before, newValues: next, ...auditCtx(req),
+      }, { transaction, required: true });
+      return next;
     });
     ok(res, after);
   } catch (e) { next(e); }
@@ -110,11 +127,19 @@ exports.markChannelReconnect = async (req, res, next) => {
 exports.emergencyDisableAi = async (req, res, next) => {
   try {
     const { shopId } = req.params;
-    const { before, after } = await adminService.emergencyDisableAi(shopId, req.user.userId);
-    await AuditService.logOperation({
-      userId: req.user.userId, shopId, action: 'admin:emergency_ai_off',
-      resourceType: 'SHOP', resourceId: shopId,
-      oldValues: before, newValues: after, ...auditCtx(req),
+    const { sequelize } = require('../../utils/database/database-setup');
+    const after = await sequelize.transaction(async (transaction) => {
+      const { before, after: next } = await adminService.emergencyDisableAi(
+        shopId,
+        req.user.userId,
+        { transaction },
+      );
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId, action: 'admin:emergency_ai_off',
+        resourceType: 'SHOP', resourceId: shopId,
+        oldValues: before, newValues: next, ...auditCtx(req),
+      }, { transaction, required: true });
+      return next;
     });
     ok(res, after);
   } catch (e) { next(e); }
@@ -127,13 +152,13 @@ exports.emergencyDisableAi = async (req, res, next) => {
 // confirm receipt on a device they watch.
 exports.sendTestAlert = async (req, res, next) => {
   try {
-    const { sendTestAlert } = require('../../utils/ops-alert');
-    const result = await sendTestAlert({ actorLabel: `admin:${req.user.userId}` });
     await AuditService.logOperation({
       userId: req.user.userId, shopId: null, action: 'admin:ops_test_alert',
       resourceType: 'OPS', resourceId: null,
-      oldValues: null, newValues: result, ...auditCtx(req),
-    });
+      oldValues: null, newValues: { status: 'requested' }, ...auditCtx(req),
+    }, { required: true });
+    const { sendTestAlert } = require('../../utils/ops-alert');
+    const result = await sendTestAlert({ actorLabel: `admin:${req.user.userId}` });
     ok(res, {
       ...result,
       note: result.anySinkConfigured

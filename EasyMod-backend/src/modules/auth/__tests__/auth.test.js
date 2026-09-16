@@ -125,6 +125,7 @@ jest.mock('src/modules/entities', () => ({
         belongsTo: jest.fn(),
         hasMany: jest.fn(),
     },
+    GrowthOsUserRole: { findOne: jest.fn() },
     Order: { ...mockModel },
     OrderItem: { ...mockModel },
     Product: { ...mockModel },
@@ -194,6 +195,9 @@ describe('Auth API', () => {
         mockUser.update.mockImplementation(() => Promise.resolve());
         mockUser.must_change_password = false;
         mockUser.temporary_password_expires_at = null;
+        UserShop.findOne.mockResolvedValue({ id: 'membership-1' });
+        const { GrowthOsUserRole } = require('src/modules/entities');
+        GrowthOsUserRole.findOne.mockResolvedValue(null);
     });
 
     // ── Signup ──────────────────────────────────────────────────────────

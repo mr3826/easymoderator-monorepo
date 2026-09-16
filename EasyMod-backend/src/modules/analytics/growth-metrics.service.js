@@ -23,11 +23,11 @@ const { cacheRedis } = require('../../config/redis');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVATION_CLAIM_TTL_SECONDS = 5 * 60;
 
-const writeFirstAiReply = async (shop, shopId, conversationId, actorUserId = null) => {
+const writeFirstAiReply = async (shop, shopId, conversationId, actorUserId = null, transaction = null) => {
     const sequelize = Shop.sequelize;
     const activatedAt = new Date().toISOString();
 
-    // The production schema stores settings as JSONB. Update only the
+    // The production schema stores settings as JSON. Update only the
     // activation path in one SQL statement so a concurrent merchant settings
     // write cannot be replaced by a stale full-object snapshot.
     if (sequelize?.getDialect?.() === 'postgres') {
@@ -40,25 +40,26 @@ const writeFirstAiReply = async (shop, shopId, conversationId, actorUserId = nul
         const [updatedCount] = await Shop.update(
             {
                     settings: sequelize.literal(
-                    `COALESCE("settings", '{}'::jsonb) || jsonb_build_object('first_ai_reply', ${escapedActivation}::jsonb)`,
+                    `(COALESCE("settings"::jsonb, '{}'::jsonb) || jsonb_build_object('first_ai_reply', ${escapedActivation}::jsonb))::json`,
                 ),
             },
             {
                 where: {
                     [Op.and]: [
                         { id: shopId },
-                        sequelize.literal(`("settings"->'first_ai_reply'->>'occurred_at') IS NULL`),
+                        sequelize.literal(`("settings"::jsonb->'first_ai_reply'->>'occurred_at') IS NULL`),
                     ],
                 },
+                ...(transaction ? { transaction } : {}),
             },
         );
         return updatedCount === 1;
     }
 
-    // SQLite-backed development/tests do not have the production JSONB
-    // operator. Keep the local fallback for those environments; production
+    // SQLite-backed development/tests do not have the production JSON
+    // operators. Keep the local fallback for those environments; production
     // uses the atomic branch above.
-    await shop.update({
+    const update = {
         settings: {
             ...normalizeSettings(shop.settings),
             first_ai_reply: {
@@ -67,7 +68,9 @@ const writeFirstAiReply = async (shop, shopId, conversationId, actorUserId = nul
                 actor_user_id: actorUserId,
             },
         },
-    });
+    };
+    if (transaction) await shop.update(update, { transaction });
+    else await shop.update(update);
     return true;
 };
 
@@ -110,16 +113,26 @@ const recordActivation = async (shopId, conversationId = null, actorUserId = nul
         claimed = claimResult === 'OK' || claimResult === 1;
         if (!claimed) return;
 
-        const shop = await Shop.findByPk(shopId);
-        if (!shop) return;
+        const recordWithinTransaction = async (transaction = null) => {
+            const shop = transaction
+                ? await Shop.findByPk(shopId, { transaction })
+                : await Shop.findByPk(shopId);
+            if (!shop) return false;
 
-        const settings = normalizeSettings(shop.settings);
-        if (settings.first_ai_reply && settings.first_ai_reply.occurred_at) {
-            activationConfirmed = true;
-            return;
-        }
+            const settings = normalizeSettings(shop.settings);
+            const firstReplyAlreadyRecorded = Boolean(settings.first_ai_reply?.occurred_at);
+            const firstReplyRecorded = firstReplyAlreadyRecorded
+                || await writeFirstAiReply(shop, shopId, conversationId, actorUserId, transaction);
+            if (!firstReplyRecorded) return false;
 
-        activationConfirmed = await writeFirstAiReply(shop, shopId, conversationId, actorUserId);
+            const { markLinkedShopsActivated } = require('../growth-os/growth-os.prospect.service');
+            await markLinkedShopsActivated({ shopId, actorUserId, transaction });
+            return true;
+        };
+        const sequelize = Shop.sequelize;
+        activationConfirmed = sequelize?.transaction
+            ? await sequelize.transaction(recordWithinTransaction)
+            : await recordWithinTransaction();
     } catch (err) {
         // Best-effort — swallow so a reply is never blocked by metrics
         // bookkeeping, but retain a sanitized operational signal.

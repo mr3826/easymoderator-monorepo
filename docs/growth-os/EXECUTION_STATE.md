@@ -784,3 +784,37 @@ frontend changes remain untouched.
 - `PRODUCTION_CHANGED`: `NO`; no production database, Redis, Qdrant, service,
   deployment, Meta review configuration, OAuth configuration, webhook
   configuration, or secret was changed.
+
+## Final P1 hardening receipt (2026-09-15)
+
+- `P1_SECURITY`: bootstrap now uses a protected operator secret, canonical
+  `SUPER_ADMIN`, one-time database advisory locking, and trusted GitHub actor
+  provenance. Shared audit readers return tenant-safe summaries; privileged
+  audit reads are Super Admin-only; legacy admin mutations share transactions
+  with required audit writes. URL, bearer, funnel, audit, and error-log
+  redaction is server-side. First-AI-reply activation, onboarding conversion,
+  and activation audits are atomic/retriable. Stale shop claims are checked
+  against active memberships; Growth users cannot receive merchant sessions;
+  sensitive merchant settings require owner membership; browser funnel code
+  emits public events only; credit idempotency keys survive tab reloads.
+- `FINAL_BACKEND`: isolated aggregate `231/231` suites and `2833/2833` tests;
+  security `49/49` suites and `452/452` tests; discovery, syntax, and builds
+  passed.
+- `FINAL_FRONTEND`: merchant frontend `68/68` files and `575/575` tests;
+  Growth `23/23` files and `135/135` tests; TypeScript and production builds
+  passed. Extension `38/38` tests and validation passed.
+- `FINAL_DISPOSABLE`: PostgreSQL/Redis integration `14/14` suites and `87/87`
+  tests; Meta-shaped E2E `43/43` tests; fresh schema/migration/bootstrap
+  verification passed twice with no drift; Growth Playwright and headed
+  extension E2E `32/32` tests passed.
+- `FINAL_AUDIT`: production dependency audit has no high/critical findings
+  under the CI `--omit=dev --audit-level=high` gate. Five low/moderate legacy
+  advisories remain deferred; they are not changed by this checkpoint.
+- `DEFERRED_P2`: audit snapshot PII retention, prospect/analytics query
+  pagination/rate limits and search-query transport, credit idempotency expiry,
+  SQLite/PostgreSQL runtime parity, Unicode search normalization, and optional
+  extension CI installation remain explicitly deferred. No P0/P1 blocker
+  remains.
+- `PRODUCTION_CHANGED`: `NO`; all databases, Redis, Qdrant, services, CI
+  deployment jobs, Meta review settings, OAuth/webhook configuration, and
+  secrets remained untouched.

@@ -61,7 +61,16 @@ const verify = async (req, res, next) => {
         await totpService.verifyTotpToken(userId, String(token));
 
         // Token valid — issue full JWT
-        const user = await User.findByPk(userId);
+        const user = await User.findByPk(userId, {
+            include: [{
+                model: Shop,
+                as: 'shops',
+                through: {
+                    attributes: ['role', 'is_active'],
+                    where: { is_active: true },
+                },
+            }],
+        });
         if (!user) throw new AppError('User not found', 404);
         if (Number(user.token_version) !== challenge.tokenVersion) {
             throw new AppError('Invalid or expired session. Please login again.', 401);
@@ -69,12 +78,28 @@ const verify = async (req, res, next) => {
         const { getTemporaryPasswordAuthData } = require('./auth.service');
         const temporaryPasswordAuthData = getTemporaryPasswordAuthData(user);
 
+        // Resolve shop context from active memberships, never from a stale
+        // last_logged_shop_id left by an earlier merchant session.
+        const { getActiveGrowthOsRole } = require('./auth.service');
+        const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
+        if (activeGrowthOsRole === undefined) {
+            throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+        }
+        const isGrowthOsUser = Boolean(activeGrowthOsRole);
+        const activeShops = Array.isArray(user.shops) ? user.shops : [];
+        let shopId = null;
+        if (!isGrowthOsUser && activeShops.length > 0) {
+            const lastShop = activeShops.find((shop) => shop.id === user.last_logged_shop_id);
+            const ownerShop = activeShops.find((shop) => shop.UserShop?.role === 'owner');
+            shopId = lastShop?.id || ownerShop?.id || activeShops[0].id;
+        }
+        if (user.last_logged_shop_id !== shopId) {
+            await user.update({ last_logged_shop_id: shopId });
+        }
         // A null shopId is only acceptable for internal Growth OS staff
-        // accounts (no shop membership required); everyone else must re-login.
-        const shopId = user.last_logged_shop_id || null;
+        // accounts (no active shop membership); everyone else must re-login.
         if (!shopId) {
-            const { hasActiveGrowthOsRole } = require('./auth.service');
-            if (!(await hasActiveGrowthOsRole(user.id))) {
+            if (!isGrowthOsUser) {
                 throw new AppError('No active shop session found. Please login again.', 401);
             }
         }

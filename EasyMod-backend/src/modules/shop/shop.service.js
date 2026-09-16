@@ -473,8 +473,9 @@ const getUserRoleInShop = async (shopId, userId) => {
 /**
  * Get shop AI settings
  */
-const getShopAiSettings = async (shopId) => {
-    const shop = await Shop.findByPk(shopId);
+const getShopAiSettings = async (shopId, { transaction = null } = {}) => {
+    const findOptions = transaction ? { transaction } : {};
+    const shop = await Shop.findByPk(shopId, findOptions);
     
     if (!shop) {
         return null;
@@ -501,8 +502,14 @@ const getShopAiSettings = async (shopId) => {
 /**
  * Update shop AI behaviour settings (writes to settings.ai, preserves other settings keys)
  */
-const updateShopAiSettings = async (shopId, userId, updates) => {
-    const shop = await Shop.findByPk(shopId);
+const updateShopAiSettings = async (
+    shopId,
+    userId,
+    updates,
+    { transaction = null, auditRequired = false } = {},
+) => {
+    const findOptions = transaction ? { transaction } : {};
+    const shop = await Shop.findByPk(shopId, findOptions);
     if (!shop) throw new AppError('Shop not found', 404);
 
     // Validate updates before applying
@@ -546,8 +553,15 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
 
     const sanitizedSettings = mergeAndSanitizeSettings(currentSettings, { ai: newAI });
 
-    await shop.update({ settings: sanitizedSettings });
-    await invalidateShopSettingsCaches(shopId);
+    if (transaction) await shop.update({ settings: sanitizedSettings }, { transaction });
+    else await shop.update({ settings: sanitizedSettings });
+    if (transaction && typeof transaction.afterCommit === 'function') {
+        transaction.afterCommit(() => {
+            void invalidateShopSettingsCaches(shopId).catch(() => {});
+        });
+    } else {
+        await invalidateShopSettingsCaches(shopId);
+    }
 
     if (modeWasProvided) {
         const newMode = normalizeAiReplyMode(newAI.automation_mode);
@@ -561,30 +575,38 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
                 actor_id: userId || null,
             };
 
-            // Audit failures must not turn a successful settings write into a
-            // failed request; AuditService follows the same convention.
-            try {
-                const AuditService = require('../audit/audit.service');
-                await AuditService.logOperation({
-                    userId: userId || null,
-                    shopId,
-                    action: 'AI_REPLY_MODE_CHANGED',
-                    resourceType: 'SHOP',
-                    resourceId: shopId,
-                    oldValues: { automation_mode: oldMode },
-                    newValues: { automation_mode: newMode },
-                    metadata: modeChange,
-                });
-            } catch (error) {
-                console.error('Failed to record AI reply mode change audit:', error);
+            const AuditService = require('../audit/audit.service');
+            const auditPayload = {
+                userId: userId || null,
+                shopId,
+                action: 'AI_REPLY_MODE_CHANGED',
+                resourceType: 'SHOP',
+                resourceId: shopId,
+                oldValues: { automation_mode: oldMode },
+                newValues: { automation_mode: newMode },
+                metadata: modeChange,
+            };
+            if (auditRequired) {
+                await AuditService.logOperation(auditPayload, { transaction, required: true });
+            } else {
+                try {
+                    if (transaction) await AuditService.logOperation(auditPayload, { transaction });
+                    else await AuditService.logOperation(auditPayload);
+                } catch (error) {
+                    console.error('Failed to record AI reply mode change audit:', error);
+                }
             }
 
-            try {
-                const sseManager = require('../../utils/sse-manager');
-                sseManager.emit(shopId, 'ai_reply_mode_changed', { mode: newMode });
-            } catch (error) {
-                console.warn('Failed to publish AI reply mode change:', error.message);
-            }
+            const emitModeChange = () => {
+                try {
+                    const sseManager = require('../../utils/sse-manager');
+                    sseManager.emit(shopId, 'ai_reply_mode_changed', { mode: newMode });
+                } catch (error) {
+                    console.warn('Failed to publish AI reply mode change:', error.message);
+                }
+            };
+            if (transaction && typeof transaction.afterCommit === 'function') transaction.afterCommit(emitModeChange);
+            else emitModeChange();
         }
     }
 

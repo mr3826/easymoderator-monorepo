@@ -3131,11 +3131,11 @@ async function processMessageJob(job) {
     });
 
     // Activation tracking: the first successful AI reply activates the shop.
-    // Fire-and-forget + Redis NX-gated, so it runs once and never blocks the reply.
+    // Await the bookkeeping before acknowledging the job, but never throw after
+    // the provider has accepted the reply; a failed claim is retried later.
     try {
-        require('../modules/analytics/growth-metrics.service')
-            .recordActivation(shopId, conversationId)
-            .catch(() => {});
+        await require('../modules/analytics/growth-metrics.service')
+            .recordActivation(shopId, conversationId);
         require('../modules/analytics/funnel-events.service')
             .recordInternalFunnelEvent({
                 event: 'first_ai_reply_sent',

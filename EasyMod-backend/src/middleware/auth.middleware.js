@@ -1,7 +1,7 @@
 const { AppError } = require('../utils/AppError');
 const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
-const { User } = require('../modules/entities');
+const { User, UserShop } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
 const { isTemporaryPasswordExpired } = require('../modules/auth/temporary-password');
 
@@ -62,6 +62,23 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
         }
         if (dbTokenVersion !== decoded.tokenVersion) {
             throw new AppError('Token has been invalidated. Please login again.', 401);
+        }
+
+        // A signed shop claim is not proof of a current merchant membership.
+        // Re-check the active relationship so a deactivated user cannot keep
+        // reading shop-scoped analytics until the JWT expires.
+        if (decoded.shopId) {
+            const activeMembership = await UserShop.findOne({
+                attributes: ['id'],
+                where: {
+                    user_id: decoded.userId,
+                    shop_id: decoded.shopId,
+                    is_active: true,
+                },
+            });
+            if (!activeMembership) {
+                throw new AppError('Shop access is not authorized for this account.', 403, 'GROWTH_OS_FORBIDDEN');
+            }
         }
 
         const passwordChangeRequired = decoded.passwordChangeRequired === true;

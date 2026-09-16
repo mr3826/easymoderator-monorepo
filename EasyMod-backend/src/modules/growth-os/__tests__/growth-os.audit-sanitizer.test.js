@@ -20,4 +20,15 @@ describe('Growth OS audit sanitizer', () => {
       'token:[redacted] api_key=[redacted]',
     );
   });
+
+  test('redacts the complete bearer credential from authorization text', () => {
+    expect(redactSecretiveValues('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature'))
+      .toBe('Authorization:[redacted]');
+  });
+
+  test('removes credentials, query strings, and fragments from source URLs', () => {
+    expect(redactSecretiveValues({
+      page_url: 'https://user:pass@example.com/prospect?access_token=secret#contact',
+    })).toEqual({ page_url: 'https://example.com/prospect' });
+  });
 });

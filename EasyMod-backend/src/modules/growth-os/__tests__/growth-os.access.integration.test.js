@@ -213,6 +213,13 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
       granted_by: actor.id,
       metadata: { source: 'self-lockout-fixture' },
     });
+    await GrowthOsUserRole.create({
+      user_id: target.id,
+      role: 'SUPER_ADMIN',
+      is_active: true,
+      granted_by: actor.id,
+      metadata: { source: 'self-lockout-fixture' },
+    });
     await expect(roleService.revokeRole({
       actorUserId: actor.id,
       targetUserId: actor.id,
@@ -248,20 +255,25 @@ describe('Growth OS access boundary on PostgreSQL and Redis', () => {
       code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
     });
 
-    // A non-self actor may remove one of two Super Admins, but the remaining
-    // final Super Admin cannot then be removed.
-    await expect(roleService.revokeRole({
-      actorUserId: target.id,
-      targetUserId: actor.id,
-      reason: 'Reduce to final-super-admin fixture',
-    })).resolves.toBeTruthy();
+    // A non-self actor may remove one of three Super Admins, but cannot remove
+    // their own remaining account.
     await expect(roleService.revokeRole({
       actorUserId: target.id,
       targetUserId: merchant.id,
+      reason: 'Reduce to two-super-admin fixture',
+    })).resolves.toBeTruthy();
+    await expect(roleService.revokeRole({
+      actorUserId: target.id,
+      targetUserId: target.id,
       reason: 'Last-super-admin guard proof',
     })).rejects.toMatchObject({
-      status: 409,
-      code: 'GROWTH_OS_LAST_SUPER_ADMIN',
+      status: 403,
+      code: 'GROWTH_OS_SELF_LOCKOUT_FORBIDDEN',
+    });
+    await roleService.revokeRole({
+      actorUserId: actor.id,
+      targetUserId: target.id,
+      reason: 'Clean up role-count fixture',
     });
   });
 

@@ -1,12 +1,12 @@
 name: Grant Growth OS Role
 
 # -----------------------------------------------------------------------------
-# Manually grant or revoke an EasyModerator Growth OS role on production.
+# Manually bootstrap the first EasyModerator Growth OS Super Admin on production.
 #
-# This is the supported bootstrap path for the first Founder and the supported
-# operator path afterwards. It runs the already-tested role service inside the
-# backend container, so transactions, audit rows, last-Founder protection, and
-# role-cache invalidation remain centralized in application code.
+# This is the supported bootstrap path only. Ongoing role changes use the
+# authenticated Growth OS user-administration screen after the first Super
+# Admin exists. The operator identity is a protected environment secret, never
+# a workflow-dispatch input.
 #
 # The target email MUST already exist as a registered app user. This workflow
 # changes Growth OS access; it does not create or modify user accounts.
@@ -16,26 +16,16 @@ on:
   workflow_dispatch:
     inputs:
       email:
-        description: 'Email of an EXISTING app user to grant/revoke'
+        description: 'Email of an EXISTING app user to bootstrap'
         required: true
         type: string
       role:
         description: 'Growth OS role to set'
         required: true
-        default: FOUNDER
+        default: SUPER_ADMIN
         type: choice
         options:
-          - FOUNDER
-          - GROWTH_MANAGER
-          - BUSINESS_EXECUTIVE
-          - MARKETER
-          - CUSTOMER_SUCCESS
-          - READ_ONLY_ANALYST
-          - NONE
-      actor:
-        description: 'Email or UUID of the operator performing the change'
-        required: true
-        type: string
+          - SUPER_ADMIN
 
 # Never run two Growth OS role changes at once.
 concurrency:
@@ -49,6 +39,7 @@ jobs:
   grant:
     name: Set Growth OS role on production
     runs-on: ubuntu-latest
+    environment: growth-bootstrap
     steps:
       - name: Run grant-growth-role on droplet
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
@@ -59,15 +50,22 @@ jobs:
           timeout: 120s
           # Forward inputs as named env vars so they are not interpolated into
           # the remote shell (avoids command injection through the email field).
-          envs: TARGET_EMAIL,TARGET_ROLE,ACTOR
+          envs: TARGET_EMAIL,TARGET_ROLE,BOOTSTRAP_ACTOR_EMAIL,GITHUB_ACTOR
           script: |
-            set -e
+            set -euo pipefail
+            if [ -z "${BOOTSTRAP_ACTOR_EMAIL}" ]; then
+              echo 'GROWTH_BOOTSTRAP_ACTOR_EMAIL is not configured in the protected environment.' >&2
+              exit 1
+            fi
             cd /opt/easymod
-            echo "==> Setting Growth OS role=${TARGET_ROLE} for ${TARGET_EMAIL} by ${ACTOR}"
-            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
-              node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}" --actor "${ACTOR}"
+            echo "==> Bootstrapping Growth OS role=${TARGET_ROLE} for ${TARGET_EMAIL} via GitHub actor ${GITHUB_ACTOR}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T \
+              -e GROWTH_BOOTSTRAP_ACTOR_EMAIL="${BOOTSTRAP_ACTOR_EMAIL}" \
+              -e GITHUB_ACTOR="${GITHUB_ACTOR}" \
+              backend node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
             echo "==> Done."
         env:
           TARGET_EMAIL: ${{ inputs.email }}
           TARGET_ROLE: ${{ inputs.role }}
-          ACTOR: ${{ inputs.actor }}
+          BOOTSTRAP_ACTOR_EMAIL: ${{ secrets.GROWTH_BOOTSTRAP_ACTOR_EMAIL }}
+          GITHUB_ACTOR: ${{ github.actor }}

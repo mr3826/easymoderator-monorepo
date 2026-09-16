@@ -7,6 +7,7 @@ const uuid = Joi.string().uuid();
 const text = (max) => Joi.string().trim().max(max).allow('', null);
 const requiredText = (max) => Joi.string().trim().min(1).max(max).required();
 const email = Joi.string().trim().email({ tlds: { allow: false } }).max(255).allow('', null);
+const pageUrl = Joi.string().trim().uri({ scheme: ['http', 'https'] }).max(2048).allow('', null);
 const channelKeys = ['contactPhone', 'contactEmail', 'pageUrl', 'contact_phone', 'contact_email', 'page_url'];
 
 const prospectFields = {
@@ -18,8 +19,8 @@ const prospectFields = {
   contact_phone: text(32),
   contactEmail: email,
   contact_email: email,
-  pageUrl: text(2048),
-  page_url: text(2048),
+  pageUrl,
+  page_url: pageUrl,
   niche: text(120),
   notes: text(10000),
   source: Joi.string().valid(...PROSPECT_SOURCES),

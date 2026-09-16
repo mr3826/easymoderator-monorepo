@@ -20,7 +20,7 @@ router.get('/shops', ctrl.listShops);
 router.get('/shops/:shopId', ctrl.getShopOverview);
 router.get('/shops/:shopId/channels', ctrl.getShopChannels);
 router.get('/shops/:shopId/billing', ctrl.getShopBilling);
-router.get('/audit-logs', ctrl.getAuditLogs);
+router.get('/audit-logs', superOnly, ctrl.getAuditLogs);
 
 // Ops alerting self-test — SUPER_ADMIN only, PII-free (finding F-06).
 router.post('/ops/test-alert', superOnly, ctrl.sendTestAlert);

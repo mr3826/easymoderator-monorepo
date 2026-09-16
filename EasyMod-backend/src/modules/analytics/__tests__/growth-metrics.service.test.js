@@ -17,11 +17,13 @@ const mockShop = {
 };
 const mockOrder = { count: jest.fn() };
 const mockCache = { set: jest.fn(), persist: jest.fn(), del: jest.fn() };
+const mockProspectService = { markLinkedShopsActivated: jest.fn() };
 const { Op } = require('sequelize');
 
 jest.mock('src/modules/shop/shop.entity', () => mockShop);
 jest.mock('src/modules/order/order.entity', () => mockOrder);
 jest.mock('src/config/redis', () => ({ cacheRedis: mockCache }));
+jest.mock('src/modules/growth-os/growth-os.prospect.service', () => mockProspectService);
 
 const { recordActivation, getGrowthMetrics } = require('src/modules/analytics/growth-metrics.service');
 
@@ -29,6 +31,7 @@ describe('growth-metrics.service', () => {
     beforeEach(() => {
         jest.resetAllMocks();
         mockShop.sequelize.getDialect.mockReturnValue('sqlite');
+        mockProspectService.markLinkedShopsActivated.mockResolvedValue({ activated: 0 });
     });
 
     describe('recordActivation', () => {
@@ -42,6 +45,11 @@ describe('growth-metrics.service', () => {
 
             expect(mockCache.set).toHaveBeenCalledWith('shop:first-ai-reply:shop-1', '1', 'EX', 300, 'NX');
             expect(update).toHaveBeenCalledTimes(1);
+            expect(mockProspectService.markLinkedShopsActivated).toHaveBeenCalledWith({
+                shopId: 'shop-1',
+                actorUserId: null,
+                transaction: null,
+            });
             const arg = update.mock.calls[0][0];
             expect(arg.settings.first_ai_reply.occurred_at).toBeTruthy();
             expect(arg.settings.first_ai_reply.first_conversation_id).toBe('conv-9');
@@ -50,7 +58,7 @@ describe('growth-metrics.service', () => {
             expect(mockCache.del).not.toHaveBeenCalled();
         });
 
-        it('patches only the activation path with a conditional JSONB update on Postgres', async () => {
+        it('patches only the activation path with a conditional JSON update on Postgres', async () => {
             mockShop.sequelize.getDialect.mockReturnValue('postgres');
             mockShop.sequelize.escape.mockReturnValue("'{\"activated_at\":\"safe\"}'");
             mockShop.sequelize.literal.mockImplementation(value => ({ value }));

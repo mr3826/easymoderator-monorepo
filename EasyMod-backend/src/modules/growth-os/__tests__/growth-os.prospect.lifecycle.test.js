@@ -86,6 +86,7 @@ describe('Growth OS prospect lifecycle', () => {
     mockAuditCreate.mockResolvedValue({ id: 'audit-1' });
     mockRepository.getModels.mockReturnValue({
       GrowthOsProspectEvent: { create: mockEventCreate },
+      Shop: { findByPk: jest.fn().mockResolvedValue(null) },
     });
     mockRepository.findDuplicateProspects.mockResolvedValue([]);
     mockRepository.findConflict.mockResolvedValue(null);
@@ -146,6 +147,37 @@ describe('Growth OS prospect lifecycle', () => {
     expect(row.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'converted' }), {
       transaction: mockTransaction,
     });
+  });
+
+  it('keeps onboarding activation and its audit in one transaction', async () => {
+    const row = makeProspect({ status: 'qualified', linked_shop_id: 'shop-1' });
+    const shop = {
+      is_active: true,
+      settings: { first_ai_reply: { occurred_at: '2026-09-15T00:00:00.000Z' } },
+    };
+    mockRepository.findProspectById.mockResolvedValue(row);
+    mockRepository.getModels.mockReturnValue({
+      GrowthOsProspectEvent: { create: mockEventCreate },
+      Shop: { findByPk: jest.fn().mockResolvedValue(shop) },
+    });
+    mockAuditCreate
+      .mockResolvedValueOnce({ id: 'audit-onboarding' })
+      .mockRejectedValueOnce(new Error('audit database unavailable'));
+
+    await expect(prospectService.transition({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      prospectId: row.id,
+      status: 'onboarding',
+      reason: 'Verified onboarding handoff',
+    })).rejects.toMatchObject({
+      status: 503,
+      code: 'GROWTH_OS_PROSPECT_UNAVAILABLE',
+    });
+    expect(row.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'converted' }), {
+      transaction: mockTransaction,
+    });
+    expect(mockAuditCreate).toHaveBeenCalledTimes(2);
   });
 
   it('requires a reason to disqualify and preserves it in the transition event', async () => {

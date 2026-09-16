@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const AuditLog = require('../audit/audit-log.entity');
+const { redactSecretiveValues, redactSensitiveUrl } = require('../growth-os/growth-os.audit-sanitizer');
 
 const ALLOWED_FUNNEL_EVENTS = new Set([
     'landing_view',
@@ -28,14 +29,28 @@ const ALLOWED_FUNNEL_EVENTS = new Set([
 ]);
 const PUBLIC_FUNNEL_EVENTS = new Set(['landing_view', 'signup_started']);
 const INTERNAL_FUNNEL_EVENTS = new Set([...ALLOWED_FUNNEL_EVENTS].filter(event => !PUBLIC_FUNNEL_EVENTS.has(event)));
+const SENSITIVE_METADATA_KEY = /(password|token|secret|api[_-]?key|authorization|cookie|credential|otp|totp|email|phone|message)/i;
+const URL_METADATA_KEY = /(?:path|url|referer|referrer|redirect|callback)/i;
+
+function scrubPath(value) {
+    if (typeof value !== 'string') return null;
+    const path = value.trim();
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path)) return redactSensitiveUrl(path);
+    return path.split(/[?#]/, 1)[0].slice(0, 500) || null;
+}
 
 function scrubMetadata(metadata) {
     if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
     const safe = {};
     for (const [key, value] of Object.entries(metadata)) {
         if (value == null) continue;
-        if (['password', 'token', 'accessToken', 'refreshToken', 'phone', 'email', 'message'].includes(key)) continue;
-        if (typeof value === 'string') safe[key] = value.slice(0, 200);
+        if (SENSITIVE_METADATA_KEY.test(key)) continue;
+        if (typeof value === 'string') {
+            safe[key] = URL_METADATA_KEY.test(key)
+                ? scrubPath(value)
+                : redactSecretiveValues(value).slice(0, 200);
+        }
         else if (typeof value === 'number' || typeof value === 'boolean') safe[key] = value;
     }
     return safe;
@@ -70,7 +85,7 @@ function buildIdempotencyKey({ event, onceKey, userId, shopId, metadata, req, on
         userId: userId || null,
         shopId: shopId || null,
         metadata: oncePerEntity ? null : scrubMetadata(metadata),
-        path: oncePerEntity ? null : (rawPath.slice(0, 500) || null),
+        path: oncePerEntity ? null : scrubPath(rawPath),
         sessionId: oncePerEntity ? null : sessionId,
     });
     const digest = crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
@@ -140,13 +155,13 @@ async function recordFunnelEvent({
         resource_id: event,
         metadata: {
             ...scrubMetadata(metadata),
-            path: rawPath.slice(0, 500) || null,
+            path: scrubPath(rawPath),
             session_id: typeof req?.body?.sessionId === 'string' ? req.body.sessionId.slice(0, 80) : null,
             correlation_id: typeof correlationId === 'string' ? correlationId.slice(0, 128) : null,
             actor_user_id: userId || null,
         },
         ip_address: typeof req?.ip === 'string' ? req.ip.slice(0, 45) : null,
-        user_agent: req?.headers?.['user-agent'] || null,
+        user_agent: redactSecretiveValues(req?.headers?.['user-agent'] || '') || null,
         idempotency_key: idempotencyKey,
     };
 
