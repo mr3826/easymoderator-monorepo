@@ -43,6 +43,7 @@ export interface SignupRequest {
   password: string;
   full_name: string;
   phone?: string;
+  accepted_terms: true;
 }
 
 export interface CreateShopRequest {

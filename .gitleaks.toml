@@ -38,3 +38,13 @@ regexTarget = "match"
 regexes = [
   '''growth-e2e-csrf-secret-at-least-32-characters''',
 ]
+
+[[allowlists]]
+description = "Reviewed one-time password fixture used only by the Growth user UI test; it is not a credential."
+paths = [
+  '''^EasyMod-growth/src/pages/GrowthUsersPage\.test\.tsx$''',
+]
+regexTarget = "match"
+regexes = [
+  '''Zk9-pass-secret-42''',
+]
