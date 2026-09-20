@@ -29,7 +29,15 @@ const signupValidator = Joi.object({
         }),
     phone: Joi.string()
         .trim()
-        .optional()
+        .optional(),
+    accepted_terms: Joi.boolean()
+        .strict()
+        .valid(true)
+        .required()
+        .messages({
+            'any.only': 'You must accept the terms and conditions',
+            'any.required': 'You must accept the terms and conditions'
+        })
 });
 
 const signinValidator = Joi.object({

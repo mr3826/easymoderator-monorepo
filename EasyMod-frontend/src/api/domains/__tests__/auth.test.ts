@@ -69,9 +69,9 @@ describe('Auth Domain API', () => {
       };
       (httpClient.post as any).mockResolvedValue(mockResponse);
 
-      const result = await auth.signup({ email: 'new@example.com', password: 'password123', full_name: 'New User' });
+      const result = await auth.signup({ email: 'new@example.com', password: 'password123', full_name: 'New User', accepted_terms: true });
 
-      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/signup', { email: 'new@example.com', password: 'password123', full_name: 'New User' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/signup', { email: 'new@example.com', password: 'password123', full_name: 'New User', accepted_terms: true });
       expect(result.user).toEqual(mockResponse.data.data.user);
       expect(result.currentShop).toEqual(mockResponse.data.data.currentShop);
     });
@@ -87,7 +87,7 @@ describe('Auth Domain API', () => {
       };
       (httpClient.post as any).mockResolvedValue(mockResponse);
 
-      const result = await auth.signup({ email: 'new@example.com', password: 'password123', full_name: 'New User' });
+      const result = await auth.signup({ email: 'new@example.com', password: 'password123', full_name: 'New User', accepted_terms: true });
 
       expect(result.currentShop).toEqual(mockResponse.data.data.shop);
       expect(result.allShops).toHaveLength(1);

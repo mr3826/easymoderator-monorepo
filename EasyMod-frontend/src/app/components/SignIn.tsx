@@ -11,7 +11,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthProvider';
 import LanguageToggle from './LanguageToggle';
 import BrandLogo from './BrandLogo';
-import { signinSchema, type SigninFormData } from '../../features/auth/validation/schemas';
+import { signinSchema, type SigninFormData, type SigninFormInput } from '../../features/auth/validation/schemas';
 import { getErrorMessage } from '@shared/lib/http/errors';
 
 const smoothEase = [0.22, 1, 0.36, 1] as const;
@@ -36,7 +36,7 @@ export default function SignIn() {
     setError,
     control,
     formState: { errors, isSubmitting },
-  } = useForm<SigninFormData>({
+  } = useForm<SigninFormInput, unknown, SigninFormData>({
     resolver: zodResolver(signinSchema),
     defaultValues: {
       email: '',

@@ -275,7 +275,7 @@ jobs:
         working-directory: ./EasyMod-frontend
         env:
           PLAYWRIGHT_PORT: '4273'
-        run: npm run test:e2e -- tests/e2e/ai-reply-mode.spec.ts tests/e2e/shared-inbox.spec.ts --workers=1
+        run: npm run test:e2e -- tests/e2e/ai-reply-mode.spec.ts tests/e2e/shared-inbox.spec.ts tests/e2e/signup-terms.spec.ts --workers=1
 
       - name: Upload frontend Playwright artifacts
         if: failure()
@@ -804,12 +804,18 @@ jobs:
   deploy:
     name: Deploy to DO Droplet
     runs-on: ubuntu-latest
-    needs: [changes, build]
+    needs: [changes, build, frontend-e2e]
     # A new monorepo must not switch the live droplet merely because its
     # default branch was populated. Enable this repository variable only after
     # deploy secrets, the production environment, and a rollback rehearsal are
     # explicitly verified.
+    # A browser regression failure must block a production cutover. The job is
+    # skipped for backend-only changes, so that result is explicitly allowed.
     if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.build.result == 'success' &&
+      (needs.frontend-e2e.result == 'success' || needs.frontend-e2e.result == 'skipped') &&
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&

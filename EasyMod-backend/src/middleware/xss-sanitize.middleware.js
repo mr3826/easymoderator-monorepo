@@ -18,6 +18,8 @@ const XSS_PATTERNS = [
     [/vbscript\s*:/gi, ''],
 ];
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Recursively sanitize a value.
  * Strings: apply XSS patterns.
@@ -32,9 +34,15 @@ function sanitize(value) {
         return value.map(sanitize);
     }
     if (value !== null && typeof value === 'object') {
-        const result = {};
+        const result = Object.create(null);
         for (const key of Object.keys(value)) {
-            result[key] = sanitize(value[key]);
+            if (UNSAFE_KEYS.has(key)) continue;
+            Object.defineProperty(result, key, {
+                configurable: true,
+                enumerable: true,
+                value: sanitize(value[key]),
+                writable: true,
+            });
         }
         return result;
     }

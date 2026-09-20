@@ -144,6 +144,10 @@ const generateUniqueShopCode = async () => {
  * Create user with first shop
  */
 const createUserWithShop = async (userData) => {
+    if (!Object.prototype.hasOwnProperty.call(userData, 'accepted_terms') || userData.accepted_terms !== true) {
+        throw new AppError('You must accept the terms and conditions', 400);
+    }
+
     const transaction = await sequelize.transaction();
 
     try {
