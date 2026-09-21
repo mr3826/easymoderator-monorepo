@@ -11,6 +11,8 @@ satisfy it and it does not satisfy App Review. See §1a.
 (`EasyMod-frontend/src`). Where a doc and the UI disagree, the UI wins and the
 doc is wrong.
 
+> **Status note, 2026-09-22.** Meta's developer tooling reported on 2026-09-21 that the app is **Live**, all three permissions are **Advanced**, and compliance is clean, so statements below that the app is still in Development are superseded. Tech Provider Access Verification and the enabled login product could not be read by tooling and remain unconfirmed; whether this app's login dialog needs a `config_id` is likewise unconfirmed. Details and the owner runbook: [incident record](incidents/2026-09-22-meta-login-unavailable.md).
+
 This is the single runbook from opening the App Dashboard to pressing Submit.
 Paste-ready field values live in [meta-app-review-submission.md](meta-app-review-submission.md).
 The recording script lives in

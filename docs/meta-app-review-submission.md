@@ -6,6 +6,8 @@
 **Last updated:** 2026-08-20 (Messenger-only launch; Facebook only)
 **Dashboard audit:** every value below verified against the live dashboard on 2026-08-20.
 
+> **Status note, 2026-09-22.** Meta's developer tooling reported on 2026-09-21 that the app is **Live**, all three permissions are **Advanced**, and compliance is clean, so statements below that the app is still in Development are superseded. Tech Provider Access Verification and the enabled login product could not be read by tooling and remain unconfirmed; whether this app's login dialog needs a `config_id` is likewise unconfirmed. Details and the owner runbook: [incident record](incidents/2026-09-22-meta-login-unavailable.md).
+
 Paste-ready values for the Meta App Dashboard. Process and video script live in
 [META_APP_REVIEW_MASTER_GUIDE.md](META_APP_REVIEW_MASTER_GUIDE.md).
 

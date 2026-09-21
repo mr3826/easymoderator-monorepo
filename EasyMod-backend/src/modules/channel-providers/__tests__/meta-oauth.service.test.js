@@ -106,6 +106,100 @@ describe('initiateOAuth (facebook) scopes', () => {
     });
 });
 
+describe('initiateOAuth state binding', () => {
+    const config = require('../../../config/config');
+    const REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+    let savedRedirect;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        savedRedirect = config.metaOAuthRedirectUri;
+        config.metaOAuthRedirectUri = REDIRECT;
+    });
+
+    afterEach(() => {
+        config.metaOAuthRedirectUri = savedRedirect;
+    });
+
+    test('state is platform:shop:user plus a 128-bit hex nonce', async () => {
+        const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(state).toMatch(/^facebook:shop-1:user-1:[0-9a-f]{32}$/);
+    });
+
+    test('draws the nonce from the CSPRNG (crypto.randomBytes, 16 bytes)', async () => {
+        // The format and uniqueness tests below would also pass for Math.random().
+        const crypto = require('crypto');
+        const spy = jest.spyOn(crypto, 'randomBytes');
+        try {
+            await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+            expect(spy).toHaveBeenCalledWith(16);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('every initiation gets a fresh nonce', async () => {
+        const states = new Set();
+        for (let i = 0; i < 25; i += 1) {
+            const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+            states.add(state);
+        }
+        expect(states.size).toBe(25);
+    });
+
+    test('returns, stores and dials with the same state value', async () => {
+        const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(stateStore.put).toHaveBeenCalledWith(
+            state,
+            expect.objectContaining({ userId: 'user-1', shopId: 'shop-1', platform: 'facebook' }),
+        );
+        expect(mockBuildAuthUrl.mock.calls[0][0].state).toBe(state);
+    });
+
+    test('binds the exact redirect URI into both the stored state and the dialog request', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(stateStore.put.mock.calls[0][1].redirectUri).toBe(REDIRECT);
+        expect(mockBuildAuthUrl.mock.calls[0][0].redirectUri).toBe(REDIRECT);
+    });
+
+    test('passes no scopes, leaving the consent request to the provider allowlist', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(mockBuildAuthUrl.mock.calls[0][0].scopes).toEqual([]);
+    });
+});
+
+// The 403 paths for a different user, shop or platform are covered by the
+// test.each in 'OAuth callback null-state guards'. Only the redirect binding is
+// added here. The state store and provider are mocked in this file: single-use
+// consumption and TTL are covered by the oauth-state store tests, and note that
+// handleCallback consumes the state (take) before it checks who is calling.
+describe('OAuth callback redirect URI binding', () => {
+    const config = require('../../../config/config');
+    let savedRedirect;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        savedRedirect = config.metaOAuthRedirectUri;
+    });
+
+    afterEach(() => {
+        config.metaOAuthRedirectUri = savedRedirect;
+    });
+
+    test('exchanges the code with the redirect URI stored in state, not live config', async () => {
+        config.metaOAuthRedirectUri = 'https://changed.example.com/channels/oauth-callback';
+
+        await oauthService.handleCallback('auth-code', 'state-ok', 'user-xyz', 'shop-abc');
+
+        expect(mockExchangeCode).toHaveBeenCalledWith({
+            code: 'auth-code',
+            redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
+        });
+    });
+});
+
 describe('OAuth callback null-state guards', () => {
     beforeEach(() => jest.clearAllMocks());
 
