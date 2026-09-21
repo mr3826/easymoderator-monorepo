@@ -19,6 +19,9 @@ const adminCtrl = require('./growth-os.admin.controller');
 const workValidator = require('./growth-os.work.validator');
 
 const router = express.Router();
+const growthAuthenticate = typeof authenticate.withOptions === 'function'
+  ? authenticate.withOptions({ requireShopMembership: false })
+  : authenticate;
 
 const prospectMutationPermissions = [
   'growth_os.prospects.manage_all',
@@ -120,7 +123,7 @@ const growthMutationLimiter = (req, res, next) => requireDistributedRateLimit(
   (error) => (error ? next(error) : growthMutationRateLimit(req, res, next)),
 );
 
-router.use(authenticate, requireGrowthOsAccess());
+router.use(growthAuthenticate, requireGrowthOsAccess());
 router.use((_req, res, next) => {
   res.set('Cache-Control', 'no-store');
   next();

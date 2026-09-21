@@ -91,27 +91,6 @@ const getResourceAuditLogs = async (req, res, next) => {
  */
 const cleanupIdempotencyKeys = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
-        }
-
-        if (req.user?.role !== 'admin') {
-            return res.status(403).json({
-                success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    message: 'Admin role required.'
-                }
-            });
-        }
-
         const deletedCount = await auditService.cleanupExpiredIdempotencyKeys();
 
         res.status(200).json({

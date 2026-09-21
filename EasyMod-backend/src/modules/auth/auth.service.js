@@ -14,6 +14,7 @@ const cacheService = require('../../utils/cache.service');
 const { getOrigins, joinOrigin } = require('../../config/origins');
 const { getTemporaryPasswordState } = require('./temporary-password');
 const { invalidateUserSessions } = require('./session-invalidation.service');
+const { findActiveMembership } = require('../../utils/active-membership');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -358,7 +359,9 @@ const resolveAuthenticatedUser = async (email, password) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            }
+            },
+            where: { is_active: true },
+            required: true,
         }]
     });
 
@@ -722,14 +725,7 @@ const validateRefreshToken = async (refreshToken) => {
         // substitute for merchant scope. Clean stale context and credentials
         // atomically before rejecting the refresh.
         if (selectedShopId) {
-            const activeMembership = await UserShop.findOne({
-                attributes: ['id'],
-                where: {
-                    user_id: user.id,
-                    shop_id: selectedShopId,
-                    is_active: true,
-                },
-            });
+            const activeMembership = await findActiveMembership(user.id, selectedShopId);
 
             if (!activeMembership) {
                 await clearStaleShopSession(user);
@@ -745,6 +741,19 @@ const validateRefreshToken = async (refreshToken) => {
             }
         }
 
+        // Rotate the refresh token so a stolen token cannot be replayed after
+        // a successful refresh.
+        const nextRefreshToken = generateRefreshToken({
+            userId: user.id,
+            tokenVersion: user.token_version,
+            mfaVerified: decoded.mfaVerified === true,
+        });
+        const nextRefreshTokenHash = crypto
+            .createHash('sha256')
+            .update(nextRefreshToken)
+            .digest('hex');
+        await user.update({ refresh_token: nextRefreshTokenHash });
+
         // Generate new access token with shopId and token_version
         const accessToken = generateAccessToken({
             userId: user.id,
@@ -755,7 +764,12 @@ const validateRefreshToken = async (refreshToken) => {
             bootstrapOperator: isInitialGrowthBootstrapUser(user),
         });
 
-        return { accessToken, userId: user.id, shopId: selectedShopId };
+        return {
+            accessToken,
+            refreshToken: nextRefreshToken,
+            userId: user.id,
+            shopId: user.last_logged_shop_id,
+        };
     } catch (error) {
         if (error?.code === 'AUTH_ROLE_LOOKUP_UNAVAILABLE') throw error;
         throw new AppError('Invalid or expired refresh token', 401);
@@ -774,7 +788,9 @@ const getAuthContext = async (userId, shopIdFromToken) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            }
+            },
+            where: { is_active: true },
+            required: true,
         }]
     });
 

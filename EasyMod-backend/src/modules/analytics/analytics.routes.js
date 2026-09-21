@@ -13,6 +13,9 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
 
 const router = express.Router();
+const growthAuthenticate = typeof authenticate.withOptions === 'function'
+    ? authenticate.withOptions({ requireShopMembership: false })
+    : authenticate;
 
 const buildAnalyticsRateLimitStore = (prefix) => {
     // Keep unit tests deterministic and use the shared Redis-backed store in
@@ -156,7 +159,7 @@ router.get('/confidence-distribution', authenticate, AnalyticsController.getConf
  * report. Canonical Growth activation analytics live at the Growth workspace
  * prospect-ledger endpoint.
  */
-router.get('/growth', authenticate, requireGrowthOsAccess('growth_os.reports.read_all'), async (req, res) => {
+router.get('/growth', growthAuthenticate, requireGrowthOsAccess('growth_os.reports.read_all'), async (req, res) => {
     try {
         const data = await growthMetrics.getGrowthMetrics();
         res.json({ success: true, data });

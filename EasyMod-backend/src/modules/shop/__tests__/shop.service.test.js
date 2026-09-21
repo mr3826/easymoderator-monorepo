@@ -43,6 +43,7 @@ jest.mock('../../entities', () => ({
         update: jest.fn(),
         destroy: jest.fn(),
     },
+    Session: { update: jest.fn().mockResolvedValue([1]) },
     Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
     GrowthOsUserRole: { findOne: jest.fn() },
@@ -67,7 +68,8 @@ jest.mock('../../../utils/database/database-setup', () => ({
                 await mockTransaction.rollback();
                 throw error;
             }
-        })
+        }),
+        literal: jest.fn((value) => value),
     }
 }));
 
@@ -92,12 +94,26 @@ jest.mock('../../audit/audit.service', () => ({
 }));
 jest.mock('../../../utils/sse-manager', () => ({
     emit: jest.fn(),
+    disconnectUser: jest.fn(),
+}));
+jest.mock('../../../utils/cache.service', () => ({
+    delete: jest.fn().mockResolvedValue(undefined),
 }));
 
-const { Shop, User, UserShop, Subscription, GrowthOsUserRole, PushSubscription } = require('../../entities');
+const {
+    Shop,
+    User,
+    UserShop,
+    Session,
+    Subscription,
+    GrowthOsUserRole,
+    PushSubscription,
+} = require('../../entities');
 const shopService = require('src/modules/shop/shop.service');
+const { invalidateUserSessions } = require('../../auth/session-invalidation.service');
 const auditService = require('../../audit/audit.service');
 const sseManager = require('../../../utils/sse-manager');
+const cacheService = require('../../../utils/cache.service');
 
 // ── Test Data ─────────────────────────────────────────────────────────────────
 const mockUserShop = {
@@ -571,5 +587,68 @@ describe('Shop Service', () => {
                 .rejects.toMatchObject({ status: 400 });
             expect(PushSubscription.destroy).not.toHaveBeenCalled();
         });
+    });
+
+    it('removeUserFromShop — invalidates tokens, sessions, cache, and local SSE', async () => {
+        const targetMembership = {
+            role: 'staff',
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        UserShop.findOne
+            .mockResolvedValueOnce({ role: 'owner' })
+            .mockResolvedValueOnce(targetMembership);
+
+        const result = await shopService.removeUserFromShop('shop-1', 'user-1', 'user-staff');
+
+        expect(targetMembership.update).toHaveBeenCalledWith(
+            { is_active: false },
+            expect.objectContaining({ transaction: mockTransaction }),
+        );
+        expect(invalidateUserSessions).toHaveBeenCalledWith('user-staff', { transaction: mockTransaction });
+        expect(Session.update).toHaveBeenCalledWith(
+            { is_active: false },
+            { where: { user_id: 'user-staff', shop_id: 'shop-1', is_active: true } },
+        );
+        expect(cacheService.delete).toHaveBeenCalledWith('user:user-staff:token_version');
+        expect(sseManager.disconnectUser).toHaveBeenCalledWith('user-staff');
+        expect(auditService.logOperation).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'SHOP_MEMBERSHIP_REVOKED',
+            resourceId: 'user-staff:shop-1',
+        }));
+        expect(result.message).toMatch(/removed/);
+    });
+
+    it('removeUserFromShop — keeps revocation committed when audit logging fails', async () => {
+        const targetUser = {
+            id: 'user-staff',
+            last_logged_shop_id: 'shop-1',
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        const targetMembership = {
+            role: 'staff',
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        User.findByPk.mockResolvedValue(targetUser);
+        UserShop.findOne
+            .mockResolvedValueOnce({ role: 'owner' })
+            .mockResolvedValueOnce(targetMembership);
+        auditService.logOperation.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        await expect(shopService.removeUserFromShop('shop-1', 'user-1', 'user-staff')).resolves.toEqual(
+            expect.objectContaining({ message: expect.stringMatching(/removed/) }),
+        );
+        expect(targetMembership.update).toHaveBeenCalledWith(
+            { is_active: false },
+            expect.objectContaining({ transaction: mockTransaction }),
+        );
+        expect(invalidateUserSessions).toHaveBeenCalledWith('user-staff', { transaction: mockTransaction });
+    });
+
+    it('addUserToShop — refuses creating a second owner', async () => {
+        UserShop.findOne.mockResolvedValueOnce({ role: 'owner' });
+
+        await expect(shopService.addUserToShop('shop-1', 'user-1', 'new@example.test', 'owner'))
+            .rejects.toMatchObject({ status: 400 });
+        expect(User.findOne).not.toHaveBeenCalled();
     });
 });

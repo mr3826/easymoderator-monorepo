@@ -49,6 +49,9 @@ function _getBus() {
 // Map<shopId, Set<res>>
 // Tracks which SSE response objects are connected to THIS process.
 const connections = new Map();
+// Map<res, { shopId: string, userId: string }>
+// Lets membership revocation close the affected user's local streams.
+const connectionUsers = new Map();
 
 // ── Per-shop subscription handlers ───────────────────────────────────────────
 // Map<shopId, Function>
@@ -100,6 +103,7 @@ async function _ensureSubscribed(shopId) {
             if (!ok) {
                 // Stale connection — remove from registry
                 conns.delete(res);
+                connectionUsers.delete(res);
                 logger.debug('SSEManager: removed stale connection', { shopId });
             }
         }
@@ -146,12 +150,14 @@ async function _maybeUnsubscribe(shopId) {
  *
  * @param {string} shopId
  * @param {object} res    Express response in SSE mode
+ * @param {string} userId optional authenticated user identity
  */
-function register(shopId, res) {
+function register(shopId, res, userId) {
     if (!connections.has(shopId)) {
         connections.set(shopId, new Set());
     }
     connections.get(shopId).add(res);
+    if (userId) connectionUsers.set(res, { shopId, userId });
 
     // Subscribe asynchronously; errors are non-fatal (dev fallback handles it)
     _ensureSubscribed(shopId).catch((err) => {
@@ -171,6 +177,7 @@ function register(shopId, res) {
  * @param {object} res
  */
 function unregister(shopId, res) {
+    connectionUsers.delete(res);
     const conns = connections.get(shopId);
     if (!conns) return;
     conns.delete(res);
@@ -179,6 +186,22 @@ function unregister(shopId, res) {
     _maybeUnsubscribe(shopId).catch((err) => {
         logger.warn('SSEManager: unsubscribe failed', { shopId, err: err.message });
     });
+}
+
+/**
+ * Close locally-connected streams for a revoked user. Other instances enforce
+ * the same membership check on their next request.
+ */
+function disconnectUser(userId) {
+    for (const [res, connection] of connectionUsers.entries()) {
+        if (String(connection.userId) !== String(userId)) continue;
+        try {
+            res.end();
+        } catch (_) {
+            // The response close handler will still remove the stale stream.
+        }
+        unregister(connection.shopId, res);
+    }
 }
 
 /**
@@ -219,14 +242,15 @@ function emit(shopId, event, data) {
  * @param {object} req    Express request (reads req.headers['last-event-id'])
  * @param {object} res    Express response in SSE mode
  * @param {string} shopId
+ * @param {string} userId authenticated user identity
  */
-async function attachToRequest(req, res, shopId) {
+async function attachToRequest(req, res, shopId, userId) {
     const lastEventIdHeader = req.headers['last-event-id'];
     const lastEventId = lastEventIdHeader ? parseInt(lastEventIdHeader, 10) : 0;
 
     // Register first so the connection is in the registry before replay starts.
     // This ensures no events are missed during the gap between replay and live delivery.
-    register(shopId, res);
+    register(shopId, res, userId);
 
     if (lastEventId > 0) {
         // Send replay events for this reconnecting client only
@@ -297,6 +321,7 @@ function getPubSubStatus() {
 module.exports = {
     register,
     unregister,
+    disconnectUser,
     emit,
     attachToRequest,
     emitToAll,

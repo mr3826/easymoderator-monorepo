@@ -2,12 +2,13 @@ const config = require('../config/config');
 const { AppError } = require('../utils/AppError');
 const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
-const { User, UserShop } = require('../modules/entities');
+const { User } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
 const { isTemporaryPasswordExpired } = require('../modules/auth/temporary-password');
 // ADR M-004: native tokens carry a `sid` claim referencing a user_sessions
 // row, looked up below only when that claim is present.
 const Session = require('../modules/auth/session.entity');
+const { findActiveMembership } = require('../utils/active-membership');
 
 const NATIVE_AUTH_PATH = '/api/auth/native';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -45,7 +46,12 @@ const hasUnexpiredSession = (session) => {
  * Checks Bearer header first, then falls back to httpOnly cookie.
  * Also verifies the token has not been blacklisted (logout revocation).
  */
-const authenticateRequest = async (req, res, next, { allowPasswordChange = false } = {}) => {
+const authenticateRequest = async (
+    req,
+    res,
+    next,
+    { allowPasswordChange = false, requireShopMembership = true } = {},
+) => {
     try {
         // 1. Extract token — prefer Authorization header, fall back to cookie
         let token = null;
@@ -104,6 +110,7 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
         // `sid` claim and skips this block entirely — proven by
         // auth-token-version.security.test.js and native-sid-revocation.test.js.
         let shopMembershipVerified = false;
+        let activeMembership = null;
         if (decoded.sid) {
             // ADR M-010 rollback: with MOBILE_API_ENABLED off, the native
             // sign-in/refresh routes 404 and so must every native token already
@@ -144,10 +151,7 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
             // sends the client through refresh, which fails on the same
             // membership check and signs the device out.
             if (decoded.shopId) {
-                const membership = await UserShop.findOne({
-                    attributes: ['id'],
-                    where: { user_id: decoded.userId, shop_id: decoded.shopId, is_active: true },
-                });
+                const membership = await findActiveMembership(decoded.userId, decoded.shopId);
                 if (!membership) {
                     throw new AppError(
                         'Shop membership is no longer active. Please login again.',
@@ -155,6 +159,7 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
                         'NATIVE_SHOP_ACCESS_REVOKED',
                     );
                 }
+                activeMembership = membership;
                 shopMembershipVerified = true;
             }
         }
@@ -163,17 +168,10 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
         // Re-check the active relationship so a deactivated user cannot keep
         // reading shop-scoped analytics until the JWT expires. A native token's
         // membership was already checked above with the same query.
-        if (decoded.shopId && !shopMembershipVerified) {
-            const activeMembership = await UserShop.findOne({
-                attributes: ['id'],
-                where: {
-                    user_id: decoded.userId,
-                    shop_id: decoded.shopId,
-                    is_active: true,
-                },
-            });
+        if (decoded.shopId && requireShopMembership !== false && !shopMembershipVerified) {
+            activeMembership = await findActiveMembership(decoded.userId, decoded.shopId);
             if (!activeMembership) {
-                throw new AppError('Shop access is not authorized for this account.', 403, 'GROWTH_OS_FORBIDDEN');
+                throw new AppError('Your shop membership is inactive. Please login again.', 401);
             }
         }
 
@@ -217,7 +215,11 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
             // ADR M-004: present only for native-issued tokens; undefined for
             // every web token, exactly like decoded.sid itself.
             sid: decoded.sid || undefined,
+            role: activeMembership?.role,
         };
+        req.activeMembership = activeMembership;
+        req.shop = activeMembership?.shop;
+        req.userRole = activeMembership?.role;
 
         next();
     } catch (error) {
@@ -229,7 +231,26 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
     }
 };
 
-const authenticate = (req, res, next) => authenticateRequest(req, res, next);
+// Bare `authenticate` remains an Express middleware. Passing one options object
+// returns an explicitly configured middleware for recovery/global identities.
+function authenticate(optionsOrReq, res, next) {
+    if (arguments.length <= 1) {
+        return (req, response, callback) => authenticateRequest(
+            req,
+            response,
+            callback,
+            optionsOrReq || {},
+        );
+    }
+    return authenticateRequest(optionsOrReq, res, next);
+}
+
+authenticate.withOptions = (options = {}) => (req, res, next) => authenticateRequest(
+    req,
+    res,
+    next,
+    options,
+);
 
 const authenticateForPasswordChange = (req, res, next) => authenticateRequest(
     req,
