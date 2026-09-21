@@ -542,6 +542,7 @@ module.exports = {
     Tenant,
     Shop,
     UserShop,
+    Session,
     Category,
     Product,
     ProductVariant,

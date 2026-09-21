@@ -1,5 +1,5 @@
 const { AppError } = require('../utils/AppError');
-const { UserShop } = require('../modules/entities');
+const { findActiveMembership } = require('../utils/active-membership');
 
 /**
  * Shop access middleware
@@ -15,15 +15,11 @@ const verifyShopAccess = async (req, res, next) => {
             throw new AppError('Shop ID is required', 400);
         }
 
-        // Check if user has access to this shop
-        const userShop = await UserShop.findOne({
-            where: {
-                user_id: req.user.userId,
-                shop_id: shopId,
-                is_active: true
-            },
-            include: ['shop']
-        });
+        // Reuse the membership checked by authenticate when available. Direct
+        // callers still get the same live membership and shop-status check.
+        const userShop = req.activeMembership?.shop_id === shopId
+            ? req.activeMembership
+            : await findActiveMembership(req.user.userId, shopId);
 
         if (!userShop) {
             throw new AppError('You do not have access to this shop', 403);
@@ -32,6 +28,8 @@ const verifyShopAccess = async (req, res, next) => {
         // Attach shop and role to request
         req.shop = userShop.shop;
         req.userRole = userShop.role;
+        req.activeMembership = userShop;
+        if (req.user) req.user.role = userShop.role;
 
         next();
     } catch (error) {

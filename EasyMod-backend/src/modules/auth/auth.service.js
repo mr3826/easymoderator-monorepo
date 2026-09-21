@@ -12,6 +12,7 @@ const emailService = require('../../utils/email.service');
 const { passwordResetEmail } = require('../../utils/email-templates/password-reset');
 const cacheService = require('../../utils/cache.service');
 const { getOrigins, joinOrigin } = require('../../config/origins');
+const { findActiveMembership } = require('../../utils/active-membership');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -297,7 +298,9 @@ const authenticateUser = async (email, password) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            }
+            },
+            where: { is_active: true },
+            required: true,
         }]
     });
 
@@ -544,6 +547,24 @@ const validateRefreshToken = async (refreshToken) => {
             throw new AppError('No active shop session found. Please login again.', 401);
         }
 
+        const activeMembership = await findActiveMembership(user.id, user.last_logged_shop_id);
+        if (!activeMembership) {
+            throw new AppError('No active shop session found. Please login again.', 401);
+        }
+
+        // Rotate the refresh token so a stolen token cannot be replayed after
+        // a successful refresh.
+        const nextRefreshToken = generateRefreshToken({
+            userId: user.id,
+            tokenVersion: user.token_version,
+            mfaVerified: decoded.mfaVerified === true,
+        });
+        const nextRefreshTokenHash = crypto
+            .createHash('sha256')
+            .update(nextRefreshToken)
+            .digest('hex');
+        await user.update({ refresh_token: nextRefreshTokenHash });
+
         // Generate new access token with shopId and token_version
         const accessToken = generateAccessToken({
             userId: user.id,
@@ -553,7 +574,12 @@ const validateRefreshToken = async (refreshToken) => {
             mfaVerified: decoded.mfaVerified === true,
         });
 
-        return { accessToken, userId: user.id, shopId: user.last_logged_shop_id };
+        return {
+            accessToken,
+            refreshToken: nextRefreshToken,
+            userId: user.id,
+            shopId: user.last_logged_shop_id,
+        };
     } catch (error) {
         throw new AppError('Invalid or expired refresh token', 401);
     }
@@ -571,7 +597,9 @@ const getAuthContext = async (userId, shopIdFromToken) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            }
+            },
+            where: { is_active: true },
+            required: true,
         }]
     });
 

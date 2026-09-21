@@ -12,7 +12,10 @@ jest.mock('../../growth-os/growth-os.middleware', () => ({
     requireGrowthOsAccess: jest.fn(() => (req, res, next) => next()),
 }));
 jest.mock('../../../middleware/auth.middleware', () => ({
-    authenticate: jest.fn((req, res, next) => next()),
+    authenticate: jest.fn((...args) => {
+        const middleware = (_req, _res, next) => next();
+        return args.length === 1 ? middleware : middleware(...args);
+    }),
 }));
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: { query: jest.fn(), transaction: jest.fn() },

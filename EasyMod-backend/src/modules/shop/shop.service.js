@@ -1,4 +1,4 @@
-const { User, Shop, UserShop, Tenant } = require('../entities');
+const { User, Shop, UserShop, Session, Tenant } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
@@ -9,8 +9,81 @@ const {
 } = require('./shop-settings.validator');
 const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 const { normalizeAiReplyMode, isAutoSendMode } = require('./ai-reply-mode');
+const cacheService = require('../../utils/cache.service');
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
+const recordMembershipAudit = async ({
+    actorUserId,
+    targetUserId,
+    shopId,
+    action,
+    metadata = {},
+    oldValues,
+    newValues,
+}) => {
+    try {
+        const auditService = require('../audit/audit.service');
+        await auditService.logOperation({
+            userId: actorUserId,
+            shopId,
+            action,
+            resourceType: 'USER_SHOP',
+            resourceId: `${targetUserId}:${shopId}`,
+            metadata: { target_user_id: targetUserId, ...metadata },
+            ...(oldValues ? { oldValues } : {}),
+            ...(newValues ? { newValues } : {}),
+        });
+    } catch (_) {
+        // Audit failure must not undo an already-authorized membership change.
+    }
+};
+
+const invalidateUserMembershipAccess = async (userId, shopId, actorUserId) => {
+    const user = await User.findByPk(userId);
+    if (!user) return;
+
+    const updates = {
+        token_version: sequelize.literal('token_version + 1'),
+        refresh_token: null,
+    };
+    if (String(user.last_logged_shop_id || '') === String(shopId)) {
+        updates.last_logged_shop_id = null;
+    }
+
+    await user.update(updates);
+    try {
+        if (Session?.update) {
+            await Session.update(
+                { is_active: false },
+                { where: { user_id: userId, shop_id: shopId, is_active: true } },
+            );
+        }
+    } catch (_) {
+        // JWT membership checks remain authoritative if session storage is down.
+    }
+    await cacheService.delete(`user:${userId}:token_version`).catch(() => {});
+
+    try {
+        const sseManager = require('../../utils/sse-manager');
+        if (typeof sseManager.disconnectUser === 'function') {
+            // token_version and refresh_token are user-global, so disconnecting
+            // every local stream keeps multi-shop sessions consistent with the
+            // forced global logout contract.
+            sseManager.disconnectUser(userId);
+        }
+    } catch (_) {
+        // Token and refresh invalidation above remain authoritative.
+    }
+
+    await recordMembershipAudit({
+        actorUserId,
+        targetUserId: userId,
+        shopId,
+        action: 'SHOP_MEMBERSHIP_REVOKED',
+        metadata: { revoked_at: new Date().toISOString() },
+    });
+};
 
 /**
  * Get the single shop for a user.
@@ -209,6 +282,9 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
     if (!requestingUserShop || (requestingUserShop.role !== 'owner' && requestingUserShop.role !== 'admin')) {
         throw new AppError('Only shop owners or admins can add users', 403);
     }
+    if (role === 'owner') {
+        throw new AppError('A shop can only have one owner', 400);
+    }
 
     // Find user by email
     const user = await User.findOne({ where: { email } });
@@ -230,6 +306,13 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
         } else {
             // Reactivate if previously deactivated
             await existingUserShop.update({ is_active: true, role });
+            await recordMembershipAudit({
+                actorUserId: requestingUserId,
+                targetUserId: user.id,
+                shopId,
+                action: 'SHOP_MEMBERSHIP_GRANTED',
+                metadata: { role, reactivated: true },
+            });
             return existingUserShop;
         }
     }
@@ -242,9 +325,14 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
         is_active: true
     });
 
-        // Multi-owner safety validation
-        const owners = await UserShop.count({ where: { shop_id: shop.id, role: 'owner', is_active: true }, transaction });
-        if (owners > 1) throw new AppError('Shop cannot have multiple owners', 400);
+    await recordMembershipAudit({
+        actorUserId: requestingUserId,
+        targetUserId: user.id,
+        shopId,
+        action: 'SHOP_MEMBERSHIP_GRANTED',
+        metadata: { role, reactivated: false },
+    });
+
     return userShop;
 };
 
@@ -283,6 +371,7 @@ const removeUserFromShop = async (shopId, requestingUserId, targetUserId) => {
 
     // Deactivate user access
     await targetUserShop.update({ is_active: false });
+    await invalidateUserMembershipAccess(targetUserId, shopId, requestingUserId);
 
     return { message: 'User removed from shop successfully' };
 };
@@ -324,7 +413,18 @@ const updateUserRole = async (shopId, requestingUserId, targetUserId, newRole) =
     }
 
     // Update role
+    const previousRole = targetUserShop.role;
     await targetUserShop.update({ role: newRole });
+
+    await recordMembershipAudit({
+        actorUserId: requestingUserId,
+        targetUserId,
+        shopId,
+        action: 'SHOP_MEMBERSHIP_ROLE_CHANGED',
+        metadata: { changed_at: new Date().toISOString() },
+        oldValues: { role: previousRole },
+        newValues: { role: newRole },
+    });
 
     return targetUserShop;
 };

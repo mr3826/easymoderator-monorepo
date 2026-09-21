@@ -1,6 +1,7 @@
 const express = require('express');
 const auditController = require('./audit.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { requirePlatformAdmin, PLATFORM_ROLES } = require('../../middleware/platform-admin.middleware');
 
 const router = express.Router();
 
@@ -14,6 +15,6 @@ router.get('/logs', auditController.getAuditLogs);
 router.get('/resource/:type/:id', auditController.getResourceAuditLogs);
 
 // POST /audit/cleanup - Clean up expired idempotency keys (admin only)
-router.post('/cleanup', auditController.cleanupIdempotencyKeys);
+router.post('/cleanup', requirePlatformAdmin(PLATFORM_ROLES.SUPER_ADMIN), auditController.cleanupIdempotencyKeys);
 
 module.exports = router;

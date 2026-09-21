@@ -450,3 +450,20 @@ precondition, not authorization to deploy.
   `OVERALL_GROWTH_OS_RELEASE_VERDICT: NO-GO`; it closes no gate and changes no gate value.
 - `CURRENT_STATE_OPEN_ACTS`: first Growth rollout, Founder bootstrap, and the live
   `growth.easymod.tech` browser walkthrough remain the three open release acts.
+
+## S-2 authentication hardening receipt (2026-09-21)
+
+This is a security hardening receipt only. It does not start or advance a Growth
+OS product phase and does not change the Growth release gates above.
+
+- Growth OS and internal Growth analytics now use explicit authentication
+  middleware with shop-membership enforcement disabled before the existing
+  server-side `requireGrowthOsAccess` policy runs. Merchant identities remain
+  denied by the Growth role/permission gate.
+- The disposable PostgreSQL/Redis integration gate passed `14` suites / `71`
+  tests, including Growth access with zero merchant membership rows.
+- The backend security gate passed `50` suites / `455` tests. Growth and
+  analytics route regressions passed `37` tests.
+- Live membership revocation remains database-backed and does not use frontend
+  claims or stale membership cache state. No production Growth host, database,
+  Redis, TLS, operator bootstrap, or browser gate was changed or claimed.

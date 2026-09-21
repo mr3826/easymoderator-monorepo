@@ -1402,7 +1402,7 @@ class ConversationController {
 
         // attachToRequest reads Last-Event-ID, replays any missed events from
         // the Redis replay buffer, then registers this connection on the bus.
-        await sseManager.attachToRequest(req, res, shopId);
+        await sseManager.attachToRequest(req, res, shopId, req.user?.userId);
 
         // Heartbeat keeps the connection alive through idle proxies (25s < 30s proxy timeout)
         const heartbeat = setInterval(() => {

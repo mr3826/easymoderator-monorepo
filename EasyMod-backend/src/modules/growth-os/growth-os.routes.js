@@ -14,6 +14,9 @@ const prospectCtrl = require('./growth-os.prospect.controller');
 const prospectValidator = require('./growth-os.prospect.validator');
 
 const router = express.Router();
+const growthAuthenticate = typeof authenticate.withOptions === 'function'
+  ? authenticate.withOptions({ requireShopMembership: false })
+  : authenticate;
 
 const prospectMutationPermissions = [
   'growth_os.prospects.manage_all',
@@ -60,7 +63,7 @@ const prospectLookupLimiter = rateLimit({
   },
 });
 
-router.use(authenticate, requireGrowthOsAccess());
+router.use(growthAuthenticate, requireGrowthOsAccess());
 router.get('/session', ctrl.getSession);
 router.post('/roles', requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.grantRole);
 router.delete('/roles/:userId', requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.revokeRole);

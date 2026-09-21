@@ -24,12 +24,15 @@ const mockSequelize = {
 };
 
 jest.mock('../../../middleware/auth.middleware', () => ({
-    authenticate: (req, res, next) => {
-        if (req.get('authorization') !== 'Bearer merchant-shop-one') {
-            return res.status(401).json({ error: 'Authentication required' });
-        }
-        req.user = { userId: 'user-1', shopId: SHOP_ONE };
-        return next();
+    authenticate: (...args) => {
+        const middleware = (req, res, next) => {
+            if (req.get('authorization') !== 'Bearer merchant-shop-one') {
+                return res.status(401).json({ error: 'Authentication required' });
+            }
+            req.user = { userId: 'user-1', shopId: SHOP_ONE };
+            return next();
+        };
+        return args.length === 1 ? middleware : middleware(...args);
     },
 }));
 jest.mock('../knowledge-gap.entity', () => ({ create: mockGapCreate }));

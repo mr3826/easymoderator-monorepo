@@ -76,8 +76,8 @@ const refresh = async (req, res, next) => {
 
         const result = await authService.validateRefreshToken(refreshToken);
 
-        // Update access token cookie
-        setAuthCookies(res, result.accessToken, null, req);
+        // Rotate both cookies so the old refresh token cannot be replayed.
+        setAuthCookies(res, result.accessToken, result.refreshToken, req);
 
         // Log successful token refresh — non-fatal, never block the response
         try {

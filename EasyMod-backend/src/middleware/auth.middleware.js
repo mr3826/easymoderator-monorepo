@@ -3,13 +3,14 @@ const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 const { User } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
+const { findActiveMembership } = require('../utils/active-membership');
 
 /**
  * Authentication middleware
  * Checks Bearer header first, then falls back to httpOnly cookie.
  * Also verifies the token has not been blacklisted (logout revocation).
  */
-const authenticate = async (req, res, next) => {
+const authenticateRequest = (options = {}) => async (req, res, next) => {
     try {
         // 1. Extract token — prefer Authorization header, fall back to cookie
         let token = null;
@@ -63,6 +64,17 @@ const authenticate = async (req, res, next) => {
             throw new AppError('Token has been invalidated. Please login again.', 401);
         }
 
+        // A valid signature and token_version do not prove that the user can
+        // still access the shop claimed by the token. Read membership state
+        // from the database on every request so revocation is immediate.
+        let activeMembership = null;
+        if (decoded.shopId && options.requireShopMembership !== false) {
+            activeMembership = await findActiveMembership(decoded.userId, decoded.shopId);
+            if (!activeMembership) {
+                throw new AppError('Your shop membership is inactive. Please login again.', 401);
+            }
+        }
+
         // 5. Attach user data to request
         req.user = {
             userId: decoded.userId,
@@ -73,7 +85,11 @@ const authenticate = async (req, res, next) => {
             // token without it is intentionally not sufficient for privileged
             // Growth roles.
             mfaVerified: decoded.mfaVerified === true,
+            role: activeMembership?.role,
         };
+        req.activeMembership = activeMembership;
+        req.shop = activeMembership?.shop;
+        req.userRole = activeMembership?.role;
 
         next();
     } catch (error) {
@@ -84,6 +100,18 @@ const authenticate = async (req, res, next) => {
         }
     }
 };
+
+// Bare `authenticate` remains an Express middleware. Call it with options only
+// for explicitly documented recovery or platform routes that do not require the
+// token's shop membership to be active.
+function authenticate(optionsOrReq, res, next) {
+    if (arguments.length <= 1) {
+        return authenticateRequest(optionsOrReq || {});
+    }
+    return authenticateRequest()(optionsOrReq, res, next);
+}
+
+authenticate.withOptions = authenticateRequest;
 
 /**
  * Block API access for suspended shops.

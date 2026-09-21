@@ -3,6 +3,7 @@
 const mockVerifyAccessToken = jest.fn();
 const mockIsTokenBlacklisted = jest.fn();
 const mockUserFindByPk = jest.fn();
+const mockUserShopFindOne = jest.fn();
 const mockCacheGet = jest.fn();
 const mockCacheSet = jest.fn();
 const mockCacheGetForShop = jest.fn();
@@ -17,6 +18,8 @@ jest.mock('../../modules/auth/auth.service', () => ({
 }));
 jest.mock('../../modules/entities', () => ({
     User: { findByPk: mockUserFindByPk },
+    Shop: {},
+    UserShop: { findOne: mockUserShopFindOne },
     Subscription: { findOne: mockSubscriptionFindOne },
 }));
 jest.mock('../../utils/cache.service', () => ({
@@ -28,13 +31,14 @@ jest.mock('../../utils/cache.service', () => ({
 
 const { authenticate, checkSubscriptionStatus } = require('../auth.middleware');
 
-function runAuthenticate() {
+function runAuthenticate(options) {
     const req = {
         headers: { authorization: 'Bearer signed-access-token' },
         cookies: {},
     };
     return new Promise((resolve) => {
-        authenticate(req, {}, (error) => resolve({ error, req }));
+        const middleware = options ? authenticate(options) : authenticate;
+        middleware(req, {}, (error) => resolve({ error, req }));
     });
 }
 
@@ -46,6 +50,13 @@ describe('access-token revocation state', () => {
         mockCacheSet.mockResolvedValue(undefined);
         mockCacheGetForShop.mockResolvedValue(null);
         mockCacheSetForShop.mockResolvedValue(undefined);
+        mockUserShopFindOne.mockResolvedValue({
+            user_id: 'user-1',
+            shop_id: 'shop-1',
+            role: 'owner',
+            is_active: true,
+            shop: { id: 'shop-1', is_active: true },
+        });
     });
 
     test('rejects a signed token that omits tokenVersion instead of bypassing revocation', async () => {
@@ -80,6 +91,41 @@ describe('access-token revocation state', () => {
         });
         expect(req.user).toMatchObject({ userId: 'user-1', shopId: 'shop-1' });
         expect(req.user.mfaVerified).toBe(false);
+    });
+
+    test('rejects a signed token after its shop membership is deactivated', async () => {
+        mockVerifyAccessToken.mockReturnValue({
+            userId: 'user-1',
+            shopId: 'shop-1',
+            email: 'owner@example.test',
+            tokenVersion: 0,
+            exp: 123,
+        });
+        mockUserFindByPk.mockResolvedValue({ token_version: 0 });
+        mockUserShopFindOne.mockResolvedValue(null);
+
+        const { error } = await runAuthenticate();
+
+        expect(error).toMatchObject({ status: 401 });
+        expect(error.message).toMatch(/membership is inactive/);
+    });
+
+    test('allows explicitly opted-out recovery middleware to run without shop membership', async () => {
+        mockVerifyAccessToken.mockReturnValue({
+            userId: 'user-1',
+            shopId: 'shop-1',
+            email: 'owner@example.test',
+            tokenVersion: 0,
+            exp: 123,
+        });
+        mockUserFindByPk.mockResolvedValue({ token_version: 0 });
+        mockUserShopFindOne.mockResolvedValue(null);
+
+        const { error, req } = await runAuthenticate({ requireShopMembership: false });
+
+        expect(error).toBeUndefined();
+        expect(req.user).toMatchObject({ userId: 'user-1', shopId: 'shop-1' });
+        expect(req.activeMembership).toBeNull();
     });
 
     test('propagates the server-issued MFA assurance claim', async () => {

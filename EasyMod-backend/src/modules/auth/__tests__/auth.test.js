@@ -187,6 +187,13 @@ describe('Auth API', () => {
         mockRedis.expire.mockClear();
         mockRedis.ttl.mockClear();
         mockUser.update.mockClear();
+        UserShop.findOne.mockResolvedValue({
+            user_id: mockUser.id,
+            shop_id: mockUser.last_logged_shop_id,
+            role: 'owner',
+            is_active: true,
+            shop: { id: mockUser.last_logged_shop_id, is_active: true },
+        });
     });
 
     // ── Signup ──────────────────────────────────────────────────────────
@@ -369,6 +376,22 @@ describe('Auth API', () => {
             const cookieStr = cookies.join('; ');
             expect(cookieStr).toContain('access_token=');
             expect(cookieStr).toContain('HttpOnly');
+        });
+
+        it('requires an active shop row when selecting a login shop', async () => {
+            User.findOne.mockResolvedValue(mockUser);
+
+            await authService.authenticateUser('test@example.com', 'correct-password');
+
+            expect(User.findOne).toHaveBeenCalledWith(expect.objectContaining({
+                include: [expect.objectContaining({
+                    where: { is_active: true },
+                    required: true,
+                    through: expect.objectContaining({
+                        where: { is_active: true },
+                    }),
+                })],
+            }));
         });
 
         it('should return 400 when email is missing', async () => {

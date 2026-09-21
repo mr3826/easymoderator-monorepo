@@ -165,7 +165,7 @@ jest.mock('src/utils/email.service', () => ({
     sendEmail: jest.fn(() => Promise.resolve())
 }));
 
-const { User, PasswordResetToken } = require('src/modules/entities');
+const { User, UserShop, PasswordResetToken } = require('src/modules/entities');
 const { generateAccessToken, generateRefreshToken } = require('src/utils/jwt.util');
 
 describe('Auth Security Fixes', () => {
@@ -182,6 +182,13 @@ describe('Auth Security Fixes', () => {
         mockUser.token_version = 1;
         mockUser.refresh_token = null;
         mockUser.last_logged_shop_id = 'shop-1';
+        UserShop.findOne.mockResolvedValue({
+            user_id: mockUser.id,
+            shop_id: mockUser.last_logged_shop_id,
+            role: 'owner',
+            is_active: true,
+            shop: { id: mockUser.last_logged_shop_id, is_active: true },
+        });
     });
 
     // ============================================================================
