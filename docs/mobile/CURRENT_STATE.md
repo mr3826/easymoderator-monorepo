@@ -342,3 +342,27 @@ leave the web application, workers, Facebook automation, orders, billing, courie
 and production deployment behaving exactly as they do at the baseline SHA above. This is verified
 per-phase by `git diff origin/main...HEAD --stat` scoped outside `EasyMod-mobile/`, `docs/mobile/`,
 and `mobile-ci.yml`, plus the existing backend/frontend/growth test suites run at unchanged counts.
+
+## 17. Platform audit reconciliation (2026-09-21)
+
+This appendix supersedes the Phase 0 baseline for release decisions without
+rewriting the historical claims or receipts above.
+
+- Current integration branch: `origin/feature/mobile-app@04bb4d5f8ec90baf241253b1dacfef48c5a6b3f6`.
+- Current main: `origin/main@cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4`.
+- PR #126 (`mobile/p2-android-build-infra`) is still open against
+  `feature/mobile-app`, at head `a4bf7c018788d000f022fcaad3995d697631a59`.
+  Its Mobile CI result is validation evidence only; `.github/workflows/mobile-ci.yml`
+  intentionally defines no Android Gradle, APK install/launch, emulator, or device
+  E2E job. Native production-grade build proof is therefore `NOT_VERIFIED`.
+- The historical Phase 1 Android receipt and the later Windows path-length failure
+  correction are both retained as history. A future native gate must use a shallow,
+  deterministic checkout with session-scoped Node/JDK/Android tooling and must prove
+  the required ABI build plus APK install/launch and device flows.
+- GitHub currently reports `main` as unprotected and exposes no repository rulesets
+  through the available API. The production environment has a branch-policy rule,
+  but this is not equivalent to protected-main enforcement. Do not treat the old
+  baseline statement that rulesets returned `403` as current evidence.
+- Mobile CI remains isolated: no production secrets, environment, SSH, registry push,
+  or main trigger. Superseded mobile validation runs are now cancelled by branch/PR
+  concurrency; this does not cancel a release or deployment action because none exists.

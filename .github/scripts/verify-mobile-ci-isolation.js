@@ -85,6 +85,22 @@ if (/permissions\s*:[\s\S]{0,200}?:\s*write\b/.test(code)) {
   failures.push('a `*: write` permission is forbidden anywhere in mobile-ci.yml');
 }
 
+// Mobile CI has no release side effect, so superseded branch validation must
+// not consume another runner while a newer push or PR update is available. But
+// the group must be scoped per event type and PR number so a branch push never
+// cancels that same branch's open-PR merge gate (they are different scopes and
+// the PR gate must remain a reliable required check).
+const concurrencyBlock = extractTopLevelBlock(code, 'concurrency') || '';
+if (!/cancel-in-progress\s*:\s*true\b/.test(concurrencyBlock)) {
+  failures.push('mobile-ci.yml must cancel superseded validation runs');
+}
+if (!/github\.event_name/.test(concurrencyBlock)) {
+  failures.push('mobile-ci.yml concurrency group must be keyed by github.event_name so a push cannot cancel a PR gate');
+}
+if (!/github\.event\.pull_request\.number/.test(concurrencyBlock)) {
+  failures.push('mobile-ci.yml concurrency group must key pull_request runs by github.event.pull_request.number so same-named PRs do not cancel each other');
+}
+
 // 5. Every push/pull_request trigger must carry an explicit, non-wildcard
 // `branches:` list that does not include `main`. This is stricter than a
 // literal "no `main` substring" check: a `branches:` list is REQUIRED (an
