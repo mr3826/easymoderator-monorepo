@@ -362,7 +362,10 @@ does not rebuild the already-merged prospect foundation.
 
 ## Known limitations and pre-existing debt
 
-- The repository has no tracked `docs/growth-os/GROWTH_OS_GOAL.md` or `CURRENT_STATE.md`; the available untracked master-goal document was preserved in the user's root worktree and historical tracked Growth documents were used as context. This Phase 2 state file is the durable evidence record.
+- The historical Phase 2 receipt said `docs/growth-os/GROWTH_OS_GOAL.md` and
+  `CURRENT_STATE.md` were absent. The current repository contains the tracked
+  `GROWTH_OS_GOAL.md` and `GROWTH_OS_CURRENT_STATE.md`; this receipt is retained
+  as history and the reconciliation appendix is the current platform record.
 - Node `v25.6.1` is newer than the repository's Node 20 engine. The local unit/security gates pass, but runs without Redis emit pre-existing post-test BullMQ/ioredis `ECONNREFUSED` logs; the disposable PostgreSQL/Redis gate passes with Redis available.
 - The two existing quarantine suites remain unrelated debt: the chatbot suite currently assumes a legacy route, and the smart-payment suite requires an unsupported CommonJS/ESM Chai load. They remain within the tracked quarantine allowance and were not changed by Phase 3.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
@@ -450,3 +453,28 @@ precondition, not authorization to deploy.
   `OVERALL_GROWTH_OS_RELEASE_VERDICT: NO-GO`; it closes no gate and changes no gate value.
 - `CURRENT_STATE_OPEN_ACTS`: first Growth rollout, Founder bootstrap, and the live
   `growth.easymod.tech` browser walkthrough remain the three open release acts.
+
+## Platform audit reconciliation (2026-09-21)
+
+This appendix is the current platform-audit receipt. Earlier dated receipts and
+their cited historical SHAs remain unchanged and are not rewritten.
+
+```text
+AUDIT_DATE=2026-09-21
+CURRENT_MAIN=cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4
+GROWTH_PR_HEAD=1f4cd9de398f9814a2e8dc2cb69fe22b83bc1f05
+PRODUCTION_DEPLOYMENT_SHA=cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4
+PRODUCTION_DEPLOY_ENABLED=false
+GROWTH_WORKFLOW_BOUNDARY=SEPARATE_PATH_FILTERED_PUSH_AND_WORKFLOW_CALL
+GROWTH_LIVE_ORIGIN=NOT_VERIFIED
+GROWTH_OPERATOR_BOOTSTRAP=NOT_VERIFIED
+GROWTH_NATIVE_PRODUCTION_DIGEST=NOT_VERIFIED
+GROWTH_RELEASE_VERDICT=NO-GO / NOT READY
+```
+
+The old `CURRENT_MAIN`, worktree, and live-gate values above this appendix are
+historical evidence. The current code still contains the Growth OS surface and
+its separate verification/publish workflow, but this audit found no new live
+Growth-origin browser, TLS, Founder bootstrap, or operator-delivery receipt.
+The production deploy gate was explicitly restored to `false` after the latest
+manual deployment run.

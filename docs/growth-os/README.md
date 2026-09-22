@@ -12,9 +12,11 @@ standalone SaaS product.
 - The dated audit and architecture documents preserve historical repository
   evidence. Current code and tests take precedence when they differ.
 
-The original `GROWTH_OS_GOAL.md` and `CURRENT_STATE.md` were never recovered.
-`GROWTH_OS_CURRENT_STATE.md` records the current-state determination; the tracked
-execution state and this index remain the durable navigation points.
+`GROWTH_OS_GOAL.md` is tracked as a goal document, while the legacy
+`CURRENT_STATE.md` is absent. `GROWTH_OS_CURRENT_STATE.md` is the tracked
+current-state determination; the tracked execution state and this index remain
+the durable navigation points. Dated audits are historical evidence and must
+not override the current code, refs, or these two living documents.
 
 ## Access Boundary
 
@@ -29,7 +31,10 @@ Phase 3 provides a canonical prospect ledger, deterministic lifecycle changes,
 assignment, deliberate linkage to existing users/shops, merge handling, a typed
 timeline, duplicate preflight, and a dry-run-by-default historical importer.
 Prospects point to EasyModerator records and never copy or mutate subscriptions,
-shops, users, customers, or merchant producer paths.
+shops, users, customers, or merchant producer paths. The one-off importer may
+read legacy CRM/audit rows to reconstruct provenance, but
+`growth_os_prospects` and `growth_os_prospect_events` remain the canonical
+Growth source of truth; `audit_logs` is not the prospect ledger.
 
 Frontend routes live inside `EasyMod-growth`:
 

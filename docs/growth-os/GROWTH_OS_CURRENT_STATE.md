@@ -1,7 +1,8 @@
 # Growth OS Current State
 
-Date: 2026-08-22
-Evidence checkout: `D:\easymod\_prt-migration-fix`
+Date: 2026-08-22 (historical determination; reconciled in the appendix below)
+Evidence checkout: historical checkout unavailable; current evidence is the
+repository revision and receipts named in the reconciliation appendix below.
 Release verdict: `NOT READY`
 
 This document is a current-state determination, not a product vision. It uses
@@ -51,8 +52,8 @@ commits behind `origin/main`. It has no prospect-ledger implementation and its
 execution state is frozen at the earlier foundation phase. Auditing that
 directory produces the false conclusion that Phase 3 does not exist.
 
-The authoritative evidence for this document is the `_prt-migration-fix`
-checkout, where the release state records the merged Phase 3 implementation,
+The authoritative evidence for this historical determination was a now-removed
+Phase 3 checkout, where the release state recorded the merged implementation,
 the hardening receipts, and the still-open production gates
 (`docs/growth-os/EXECUTION_STATE.md:317-361`, `:408-438`). Do not use the
 stale checkout for release decisions, code review, or gap counting.
@@ -234,7 +235,7 @@ acceptance criteria, and the release gate or readiness condition it affects.
 Files and surfaces:
 
 - `D:\easymod\easy-moderator` default checkout.
-- `D:\easymod\_prt-migration-fix` authoritative Phase 3 checkout.
+- The historical Phase 3 checkout (no longer retained locally).
 - `docs/growth-os/README.md` and `docs/growth-os/EXECUTION_STATE.md`.
 
 Acceptance criteria:
@@ -609,11 +610,11 @@ gap; it does not replace the live-origin receipt.
 
 ### Defer and reject decisions
 
-The tracked repository says the original `GROWTH_OS_GOAL.md` and
-`CURRENT_STATE.md` are absent (`docs/growth-os/README.md:15-17`; execution state
-also records the absence at `docs/growth-os/EXECUTION_STATE.md:363-371`). The
-seven questions below are therefore explicit decision tests for this document,
-not a claim that a missing canonical list was recovered:
+The historical determination said the original `GROWTH_OS_GOAL.md` and legacy
+`CURRENT_STATE.md` were absent. The current repository contains
+`GROWTH_OS_GOAL.md` and `GROWTH_OS_CURRENT_STATE.md`; the seven questions below
+remain explicit decision tests rather than a claim that the historical legacy
+list was recovered:
 
 1. What user problem is being solved now?
 2. Is there enough real volume and evidence to justify the proposed system?
@@ -701,7 +702,7 @@ are later decisions that require real volume and evidence.
 This deliverable is a document, so verification is read-back and citation
 review rather than an application test run.
 
-1. Spot-check every cited path in the `_prt-migration-fix` checkout, including
+1. Spot-check every cited path in the current repository revision, including
    the migration checks/indexes, the `scope: null` sites, the workflow bootstrap
    path, and the rollback fixture.
 2. Compare every quoted `EXECUTION_STATE.md` gate and value against the source;
@@ -720,3 +721,23 @@ production host, database, prospect data, secrets, billing state, DNS, TLS,
 infrastructure, registry state, or external service. The Growth image
 publication and prior CI receipts are recorded evidence, not actions performed
 by this document.
+
+## Platform audit reconciliation (2026-09-21)
+
+The dated determination above remains historical. Current platform evidence is:
+
+- `origin/main` is `cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4`; the recorded
+  `cf634fab...` current-main value is stale.
+- The current repository still contains the Growth backend/frontend surface and
+  the separate path-filtered `growth-os.yml` pipeline. It is not part of the
+  merchant image build/deploy decision except for preserving the running
+  immutable Growth reference during a production cutover.
+- GitHub's latest production deployment record is for `cf57db1e...`, but the
+  live Growth digest, TLS certificate, authenticated Founder bootstrap, and
+  real-origin browser walkthrough were not independently verified in this audit.
+- `PRODUCTION_DEPLOY_ENABLED` was observed `true` after the latest manual
+  deployment and was restored to `false` on 2026-09-21. No production deploy was
+  initiated by this audit.
+- The release disposition remains `CONDITIONAL / NO-GO` until the three live
+  Growth acts named in the historical determination have receipts from the
+  current deployment.

@@ -1,5 +1,12 @@
 # Growth OS Application Foundation
 
+> **Historical bootstrap note:** The raw SQL role snippets in this dated
+> document are retained as history only. Do not use them for production access
+> changes. Use the audited `grant-growth-role.yml` workflow, which delegates to
+> the transactional role service, preserves the last-Founder guard, writes the
+> audit row, and invalidates the authorization cache. The current release state
+> and operator procedure are maintained in `docs/growth-os/EXECUTION_STATE.md`.
+
 Date: 2026-07-18
 Status: Prompt 2 foundation implemented
 Verdict: CONDITIONALLY READY for Prompt 3 after manual role bootstrap and browser verification
@@ -151,9 +158,11 @@ Roles:
 
 Initial permissions are intentionally minimal and foundation-oriented. Prompt 3 must extend permissions only for the prospect/lead module it implements.
 
-## Manual Role Bootstrap
+## Manual Role Bootstrap (Historical, Do Not Execute)
 
-No Founder UI exists yet. Bootstrap the first Growth OS role directly in the database after migrations run:
+No Founder UI existed when this document was written. The following SQL is a
+historical record of the old procedure and must not be executed against a
+current environment:
 
 ```sql
 INSERT INTO growth_os_user_roles (user_id, role, is_active, metadata)
@@ -196,7 +205,8 @@ Docker Compose service:
 growth-frontend
 ```
 
-Default image:
+Historical development placeholder only. Production must resolve the image to
+an immutable `@sha256:<digest>` reference; never deploy this mutable tag:
 
 ```text
 ghcr.io/mr3826/easymod-growth:latest

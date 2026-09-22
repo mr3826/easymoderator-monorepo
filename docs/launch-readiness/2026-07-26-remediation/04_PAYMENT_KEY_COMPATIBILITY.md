@@ -35,7 +35,10 @@ This writes the **exact same 32 bytes the runtime already derives**, so:
 | digest vs runtime | `Buffer.from(normalized,'hex')` equals the runtime `getEncryptionKey()` derivation |
 | missing key | preflight throws `/PAYMENT_ENCRYPTION_KEY/` |
 
-All pass (see `08_TEST_AND_SECURITY_RECEIPTS.md`).
+The original task recorded these cases as passing. The supporting receipt is
+not present in the current checkout, so this dated document is historical
+evidence and must not be treated as a current receipt without rerunning the
+cases.
 
 ## Documented follow-up (NOT done in this task)
 

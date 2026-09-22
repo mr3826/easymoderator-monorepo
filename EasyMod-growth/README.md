@@ -34,9 +34,11 @@ npm run typecheck    # tsc --noEmit
 npm run build
 ```
 
-`npm test` is an alias for `typecheck`. There is no behavioural test suite here
-— the authorization rules this app depends on are covered on the backend by
-`growth-os.authz.test.js`. Treat the type gate as a type gate, not as coverage.
+`npm test` runs the Growth Vitest suite and TypeScript check. `npm run test:e2e`
+runs the Playwright suite against the configured local test server. These are
+behavioral checks for the frontend; backend authorization remains covered by
+`growth-os.authz.test.js`. The current browser suite uses the Vite/test harness,
+so it is not a substitute for a live-origin Caddy/nginx receipt.
 
 ## Delivery
 
