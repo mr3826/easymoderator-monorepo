@@ -3,12 +3,14 @@
 const {
     run,
     checkRedirectUri,
+    checkLoginConfigId,
     checkApiBase,
     checkDeletionEndpoint,
     MANUAL_CHECKS,
 } = require('../meta-readiness-preflight');
 
 const GOOD_REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+const GOOD_CONFIG_ID = '1685388446490514';
 const DELETION_BODY = { instructions: ['Remove the app in Facebook settings.'], contact: 'privacy@easymod.tech' };
 
 const okFetch = () => jest.fn().mockResolvedValue({ status: 200, json: async () => DELETION_BODY });
@@ -111,10 +113,37 @@ describe('checkDeletionEndpoint', () => {
     });
 });
 
+describe('checkLoginConfigId', () => {
+    test('accepts a bare numeric configuration ID', () => {
+        expect(checkLoginConfigId(GOOD_CONFIG_ID).status).toBe('PASS');
+    });
+
+    test('never claims the configuration exists or is the right token type', () => {
+        expect(checkLoginConfigId(GOOD_CONFIG_ID).detail).toMatch(/not verified against Meta/);
+    });
+
+    test.each([
+        ['unset', undefined],
+        ['empty', ''],
+        ['a placeholder', 'CHANGE_ME'],
+        ['quoted', '"1685388446490514"'],
+        ['too short', '12345'],
+        ['a comma-joined pair', '1685388446490514,35885387384409543'],
+        ['carrying an injected parameter', '1685388446490514&scope=business_management'],
+    ])('fails on %s', (_label, value) => {
+        expect(checkLoginConfigId(value).status).toBe('FAIL');
+    });
+
+    test('does not echo the offending value back into output', () => {
+        const detail = checkLoginConfigId('"1685388446490514"').detail;
+        expect(detail).not.toContain('1685388446490514');
+    });
+});
+
 describe('run', () => {
     test('exits 0 when no automated check fails, and still lists every unverified item', async () => {
         const { code, output } = await runCaptured({
-            env: { META_OAUTH_REDIRECT_URI: GOOD_REDIRECT },
+            env: { META_OAUTH_REDIRECT_URI: GOOD_REDIRECT, META_LOGIN_CONFIG_ID: GOOD_CONFIG_ID },
             fetchImpl: okFetch(),
         });
 
@@ -124,7 +153,7 @@ describe('run', () => {
 
     test('never reports Meta as ready: the verdict is UNKNOWN until manual items are confirmed', async () => {
         const { output } = await runCaptured({
-            env: { META_OAUTH_REDIRECT_URI: GOOD_REDIRECT },
+            env: { META_OAUTH_REDIRECT_URI: GOOD_REDIRECT, META_LOGIN_CONFIG_ID: GOOD_CONFIG_ID },
             fetchImpl: okFetch(),
         });
 
@@ -132,18 +161,34 @@ describe('run', () => {
     });
 
     test('says how many checks were skipped instead of calling a partial run a pass', async () => {
-        const { code, output } = await runCaptured({ env: {}, fetchImpl: okFetch() });
+        const { code, output } = await runCaptured({
+            env: { META_LOGIN_CONFIG_ID: GOOD_CONFIG_ID },
+            fetchImpl: okFetch(),
+        });
 
         expect(code).toBe(0);
         expect(output).toContain('SKIP  redirect URI shape');
-        expect(output).toMatch(/2 passed, 1 skipped/);
+        expect(output).toMatch(/3 passed, 1 skipped/);
         expect(output).not.toMatch(/automated checks passed/i);
+    });
+
+    // An unset configuration ID is not a skip: it is the 2026-09-22 defect
+    // itself, so the preflight must fail rather than report a clean run.
+    test('exits 1 when META_LOGIN_CONFIG_ID is unset', async () => {
+        const { code, output } = await runCaptured({
+            env: { META_OAUTH_REDIRECT_URI: GOOD_REDIRECT },
+            fetchImpl: okFetch(),
+        });
+
+        expect(code).toBe(1);
+        expect(output).toContain('FAIL  login configuration ID shape');
     });
 
     test('keeps the gates behind the 2026-09-22 incident on the unverified list', () => {
         const names = MANUAL_CHECKS.map(([name]) => name).join('\n');
         expect(names).toContain('public_profile is at Advanced Access');
-        expect(names).toContain('Login product');
+        expect(names).toContain('META_LOGIN_CONFIG_ID');
+        expect(names).toContain('USER access token configuration');
         expect(names).toContain('Access Verification (Tech Provider)');
     });
 

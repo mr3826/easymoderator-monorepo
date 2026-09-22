@@ -69,19 +69,47 @@ jest.mock('../meta-channel.service', () => ({
 const stateStore = require('../oauth-state.store');
 const oauthService = require('../meta-oauth.service');
 
-describe('initiateOAuth (facebook) scopes', () => {
+describe('initiateOAuth (facebook) permission surface', () => {
     beforeEach(() => jest.clearAllMocks());
 
-    test('never injects business_management or any Instagram scope', async () => {
+    // Under Facebook Login for Business the Meta Login Configuration owns the
+    // permission set, so the service must not negotiate permissions at all.
+    // It still passes an empty `scopes` to keep the ChannelProvider contract;
+    // what matters is that it never populates it. See
+    // docs/incidents/2026-09-22-meta-login-unavailable.md.
+    test('requests no runtime permissions and never injects business_management or Instagram', async () => {
         await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
         const { scopes } = mockBuildAuthUrl.mock.calls[0][0];
-        // The service delegates the concrete scope list to
-        // MetaMessengerProvider.DEFAULT_SCOPES (asserted in the provider test);
-        // it must never add Instagram or the high-sensitivity business_management.
+
+        expect(scopes).toEqual([]);
         expect(scopes).not.toContain('business_management');
         expect(scopes).not.toContain('instagram_basic');
         expect(scopes).not.toContain('instagram_manage_messages');
         expect(scopes).not.toContain('instagram_manage_comments');
+    });
+
+    // The provider owns config_id; the service must not invent one or reach
+    // around the provider to build its own authorization URL.
+    test('delegates the authorization URL to the provider and returns it unchanged', async () => {
+        mockBuildAuthUrl.mockResolvedValueOnce('https://www.facebook.com/v22.0/dialog/oauth?config_id=stub');
+        const result = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(mockBuildAuthUrl).toHaveBeenCalledTimes(1);
+        expect(result.redirectUrl).toBe('https://www.facebook.com/v22.0/dialog/oauth?config_id=stub');
+    });
+
+    // A provider that fails closed on a missing configuration must surface as a
+    // failed initiation, not as a half-built dialog or a swallowed error.
+    test('propagates a fail-closed provider error instead of returning a URL', async () => {
+        mockBuildAuthUrl.mockRejectedValueOnce(
+            Object.assign(new Error('Facebook login is not configured.'), {
+                status: 500,
+                code: 'META_LOGIN_CONFIG_ID_INVALID',
+            }),
+        );
+
+        await expect(oauthService.initiateOAuth('user-1', 'shop-1', 'facebook'))
+            .rejects.toMatchObject({ code: 'META_LOGIN_CONFIG_ID_INVALID' });
     });
 
     test('builds an OAuth redirect URL + facebook-prefixed state', async () => {

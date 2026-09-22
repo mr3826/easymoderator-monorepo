@@ -52,6 +52,7 @@ function validSource(overrides = {}) {
         FRONTEND_URL: 'https://app.easymod.tech',
         BASE_URL: 'https://api.easymod.tech',
         META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/channels/oauth-callback',
+        META_LOGIN_CONFIG_ID: '1685388446490514',
         META_APP_ID: '1234567890',
         META_APP_SECRET: hex64('e'),
         META_WEBHOOK_VERIFY_TOKEN: hex64('f'),
@@ -276,6 +277,30 @@ describe('image-understanding switches are settable in production', () => {
     test('vision can be turned on deliberately', () => {
         const env = buildRenderedEnv(validSource({ AI_VISION_ENABLED: 'true' }));
         expect(env.AI_VISION_ENABLED).toBe('true');
+    });
+});
+
+describe('Facebook Login for Business configuration (2026-09-22 incident)', () => {
+    // The deploy must carry the Meta Login Configuration ID. Without it the
+    // authorization dialog reverts to the classic-Login contract, which this
+    // app's Meta configuration no longer honours — the merchant-visible
+    // "Feature unavailable" outage. Catch it at render time, not in production.
+    test('a missing META_LOGIN_CONFIG_ID fails the render', () => {
+        const source = validSource();
+        delete source.META_LOGIN_CONFIG_ID;
+
+        expect(() => buildRenderedEnv(source))
+            .toThrow(/META_LOGIN_CONFIG_ID/);
+    });
+
+    test('a malformed META_LOGIN_CONFIG_ID fails the render', () => {
+        expect(() => buildRenderedEnv(validSource({ META_LOGIN_CONFIG_ID: 'CHANGE_ME' })))
+            .toThrow(/META_LOGIN_CONFIG_ID/);
+    });
+
+    test('the configured value reaches .env.prod verbatim', () => {
+        const rendered = buildRenderedEnv(validSource());
+        expect(rendered.META_LOGIN_CONFIG_ID).toBe('1685388446490514');
     });
 });
 

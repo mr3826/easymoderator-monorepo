@@ -19,6 +19,11 @@
  *
  * Usage: node scripts/meta-readiness-preflight.js
  *   META_OAUTH_REDIRECT_URI  callback URL to shape-check (optional; SKIP if unset)
+ *   META_LOGIN_CONFIG_ID     Facebook Login for Business configuration ID to
+ *                            shape-check (optional; SKIP if unset). Whether the
+ *                            ID actually exists in the app, and whether it is a
+ *                            user- or system-user-token configuration, is only
+ *                            visible in the dashboard and stays UNVERIFIED.
  *   API_BASE_URL             defaults to https://api.easymod.tech (https only,
  *                            except localhost); redirects are not followed
  * Exit code: 0 = no automated check failed (skips are reported, not failures),
@@ -29,10 +34,13 @@ const DEFAULT_API_BASE = 'https://api.easymod.tech';
 const CALLBACK_PATH = '/channels/oauth-callback';
 const TIMEOUT_MS = 10000;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+// Must stay in step with production-config.validator.js and
+// MetaMessengerProvider's LOGIN_CONFIG_ID_PATTERN.
+const LOGIN_CONFIG_ID_PATTERN = /^[0-9]{6,32}$/;
 
 const MANUAL_CHECKS = [
     ['public_profile is at Advanced Access', 'App Review > Permissions and Features, or devtools_app_review privileges'],
-    ['Login product (Facebook Login vs Facebook Login for Business) and its configuration', 'App Dashboard > Facebook Login'],
+    ['The configured META_LOGIN_CONFIG_ID exists and is the USER access token configuration (not the system-user one)', 'App Dashboard > Facebook Login for Business > Configurations'],
     ['Access Verification (Tech Provider) is completed', 'App settings > Basic > Business portfolio > Access verification'],
     ['pages_show_list, pages_messaging, pages_manage_metadata are Advanced and live', 'devtools_app_review privileges'],
     ['App mode is Live', 'devtools_app basic_settings'],
@@ -63,6 +71,23 @@ function checkRedirectUri(value) {
         };
     }
     return { status: 'PASS', detail: `${canonical} (shape only; host not verified against Meta)` };
+}
+
+// Shape only. A syntactically valid ID can still be the wrong configuration, or
+// belong to another app — only the dashboard can settle that, so it stays in
+// MANUAL_CHECKS. What this catches is the class of value that cannot work at
+// all: unset, placeholder, quoted, or carrying injected query parameters.
+function checkLoginConfigId(value) {
+    if (!value) {
+        return {
+            status: 'FAIL',
+            detail: 'META_LOGIN_CONFIG_ID not set; Facebook Login for Business cannot invoke a login dialog without it',
+        };
+    }
+    if (!LOGIN_CONFIG_ID_PATTERN.test(String(value).trim())) {
+        return { status: 'FAIL', detail: 'must be a bare numeric configuration ID (6-32 digits)' };
+    }
+    return { status: 'PASS', detail: 'well-formed (existence and token type not verified against Meta)' };
 }
 
 function checkApiBase(apiBase) {
@@ -127,6 +152,7 @@ async function run({ env = process.env, fetchImpl = globalThis.fetch, log = cons
 
     const results = [
         ['redirect URI shape', checkRedirectUri(env.META_OAUTH_REDIRECT_URI)],
+        ['login configuration ID shape', checkLoginConfigId(env.META_LOGIN_CONFIG_ID)],
         ['API base URL', apiBaseCheck],
         ['data-deletion endpoint live', deletionCheck],
     ];
@@ -154,4 +180,11 @@ if (require.main === module) {
         });
 }
 
-module.exports = { run, checkRedirectUri, checkApiBase, checkDeletionEndpoint, MANUAL_CHECKS };
+module.exports = {
+    run,
+    checkRedirectUri,
+    checkLoginConfigId,
+    checkApiBase,
+    checkDeletionEndpoint,
+    MANUAL_CHECKS,
+};

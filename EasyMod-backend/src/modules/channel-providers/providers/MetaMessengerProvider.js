@@ -30,11 +30,24 @@ const logger = createLogger('MetaMessengerProvider');
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-const DEFAULT_SCOPES = [
+// The permissions this integration runs on. Under Facebook Login for Business
+// these are OWNED BY THE META LOGIN CONFIGURATION (META_LOGIN_CONFIG_ID), not
+// requested at runtime — Meta's guidance for a configuration-driven dialog is
+// that `config_id` replaces `scope` and that `scope` should not be sent.
+// This list is kept as the in-repo record of what that configuration must
+// grant, and as the assertion target for the App Review surface tests. It is
+// deliberately NOT put on the authorization URL. See
+// docs/incidents/2026-09-22-meta-login-unavailable.md.
+const CONFIGURATION_OWNED_PERMISSIONS = [
     'pages_show_list',
     'pages_messaging',
     'pages_manage_metadata'
 ];
+
+// Meta Login Configuration IDs are numeric identifiers. Reject anything else
+// rather than putting a malformed value on the wire, where it surfaces to the
+// merchant as an opaque "Feature unavailable" dialog with nothing in our logs.
+const LOGIN_CONFIG_ID_PATTERN = /^[0-9]{6,32}$/;
 
 const WEBHOOK_FIELDS = [
     'messages'
@@ -213,14 +226,40 @@ class MetaMessengerProvider extends ChannelProvider {
     get platform() { return 'facebook'; }
 
     async buildAuthUrl({ state, scopes, redirectUri }) {
-        // OAuth scope selection is provider-owned for the Messenger-only launch.
-        // Keep the base provider contract's `scopes` argument, but never let a
-        // caller broaden or narrow this exact consent request.
-        const finalScopes = DEFAULT_SCOPES.join(',');
+        // Facebook Login for Business is configuration-driven: the dashboard
+        // Login Configuration owns the permission set, and `config_id` selects
+        // it. The legacy classic-Login contract (scope=..., no config_id) is
+        // what produced the 2026-09-22 "Feature unavailable" outage, so there is
+        // no fallback to it — a missing or malformed configuration ID fails
+        // closed here, in every environment, rather than silently downgrading
+        // the authorization contract. Production boot also refuses to start
+        // without META_LOGIN_CONFIG_ID (production-config.validator.js).
+        //
+        // The base provider contract's `scopes` argument is intentionally
+        // ignored: permissions are not negotiable at runtime under this product,
+        // so a caller can neither broaden nor narrow the consent request.
+        const configId = String(config.metaLoginConfigId || '').trim();
+        if (!LOGIN_CONFIG_ID_PATTERN.test(configId)) {
+            throw new AppError(
+                'Facebook login is not configured. Set META_LOGIN_CONFIG_ID to the '
+                + 'Meta Login Configuration ID for this app.',
+                500,
+                'META_LOGIN_CONFIG_ID_INVALID',
+            );
+        }
+
+        // Parameter set per Meta's manual login flow + Facebook Login for
+        // Business guidance for a USER access token configuration:
+        //   - config_id replaces scope (scope is deliberately absent)
+        //   - response_type=code is the manual flow's documented default and is
+        //     what this server-side exchange needs
+        //   - override_default_response_type is NOT sent: it is documented only
+        //     for business integration system user (SUAT/BISU) configurations,
+        //     which this app does not use for merchant login.
         const params = new URLSearchParams({
             client_id: config.metaAppId,
             redirect_uri: redirectUri || config.metaOAuthRedirectUri,
-            scope: finalScopes,
+            config_id: configId,
             response_type: 'code',
             state
         });
@@ -739,4 +778,11 @@ class MetaMessengerProvider extends ChannelProvider {
 }
 
 module.exports = MetaMessengerProvider;
-module.exports._private = { selectedPageIdsFromDebugToken };
+module.exports._private = {
+    selectedPageIdsFromDebugToken,
+    // Exported so the App Review surface tests can assert the permission
+    // set this integration declares, now that it is no longer observable
+    // on the authorization URL.
+    CONFIGURATION_OWNED_PERMISSIONS,
+    LOGIN_CONFIG_ID_PATTERN,
+};
