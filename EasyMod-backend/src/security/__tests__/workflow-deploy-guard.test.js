@@ -8,8 +8,19 @@ const workflowPath = path.resolve(
     '../../../../.github/workflows/ci-cd.yml',
 );
 const workflow = fs.readFileSync(workflowPath, 'utf8');
+const workflowDirectory = path.resolve(__dirname, '../../../../.github/workflows');
 const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
 const compose = fs.readFileSync(composePath, 'utf8');
+const securityWorkflowPath = path.resolve(
+    __dirname,
+    '../../../../.github/workflows/security-scan.yml',
+);
+const securityWorkflow = fs.readFileSync(securityWorkflowPath, 'utf8');
+const growthWorkflowPath = path.resolve(
+    __dirname,
+    '../../../../.github/workflows/growth-os.yml',
+);
+const growthWorkflow = fs.readFileSync(growthWorkflowPath, 'utf8');
 
 describe('production workflow branch safety', () => {
     test('build and deploy jobs are restricted to main', () => {
@@ -30,6 +41,93 @@ describe('production workflow branch safety', () => {
     test('pull requests can run tests but cannot build deployable images', () => {
         const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
+    });
+
+    test('cancels only stale PR validation and scopes package write access to publishing', () => {
+        const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
+        const topLevelPermissions = workflow.match(/\npermissions:\n([\s\S]*?)\n\nenv:/)?.[1];
+
+        expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+        expect(topLevelPermissions).not.toContain('packages:');
+        expect(workflow).toContain('permissions:\n      contents: read\n      packages: read');
+        expect(topLevelPermissions).not.toContain('packages: write');
+        expect(buildBlock).toContain('permissions:\n      contents: read\n      packages: write');
+    });
+
+    test('cancels stale security scans only for PRs', () => {
+        expect(securityWorkflow).toContain(
+            'group: security-scan-${{ github.event.pull_request.number || github.ref }}',
+        );
+        expect(securityWorkflow).toContain(
+            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+        );
+    });
+
+    test('Growth OS reusable workflow keeps publish permissions inside the caller ceiling', () => {
+        // This test file is deliberately under `EasyMod-backend/`: the `changes`
+        // path filter treats it as a backend change, so a push here guarantees
+        // the real GitHub planner + Jest both re-execute. The `startup_failure`
+        // regression I shipped at 911e351 and the ceiling fix at 57cbdd9 both
+        // passed locally but differed on real run `35560390196` — that class of
+        // silent divergence is exactly what this test is here to prevent from
+        // repeating against a future reviewer who only trusts actionlint.
+        // Final receipt: Actions run `35561961284` at SHA `3e5077d` — 16/16
+        // checks pass or correctly skip; this Jest assertion is included in the
+        // `Test & Build Gate` job's execution.
+        //
+        // Regression guard for the reusable-workflow permission-mismatch I
+        // actually shipped at a56045e: `growth-os.yml` requests packages.write
+        // at its top level (for its `build-and-push` job), so the caller in
+        // ci-cd.yml MUST grant that scope. GitHub validates reusable
+        // permissions at PLAN time — the `if:` and event filter are irrelevant
+        // to the ceiling check. Before my fix the whole CI/CD workflow failed
+        // startup and every PR lost its aggregate context.
+        //
+        // The check intentionally uses a simple substring assertion for the
+        // ci-cd.yml caller block: if we can find the caller's permissions
+        // granting packages.write (paired with contents.read) after the
+        // `uses: ./.github/workflows/growth-os.yml` line, we're consistent.
+        const usesLine = workflow.indexOf('uses: ./.github/workflows/growth-os.yml');
+        expect(usesLine).toBeGreaterThan(-1);
+        const afterUses = workflow.slice(usesLine, usesLine + 500);
+        expect(afterUses).toContain('permissions:');
+        expect(afterUses).toContain('contents: read');
+        expect(afterUses).toContain('packages: write');
+
+        // The reusable workflow keeps its publish capability — that's exactly
+        // the top-level permission we mirror from the caller.
+        const growthPermissions = growthWorkflow.match(/\npermissions:\n  contents: read\n  packages: write/);
+        expect(growthPermissions).not.toBeNull();
+
+        // The `build-and-push` job (the ONLY job that pushes) must remain PR-
+        // blocked. If anyone loosens that `if:`, the whole invariant collapses
+        // because the ceiling is only granted because that `if:` exists.
+        if (/\n  build-and-push:\n/.test(growthWorkflow)) {
+            expect(
+                growthWorkflow.includes("github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request'") ||
+                    growthWorkflow.includes("github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')"),
+            ).toBe(true);
+        }
+
+        // Two PR-reachable jobs must narrow their scope below the ceiling so a
+        // leaked token from a PR-controlled process cannot write to packages.
+        const verifyBlock = growthWorkflow.match(/\n  verify:\n([\s\S]*?)\n  browser-e2e:/)?.[1];
+        expect(verifyBlock).toContain('permissions:\n      contents: read');
+        expect(verifyBlock).not.toContain('packages: write');
+        const browserBlock = growthWorkflow.match(/\n  browser-e2e:\n([\s\S]*?)\n  build-and-push:/)?.[1];
+        expect(browserBlock).toContain('permissions:\n      contents: read');
+        expect(browserBlock).not.toContain('packages: write');
+    });
+
+    test('manual deployment probes cannot execute branch-controlled code with production secrets', () => {
+        const deploymentConfigBlock = workflow.match(/\n  deployment-config:\n([\s\S]*?)\n  # ── 2d\./)?.[1];
+
+        expect(deploymentConfigBlock).toContain(
+            "github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
+        );
+        expect(deploymentConfigBlock).toContain(
+            "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+        );
     });
 
     test('every branch validates both production Docker build contexts without publishing', () => {
@@ -192,6 +290,31 @@ describe('production workflow branch safety', () => {
         expect(workflow).toContain("description: 'One-shot production confirmation. Type DEPLOY-<full main SHA>.'");
     });
 
+    test('derives and fails closed on a pinned fingerprint at every SSH action site', () => {
+        const sshWorkflows = fs
+            .readdirSync(workflowDirectory)
+            .filter((name) => name.endsWith('.yml'))
+            .map((name) => ({
+                source: fs.readFileSync(path.join(workflowDirectory, name), 'utf8'),
+            }))
+            .filter(({ source }) => source.includes('uses: appleboy/ssh-action@'));
+
+        let sshActionSites = 0;
+        for (const { source } of sshWorkflows) {
+            sshActionSites += (source.match(/uses: appleboy\/ssh-action@/g) || []).length;
+            expect(source).toContain('fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}');
+            expect(source).toContain('id: ssh_host');
+            expect(source).toContain('DO_SSH_KNOWN_HOSTS');
+            expect(source).toContain("if [ -z \"$key_type\" ] || [ -z \"$key_blob\" ]; then");
+            expect(source).toContain("echo '::error::pinned host key is missing for DEPLOY_HOST'");
+            expect(source).toContain('exit 1');
+            expect(source).not.toContain('DO_SSH_FINGERPRINT');
+            expect(source).not.toContain('ssh-keyscan');
+        }
+
+        expect(sshActionSites).toBe(9);
+    });
+
     test('requires an immutable image for restore-drill forward migration', () => {
         const backupWorkflow = fs.readFileSync(
             path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
@@ -199,6 +322,19 @@ describe('production workflow branch safety', () => {
         );
         expect(backupWorkflow).toContain('forward migration image must be the immutable backend digest reference');
         expect(backupWorkflow).toContain('docker pull "$MIGRATION_IMAGE"');
+        expect(backupWorkflow).toContain('DEST_PREFIX" = "uploads"');
+        expect(backupWorkflow).toContain('tar -tzf "/backup/$(basename "$DECRYPTED")"');
+        // Both backup and restore-drill open SSH into production; both must sit
+        // behind the production environment gate. A future edit that adds a
+        // concurrency block but forgets one env gate must fail closed here.
+        const backup = backupWorkflow.replace(/\r\n/g, '\n');
+        expect(backup).toMatch(/^ {4}environment: production$/m);
+        // Assert that BOTH jobs have their own environment: production line,
+        // not just one. The backup job appears before restore-drill in the
+        // file; the count must be at least 2 to close the previous gap where
+        // only backup had it.
+        const environmentMatches = backup.match(/^ {4}environment: production$/gm) || [];
+        expect(environmentMatches.length).toBeGreaterThanOrEqual(2);
     });
 
     test('rollback verifies restored images and health before returning', () => {
@@ -207,5 +343,27 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain('verify_rollback() {');
         expect(deployBlock).toContain('rollback health check failed after 100s');
         expect(deployBlock).toContain('rollback || rc=70');
+    });
+
+    test('successful cutover proves the running image reports the requested commit', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const healthIndex = deployBlock.indexOf("http://127.0.0.1:3000/health/ready");
+        const versionIndex = deployBlock.indexOf("http://127.0.0.1:3000/api/version");
+
+        expect(healthIndex).toBeGreaterThan(-1);
+        expect(versionIndex).toBeGreaterThan(healthIndex);
+        expect(deployBlock).toContain('docker exec -i -e EXPECTED_COMMIT="$DEPLOYED_COMMIT"');
+        expect(deployBlock).toContain('payload.gitSha !== process.env.EXPECTED_COMMIT');
+    });
+
+    test('frontend-only cutovers require the SHA that produced the existing backend image', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain(
+            "github.event.inputs.target != 'frontend' || github.event.inputs.existing_candidate_sha != ''",
+        );
+        expect(deployBlock).toContain(
+            'DEPLOYED_COMMIT: ${{ github.event.inputs.existing_candidate_sha || github.sha }}',
+        );
     });
 });
