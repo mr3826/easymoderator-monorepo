@@ -713,16 +713,40 @@ class MetaMessengerProvider extends ChannelProvider {
             }
         }
 
+        const providerMessageIds = [];
+        const providerComponents = bodies.map((body, index) => ({
+            index,
+            type: body.message?.attachment?.type || 'text',
+            attempted: false,
+            status: 'PENDING',
+            providerMessageId: null,
+        }));
+        const attachProviderState = (error) => {
+            error.providerMessageIds = [...providerMessageIds];
+            error.providerComponents = providerComponents.map((component) => ({ ...component }));
+            error.providerFailure = {
+                code: error.code || null,
+                status: error.status || error.response?.status || null,
+                metaCode: error.details?.metaCode || error.response?.data?.error?.code || null,
+                metaSubcode: error.details?.metaSubcode || error.response?.data?.error?.error_subcode || null,
+            };
+            return error;
+        };
+
         try {
-            const providerMessageIds = [];
-            for (const body of bodies) {
+            for (const [index, body] of bodies.entries()) {
+                const component = providerComponents[index];
                 const reservation = await reserveSendSlot(channel.meta_asset_id);
                 if (!reservation.allowed) {
                     const rateLimitError = new Error('Meta send rate limit reached');
                     rateLimitError.code = 'META_RATE_LIMIT';
                     rateLimitError.retryAfterMs = reservation.retryAfterMs;
+                    component.status = 'FAILED';
+                    component.failureCode = rateLimitError.code;
+                    attachProviderState(rateLimitError);
                     throw rateLimitError;
                 }
+                component.attempted = true;
                 try {
                     const resp = await axios.post(
                         `${GRAPH_BASE}/me/messages`,
@@ -738,8 +762,13 @@ class MetaMessengerProvider extends ChannelProvider {
                         error.code = 'PROVIDER_NO_ACK';
                         throw error;
                     }
-                    providerMessageIds.push(String(providerMessageId));
+                    const normalizedProviderMessageId = String(providerMessageId);
+                    providerMessageIds.push(normalizedProviderMessageId);
+                    component.status = 'ACKNOWLEDGED';
+                    component.providerMessageId = normalizedProviderMessageId;
                 } catch (sendErr) {
+                    component.status = 'FAILED';
+                    component.failureCode = sendErr.code || sendErr.response?.data?.error?.code || null;
                     await releaseSendSlot(channel.meta_asset_id, reservation.member);
                     throw sendErr;
                 }
@@ -747,10 +776,11 @@ class MetaMessengerProvider extends ChannelProvider {
             return {
                 providerMessageId: providerMessageIds[providerMessageIds.length - 1] || null,
                 providerMessageIds,
+                providerComponents,
             };
         } catch (err) {
             if (err.code === 'META_RATE_LIMIT') {
-                throw err;
+                throw attachProviderState(err);
             }
             const normalized = metaError(err, 'sendMessage');
             if ([102, 190].includes(Number(normalized.details?.metaCode))) {
@@ -775,7 +805,7 @@ class MetaMessengerProvider extends ChannelProvider {
                 normalized.code = 'META_AUTHORIZATION_REQUIRED';
                 normalized.status = 401;
             }
-            throw normalized;
+            throw attachProviderState(normalized);
         }
     }
 
