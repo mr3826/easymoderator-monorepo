@@ -20,6 +20,13 @@ const CORE_REQUIRED = [
     'META_APP_SECRET',
     'META_WEBHOOK_VERIFY_TOKEN',
     'META_OAUTH_REDIRECT_URI',
+    // Facebook Login for Business is configuration-driven. Without this the
+    // authorization dialog silently falls back to the classic-Login contract
+    // Meta no longer honours for this app, which merchants see only as an
+    // opaque "Feature unavailable" screen. Required so that drift between the
+    // Meta dashboard and this deployment fails the deploy, not the merchant.
+    // See docs/incidents/2026-09-22-meta-login-unavailable.md.
+    'META_LOGIN_CONFIG_ID',
     'PAYMENT_ENCRYPTION_KEY',
     'DELIVERY_ENCRYPTION_KEY',
     'CHANNEL_ENCRYPTION_KEY',
@@ -168,6 +175,17 @@ function validateProductionConfig(env = process.env) {
         // credentialed allowlist. Its public endpoints use route-local CORS.
         if (env.MARKETING_URL && allowedOrigins.includes(env.MARKETING_URL)) invalid.push('CORS_ORIGINS');
         if (allowedOrigins.includes('*')) invalid.push('CORS_ORIGINS');
+    }
+    // Meta Login Configuration IDs are numeric. A transposed, quoted or
+    // partially-pasted value is accepted by nothing downstream and would only
+    // show up as a broken login dialog in production.
+    // The same shape is enforced at runtime by LOGIN_CONFIG_ID_PATTERN in
+    // MetaMessengerProvider.js and by the readiness preflight. It is repeated
+    // rather than shared because this validator is imported by
+    // render-production-env.js, which must not pull in the provider's axios and
+    // Redis dependencies; keep the three in step.
+    if (env.META_LOGIN_CONFIG_ID && !/^[0-9]{6,32}$/.test(env.META_LOGIN_CONFIG_ID.trim())) {
+        invalid.push('META_LOGIN_CONFIG_ID');
     }
     // The canonical app/API split does not need parent-domain cookies. Keeping
     // auth cookies host-only to api.easymod.tech limits cross-subdomain impact.

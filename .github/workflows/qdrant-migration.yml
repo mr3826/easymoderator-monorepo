@@ -37,7 +37,8 @@ jobs:
     name: Non-deploying Qdrant migration proof
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    if: vars.PRODUCTION_DEPLOY_ENABLED != 'true'
+    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED != 'true'
+    environment: production
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
@@ -57,6 +58,8 @@ jobs:
     steps:
       - name: Check out proof runner
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Pull and digest-pin the candidate with GITHUB_TOKEN
         id: candidate
@@ -82,6 +85,7 @@ jobs:
           docker logout ghcr.io >/dev/null 2>&1 || true
 
       - name: Copy the proof runner to the production host
+        id: ssh_host
         shell: bash
         run: |
           set -euo pipefail
@@ -93,6 +97,19 @@ jobs:
           chmod 600 ~/.ssh/easymod_deploy_key
           printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
           ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
             "set -e; test -f /opt/easymod/.env.prod; test -f /opt/easymod/docker-compose.prod.yml; rm -f -- '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH' '$READINESS_SCRIPT_PATH'"
           scp -i ~/.ssh/easymod_deploy_key scripts/qdrant-migration-proof.js \
@@ -135,6 +152,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 1800s
           envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION_BASE,GEMINI_COLLECTION_BASE,GEMINI_SEMANTIC_COLLECTION_BASE,OPENAI_SEMANTIC_COLLECTION_BASE,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,ACCEPTANCE_CONTRACT_PATH,FIXTURE_SCRIPT_PATH,READINESS_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED,OPENAI_API_KEY,GEMINI_API_KEY,GEMINI_EMBEDDING_MODEL
           script: |

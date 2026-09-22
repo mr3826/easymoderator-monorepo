@@ -23,7 +23,7 @@ jest.mock('../../../utils/structured-logger', () => ({
     })
 }));
 
-// ── PushSubscription entity mock ──────────────────────────────────────────────
+// ── PushSubscription / UserShop entity mock ───────────────────────────────────
 let mockSubRow = null;
 jest.mock('../../entities', () => ({
     PushSubscription: {
@@ -31,14 +31,22 @@ jest.mock('../../entities', () => ({
         findAll: jest.fn(async () => []),
         create: jest.fn(async (data) => ({ id: 'sub-uuid-1', ...data })),
         destroy: jest.fn(async () => 1),
+    },
+    UserShop: {
+        findOne: jest.fn(),
     }
 }));
 
 // ── Auth middleware mock ──────────────────────────────────────────────────────
+// Mirrors real authenticate: it only ever populates req.user (see
+// auth.middleware.js). req.userId/req.shopId are also set here so the
+// routes' `req.userId || req.user?.userId` fallback stays exercised, but
+// verifyShopAccess (the real, unmocked middleware) reads req.user directly.
 jest.mock('../../../middleware/auth.middleware', () => ({
     authenticate: (req, _res, next) => {
         req.userId = 'user-1';
         req.shopId = 'shop-1';
+        req.user = { userId: 'user-1', shopId: 'shop-1' };
         next();
     }
 }));
@@ -55,6 +63,7 @@ jest.mock('../../../utils/database/database-setup', () => ({
 
 const request = require('supertest');
 const express = require('express');
+const { globalErrorHandler } = require('../../../utils/AppError');
 
 let app;
 beforeAll(() => {
@@ -62,15 +71,29 @@ beforeAll(() => {
     app.use(express.json());
     const notifRouter = require('../push-subscription.routes');
     app.use('/api/notifications', notifRouter);
+    // Same error handler the real app mounts (src/app.js) — needed so the
+    // AppError thrown by verifyShopAccess turns into a JSON response here
+    // too, instead of Express's default HTML error page.
+    app.use(globalErrorHandler);
 });
 
 beforeEach(() => {
     jest.clearAllMocks();
     mockSubRow = null;
-    const { PushSubscription } = require('../../entities');
+    const { PushSubscription, UserShop } = require('../../entities');
     PushSubscription.create.mockResolvedValue({ id: 'sub-uuid-1', shop_id: 'shop-1', type: 'web', subscription_json: null, device_token: null });
     PushSubscription.findAll.mockResolvedValue([]);
     PushSubscription.destroy.mockResolvedValue(1);
+    // Default: requesting user is an active member of shop-1, matching the
+    // shopId/userId the mocked authenticate above issues.
+    UserShop.findOne.mockResolvedValue({
+        id: 'us-1',
+        user_id: 'user-1',
+        shop_id: 'shop-1',
+        role: 'staff',
+        is_active: true,
+        shop: { id: 'shop-1' },
+    });
 });
 
 // ── POST /subscriptions ───────────────────────────────────────────────────────
@@ -170,6 +193,36 @@ describe('POST /api/notifications/subscriptions', () => {
 
         expect(res.status).toBe(500);
         expect(res.body.success).toBe(false);
+    });
+
+    // ── Membership targeting defect coverage ──────────────────────────────────
+    // A removed staff member's JWT can stay valid until it expires. Without a
+    // membership check here, they could re-register a push subscription for a
+    // shop they were already removed from.
+    it('rejects registration when the requesting user has no active membership in the shop', async () => {
+        const { PushSubscription, UserShop } = require('../../entities');
+        UserShop.findOne.mockResolvedValueOnce(null);
+
+        const res = await request(app)
+            .post('/api/notifications/subscriptions')
+            .send({ type: 'fcm', device_token: 'fcm-device-token-abc' });
+
+        expect(res.status).toBe(403);
+        expect(res.body.success).toBe(false);
+        expect(PushSubscription.create).not.toHaveBeenCalled();
+    });
+
+    it('checks active membership for the shop/user pair from the JWT before registering', async () => {
+        const { UserShop } = require('../../entities');
+        await request(app)
+            .post('/api/notifications/subscriptions')
+            .send({ type: 'fcm', device_token: 'fcm-device-token-abc' });
+
+        expect(UserShop.findOne).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({ user_id: 'user-1', shop_id: 'shop-1', is_active: true })
+            })
+        );
     });
 });
 

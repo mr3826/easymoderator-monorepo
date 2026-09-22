@@ -1314,6 +1314,8 @@ async function finalizeAiMessage(
         heldReason = null,
         providerMessageId = null,
         providerMessageIds = [],
+        providerComponents = [],
+        providerFailure = null,
         deliveryState = null,
         deliverySource = 'AUTO',
         suggestionVisibility = null,
@@ -1498,6 +1500,10 @@ async function finalizeAiMessage(
         // and what the customer actually received.
         provider_message_id: primaryProviderMessageId,
         ...(acknowledgedProviderIds.length > 0 ? { provider_message_ids: acknowledgedProviderIds } : {}),
+        ...(Array.isArray(providerComponents) && providerComponents.length > 0
+            ? { provider_components: providerComponents }
+            : {}),
+        ...(providerFailure ? { provider_failure: providerFailure } : {}),
         provider_send_confirmed: Boolean(delivered),
         ...(heldReason === 'provider_send_failed' ? { provider_send_attempted: true } : {}),
     };
@@ -3074,6 +3080,9 @@ async function processMessageJob(job) {
             const finalized = await finalizeAiMessage(aiMessage, shopId, conversationId, {
                 delivered: false,
                 heldReason: 'provider_send_failed',
+                providerMessageIds: Array.isArray(err.providerMessageIds) ? err.providerMessageIds : [],
+                providerComponents: Array.isArray(err.providerComponents) ? err.providerComponents : [],
+                providerFailure: err.providerFailure || null,
                 deliveryState: MESSAGE_DELIVERY_STATES.FAILED,
                 deliverySource: 'AUTO',
                 suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
@@ -3100,6 +3109,9 @@ async function processMessageJob(job) {
         const finalized = await finalizeAiMessage(aiMessage, shopId, conversationId, {
             delivered: false,
             heldReason: 'provider_send_failed',
+            providerMessageIds: Array.isArray(err.providerMessageIds) ? err.providerMessageIds : [],
+            providerComponents: Array.isArray(err.providerComponents) ? err.providerComponents : [],
+            providerFailure: err.providerFailure || null,
             deliveryState: MESSAGE_DELIVERY_STATES.FAILED,
             deliverySource: 'AUTO',
             suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
@@ -3124,6 +3136,9 @@ async function processMessageJob(job) {
         providerMessageId: providerAcknowledgementId(sendResult),
         providerMessageIds: Array.isArray(sendResult.providerMessageIds)
             ? sendResult.providerMessageIds
+            : [],
+        providerComponents: Array.isArray(sendResult.providerComponents)
+            ? sendResult.providerComponents
             : [],
         deliveryState: MESSAGE_DELIVERY_STATES.SENT,
         deliverySource: 'AUTO',

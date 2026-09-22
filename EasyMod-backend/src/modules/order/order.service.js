@@ -1131,6 +1131,15 @@ const buildCourierOrderData = (order, { stepData = {}, overrides = {}, pickup = 
         order?.delivery_address || stepValues.address || overrideValues.delivery_address || overrideValues.recipient_address
     );
     const total = numericOr(order?.total, 0);
+    // Cash-to-collect on delivery must reflect what the customer still owes,
+    // not the order's face value. A 'paid' order was already settled online
+    // (bKash/Nagad/card) so the courier must collect 0, or every provider
+    // re-invoices the customer for the full amount as COD. There is no
+    // due-balance/paid-amount field on the Order model today, so
+    // 'partially_paid' (and every other non-'paid' status, including an
+    // unset payment_status on legacy/manual orders) falls back to the full
+    // total exactly like a normal COD order.
+    const collectionAmount = order?.payment_status === 'paid' ? 0 : total;
     const items = orderItemsForCourier(order);
     const itemQuantity = items.reduce((sum, item) => {
         const quantity = Number(item?.quantity);
@@ -1164,7 +1173,8 @@ const buildCourierOrderData = (order, { stepData = {}, overrides = {}, pickup = 
         recipient_name: customerName,
         recipient_phone: customerPhone,
         recipient_address: address,
-        cod_amount: total,
+        cod_amount: collectionAmount,
+        amount_to_collect: collectionAmount,
         weight: itemWeight,
     };
 
@@ -1499,7 +1509,14 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
             throw claimError;
         }
         if (claim.state === 'committed') {
-            const committedResult = synthesizeCourierResult(order, resolution.provider, dispatchRecord);
+            // The claim is now scoped to (shop_id, order_id) only, so this
+            // branch can be reached by a request for a DIFFERENT provider than
+            // the one that actually committed. Report the record's own
+            // provider — the courier that really booked the parcel — not the
+            // just-attempted resolution.provider, or persistDeliveryResult
+            // below would overwrite order.delivery_provider with a courier
+            // that never touched this order.
+            const committedResult = synthesizeCourierResult(order, dispatchRecord?.provider || resolution.provider, dispatchRecord);
             await persistDeliveryResult(order, committedResult);
             return committedResult;
         }

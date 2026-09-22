@@ -56,6 +56,20 @@ describe('opsAlert', () => {
         global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
         await expect(opsAlert('Resilient', {})).resolves.toBeUndefined();
     });
+
+    test('a non-2xx Slack response is reported as unsuccessful by sendSlack', async () => {
+        jest.resetModules();
+        global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 });
+        const mod = require('src/utils/ops-alert');
+        await expect(mod.sendSlack('boom')).resolves.toBe(false);
+    });
+
+    test('a 2xx Slack response is reported as successful by sendSlack', async () => {
+        jest.resetModules();
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+        const mod = require('src/utils/ops-alert');
+        await expect(mod.sendSlack('fine')).resolves.toBe(true);
+    });
 });
 
 describe('describeAlertSinks / sendTestAlert (F-06)', () => {

@@ -2,7 +2,7 @@ name: Growth OS CI / CD
 
 # Changes to release-safety workflows intentionally exercise the required PR
 # verification jobs; receipt-only and docs-only updates use this path too;
-# image publication remains guarded by its event condition.
+# image publication remains guarded by its event and main-ref condition.
 #
 # On pull requests this workflow is invoked by ci-cd.yml's PR Merge Gate via
 # workflow_call — see the `on:` block below for why it has no pull_request
@@ -47,7 +47,8 @@ on:
   # required context that never reports blocks the PR forever with "Expected —
   # waiting for status". PR validation is driven through workflow_call by
   # ci-cd.yml's `PR Merge Gate`, which DOES run on every PR and decides there
-  # whether Growth is affected. Push/deploy behaviour below is unchanged.
+  # whether Growth is affected. Publication is restricted to the default branch
+  # even for manual dispatches; validation remains callable from pull requests.
   workflow_call:
   workflow_dispatch:
 
@@ -66,9 +67,14 @@ jobs:
   verify:
     name: Growth OS build gate
     runs-on: ubuntu-latest
+    # Ceiling-allowed but narrowed to read: this job runs PR-controlled code,
+    # so the caller's package-write ceiling must not reach its GITHUB_TOKEN.
+    # Job-scoped permissions in reusable workflows may restrict but never
+    # expand above the caller's grant, and the top-level block is still a
+    # superset for `build-and-push`. GitHub's plan check accepts the whole
+    # arrangement because the ceiling here matches the caller exactly.
     permissions:
       contents: read
-      packages: none
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -109,9 +115,9 @@ jobs:
     name: Growth OS browser E2E gate
     runs-on: ubuntu-latest
     needs: verify
+    # Same narrowing rationale as `verify`: this job runs PR-controlled code.
     permissions:
       contents: read
-      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -173,10 +179,7 @@ jobs:
     name: Build and publish Growth OS image
     runs-on: ubuntu-latest
     needs: [verify, browser-e2e]
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    permissions:
-      contents: read
-      packages: write
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -189,7 +192,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
 
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

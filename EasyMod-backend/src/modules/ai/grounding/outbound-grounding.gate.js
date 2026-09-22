@@ -77,7 +77,12 @@ const supportedNumbers = (evidence) => {
         }
     };
     addAll(evidence.sourceText);
-    for (const product of [...evidence.verifiedProducts, ...evidence.relatedProducts]) {
+    const sameShopProducts = [...evidence.verifiedProducts, ...evidence.relatedProducts]
+        .filter((product) => product
+            && evidence.shopId
+            && product.shopId
+            && String(product.shopId) === String(evidence.shopId));
+    for (const product of sameShopProducts) {
         for (const fact of Object.values(product.facts || {})) {
             if (fact.state === FactState.KNOWN && fact.value !== null) addAll(String(fact.value));
         }

@@ -18,6 +18,11 @@ on:
         default: ''
         type: string
 
+concurrency:
+  group: production-backup
+  # Backups and restore drills must not race over the newest receipt/archive.
+  cancel-in-progress: false
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Required GitHub secrets:
 #   DEPLOY_HOST       — Droplet IP or hostname (canonical deployment host)
@@ -50,7 +55,32 @@ jobs:
   backup:
     name: Backup PostgreSQL
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
     steps:
+      - name: Derive pinned SSH host fingerprint
+        id: ssh_host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+
       - name: Run pg_dump + encrypted off-site upload via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         env:
@@ -66,10 +96,12 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 300s
           envs: DO_TOKEN,BACKUP_ENCRYPTION_KEY,SPACES_ACCESS_KEY_ID,SPACES_SECRET_ACCESS_KEY,SPACES_ENDPOINT,BACKUP_BUCKET,OFFSITE_RETENTION_DAYS,BACKUP_RUN_ID
           script: |
             set -euo pipefail
+            umask 077
 
             if [ -z "${DO_TOKEN:-}" ]; then
               echo "::error::DO_TOKEN_MISSING"
@@ -89,6 +121,8 @@ jobs:
 
             BACKUP_DIR=/opt/easymod/backups
             mkdir -p "$BACKUP_DIR"
+            AWS_CLI_IMAGE='amazon/aws-cli@sha256:165b494a2acea6b41fd5bb6f9b0ce903124f9cf2da2faab61e9c3c95b8d8a1b9'
+            POSTGRES_HELPER_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'
 
             # The production compose contract requires immutable image
             # references even for read-only commands such as `exec`. Resolve
@@ -125,8 +159,8 @@ jobs:
             test -n "${BACKUP_RUN_ID:-}"
             BACKUP_FILE="$BACKUP_DIR/easymod-${TIMESTAMP}-${BACKUP_RUN_ID}.dump"
             BACKUP_TMP_FILE="$BACKUP_FILE.partial"
-            UPLOADS_BACKUP_FILE="easymod-uploads-${TIMESTAMP}.tar.gz"
-            trap 'rm -f "$BACKUP_TMP_FILE"' EXIT
+            UPLOADS_BACKUP_FILE="easymod-uploads-${TIMESTAMP}-${BACKUP_RUN_ID}.tar.gz"
+            trap 'rm -f "$BACKUP_TMP_FILE" "$BACKUP_DIR"/*.readback.dump "$BACKUP_DIR"/*.readback.enc "$BACKUP_DIR"/*.readback.sha256' EXIT
 
             echo "Starting backup: $BACKUP_FILE"
 
@@ -190,6 +224,10 @@ jobs:
             if [ -n "${BACKUP_ENCRYPTION_KEY:-}" ] && [ -n "${SPACES_ACCESS_KEY_ID:-}" ] \
                && [ -n "${SPACES_SECRET_ACCESS_KEY:-}" ] && [ -n "${SPACES_ENDPOINT:-}" ] \
                && [ -n "${BACKUP_BUCKET:-}" ]; then
+              case "$SPACES_ENDPOINT" in
+                https://*) ;;
+                *) echo "::error::SPACES_ENDPOINT must use HTTPS"; exit 1 ;;
+              esac
               echo "Off-site upload: credentials present — encrypting and uploading."
 
               upload_one() {
@@ -212,7 +250,7 @@ jobs:
                   -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                   -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
                   -v "$BACKUP_DIR":/backup \
-                  amazon/aws-cli s3 cp "/backup/$(basename "$ENC")" \
+                  "$AWS_CLI_IMAGE" s3 cp "/backup/$(basename "$ENC")" \
                   "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC")" \
                   --endpoint-url "$SPACES_ENDPOINT"
 
@@ -220,36 +258,41 @@ jobs:
                   -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                   -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
                   -v "$BACKUP_DIR":/backup \
-                  amazon/aws-cli s3 cp "/backup/$(basename "$ENC").sha256" \
+                  "$AWS_CLI_IMAGE" s3 cp "/backup/$(basename "$ENC").sha256" \
                   "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC").sha256" \
                   --endpoint-url "$SPACES_ENDPOINT"
 
-                 if [ "$DEST_PREFIX" = db ]; then
-                   READBACK="$BACKUP_DIR/${BASE}.readback.enc"
-                   READBACK_SHA="$BACKUP_DIR/${BASE}.readback.sha256"
-                   DECRYPTED="$BACKUP_DIR/${BASE}.readback.dump"
+                  if [ "$DEST_PREFIX" = "db" ] || [ "$DEST_PREFIX" = "uploads" ]; then
+                    READBACK="$BACKUP_DIR/${BASE}.readback.enc"
+                    READBACK_SHA="$BACKUP_DIR/${BASE}.readback.sha256"
+                    DECRYPTED="$BACKUP_DIR/${BASE}.readback.dump"
                    docker run --rm \
                      -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                      -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
                      -v "$BACKUP_DIR":/backup \
-                     amazon/aws-cli s3 cp "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC")" "/backup/$(basename "$READBACK")" \
+                      "$AWS_CLI_IMAGE" s3 cp "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC")" "/backup/$(basename "$READBACK")" \
                      --endpoint-url "$SPACES_ENDPOINT"
                    docker run --rm \
                      -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                      -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
                      -v "$BACKUP_DIR":/backup \
-                     amazon/aws-cli s3 cp "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC").sha256" "/backup/$(basename "$READBACK_SHA")" \
+                      "$AWS_CLI_IMAGE" s3 cp "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC").sha256" "/backup/$(basename "$READBACK_SHA")" \
                      --endpoint-url "$SPACES_ENDPOINT"
                    expected_checksum=$(awk '{print $1}' "$READBACK_SHA")
                    actual_checksum=$(sha256sum "$READBACK" | awk '{print $1}')
                    test -n "$expected_checksum" && test "$actual_checksum" = "$expected_checksum"
-                   openssl enc -d -aes-256-cbc -pbkdf2 -in "$READBACK" -out "$DECRYPTED" \
-                     -pass env:BACKUP_ENCRYPTION_KEY
-                   docker run --rm -v "$BACKUP_DIR":/backup postgres:16-alpine \
-                     pg_restore --list --exit-on-error "/backup/$(basename "$DECRYPTED")"
-                   rm -f "$READBACK" "$READBACK_SHA" "$DECRYPTED"
-                   echo 'REMOTE_READBACK=PASS'
-                 fi
+                    openssl enc -d -aes-256-cbc -pbkdf2 -in "$READBACK" -out "$DECRYPTED" \
+                      -pass env:BACKUP_ENCRYPTION_KEY
+                    if [ "$DEST_PREFIX" = "db" ]; then
+                      docker run --rm -v "$BACKUP_DIR":/backup "$POSTGRES_HELPER_IMAGE" \
+                        pg_restore --list --exit-on-error "/backup/$(basename "$DECRYPTED")"
+                    else
+                      docker run --rm -v "$BACKUP_DIR":/backup "$POSTGRES_HELPER_IMAGE" \
+                        tar -tzf "/backup/$(basename "$DECRYPTED")" >/dev/null
+                    fi
+                    rm -f "$READBACK" "$READBACK_SHA" "$DECRYPTED"
+                    echo "REMOTE_READBACK=$DEST_PREFIX:PASS"
+                  fi
 
                  echo "Off-site upload OK: $DEST_PREFIX/$(basename "$ENC")"
                 rm -f "$ENC" "$ENC.sha256"
@@ -264,17 +307,42 @@ jobs:
               BUCKET_ACL=$(docker run --rm \
                 -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                 -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
-                amazon/aws-cli s3api get-bucket-acl --bucket "$BACKUP_BUCKET" \
+                "$AWS_CLI_IMAGE" s3api get-bucket-acl --bucket "$BACKUP_BUCKET" \
                 --endpoint-url "$SPACES_ENDPOINT" --output json)
               if printf '%s' "$BUCKET_ACL" | grep -Eq 'AllUsers|AuthenticatedUsers'; then
                 echo "::error::Spaces bucket ACL exposes a public or authenticated-users grant"
                 exit 1
               fi
-              docker run --rm \
+              if ! [[ "$OFFSITE_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::OFFSITE_RETENTION_DAYS must be a positive integer"
+                exit 1
+              fi
+              LIFECYCLE_RULES=$(docker run --rm \
                 -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                 -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
-                amazon/aws-cli s3api get-bucket-lifecycle-configuration --bucket "$BACKUP_BUCKET" \
-                --endpoint-url "$SPACES_ENDPOINT" >/dev/null
+                "$AWS_CLI_IMAGE" s3api get-bucket-lifecycle-configuration --bucket "$BACKUP_BUCKET" \
+                --endpoint-url "$SPACES_ENDPOINT" \
+                --query 'Rules[?Status==`Enabled` && Expiration.Days != `null`].[Filter.Prefix,Expiration.Days]' \
+                --output text) || {
+                  echo "::error::unable to read the Spaces lifecycle policy"
+                  exit 1
+                }
+              if ! printf '%s\n' "$LIFECYCLE_RULES" | awk -v expected="$OFFSITE_RETENTION_DAYS" '
+                {
+                  prefix = $1
+                  days = $2
+                  if (days != expected) next
+                  if (prefix == "None" || prefix == "null" || prefix == "") broad = 1
+                  if (prefix == "db/" || prefix == "db") db = 1
+                  if (prefix == "uploads/" || prefix == "uploads") uploads = 1
+                }
+                END { exit (broad || (db && uploads)) ? 0 : 1 }
+              '; then
+                echo "::error::Spaces lifecycle policy does not enforce OFFSITE_RETENTION_DAYS=$OFFSITE_RETENTION_DAYS for db/ and uploads/"
+                exit 1
+              fi
+              echo "Off-site lifecycle retention policy verified: ${OFFSITE_RETENTION_DAYS} days"
+
               echo "Off-site upload complete."
             else
               echo "::error::Off-site backup upload BLOCKED — object-storage credentials not configured (F-04 BLOCKED_EXTERNAL_CREDENTIAL). Backups exist ONLY on the droplet."
@@ -297,13 +365,42 @@ jobs:
     # always(): the drill reads the newest dump on the droplet, so a failed
     # off-site upload must not also cost the day's migration proof.
     if: |
-      always() && (
+      always() && github.ref == 'refs/heads/main' && (
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.restore_drill == true)
       )
+    # The drill SSHs into the production droplet with repository-scoped
+    # credentials, so it belongs behind the same protected environment gate as
+    # the backup job itself. Without this, a scheduled or manual dispatch of
+    # backup.yml could reach the droplet without production-environment
+    # approval, contradicting the isolation claim made for the file.
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Derive pinned SSH host fingerprint
+        id: ssh_host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+
       - name: Restore the recorded production dump into an isolated target
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         env:
@@ -316,6 +413,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 900s
           envs: RESTORE_DRILL_RUN_ID,FORWARD_MIGRATION_IMAGE,GH_TOKEN,GH_ACTOR,GHCR_BACKEND
           script: |
@@ -431,8 +529,14 @@ jobs:
               MIGRATION_IMAGE=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1)
             fi
             test -n "$MIGRATION_IMAGE"
-            if ! printf '%s' "$MIGRATION_IMAGE" | grep -Eq "^${GHCR_BACKEND}@sha256:[0-9a-fA-F]{64}$"; then
+            MIGRATION_PREFIX="${GHCR_BACKEND}@sha256:"
+            if [[ "$MIGRATION_IMAGE" != "$MIGRATION_PREFIX"* ]]; then
               echo 'ERROR: forward migration image must be the immutable backend digest reference'
+              exit 1
+            fi
+            MIGRATION_DIGEST="${MIGRATION_IMAGE#"$MIGRATION_PREFIX"}"
+            if ! printf '%s' "$MIGRATION_DIGEST" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+              echo 'ERROR: forward migration image digest is invalid'
               exit 1
             fi
             echo "FORWARD_MIGRATION_IMAGE=$MIGRATION_IMAGE"

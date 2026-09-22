@@ -37,6 +37,9 @@ const {
   mockReconnectMetaChannel,
   mockHandleMetaOAuthCallback,
   mockConnectMetaAsset,
+  mockPingMetaChannel,
+  mockToastSuccess,
+  mockToastError,
 } = vi.hoisted(() => {
   return {
     mockListMetaChannels:      vi.fn().mockResolvedValue([]),
@@ -45,6 +48,14 @@ const {
     mockReconnectMetaChannel:   vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com', state: 'state-reconnect', channelId: 'mc-1', platform: 'facebook' }),
     mockHandleMetaOAuthCallback: vi.fn().mockResolvedValue({ pages: [], tempToken: 'tmp' }),
     mockConnectMetaAsset:      vi.fn().mockResolvedValue({ webhookWarning: null }),
+    mockPingMetaChannel:       vi.fn().mockResolvedValue({
+      ping: { ok: true, latencyMs: 10 },
+      connection: { ok: true, status: 'CONNECTED' },
+      subscription: { ok: true, fields: ['messages'], requiredFields: ['messages'], repaired: false },
+      transport: { status: 'NOT_PROBED', reason: 'requires an inbound Messenger event' },
+    }),
+    mockToastSuccess:          vi.fn(),
+    mockToastError:            vi.fn(),
   };
 });
 
@@ -53,12 +64,20 @@ vi.mock('@/api/domains/meta-channels', () => ({
   listMetaChannels:           mockListMetaChannels,
   disconnectMetaChannel:      mockDisconnectMetaChannel,
   reconnectMetaChannel:       mockReconnectMetaChannel,
-  pingMetaChannel:            vi.fn().mockResolvedValue({ ping: { ok: true, latencyMs: 10 } }),
+  pingMetaChannel:            mockPingMetaChannel,
   getMetaChannelConsentSummary: vi.fn().mockResolvedValue({ channelId: 'mc-1', counts: { optIns: 0, optOuts: 0, deauthorized: 0, dataDeleted: 0 }, recentEvents: [] }),
   updateMetaChannelPurposeLabel: vi.fn().mockResolvedValue({}),
   initiateMetaOAuth:          mockInitiateMetaOAuth,
   handleMetaOAuthCallback:    mockHandleMetaOAuthCallback,
   connectMetaAsset:           mockConnectMetaAsset,
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: mockToastSuccess,
+    error: mockToastError,
+    warning: vi.fn(),
+  },
 }));
 
 // ── Mock subscription hook ────────────────────────────────────────────────
@@ -112,6 +131,14 @@ describe('ChatSettings', () => {
     mockReconnectMetaChannel.mockReset().mockResolvedValue({ redirectUrl: 'https://example.com', state: 'state-reconnect', channelId: 'mc-1', platform: 'facebook' });
     mockHandleMetaOAuthCallback.mockReset().mockResolvedValue({ pages: [], tempToken: 'tmp' });
     mockConnectMetaAsset.mockReset().mockResolvedValue({ webhookWarning: null });
+    mockPingMetaChannel.mockReset().mockResolvedValue({
+      ping: { ok: true, latencyMs: 10 },
+      connection: { ok: true, status: 'CONNECTED' },
+      subscription: { ok: true, fields: ['messages'], requiredFields: ['messages'], repaired: false },
+      transport: { status: 'NOT_PROBED', reason: 'requires an inbound Messenger event' },
+    });
+    mockToastSuccess.mockReset();
+    mockToastError.mockReset();
     lastBroadcastChannel = null;
     sessionStorage.clear();
 
@@ -155,6 +182,20 @@ describe('ChatSettings', () => {
     await waitFor(() => {
       expect(mockListMetaChannels).toHaveBeenCalled();
     }, { timeout: 2000 });
+  });
+
+  it('reports the canonical subscribed_apps health result from Test', async () => {
+    await renderComponent();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Test$/i }));
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(mockPingMetaChannel).toHaveBeenCalledWith('mc-1');
+      expect(mockToastSuccess).toHaveBeenCalled();
+    });
   });
 
   // ── Token expiry badge ──────────────────────────────────────────────────

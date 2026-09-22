@@ -230,6 +230,7 @@ describe('Auth API', () => {
                 full_name: 'Signup User',
                 phone: '01700000000',
                 shop_name: shop.name,
+                accepted_terms: true,
             });
 
             expect(Subscription.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -258,6 +259,92 @@ describe('Auth API', () => {
 
             expect(res.status).toBe(400);
             expect(res.body.success).toBe(false);
+        });
+
+        it('should reject signup without explicit terms consent before creating an account', async () => {
+            User.create.mockClear();
+            const res = await request(app)
+                .post('/api/auth/signup')
+                .send({
+                    email: 'no-consent@example.com',
+                    password: 'ValidPass123!',
+                    full_name: 'No Consent',
+                    phone: '01700000000',
+                });
+
+            expect(res.status).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error?.message || res.body.message).toMatch(/terms and conditions/i);
+            expect(User.create).not.toHaveBeenCalled();
+        });
+
+        it('should reject an explicit false terms value before creating an account', async () => {
+            User.create.mockClear();
+            const res = await request(app)
+                .post('/api/auth/signup')
+                .send({
+                    email: 'false-consent@example.com',
+                    password: 'ValidPass123!',
+                    full_name: 'False Consent',
+                    phone: '01700000000',
+                    accepted_terms: false,
+                });
+
+            expect(res.status).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error?.message || res.body.message).toMatch(/terms and conditions/i);
+            expect(User.create).not.toHaveBeenCalled();
+        });
+
+        it('should require a boolean consent value', async () => {
+            User.create.mockClear();
+            const res = await request(app)
+                .post('/api/auth/signup')
+                .send({
+                    email: 'string-consent@example.com',
+                    password: 'ValidPass123!',
+                    full_name: 'String Consent',
+                    phone: '01700000000',
+                    accepted_terms: 'true',
+                });
+
+            expect(res.status).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error?.message || res.body.message).toMatch(/terms and conditions/i);
+            expect(User.create).not.toHaveBeenCalled();
+        });
+
+        it('should reject prototype-polluted consent fields before creating an account', async () => {
+            User.create.mockClear();
+            const res = await request(app)
+                .post('/api/auth/signup')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__":{"email":"proto@example.com","password":"ValidPass123!","full_name":"Proto User","phone":"01700000000","accepted_terms":true}}');
+
+            expect(res.status).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(User.create).not.toHaveBeenCalled();
+        });
+
+        it('should not inherit consent from a polluted global object prototype', async () => {
+            User.create.mockClear();
+            Object.prototype.accepted_terms = true;
+            try {
+                const res = await request(app)
+                    .post('/api/auth/signup')
+                    .send({
+                        email: 'ambient-proto@example.com',
+                        password: 'ValidPass123!',
+                        full_name: 'Ambient Prototype',
+                        phone: '01700000000',
+                    });
+
+                expect(res.status).toBe(400);
+                expect(res.body.success).toBe(false);
+                expect(User.create).not.toHaveBeenCalled();
+            } finally {
+                delete Object.prototype.accepted_terms;
+            }
         });
     });
 

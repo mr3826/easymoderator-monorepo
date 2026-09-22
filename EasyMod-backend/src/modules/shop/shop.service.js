@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { User, Shop, UserShop, Tenant, GrowthOsUserRole } = require('../entities');
+const { User, Shop, UserShop, Tenant, GrowthOsUserRole, PushSubscription } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
@@ -402,6 +402,17 @@ const removeUserFromShop = async (shopId, requestingUserId, targetUserId) => {
 
         // Deactivate user access
         await targetUserShop.update({ is_active: false }, { transaction });
+
+        // A removed user must stop receiving push notifications for this shop
+        // immediately. Deactivating the membership alone left their
+        // push_subscriptions rows standing, so order/customer notifications
+        // kept reaching a staff member who no longer has access — delete
+        // them outright, matching the existing DELETE /subscriptions/:id
+        // behavior rather than introducing a new soft-delete pattern.
+        await PushSubscription.destroy({
+            where: { shop_id: shopId, user_id: targetUserId },
+            transaction
+        });
 
         if (wasActive) {
             await clearLastLoggedShop([targetUserShop.user_id], shopId, transaction);

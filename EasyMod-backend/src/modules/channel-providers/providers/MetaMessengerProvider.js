@@ -30,11 +30,24 @@ const logger = createLogger('MetaMessengerProvider');
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-const DEFAULT_SCOPES = [
+// The permissions this integration runs on. Under Facebook Login for Business
+// these are OWNED BY THE META LOGIN CONFIGURATION (META_LOGIN_CONFIG_ID), not
+// requested at runtime — Meta's guidance for a configuration-driven dialog is
+// that `config_id` replaces `scope` and that `scope` should not be sent.
+// This list is kept as the in-repo record of what that configuration must
+// grant, and as the assertion target for the App Review surface tests. It is
+// deliberately NOT put on the authorization URL. See
+// docs/incidents/2026-09-22-meta-login-unavailable.md.
+const CONFIGURATION_OWNED_PERMISSIONS = [
     'pages_show_list',
     'pages_messaging',
     'pages_manage_metadata'
 ];
+
+// Meta Login Configuration IDs are numeric identifiers. Reject anything else
+// rather than putting a malformed value on the wire, where it surfaces to the
+// merchant as an opaque "Feature unavailable" dialog with nothing in our logs.
+const LOGIN_CONFIG_ID_PATTERN = /^[0-9]{6,32}$/;
 
 const WEBHOOK_FIELDS = [
     'messages'
@@ -129,6 +142,18 @@ function hasNonEmptyAccessToken(page) {
     return typeof page?.access_token === 'string' && page.access_token.trim().length > 0;
 }
 
+function retainPageCredential(pageCredentials, page) {
+    if (!pageCredentials || typeof pageCredentials !== 'object') return;
+    if (page?.id === null || page?.id === undefined || !hasNonEmptyAccessToken(page)) return;
+
+    const pageId = String(page.id);
+    pageCredentials[pageId] = {
+        pageId,
+        token: page.access_token,
+        expiresAt: null,
+    };
+}
+
 /**
  * Follow Graph cursors without reusing Meta's `paging.next` URL. Meta embeds
  * the user token in that URL, and using it would also drop the signed params
@@ -177,7 +202,7 @@ async function mapWithConcurrency(values, concurrency, mapper) {
     return results;
 }
 
-async function hydratePageById(pageId, userToken) {
+async function hydratePageById(pageId, userToken, pageCredentials) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
@@ -195,6 +220,7 @@ async function hydratePageById(pageId, userToken) {
             logger.warn('metaPageHydrationRejected', { pageId, reason: 'ACCESS_TOKEN_MISSING' });
             return { page: null, status: 'rejected' };
         }
+        retainPageCredential(pageCredentials, page);
         return { page, status: 'succeeded' };
     } catch (err) {
         // Never serialize the Graph error or request config: either can contain
@@ -213,14 +239,40 @@ class MetaMessengerProvider extends ChannelProvider {
     get platform() { return 'facebook'; }
 
     async buildAuthUrl({ state, scopes, redirectUri }) {
-        // OAuth scope selection is provider-owned for the Messenger-only launch.
-        // Keep the base provider contract's `scopes` argument, but never let a
-        // caller broaden or narrow this exact consent request.
-        const finalScopes = DEFAULT_SCOPES.join(',');
+        // Facebook Login for Business is configuration-driven: the dashboard
+        // Login Configuration owns the permission set, and `config_id` selects
+        // it. The legacy classic-Login contract (scope=..., no config_id) is
+        // what produced the 2026-09-22 "Feature unavailable" outage, so there is
+        // no fallback to it — a missing or malformed configuration ID fails
+        // closed here, in every environment, rather than silently downgrading
+        // the authorization contract. Production boot also refuses to start
+        // without META_LOGIN_CONFIG_ID (production-config.validator.js).
+        //
+        // The base provider contract's `scopes` argument is intentionally
+        // ignored: permissions are not negotiable at runtime under this product,
+        // so a caller can neither broaden nor narrow the consent request.
+        const configId = String(config.metaLoginConfigId || '').trim();
+        if (!LOGIN_CONFIG_ID_PATTERN.test(configId)) {
+            throw new AppError(
+                'Facebook login is not configured. Set META_LOGIN_CONFIG_ID to the '
+                + 'Meta Login Configuration ID for this app.',
+                500,
+                'META_LOGIN_CONFIG_ID_INVALID',
+            );
+        }
+
+        // Parameter set per Meta's manual login flow + Facebook Login for
+        // Business guidance for a USER access token configuration:
+        //   - config_id replaces scope (scope is deliberately absent)
+        //   - response_type=code is the manual flow's documented default and is
+        //     what this server-side exchange needs
+        //   - override_default_response_type is NOT sent: it is documented only
+        //     for business integration system user (SUAT/BISU) configurations,
+        //     which this app does not use for merchant login.
         const params = new URLSearchParams({
             client_id: config.metaAppId,
             redirect_uri: redirectUri || config.metaOAuthRedirectUri,
-            scope: finalScopes,
+            config_id: configId,
             response_type: 'code',
             state
         });
@@ -282,7 +334,7 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    async listManagedAssets({ userToken }) {
+    async listManagedAssets({ userToken, pageCredentials }) {
         // The pages granted for Messenger are the authorization boundary. This
         // must run even when /me/accounts is empty so a Business Portfolio Page
         // can be recovered through its exact granted target ID.
@@ -319,6 +371,7 @@ class MetaMessengerProvider extends ChannelProvider {
             .filter((pageId) => !hasNonEmptyAccessToken(meAccountsById.get(pageId)));
         for (const [pageId, page] of meAccountsById) {
             if (selectedPageIds.has(pageId) && hasNonEmptyAccessToken(page)) {
+                retainPageCredential(pageCredentials, page);
                 pagesById.set(pageId, { ...page, source: 'ME_ACCOUNTS' });
             }
         }
@@ -326,7 +379,7 @@ class MetaMessengerProvider extends ChannelProvider {
         const hydrationResults = await mapWithConcurrency(
             targetsNeedingHydration,
             PAGE_HYDRATION_CONCURRENCY,
-            (pageId) => hydratePageById(pageId, userToken),
+            (pageId) => hydratePageById(pageId, userToken, pageCredentials),
         );
         const hydrationStats = {
             attempted: targetsNeedingHydration.length,
@@ -433,30 +486,6 @@ class MetaMessengerProvider extends ChannelProvider {
         }
 
         return { appScopedUserId, pageScopedIdentities };
-    }
-
-    async getAssetAccessToken({ assetId, userToken }) {
-        try {
-            const resp = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(assetId)}`, {
-                params: {
-                    fields: 'access_token',
-                    access_token: userToken,
-                    appsecret_proof: appsecretProof(userToken)
-                }
-            });
-            const token = resp.data?.access_token;
-            if (!hasNonEmptyAccessToken({ access_token: token })) {
-                throw new AppError(
-                    'Meta did not return a Page access token',
-                    502,
-                    'META_PAGE_ACCESS_TOKEN_MISSING',
-                );
-            }
-            return { token, expiresAt: null };  // Page tokens are non-expiring
-        } catch (err) {
-            if (err instanceof AppError) throw err;
-            throw metaError(err, 'getAssetAccessToken');
-        }
     }
 
     async refreshAssetToken({ channel }) {
@@ -657,16 +686,40 @@ class MetaMessengerProvider extends ChannelProvider {
             }
         }
 
+        const providerMessageIds = [];
+        const providerComponents = bodies.map((body, index) => ({
+            index,
+            type: body.message?.attachment?.type || 'text',
+            attempted: false,
+            status: 'PENDING',
+            providerMessageId: null,
+        }));
+        const attachProviderState = (error) => {
+            error.providerMessageIds = [...providerMessageIds];
+            error.providerComponents = providerComponents.map((component) => ({ ...component }));
+            error.providerFailure = {
+                code: error.code || null,
+                status: error.status || error.response?.status || null,
+                metaCode: error.details?.metaCode || error.response?.data?.error?.code || null,
+                metaSubcode: error.details?.metaSubcode || error.response?.data?.error?.error_subcode || null,
+            };
+            return error;
+        };
+
         try {
-            const providerMessageIds = [];
-            for (const body of bodies) {
+            for (const [index, body] of bodies.entries()) {
+                const component = providerComponents[index];
                 const reservation = await reserveSendSlot(channel.meta_asset_id);
                 if (!reservation.allowed) {
                     const rateLimitError = new Error('Meta send rate limit reached');
                     rateLimitError.code = 'META_RATE_LIMIT';
                     rateLimitError.retryAfterMs = reservation.retryAfterMs;
+                    component.status = 'FAILED';
+                    component.failureCode = rateLimitError.code;
+                    attachProviderState(rateLimitError);
                     throw rateLimitError;
                 }
+                component.attempted = true;
                 try {
                     const resp = await axios.post(
                         `${GRAPH_BASE}/me/messages`,
@@ -682,8 +735,13 @@ class MetaMessengerProvider extends ChannelProvider {
                         error.code = 'PROVIDER_NO_ACK';
                         throw error;
                     }
-                    providerMessageIds.push(String(providerMessageId));
+                    const normalizedProviderMessageId = String(providerMessageId);
+                    providerMessageIds.push(normalizedProviderMessageId);
+                    component.status = 'ACKNOWLEDGED';
+                    component.providerMessageId = normalizedProviderMessageId;
                 } catch (sendErr) {
+                    component.status = 'FAILED';
+                    component.failureCode = sendErr.code || sendErr.response?.data?.error?.code || null;
                     await releaseSendSlot(channel.meta_asset_id, reservation.member);
                     throw sendErr;
                 }
@@ -691,10 +749,11 @@ class MetaMessengerProvider extends ChannelProvider {
             return {
                 providerMessageId: providerMessageIds[providerMessageIds.length - 1] || null,
                 providerMessageIds,
+                providerComponents,
             };
         } catch (err) {
             if (err.code === 'META_RATE_LIMIT') {
-                throw err;
+                throw attachProviderState(err);
             }
             const normalized = metaError(err, 'sendMessage');
             if ([102, 190].includes(Number(normalized.details?.metaCode))) {
@@ -719,24 +778,18 @@ class MetaMessengerProvider extends ChannelProvider {
                 normalized.code = 'META_AUTHORIZATION_REQUIRED';
                 normalized.status = 401;
             }
-            throw normalized;
+            throw attachProviderState(normalized);
         }
     }
 
-    async ping({ channel }) {
-        const token = channel.page_access_token_ct;
-        if (!token) return { ok: false, latencyMs: 0 };
-        const start = Date.now();
-        try {
-            await axios.get(`${GRAPH_BASE}/${encodeURIComponent(channel.meta_asset_id)}`, {
-                params: { fields: 'id', access_token: token, appsecret_proof: appsecretProof(token) }
-            });
-            return { ok: true, latencyMs: Date.now() - start };
-        } catch (err) {
-            return { ok: false, latencyMs: Date.now() - start };
-        }
-    }
 }
 
 module.exports = MetaMessengerProvider;
-module.exports._private = { selectedPageIdsFromDebugToken };
+module.exports._private = {
+    selectedPageIdsFromDebugToken,
+    // Exported so the App Review surface tests can assert the permission
+    // set this integration declares, now that it is no longer observable
+    // on the authorization URL.
+    CONFIGURATION_OWNED_PERMISSIONS,
+    LOGIN_CONFIG_ID_PATTERN,
+};

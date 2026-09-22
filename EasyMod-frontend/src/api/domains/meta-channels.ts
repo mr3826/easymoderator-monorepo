@@ -15,6 +15,7 @@
  *   disconnectMetaChannel(channelId)           — POST   /api/channels/meta/:id/disconnect
  *   reconnectMetaChannel(channelId)            — POST   /api/channels/meta/:id/reconnect
  *   pingMetaChannel(channelId)                 — POST   /api/channels/meta/:id/test-webhook
+ *                                              (subscribed_apps verification)
  */
 
 import { httpClient } from '@/shared/lib/http/client';
@@ -88,7 +89,11 @@ export interface MetaReconnectResult {
 export interface MetaChannelPingResult {
   channelId: string;
   platform: MetaPlatform;
+  /** Backward-compatible alias for the canonical subscribed_apps result. */
   ping: { ok: boolean; latencyMs?: number; error?: string };
+  connection: { ok: boolean; status: MetaChannelStatus };
+  subscription: { ok: boolean; fields: string[]; requiredFields: string[]; repaired: boolean };
+  transport: { status: 'NOT_PROBED'; reason: string };
   checkedAt: string;
 }
 

@@ -46,12 +46,16 @@ async function sendSlack(text) {
     const url = process.env.SLACK_ALERT_WEBHOOK_URL;
     if (!url) return false;
     try {
-        await fetch(url, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text }),
         });
-        return true;
+        // Slack signals a rejected payload with a non-2xx status even though
+        // fetch() only REJECTS on network failure. Treating 4xx/5xx as accepted
+        // would report a dead sink (deactivated webhook, rate limit, malformed
+        // payload) as healthy and falsely close the launch alerting gate.
+        return Boolean(response && response.ok);
     } catch (_) {
         return false; // never let an alert-sink failure bubble into the caller
     }

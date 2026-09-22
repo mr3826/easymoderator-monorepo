@@ -38,29 +38,11 @@ describe('MetaMessengerProvider', () => {
         expect(provider.platform).toBe('facebook');
     });
 
-    describe('getAssetAccessToken()', () => {
-        afterEach(() => jest.resetAllMocks());
-
-        test('rejects when Meta omits the Page access token', async () => {
-            axios.get.mockResolvedValueOnce({ data: {} });
-
-            await expect(provider.getAssetAccessToken({
-                assetId: 'PAGE_1',
-                userToken: 'user-token',
-            })).rejects.toMatchObject({
-                status: 502,
-                code: 'META_PAGE_ACCESS_TOKEN_MISSING',
-            });
-        });
-
-        test('returns a non-empty Page access token', async () => {
-            axios.get.mockResolvedValueOnce({ data: { access_token: 'page-token' } });
-
-            await expect(provider.getAssetAccessToken({
-                assetId: 'PAGE_1',
-                userToken: 'user-token',
-            })).resolves.toEqual({ token: 'page-token', expiresAt: null });
-        });
+    // The approved production path never reads the Page node for a token; the
+    // credential is captured during /me/accounts discovery. A guard test that
+    // no provider exposes getAssetAccessToken lives below.
+    test('exposes no direct Page-node token lookup', () => {
+        expect(provider.getAssetAccessToken).toBeUndefined();
     });
 
     function debugTokenResponse(targetIds, manageTargetIds = targetIds, showListTargetIds = targetIds) {
@@ -135,26 +117,63 @@ describe('MetaMessengerProvider', () => {
         });
     }
 
-    describe('buildAuthUrl() default scopes (App Review surface)', () => {
-        test('requests exactly the Messenger-only Facebook scopes when none are passed', async () => {
-            const url = await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
-            const scope = new URL(url).searchParams.get('scope') || '';
-            expect(scope.split(',').sort()).toEqual([
+    // Facebook Login for Business is configuration-driven: the Meta dashboard
+    // Login Configuration owns the permission set and `config_id` selects it.
+    // Sending the classic-Login `scope` contract instead is what produced the
+    // 2026-09-22 "Feature unavailable" production outage. These tests pin the
+    // corrected contract so a regression to the legacy one cannot ship.
+    // See docs/incidents/2026-09-22-meta-login-unavailable.md.
+    describe('buildAuthUrl() permission surface (App Review surface)', () => {
+        const { CONFIGURATION_OWNED_PERMISSIONS } = MetaMessengerProvider._private;
+        const config = require('../../../config/config');
+        let saved;
+
+        beforeEach(() => {
+            saved = {
+                id: config.metaAppId,
+                redirect: config.metaOAuthRedirectUri,
+                configId: config.metaLoginConfigId,
+            };
+            config.metaAppId = '2040799330176198';
+            config.metaOAuthRedirectUri = 'https://app.easymod.tech/channels/oauth-callback';
+            config.metaLoginConfigId = '1685388446490514';
+        });
+
+        afterEach(() => {
+            config.metaAppId = saved.id;
+            config.metaOAuthRedirectUri = saved.redirect;
+            config.metaLoginConfigId = saved.configId;
+        });
+
+        test('declares exactly the Messenger-only Page permissions', () => {
+            expect([...CONFIGURATION_OWNED_PERMISSIONS].sort()).toEqual([
                 'pages_manage_metadata',
                 'pages_messaging',
                 'pages_show_list',
             ]);
         });
 
-        test('never requests Instagram or business_management scopes', async () => {
-            const url = await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
-            const scope = new URL(url).searchParams.get('scope') || '';
-            expect(scope).not.toMatch(/instagram_/);
-            expect(scope).not.toContain('business_management');
+        test('declares no Instagram, business_management, engagement or ads permission', () => {
+            const declared = CONFIGURATION_OWNED_PERMISSIONS.join(',');
+            expect(declared).not.toMatch(/instagram_/);
+            expect(declared).not.toContain('business_management');
+            expect(declared).not.toContain('pages_read_engagement');
+            expect(declared).not.toContain('pages_manage_engagement');
+            expect(declared).not.toContain('ads_management');
+            expect(declared).not.toContain('ads_read');
         });
 
-        test('ignores forbidden caller-supplied scopes and preserves the exact allowlist', async () => {
-            const url = await provider.buildAuthUrl({
+        // The regression guard for the outage: permissions come from the Meta
+        // configuration, so no permission may be negotiated on the URL at all.
+        test('puts no runtime permission scope on the authorization URL', async () => {
+            const url = new URL(await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] }));
+            expect(url.searchParams.get('scope')).toBeNull();
+            expect(url.searchParams.has('scope')).toBe(false);
+            expect(url.search).not.toContain('pages_');
+        });
+
+        test('a caller cannot reintroduce scope or broaden consent', async () => {
+            const url = new URL(await provider.buildAuthUrl({
                 state: 'facebook:s:u:n',
                 scopes: [
                     'business_management',
@@ -162,16 +181,201 @@ describe('MetaMessengerProvider', () => {
                     'instagram_manage_messages',
                     'pages_read_engagement',
                 ],
-            });
-            const scope = new URL(url).searchParams.get('scope') || '';
+            }));
 
-            expect(scope.split(',').sort()).toEqual([
-                'pages_manage_metadata',
-                'pages_messaging',
-                'pages_show_list',
+            expect(url.searchParams.has('scope')).toBe(false);
+            expect(url.search).not.toContain('business_management');
+            expect(url.search).not.toMatch(/instagram_/);
+            expect(url.search).not.toContain('pages_read_engagement');
+        });
+    });
+
+    describe('buildAuthUrl() dialog contract (Facebook Login for Business, User access token configuration)', () => {
+        const config = require('../../../config/config');
+        const APP_ID = '2040799330176198';
+        const REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+        // The app's USER access token configuration. The separate system-user
+        // configuration (35885387384409543) is intentionally NOT used by
+        // merchant login and must never appear on this URL.
+        const CONFIG_ID = '1685388446490514';
+        const SYSTEM_USER_CONFIG_ID = '35885387384409543';
+        const STATE = 'facebook:shop-1:user-1:nonce-fixture';
+        let saved;
+
+        beforeEach(() => {
+            saved = {
+                id: config.metaAppId,
+                redirect: config.metaOAuthRedirectUri,
+                configId: config.metaLoginConfigId,
+            };
+            config.metaAppId = APP_ID;
+            config.metaOAuthRedirectUri = REDIRECT;
+            config.metaLoginConfigId = CONFIG_ID;
+        });
+
+        afterEach(() => {
+            config.metaAppId = saved.id;
+            config.metaOAuthRedirectUri = saved.redirect;
+            config.metaLoginConfigId = saved.configId;
+        });
+
+        const build = (args = {}) => provider.buildAuthUrl({ state: STATE, scopes: [], ...args });
+
+        test('targets the Facebook dialog host on the shared Graph version', async () => {
+            const url = new URL(await build());
+            const version = process.env.META_GRAPH_API_VERSION || 'v22.0';
+            expect(url.origin).toBe('https://www.facebook.com');
+            expect(url.pathname).toBe('/' + version + '/dialog/oauth');
+        });
+
+        test('emits exactly client_id, redirect_uri, config_id, response_type and state', async () => {
+            const url = new URL(await build());
+            expect([...url.searchParams.keys()].sort()).toEqual([
+                'client_id',
+                'config_id',
+                'redirect_uri',
+                'response_type',
+                'state',
             ]);
-            expect(scope).not.toContain('business_management');
-            expect(scope).not.toMatch(/instagram_/);
+            expect(url.searchParams.get('client_id')).toBe(APP_ID);
+            expect(url.searchParams.get('response_type')).toBe('code');
+        });
+
+        test('carries the configured Login Configuration ID as config_id', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.get('config_id')).toBe(CONFIG_ID);
+            expect(url.searchParams.get('config_id')).toBe(config.metaLoginConfigId);
+        });
+
+        test('config_id follows the configured value rather than a hardcoded constant', async () => {
+            config.metaLoginConfigId = '999888777666555';
+            const url = new URL(await build());
+            expect(url.searchParams.get('config_id')).toBe('999888777666555');
+        });
+
+        // Meta documents `scope` as replaced by `config_id` and recommends
+        // against sending it. Sending the scope contract with no config_id is
+        // exactly the legacy request that broke.
+        test('sends no scope parameter', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.has('scope')).toBe(false);
+        });
+
+        // override_default_response_type is documented ONLY for business
+        // integration system user (SUAT/BISU) configurations, where it forces
+        // the authorization-code grant. This app's merchant login uses a USER
+        // access token configuration, which does not take it. Cargo-culting it
+        // across would be an unproven change to the authorization contract.
+        test('does not send override_default_response_type (system-user only)', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.has('override_default_response_type')).toBe(false);
+        });
+
+        test('never carries the preserved system-user configuration ID', async () => {
+            const url = await build();
+            expect(url).not.toContain(SYSTEM_USER_CONFIG_ID);
+        });
+
+        test('uses the configured redirect_uri exactly, with no trailing slash', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.get('redirect_uri')).toBe(REDIRECT);
+        });
+
+        test('prefers the redirect_uri bound to the OAuth state when one is passed', async () => {
+            const bound = 'https://app.easymod.tech/channels/oauth-callback';
+            config.metaOAuthRedirectUri = 'https://changed.example.com/channels/oauth-callback';
+            const url = new URL(await build({ redirectUri: bound }));
+            expect(url.searchParams.get('redirect_uri')).toBe(bound);
+        });
+
+        test('passes state through byte-identically', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.get('state')).toBe(STATE);
+        });
+
+        // buildAuthUrl passes a caller-supplied redirectUri through verbatim: the
+        // service supplies config.metaOAuthRedirectUri and Meta's whitelist enforces
+        // it. What this pins is only that hostile text stays inside its own
+        // percent-encoded parameter and cannot add or override another one.
+        test('keeps hostile state and redirect_uri values inside their own encoded parameters', async () => {
+            const hostileState = STATE + '&scope=business_management&config_id=999#frag';
+            const hostileRedirect = REDIRECT + '&scope=instagram_basic&client_id=1';
+            const url = new URL(await build({ state: hostileState, redirectUri: hostileRedirect }));
+
+            expect([...url.searchParams.keys()].sort()).toEqual([
+                'client_id',
+                'config_id',
+                'redirect_uri',
+                'response_type',
+                'state',
+            ]);
+            expect(url.searchParams.get('state')).toBe(hostileState);
+            expect(url.searchParams.get('redirect_uri')).toBe(hostileRedirect);
+            expect(url.searchParams.get('client_id')).toBe(APP_ID);
+            expect(url.searchParams.get('config_id')).toBe(CONFIG_ID);
+            expect(url.searchParams.has('scope')).toBe(false);
+        });
+    });
+
+    // Configuration drift protection. Facebook Login for Business cannot be
+    // driven without a configuration ID, and the failure mode of guessing is an
+    // opaque merchant-facing dialog with nothing in our logs. So this fails
+    // closed rather than downgrading to the legacy scope-only contract.
+    describe('buildAuthUrl() fails closed on a missing or malformed configuration ID', () => {
+        const config = require('../../../config/config');
+        let saved;
+
+        beforeEach(() => {
+            saved = {
+                id: config.metaAppId,
+                redirect: config.metaOAuthRedirectUri,
+                configId: config.metaLoginConfigId,
+            };
+            config.metaAppId = '2040799330176198';
+            config.metaOAuthRedirectUri = 'https://app.easymod.tech/channels/oauth-callback';
+        });
+
+        afterEach(() => {
+            config.metaAppId = saved.id;
+            config.metaOAuthRedirectUri = saved.redirect;
+            config.metaLoginConfigId = saved.configId;
+        });
+
+        const build = () => provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
+
+        test.each([
+            ['undefined', undefined],
+            ['null', null],
+            ['empty string', ''],
+            ['whitespace only', '   '],
+            ['non-numeric', 'not-a-config-id'],
+            ['too short', '12345'],
+            ['quoted', '"1685388446490514"'],
+            ['comma-joined pair', '1685388446490514,35885387384409543'],
+            ['signed', '+1685388446490514'],
+            ['decimal', '1685388446490514.0'],
+            ['scientific notation', '1.6853884464905e15'],
+            ['embedded parameter injection', '1685388446490514&scope=business_management'],
+            ['placeholder', 'CHANGE_ME'],
+        ])('refuses to build an authorization URL when META_LOGIN_CONFIG_ID is %s', async (_label, value) => {
+            config.metaLoginConfigId = value;
+            await expect(build()).rejects.toMatchObject({
+                status: 500,
+                code: 'META_LOGIN_CONFIG_ID_INVALID',
+            });
+        });
+
+        test('does not silently downgrade to the legacy scope-only contract', async () => {
+            config.metaLoginConfigId = '';
+            // Nothing is returned at all when the configuration is absent, so
+            // the legacy scope-only URL is unreachable by any path.
+            await expect(build()).rejects.toThrow();
+        });
+
+        test('tolerates surrounding whitespace on an otherwise valid value', async () => {
+            config.metaLoginConfigId = '  1685388446490514  ';
+            const url = new URL(await build());
+            expect(url.searchParams.get('config_id')).toBe('1685388446490514');
         });
     });
 
@@ -409,6 +613,45 @@ describe('MetaMessengerProvider', () => {
                 type: 'file',
                 payload: { url: 'https://cdn.example.com/invoice.pdf', is_reusable: true },
             });
+        });
+
+        test('preserves acknowledged text when a later attachment call fails', async () => {
+            axios.post
+                .mockResolvedValueOnce({ data: { message_id: 'mid_text_partial' } })
+                .mockRejectedValueOnce({
+                    response: {
+                        status: 400,
+                        data: {
+                            error: {
+                                code: 100,
+                                error_subcode: 2018001,
+                                type: 'OAuthException',
+                                message: 'Attachment URL could not be fetched',
+                            },
+                        },
+                    },
+                });
+
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_PARTIAL',
+                normalizedMessage: {
+                    text: 'Photo attached',
+                    attachments: [{ type: 'image', url: 'https://cdn.example.com/broken.jpg' }],
+                },
+                decision,
+            })).rejects.toMatchObject({
+                providerMessageIds: ['mid_text_partial'],
+                providerComponents: [
+                    expect.objectContaining({ type: 'text', status: 'ACKNOWLEDGED', providerMessageId: 'mid_text_partial' }),
+                    expect.objectContaining({ type: 'image', status: 'FAILED', attempted: true }),
+                ],
+                providerFailure: expect.objectContaining({
+                    metaCode: 100,
+                    metaSubcode: 2018001,
+                }),
+            });
+            expect(axios.post).toHaveBeenCalledTimes(2);
         });
 
         test('fails closed when Meta accepts a request without returning a message ID', async () => {
@@ -680,6 +923,27 @@ describe('MetaMessengerProvider', () => {
             expect(debugCall[1].params.appsecret_proof).toBe(
                 crypto.createHmac('sha256', 'test-secret').update('test-app-id|test-secret').digest('hex'),
             );
+        });
+
+        test('retains /me/accounts Page credentials in the server-only sink', async () => {
+            const pageCredentials = Object.create(null);
+            const pageToken = 'PAGE_SECRET_SENTINEL_DISCOVERY';
+            configureGraph({
+                accountPages: [{
+                    data: { data: [page('P_SECRET', { access_token: pageToken })], paging: {} },
+                }],
+                targetIds: ['P_SECRET'],
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_sink', pageCredentials });
+
+            expect(result).toEqual([expect.objectContaining({ id: 'P_SECRET' })]);
+            expect(result[0]).not.toHaveProperty('access_token');
+            expect(JSON.stringify(result)).not.toContain(pageToken);
+            expect(pageCredentials).toEqual({
+                P_SECRET: { pageId: 'P_SECRET', token: pageToken, expiresAt: null },
+            });
+            expect(axios.get.mock.calls.filter(([url]) => String(url).endsWith('/P_SECRET'))).toHaveLength(0);
         });
 
         test('recovers a granted Business Portfolio Page omitted by /me/accounts', async () => {

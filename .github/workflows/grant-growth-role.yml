@@ -39,14 +39,39 @@ jobs:
   grant:
     name: Set Growth OS role on production
     runs-on: ubuntu-latest
-    environment: growth-bootstrap
+    if: github.ref == 'refs/heads/main'
+    environment: production
     steps:
+      - name: Derive pinned SSH host fingerprint
+        id: ssh_host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+
       - name: Run grant-growth-role on droplet
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 120s
           # Forward inputs as named env vars so they are not interpolated into
           # the remote shell (avoids command injection through the email field).

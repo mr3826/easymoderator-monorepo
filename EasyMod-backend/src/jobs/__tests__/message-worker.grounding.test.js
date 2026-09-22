@@ -424,6 +424,44 @@ describe('existing behaviour is preserved', () => {
         expect(cacheRedis.del).toHaveBeenCalledWith('msg:dedup:shop-a:facebook:ext-1');
     });
 
+    test('persists acknowledged components when a later provider component fails', async () => {
+        const partialError = Object.assign(new Error('attachment fetch failed'), {
+            code: 'META_API_ERROR',
+            providerMessageIds: ['mid_text_partial'],
+            providerComponents: [
+                { index: 0, type: 'text', attempted: true, status: 'ACKNOWLEDGED', providerMessageId: 'mid_text_partial' },
+                { index: 1, type: 'image', attempted: true, status: 'FAILED', providerMessageId: null, failureCode: 100 },
+            ],
+            providerFailure: { code: 'META_API_ERROR', status: 400, metaCode: 100, metaSubcode: 2018001 },
+        });
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'Photo attached',
+            confidence: 0.9,
+            source: 'llm',
+            provider: 'gemini-lite',
+            grounding: verifiedEvidence({ photo: PHOTO_URL }),
+            attachments: [{ type: 'image', url: PHOTO_URL, productId: 'p-1' }],
+        });
+        sendMessage.mockRejectedValueOnce(partialError);
+
+        await expect(processMessageJob(job())).rejects.toBe(partialError);
+
+        expect(mockStoredAiMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+            provider_message_id: 'mid_text_partial',
+            metadata: expect.objectContaining({
+                delivered: false,
+                delivery_state: 'FAILED',
+                provider_send_attempted: true,
+                provider_message_ids: ['mid_text_partial'],
+                provider_components: expect.arrayContaining([
+                    expect.objectContaining({ type: 'text', status: 'ACKNOWLEDGED' }),
+                    expect.objectContaining({ type: 'image', status: 'FAILED' }),
+                ]),
+                provider_failure: expect.objectContaining({ metaCode: 100, metaSubcode: 2018001 }),
+            }),
+        }));
+    });
+
     test('a policy denial still holds the reply as a draft rather than sending', async () => {
         const policyEngine = require('src/modules/policy/policy.engine');
         policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'OUTSIDE_24H' });

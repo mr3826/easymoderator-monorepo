@@ -46,6 +46,7 @@ jest.mock('../../entities', () => ({
     Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
     GrowthOsUserRole: { findOne: jest.fn() },
+    PushSubscription: { destroy: jest.fn() },
 }));
 
 const mockTransaction = {
@@ -93,7 +94,7 @@ jest.mock('../../../utils/sse-manager', () => ({
     emit: jest.fn(),
 }));
 
-const { Shop, User, UserShop, Subscription, GrowthOsUserRole } = require('../../entities');
+const { Shop, User, UserShop, Subscription, GrowthOsUserRole, PushSubscription } = require('../../entities');
 const shopService = require('src/modules/shop/shop.service');
 const auditService = require('../../audit/audit.service');
 const sseManager = require('../../../utils/sse-manager');
@@ -126,6 +127,7 @@ describe('Shop Service', () => {
         User.findOne.mockResolvedValue({ id: 'user-2', email: 'invitee@example.com' });
         User.update.mockResolvedValue([1]);
         GrowthOsUserRole.findOne.mockResolvedValue(null);
+        PushSubscription.destroy.mockResolvedValue(0);
     });
 
     // ── getShopsByUserId ───────────────────────────────────────────────────────
@@ -476,5 +478,64 @@ describe('Shop Service', () => {
         UserShop.findOne.mockResolvedValueOnce(null); // owner check fails
         await expect(shopService.deleteShopById('shop-1', 'user-staff'))
             .rejects.toMatchObject({ status: 403 });
+    });
+
+    // ── removeUserFromShop ─────────────────────────────────────────────────────
+    // Defect: removing a user only ever deactivated their UserShop row. Their
+    // push_subscriptions rows for the shop were left standing, so a fired or
+    // reassigned staff member kept receiving order/customer push notifications
+    // indefinitely. Removal must also revoke push delivery for that shop.
+    describe('removeUserFromShop', () => {
+        const requesterOwner = { user_id: 'user-1', shop_id: 'shop-1', role: 'owner', is_active: true };
+        let targetStaff;
+
+        beforeEach(() => {
+            targetStaff = {
+                user_id: 'user-2',
+                shop_id: 'shop-1',
+                role: 'staff',
+                is_active: true,
+                update: jest.fn().mockResolvedValue(true),
+            };
+            UserShop.findOne.mockReset();
+            UserShop.findOne
+                .mockResolvedValueOnce(requesterOwner) // requester permission check
+                .mockResolvedValueOnce(targetStaff);   // target membership lookup
+        });
+
+        it("deactivates membership and deletes the removed user's push subscriptions for this shop", async () => {
+            const result = await shopService.removeUserFromShop('shop-1', 'user-1', 'user-2');
+
+            expect(targetStaff.update).toHaveBeenCalledWith(
+                { is_active: false },
+                expect.anything()
+            );
+            expect(PushSubscription.destroy).toHaveBeenCalledWith(
+                expect.objectContaining({ where: { shop_id: 'shop-1', user_id: 'user-2' } })
+            );
+            expect(result.message).toBeDefined();
+        });
+
+        it('throws 403 when the requester is not an owner or admin, and never touches push subscriptions', async () => {
+            UserShop.findOne.mockReset();
+            UserShop.findOne
+                .mockResolvedValueOnce({ ...requesterOwner, role: 'staff' })
+                .mockResolvedValueOnce(targetStaff);
+
+            await expect(shopService.removeUserFromShop('shop-1', 'user-1', 'user-2'))
+                .rejects.toMatchObject({ status: 403 });
+            expect(PushSubscription.destroy).not.toHaveBeenCalled();
+        });
+
+        it('throws 400 and never touches push subscriptions when the target is the owner', async () => {
+            UserShop.findOne.mockReset();
+            UserShop.findOne
+                .mockResolvedValueOnce(requesterOwner)
+                .mockResolvedValueOnce({ ...targetStaff, role: 'owner' });
+
+            await expect(shopService.removeUserFromShop('shop-1', 'user-1', 'user-2'))
+                .rejects.toMatchObject({ status: 400 });
+            expect(PushSubscription.destroy).not.toHaveBeenCalled();
+        });
     });
 });

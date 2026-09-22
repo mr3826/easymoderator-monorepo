@@ -53,6 +53,13 @@ module.exports = {
     metaWebhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN,
     metaAppId: process.env.META_APP_ID,
     metaAppSecret: process.env.META_APP_SECRET,
+    // Meta Login Configuration ID for Facebook Login for Business. The dashboard
+    // configuration — not the runtime `scope` parameter — owns which Page
+    // permissions the login dialog requests, and `config_id` is what selects it.
+    // Not a secret (it travels in the authorization URL), but environment-
+    // specific: production must not inherit a developer's configuration.
+    // Production boot refuses to start without it, so it is never defaulted here.
+    metaLoginConfigId: process.env.META_LOGIN_CONFIG_ID,
     metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI
         || (process.env.FRONTEND_URL && `${process.env.FRONTEND_URL}/channels/oauth-callback`),
     origins: getOrigins(process.env),

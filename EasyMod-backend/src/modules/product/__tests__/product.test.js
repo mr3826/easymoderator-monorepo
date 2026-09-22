@@ -12,6 +12,7 @@ const CAT_ID        = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22';
 const CAT2_ID       = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a23';
 const USER_ID       = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33';
 const SHOP_ID       = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44';
+const OTHER_SHOP_ID = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55';
 const OTHER_PROD_ID = 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66';
 
 // ── Mock Redis ─────────────────────────────────────────────────────────────
@@ -390,6 +391,31 @@ describe('Product API', () => {
             await request(app).post('/api/product').send({ name: 'AI Test', price: 100 });
             expect(queueProductProcessing).toHaveBeenCalled();
         });
+
+        it('ignores a client-supplied shop_id and creates under the authenticated shop, not the body value (SECURITY)', async () => {
+            const captured = [];
+            Product.create.mockImplementationOnce((data) => { captured.push(data); return Promise.resolve(mockProduct); });
+
+            const res = await request(app)
+                .post('/api/product')
+                .send({ name: 'Cross-tenant Attempt', price: 100, shop_id: OTHER_SHOP_ID });
+
+            expect(res.status).toBe(201);
+            expect(captured[0].shop_id).toBe(SHOP_ID);
+            expect(captured[0].shop_id).not.toBe(OTHER_SHOP_ID);
+        });
+
+        it('ignores a client-supplied shopId (camelCase) the same way (SECURITY)', async () => {
+            const captured = [];
+            Product.create.mockImplementationOnce((data) => { captured.push(data); return Promise.resolve(mockProduct); });
+
+            const res = await request(app)
+                .post('/api/product')
+                .send({ name: 'Cross-tenant Attempt 2', price: 100, shopId: OTHER_SHOP_ID });
+
+            expect(res.status).toBe(201);
+            expect(captured[0].shop_id).toBe(SHOP_ID);
+        });
     });
 
     // ── PATCH /product/:id ────────────────────────────────────────────────
@@ -442,6 +468,23 @@ describe('Product API', () => {
             Category.findOne.mockResolvedValueOnce(null);
             const res = await request(app).patch(`/api/product/${PROD_ID}`).send({ category_id: CAT2_ID });
             expect(res.status).toBe(404);
+        });
+
+        it('ignores a client-supplied shop_id and does not move the product to another shop (SECURITY)', async () => {
+            const captured = [];
+            mockProduct.update.mockImplementationOnce(function (data) {
+                captured.push(data);
+                Object.assign(this, data);
+                return Promise.resolve(this);
+            });
+
+            const res = await request(app)
+                .patch(`/api/product/${PROD_ID}`)
+                .send({ price: 500, shop_id: OTHER_SHOP_ID });
+
+            expect(res.status).toBe(200);
+            expect(captured[0]).not.toHaveProperty('shop_id');
+            expect(res.body.data.shop_id).toBe(SHOP_ID);
         });
     });
 
@@ -617,6 +660,45 @@ describe('Product API', () => {
             Product.findOne.mockReset().mockResolvedValueOnce(null);
             await expect(productService.updateProduct(OTHER_PROD_ID, USER_ID, SHOP_ID, { name: 'X' }))
                 .rejects.toMatchObject({ status: 404 });
+        });
+
+        it('createProduct strips a client-supplied shop_id — the authenticated shopId always wins (SECURITY)', async () => {
+            const captured = [];
+            Product.create.mockImplementationOnce((data) => { captured.push(data); return Promise.resolve(mockProduct); });
+
+            await productService.createProduct(USER_ID, SHOP_ID, {
+                name: 'Test', price: 100, shop_id: OTHER_SHOP_ID,
+            });
+
+            expect(captured[0].shop_id).toBe(SHOP_ID);
+            expect(captured[0].shop_id).not.toBe(OTHER_SHOP_ID);
+        });
+
+        it('updateProduct strips a client-supplied shop_id — cannot move a product to another shop (SECURITY)', async () => {
+            const captured = [];
+            mockProduct.update.mockImplementationOnce(function (data) {
+                captured.push(data);
+                Object.assign(this, data);
+                return Promise.resolve(this);
+            });
+
+            await productService.updateProduct(PROD_ID, USER_ID, SHOP_ID, {
+                price: 500, shop_id: OTHER_SHOP_ID,
+            });
+
+            expect(captured[0]).not.toHaveProperty('shop_id');
+        });
+
+        it('legacy POST /product/create also strips a client-supplied shop_id (shares createProduct) (SECURITY)', async () => {
+            const captured = [];
+            Product.create.mockImplementationOnce((data) => { captured.push(data); return Promise.resolve(mockProduct); });
+
+            const res = await request(app)
+                .post('/api/product/create')
+                .send({ name: 'Legacy Attempt', price: 100, shop_id: OTHER_SHOP_ID });
+
+            expect(res.status).toBe(201);
+            expect(captured[0].shop_id).toBe(SHOP_ID);
         });
 
         it('deleteProduct returns 404 when product does not exist', async () => {
