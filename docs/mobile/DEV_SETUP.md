@@ -95,20 +95,164 @@ anticipated). **Net: the emulator itself is proven good (boots, hardware-acceler
 cold-start perf budget in `MOBILE_PRODUCT_SPEC.md` §4 is explicitly UNVERIFIED — confirmed blocked
 by this path-length issue, not confirmed passing or failing on its own merits.**
 
-Whoever picks this up next has three independent remediation paths, none attempted in this
-time-boxed lane: (1) enable Windows NTFS long-path support machine-wide
-(`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled=1`, requires admin + reboot)
-and confirm CMake/ninja actually honor it on this Windows build (not guaranteed — `CMAKE_OBJECT_PATH_MAX`
-is a CMake-level guard, not just an OS one); (2) build from a shallower checkout path for local
-Android dev work instead of the nested `.claude/worktrees/<id>/` layout (e.g. a short-path clone
-dedicated to mobile native builds); or (3) restrict the build to one ABI via
-`-PreactNativeArchitectures=x86` (matching the emulator) to shave a few path-length characters and
-skip compiling the other three ABIs — worth trying first since it's the cheapest, but may not be
-sufficient on its own given how much of the 250-character budget the worktree prefix alone
-consumes. This is the first time this program has attempted a native build against the API-24
-target, and it surfaced a real Windows-worktree environment constraint that will affect every
-future native Android build from this checkout layout, not just this AVD — worth flagging to
-whoever owns workstation/CI environment setup, independent of this lane.
+**Phase 2 Lane 0 follow-up — root-cause and remediation, actually attempted (2026-09-15,
+`mobile/p2-android-build-infra`, worktree `D:/easymod/mob-buildfix`):** the three remediation paths
+above were tried in priority order, each with a real reproduced result, not a guess. Summary
+verdict first: **the checkout-depth root cause is real and is resolved by not using the nested
+`.claude/worktrees/<id>/` layout for local Android native builds; this specific workstation also
+has a second, unrelated, and currently more acute problem — its `D:` drive has no free space to
+reliably finish a native Android build at all.** Detail follows.
+
+1. **Shorter checkout path — tried, and the checkout-depth hypothesis is confirmed.** This lane's
+   own worktree, `D:/easymod/mob-buildfix`, is already ~20 characters shorter than the failing
+   `D:/easymod/easy-moderator/.claude/worktrees/wf_029f7387-dd1-1/...` path, simply by not being
+   nested under `.claude/worktrees/<id>/` — which is itself the normal, already-used-everywhere-else
+   layout for this program's other worktrees (`git worktree list` shows `mob`, `mob-home`, and every
+   `fix/`/`hotfix/` lane sitting directly under `D:/easymod/<name>/`; only the four
+   `wf_029f7387-dd1-*` worktrees are nested under `.claude/worktrees/`). Computed exactly (Python,
+   using reanimated's actual longest source file,
+   `Common/cpp/reanimated/CSS/interpolation/transforms/TransformOperationInterpolator.cpp`, 85
+   characters relative to the package root — 1 character longer than the file that appears in the
+   original failure log, so this is the true worst case, not an approximation): the original
+   worktree prefix produces a 267-character full object-file path (over the 250-character
+   `CMAKE_OBJECT_PATH_MAX` ceiling — matches the observed failure exactly); this lane's own
+   `mob-buildfix` prefix produces a 229-character path for the same file (**under** the ceiling by
+   21 characters).
+   - Also tried, as the cheaper first step the task brief suggested: an NTFS junction
+     (`mklink /J D:\m D:\easymod\mob-buildfix`) to get an even shorter apparent path (210 characters
+     for the same file). **Finding: the junction is a no-op for this specific failure.** Running
+     `gradlew` from `D:\m\EasyMod-mobile\android` still produced `.cxx` build trees physically
+     rooted at the real `D:\easymod\mob-buildfix\...` path (confirmed by listing the generated
+     `.cxx` directories after the build started — they exist under `mob-buildfix`, never under
+     `D:\m`) — Android Gradle Plugin's CMake/ninja integration resolves the module directory to its
+     real filesystem path before computing `.cxx` output locations, so a junction/alias does not
+     shorten anything AGP itself cares about. (This differs from the Qt Creator long-path
+     workaround reported upstream, which junctions the CMake source/build dirs at a layer Qt
+     Creator controls directly — that does not transfer to AGP's own path resolution.) **Do not
+     rely on a junction for this; a genuinely shallow checkout path is what matters, not an alias to
+     a deep one.**
+   - The real build, run to completion (see disk-space finding below for why it didn't finish
+     clean): sourced `scripts/dev-env.sh`, ran `npx expo prebuild --platform android` (succeeded;
+     spot-checked `applicationId 'tech.easymod.merchant.dev'` and
+     `android:usesCleartextTraffic="true"` — correct `.dev` variant), then
+     `./gradlew assembleDebug -PreactNativeArchitectures=x86 --stacktrace` (single-ABI used here
+     purely to shorten iteration time, per the task brief's suggestion — ABI folder-name length
+     doesn't materially change the path-length math, only total compile time). Result: **no
+     `CMAKE_OBJECT_PATH_MAX` warning and no `ninja: error: manifest 'build.ninja' still dirty`
+     message appeared anywhere in the run** (grep-verified against the full ~660KB build log) —
+     reanimated's CMake configured cleanly, its `build.ninja` was never dirty, and ninja actually
+     compiled 92 of 107 (86%) of reanimated's object files before the run hit the unrelated failure
+     below. This is real forward progress past the exact point the original attempt never reached
+     in 28m43s, and it is strong, reproduced evidence that avoiding the deep worktree-nesting
+     pattern resolves this failure mode.
+
+2. **Windows long-path support — verified, and confirmed to be the dead end the note suspected, with a
+   citable reason, not a guess.** `Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem
+   LongPathsEnabled` was queried directly on this machine (not assumed from the note) and returned
+   `1` — the flag genuinely is set. It is nonetheless provably insufficient for this failure, for
+   two independent, documented reasons:
+   - `CMAKE_OBJECT_PATH_MAX` (default "as close as possible to the actual MAX_PATH limit (260)",
+     i.e. ~250) is a static CMake-generator-time constant that CMake enforces on its own — it is
+     never derived from, or aware of, the Windows `LongPathsEnabled` registry value. Raising it
+     requires either a newer CMake default or an explicit `-DCMAKE_OBJECT_PATH_MAX=...`/toolchain
+     override inside the CMakeLists that owns the build (here, reanimated's own — out of bounds per
+     this lane's hard boundaries).
+   - Separately, even Windows' own long-path *transparency* for a raw (non-`\\?\`-prefixed) path
+     requires **both** the registry flag **and** the calling executable's own manifest declaring
+     `longPathAware=true` (a Windows 10 1607+ mechanism) — the registry flag alone does not retrofit
+     long-path behavior onto an executable that wasn't built with that manifest. Ninja only gained
+     this manifest (plus wide-path Win32 API usage) in **v1.12** (2024); CMake gained the
+     equivalent around **v4.0**. This project's actual bundled toolchain, resolved from
+     `ANDROID_HOME` (`D:\Android\Sdk\cmake\3.22.1`), is **CMake 3.22.1 / ninja 1.10.2** — both
+     verified directly (`cmake --version`, `ninja --version`) and both years before that fix. CMake's
+     own bug tracker documents this exact interaction: gitlab.kitware.com/cmake/cmake/-/issues/25936,
+     "Path names longer than MAX_PATH fail on Windows, even if long paths support is enabled" — its
+     own title is this project's exact situation. **Conclusion: `LongPathsEnabled=1` is real, correct,
+     and irrelevant to this failure with this Android SDK/NDK-bundled toolchain version — not a
+     hypothesis, a version-checked fact.** (Also: nothing in this project bundles or pins its own
+     cmake/ninja — both come from whatever NDK version `android/build.gradle`'s `externalNativeBuild`
+     resolves — so this isn't a one-line project-side version bump either without touching
+     reanimated's own build configuration, which is out of bounds here.)
+
+3. **CI as an authoritative native-build gate — confirmed absent, and correctly so for now, not
+   silently missing.** `.github/workflows/mobile-ci.yml` exists, runs on `ubuntu-latest` (ADR
+   M-009), and passes reliably (`gh run list --branch feature/mobile-app`: 5 of the last 6 runs
+   green, including every mobile-only PR merged so far). It does **not** include an Android Gradle
+   build job — this is a deliberate, already-documented deferral in ADR M-009 itself ("adding this
+   job means pinning a Java setup action and an emulator/Maestro-runner action by digest... no
+   digest is fabricated here without verifying it against the real action first... The phase that
+   first needs an on-device/CI Android build adds this job with real, verified pins"). That
+   reasoning is sound and this lane did not override it: verifying real action digests, deciding
+   whether a full emulator/Maestro run is even needed for a pure native-compile check (it is not —
+   a compile-only job needs no emulator at all, just `assembleDebug`), and wiring Gradle/NDK
+   caching for a Linux runner is a distinct, non-trivial scope of its own, not the "small, cheap,
+   safe addition" the task brief allows without further scope review — so it was not added in this
+   PR. For the record, since it bears directly on urgency: GitHub's hosted `ubuntu-latest` runners
+   ship a preinstalled, much newer Android NDK/CMake (NDK r28 / CMake ~3.31 as of late-2025 runner
+   images) than this project's Windows-resolved 3.22.1, which would not hit this exact
+   `CMAKE_OBJECT_PATH_MAX` failure mode at all (Linux has no `MAX_PATH`, and a modern CMake wouldn't
+   apply the same conservative default even if it did) — but that is an informed expectation, not
+   verified evidence, because no such job has ever run. **Honest statement: as of this lane, there
+   is zero CI evidence — on Linux or anywhere else — that `EasyMod-mobile`'s Android native build
+   succeeds end-to-end.** This is the single highest-leverage next step for whoever owns this next:
+   a compile-only (`assembleDebug`, no emulator) Android job added to `mobile-ci.yml` with real
+   verified action-digest pins would be cheap on a GitHub-hosted runner and would finally give this
+   an authoritative, Windows-path-length-immune pass/fail signal on every push — something local
+   Windows dev builds cannot reliably provide on this workstation (see below).
+
+4. **Single-ABI local-build flag — implemented as an opt-in local developer convenience,
+   independent of whether it was "needed."** The measurements above show ABI choice barely affects
+   the path-length math (ABI folder names are all similar length); its real value is cutting local
+   build time/disk roughly 4x by compiling one ABI instead of four. Because `EasyMod-mobile/android/`
+   is generated fresh by `expo prebuild` and is git-ignored (Continuous Native Generation — confirmed
+   via `.gitignore` and `git check-ignore`), a hand-edit to `android/gradle.properties` would be
+   silently wiped on the next prebuild; the durable, prebuild-safe mechanism is a `ORG_GRADLE_PROJECT_*`
+   environment variable, which Gradle automatically maps to a `-P` project property and which lives
+   entirely outside the generated `android/` tree. `scripts/dev-env.ps1`/`dev-env.sh` now export
+   `EASYMOD_ANDROID_LOCAL_ABI` (opt-in, unset by default — set it to an ABI name, e.g. `x86` to match
+   `Nexus_5_API_24`, before sourcing the script) which the script turns into
+   `ORG_GRADLE_PROJECT_reactNativeArchitectures` for that shell only. This never touches
+   `android/gradle.properties`'s own default (`armeabi-v7a,arm64-v8a,x86,x86_64`, which is what EAS
+   Build and any future CI Android job will still use), never touches CI (`mobile-ci.yml` does not
+   source these scripts), and is documented here rather than defaulted-on so a developer who
+   actually needs to test a different ABI/real device isn't silently overridden.
+
+**Workstation disk-capacity finding (2026-09-15, found during the above, not part of the original
+three remediation paths but too material to omit):** the `assembleDebug` run above did not reach a
+clean `BUILD SUCCESSFUL`. After compiling 92/107 of reanimated's objects and making real progress in
+several other native modules, it failed with `fatal error: error in backend: IO failure on output
+stream: No space left on device` (clang++) and matching `javac`/CMake write failures — at that point
+`Get-PSDrive` showed `D:` at **0.00 GB free out of ~102 GB total**. This is a **wholly separate,
+unrelated failure mode from `CMAKE_OBJECT_PATH_MAX`** — no path-length warning or ninja-dirty-manifest
+message appears anywhere before it in the log — and it is evidence of a real, currently-unresolved
+workstation-capacity constraint, not a mobile-program code or config problem: `D:` hosts roughly a
+dozen concurrent worktrees (per `git worktree list`) plus several GB of unrelated video files, and a
+single Android native build's `.cxx`/object-file output across several native modules is enough by
+itself to exhaust whatever margin was left. This lane freed space it could safely free (its own
+`EasyMod-mobile/android/` build output and `node_modules/`, both git-ignored and regenerable, plus its
+own scratch build log) rather than touching any other worktree's files, which is out of this lane's
+scope and could destroy another lane's in-progress work — but that is a stopgap, not a fix, and the
+next full local Android build attempt (by anyone, on this box) should expect to hit the same wall
+again unless real disk headroom (recommend reserving at least 10-15 GB free, on top of whatever
+`node_modules`/npm cache already need) is confirmed free immediately beforehand. This is flagged
+here because it would otherwise be indistinguishable from "the path-length fix didn't work" to
+whoever reads a future failed build log without also checking free disk space first.
+
+**Does this need to be resolved before Phase 8 (first internal installable Android beta)? No —
+not as a release blocker, with one caveat.** Per ADR `M-009-ci-isolation.md`, "Phase 8's beta build
+path goes through EAS directly, not through this [CI] workflow" — and EAS Build runs on Expo's own
+Linux/macOS cloud infrastructure, not this Windows workstation, so it does not inherit this
+workstation's checkout-depth or `MAX_PATH` behavior at all. The checkout-depth root cause identified
+here is a **local Windows developer-experience friction**, not a property of the app or its native
+dependencies, and this lane's own (disk-space-interrupted but otherwise clean) build run is real
+evidence the native build itself is healthy once run from a normal-depth checkout. The caveat: (a)
+this conclusion about EAS is based on ADR M-009's stated intent, not a Lane-0-verified EAS build —
+whoever runs the first real EAS build should confirm it directly; (b) item 3 above stands
+independently of Phase 8 — shipping any Android beta with **zero** CI evidence that the native build
+succeeds anywhere, Windows or not, is a real gap worth closing before repeated betas, even though
+it does not block the *first* one; and (c) the disk-space finding *does* block any developer on
+*this specific workstation* from doing local `adb`/on-device debugging of a real `.dev` build until
+that's addressed — which matters for pre-beta QA even if it doesn't block the EAS build path itself.
 
 ## 3. Dev backend
 
