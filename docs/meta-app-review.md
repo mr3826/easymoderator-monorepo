@@ -5,6 +5,13 @@
 **Graph API version:** v22.0
 **Login product:** Facebook Login for Business
 
+**Active Login Configuration:** `1685388446490514` (User access token)
+
+**Access Verification:** submitted/in review; deadline `2026-11-21`
+
+**Preserved future configuration:** `35885387384409543` (Business Integration
+System User; not the production merchant login path)
+
 EasyModerator launches as a Facebook Page Messenger inbox with AI-assisted replies and order support. Customers must message the Page directly. The app does not read, process, reply to, or trigger workflows from Facebook post comments.
 
 ## Requested Permissions
@@ -24,6 +31,12 @@ Final requested set: `pages_show_list`, `pages_messaging`, `pages_manage_metadat
 The requested scope list lives in `EasyMod-backend/src/modules/channel-providers/providers/MetaMessengerProvider.js` as `DEFAULT_SCOPES`.
 
 The webhook subscription list in the same provider is `WEBHOOK_FIELDS = ['messages']`.
+
+The production token contract is `User access token -> /me/accounts Page
+access_token -> encrypted channel credential`. Webhook health is derived from
+`GET /{page-id}/subscribed_apps` verification and must include `messages`.
+The direct Page-node access-token lookup and legacy Page-node health probe are
+not supported production paths.
 
 Regression tests enforce that the provider:
 

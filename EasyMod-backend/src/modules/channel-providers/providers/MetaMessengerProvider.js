@@ -809,19 +809,6 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    async ping({ channel }) {
-        const token = channel.page_access_token_ct;
-        if (!token) return { ok: false, latencyMs: 0 };
-        const start = Date.now();
-        try {
-            await axios.get(`${GRAPH_BASE}/${encodeURIComponent(channel.meta_asset_id)}`, {
-                params: { fields: 'id', access_token: token, appsecret_proof: appsecretProof(token) }
-            });
-            return { ok: true, latencyMs: Date.now() - start };
-        } catch (err) {
-            return { ok: false, latencyMs: Date.now() - start };
-        }
-    }
 }
 
 module.exports = MetaMessengerProvider;

@@ -246,19 +246,6 @@ class ChannelProvider {
         throw new Error('not_implemented');
     }
 
-    // ── Health ──────────────────────────────────────────────────────────────────
-
-    /**
-     * Check whether the channel is still accessible from the provider's side.
-     * Makes a lightweight Graph API call and measures round-trip latency.
-     *
-     * @param {object} params
-     * @param {object} params.channel - MetaChannel instance
-     * @returns {Promise<{ ok: boolean, latencyMs: number }>}
-     */
-    async ping({ channel }) {
-        throw new Error('not_implemented');
-    }
 }
 
 module.exports = ChannelProvider;
