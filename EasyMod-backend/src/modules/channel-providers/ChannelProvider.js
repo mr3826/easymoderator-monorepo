@@ -118,18 +118,6 @@ class ChannelProvider {
     }
 
     /**
-     * Get the page-scoped access token for a specific asset.
-     *
-     * @param {object} params
-     * @param {string} params.assetId    - Page ID or IG Business Account ID
-     * @param {string} params.userToken  - Long-lived user access token
-     * @returns {Promise<{ token: string, expiresAt: Date|null }>}
-     */
-    async getAssetAccessToken({ assetId, userToken }) {
-        throw new Error('not_implemented');
-    }
-
-    /**
      * Refresh the page access token stored on a channel.
      * Updates the channel in-place via MetaChannelService.updateTokens().
      *
