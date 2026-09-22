@@ -65,6 +65,39 @@ authorization code -> /oauth/access_token -> short-lived user token
 
 A **system user** configuration would have broken this: it returns a non-expiring system-user token, for which `fb_exchange_token` is meaningless. The app's system-user configuration `35885387384409543` is preserved and intentionally unused; migrating to it is separate, deferred work (see below).
 
+## Current production Meta contract
+
+The supported production path is intentionally narrow and configuration-owned:
+
+```text
+Facebook Login for Business (User access token configuration 1685388446490514)
+  -> long-lived User access token
+  -> debug_token granular Page targets
+  -> /me/accounts (Page access_token)
+  -> encrypted channel Page credential
+  -> /{page-id}/subscribed_apps verification
+```
+
+The approved permission set is exactly:
+
+```text
+pages_show_list
+pages_messaging
+pages_manage_metadata
+```
+
+The connection and webhook-health paths must not require `pages_read_engagement`,
+`business_management`, or Page public-content/metadata features. The direct
+Page-node `getAssetAccessToken()` lookup is not part of the approved OAuth
+connection path, and the legacy direct Page-node health probe is not a supported
+health signal. `subscribed_apps` verification is authoritative for webhook health.
+
+The preserved Business Integration System User configuration
+`35885387384409543` is future architecture work only and is not the production
+merchant login path. Meta Access Verification remains submitted/in review with
+deadline `2026-11-21`; that external review status does not justify changing the
+working production contract.
+
 ## Drift protection
 
 The class of failure here is Meta-side configuration drifting away from the application's hardcoded assumptions, surfacing only at a merchant's browser. Three guards now make that fail loudly and early:
