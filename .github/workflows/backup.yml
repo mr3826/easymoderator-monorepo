@@ -313,11 +313,36 @@ jobs:
                 echo "::error::Spaces bucket ACL exposes a public or authenticated-users grant"
                 exit 1
               fi
-              docker run --rm \
+              if ! [[ "$OFFSITE_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::OFFSITE_RETENTION_DAYS must be a positive integer"
+                exit 1
+              fi
+              LIFECYCLE_RULES=$(docker run --rm \
                 -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
                 -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
                 "$AWS_CLI_IMAGE" s3api get-bucket-lifecycle-configuration --bucket "$BACKUP_BUCKET" \
-                --endpoint-url "$SPACES_ENDPOINT" >/dev/null
+                --endpoint-url "$SPACES_ENDPOINT" \
+                --query 'Rules[?Status==`Enabled` && Expiration.Days != `null`].[Filter.Prefix,Expiration.Days]' \
+                --output text) || {
+                  echo "::error::unable to read the Spaces lifecycle policy"
+                  exit 1
+                }
+              if ! printf '%s\n' "$LIFECYCLE_RULES" | awk -v expected="$OFFSITE_RETENTION_DAYS" '
+                {
+                  prefix = $1
+                  days = $2
+                  if (days != expected) next
+                  if (prefix == "None" || prefix == "null" || prefix == "") broad = 1
+                  if (prefix == "db/" || prefix == "db") db = 1
+                  if (prefix == "uploads/" || prefix == "uploads") uploads = 1
+                }
+                END { exit (broad || (db && uploads)) ? 0 : 1 }
+              '; then
+                echo "::error::Spaces lifecycle policy does not enforce OFFSITE_RETENTION_DAYS=$OFFSITE_RETENTION_DAYS for db/ and uploads/"
+                exit 1
+              fi
+              echo "Off-site lifecycle retention policy verified: ${OFFSITE_RETENTION_DAYS} days"
+
               echo "Off-site upload complete."
             else
               echo "::error::Off-site backup upload BLOCKED — object-storage credentials not configured (F-04 BLOCKED_EXTERNAL_CREDENTIAL). Backups exist ONLY on the droplet."

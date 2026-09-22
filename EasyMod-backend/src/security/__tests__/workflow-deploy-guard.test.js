@@ -99,15 +99,12 @@ describe('production workflow branch safety', () => {
         const growthPermissions = growthWorkflow.match(/\npermissions:\n  contents: read\n  packages: write/);
         expect(growthPermissions).not.toBeNull();
 
-        // The `build-and-push` job (the ONLY job that pushes) must remain PR-
-        // blocked. If anyone loosens that `if:`, the whole invariant collapses
-        // because the ceiling is only granted because that `if:` exists.
-        if (/\n  build-and-push:\n/.test(growthWorkflow)) {
-            expect(
-                growthWorkflow.includes("github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request'") ||
-                    growthWorkflow.includes("github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')"),
-            ).toBe(true);
-        }
+        // The `build-and-push` job (the ONLY job that pushes) must be restricted
+        // to the default branch even for manual dispatches. Otherwise a maintainer
+        // could publish an arbitrary branch's image with package-write authority.
+        expect(growthWorkflow).toContain(
+            "if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')",
+        );
 
         // Two PR-reachable jobs must narrow their scope below the ceiling so a
         // leaked token from a PR-controlled process cannot write to packages.
@@ -335,6 +332,26 @@ describe('production workflow branch safety', () => {
         // only backup had it.
         const environmentMatches = backup.match(/^ {4}environment: production$/gm) || [];
         expect(environmentMatches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('backup validates the configured off-site retention policy', () => {
+        const backupWorkflow = fs.readFileSync(
+            path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
+            'utf8',
+        );
+
+        expect(backupWorkflow).toContain(
+            'OFFSITE_RETENTION_DAYS must be a positive integer',
+        );
+        expect(backupWorkflow).toContain(
+            "Rules[?Status==`Enabled` && Expiration.Days != `null`].[Filter.Prefix,Expiration.Days]",
+        );
+        expect(backupWorkflow).toContain(
+            'END { exit (broad || (db && uploads)) ? 0 : 1 }',
+        );
+        expect(backupWorkflow).toContain(
+            'Spaces lifecycle retention policy verified',
+        );
     });
 
     test('rollback verifies restored images and health before returning', () => {
