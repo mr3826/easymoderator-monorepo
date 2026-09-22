@@ -49,6 +49,19 @@ function intersect(left, right) {
     return new Set([...left].filter((id) => right.has(id)));
 }
 
+function retainPageCredential(pageCredentials, page) {
+    if (!pageCredentials || typeof pageCredentials !== 'object') return;
+    if (page?.id === null || page?.id === undefined) return;
+    if (typeof page.access_token !== 'string' || page.access_token.trim() === '') return;
+
+    const pageId = String(page.id);
+    pageCredentials[pageId] = {
+        pageId,
+        token: page.access_token,
+        expiresAt: null,
+    };
+}
+
 class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
     async getStrictGrantedPageIds({ userToken }) {
         const appId = config.metaAppId || process.env.META_APP_ID;
@@ -80,7 +93,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
         }
     }
 
-    async hydrateStrictGrantedPage(pageId, userToken) {
+    async hydrateStrictGrantedPage(pageId, userToken, pageCredentials) {
         try {
             const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
                 params: {
@@ -92,6 +105,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
             const page = response.data || {};
             if (String(page.id || '') !== String(pageId)) return null;
             if (typeof page.access_token !== 'string' || page.access_token.trim() === '') return null;
+            retainPageCredential(pageCredentials, page);
 
             // These normalized task values are an authorization projection for
             // the existing connectPage guard. They are not copied from Meta's
@@ -117,8 +131,8 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
         }
     }
 
-    async listManagedAssets({ userToken }) {
-        const baseAssets = await super.listManagedAssets({ userToken });
+    async listManagedAssets({ userToken, pageCredentials }) {
+        const baseAssets = await super.listManagedAssets({ userToken, pageCredentials });
         const strictGrantedPageIds = await this.getStrictGrantedPageIds({ userToken });
         if (!strictGrantedPageIds.size) return baseAssets;
 
@@ -133,7 +147,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
         if (!fallbackIds.length) return [...byId.values()];
 
         const hydrated = await Promise.all(
-            fallbackIds.map((pageId) => this.hydrateStrictGrantedPage(pageId, userToken)),
+            fallbackIds.map((pageId) => this.hydrateStrictGrantedPage(pageId, userToken, pageCredentials)),
         );
         let recovered = 0;
         hydrated.forEach((asset) => {

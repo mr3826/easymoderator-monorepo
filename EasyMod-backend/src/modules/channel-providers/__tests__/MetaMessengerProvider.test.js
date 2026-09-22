@@ -904,6 +904,27 @@ describe('MetaMessengerProvider', () => {
             );
         });
 
+        test('retains /me/accounts Page credentials in the server-only sink', async () => {
+            const pageCredentials = Object.create(null);
+            const pageToken = 'PAGE_SECRET_SENTINEL_DISCOVERY';
+            configureGraph({
+                accountPages: [{
+                    data: { data: [page('P_SECRET', { access_token: pageToken })], paging: {} },
+                }],
+                targetIds: ['P_SECRET'],
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_sink', pageCredentials });
+
+            expect(result).toEqual([expect.objectContaining({ id: 'P_SECRET' })]);
+            expect(result[0]).not.toHaveProperty('access_token');
+            expect(JSON.stringify(result)).not.toContain(pageToken);
+            expect(pageCredentials).toEqual({
+                P_SECRET: { pageId: 'P_SECRET', token: pageToken, expiresAt: null },
+            });
+            expect(axios.get.mock.calls.filter(([url]) => String(url).endsWith('/P_SECRET'))).toHaveLength(0);
+        });
+
         test('recovers a granted Business Portfolio Page omitted by /me/accounts', async () => {
             configureGraph({
                 accountPages: [{ data: { data: [page('P1')], paging: {} } }],
