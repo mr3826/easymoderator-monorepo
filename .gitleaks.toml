@@ -38,3 +38,24 @@ regexTarget = "match"
 regexes = [
   '''growth-e2e-csrf-secret-at-least-32-characters''',
 ]
+
+# `mobile-ci` uses `--log-opts="--all"` with fetch-depth: 0 on a private repo.
+# `actions/checkout@v6` with fetch-depth: 0 fetches every remote branch and tag,
+# so a value introduced on an unrelated in-progress branch — here the Growth
+# control-plane PR #127's UI test mock — is scanned as part of every mobile PR's
+# historical scan. main's config already carries this reviewed-path + value entry;
+# copying it forward here keeps the mobile tree's allowlist consistent with main
+# so mobile PRs are not silently blocked by another feature branch's own test
+# fixture. This is a reviewed false positive ONLY for the deterministic fixture
+# `Zk9-pass-secret-42` inside the exact `GrowthUsersPage.test.tsx` path; it does
+# not weaken scanning for any other file or value. Real mobile CI history
+# scanning is left intact.
+[[allowlists]]
+description = "Reviewed one-time password fixture used only by the Growth user UI test; it is not a credential."
+paths = [
+  '''^EasyMod-growth/src/pages/GrowthUsersPage\.test\.tsx$''',
+]
+regexTarget = "match"
+regexes = [
+  '''Zk9-pass-secret-42''',
+]

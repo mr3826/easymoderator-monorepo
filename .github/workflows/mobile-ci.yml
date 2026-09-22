@@ -16,6 +16,18 @@ on:
     branches:
       - feature/mobile-app
 
+# Mobile validation has no release or deployment side effect, so a newer run
+# for the SAME scope can safely supersede an older one. The group is keyed by
+# event type so a push to `mobile/foo` never cancels that branch's PR merge-gate
+# (different scopes), and a PR is keyed by its number so concurrent PRs sharing
+# a head branch never cancel each other. `persist-credentials` is deliberately
+# left at its safe default: the mobile repo is private and both the protected-
+# paths diff and the Gitleaks history scan fetch full ref history, which needs
+# the persisted token to auth to GitHub.
+concurrency:
+  group: mobile-ci-${{ github.repository }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

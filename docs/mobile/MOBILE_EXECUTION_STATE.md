@@ -313,3 +313,30 @@ drifts again, one of these two suites fails immediately instead of both staying 
 
 The Phase 1 receipt's test/build counts above are left exactly as originally recorded — this entry
 does not rewrite that history, it documents what those numbers did not, in fact, prove.
+
+## Platform audit reconciliation (2026-09-21)
+
+This is an append-only current-state receipt; earlier phase receipts remain
+historical evidence and are not rewritten.
+
+```text
+AUDIT_DATE=2026-09-21
+FEATURE_MOBILE_APP_SHA=04bb4d5f8ec90baf241253b1dacfef48c5a6b3f6
+MAIN_SHA=cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4
+PR_126_HEAD=a4bf7c018788d000f022fcaad3995d697631a59
+PR_126_TARGET=feature/mobile-app
+PR_126_STATUS=OPEN
+MOBILE_CI=VALIDATION_ONLY
+MOBILE_NATIVE_BUILD=NOT_VERIFIED
+MOBILE_DEVICE_E2E=NOT_VERIFIED
+PRODUCTION_SECRETS_IN_MOBILE_CI=NONE
+PRODUCTION_DEPLOYMENT_FROM_MOBILE_CI=NONE
+MAIN_BRANCH_PROTECTION=NOT_VERIFIED / GitHub reports protected=false and no rulesets
+```
+
+The current Mobile CI workflow has no native Android build or device job. A
+green Mobile CI run cannot close `MOBILE_NATIVE_BUILD` or `MOBILE_DEVICE_E2E`.
+The next native proof must run from a short, clean checkout with deterministic
+Node 22/JDK 17/Android SDK inputs, perform a clean Expo prebuild, build the
+required release/debug ABI set, install and launch the APK, and execute device
+flows without changing machine-wide settings.
