@@ -30,6 +30,41 @@ function renderCreateForm() {
   );
 }
 
+function makeProspect(overrides: Partial<Prospect> = {}): Prospect {
+  return {
+    id: 'prospect-1',
+    businessName: 'North Star',
+    contactName: 'Owner',
+    contactPhone: '01700000000',
+    contactEmail: 'owner@example.com',
+    pageUrl: null,
+    niche: 'retail',
+    notes: 'Existing note',
+    source: 'manual_entry',
+    sourceDetail: 'Campaign',
+    sourceReference: null,
+    sourceRecordedAt: null,
+    status: 'new',
+    statusChangedAt: null,
+    disqualifiedReason: null,
+    ownerUserId: null,
+    assignedAt: null,
+    assignedBy: null,
+    linkedShopId: null,
+    linkedUserId: null,
+    linkedAt: null,
+    mergedIntoId: null,
+    mergedAt: null,
+    createdBy: null,
+    metadata: {},
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+    timeline: [],
+    timelinePagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+    ...overrides,
+  };
+}
+
 describe('ProspectFormPage', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -57,55 +92,17 @@ describe('ProspectFormPage', () => {
     expect(screen.getByRole('option', { name: 'manual entry' })).toHaveValue('manual_entry');
   });
 
-  it('renders redacted contact channels as non-editable role-hidden values', async () => {
-    vi.spyOn(growthApi, 'getProspect').mockResolvedValue({
-      id: 'prospect-1',
-      businessName: 'Private shop',
-      contactName: null,
-      contactPhone: null,
-      contactEmail: null,
-      pageUrl: null,
-      niche: 'retail',
-      notes: null,
-      source: 'event',
-      sourceDetail: null,
-      sourceReference: null,
-      sourceRecordedAt: null,
-      status: 'new',
-      statusChangedAt: null,
-      disqualifiedReason: null,
-      ownerUserId: null,
-      assignedAt: null,
-      assignedBy: null,
-      linkedShopId: null,
-      linkedUserId: null,
-      linkedAt: null,
-      mergedIntoId: null,
-      mergedAt: null,
-      createdBy: null,
-      metadata: {},
-      createdAt: '2026-08-20T00:00:00.000Z',
-      updatedAt: '2026-08-20T00:00:00.000Z',
-      eligibleForNextPhase: false,
-      redacted: true,
-       timeline: [],
-       timelinePagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
-     } satisfies Prospect);
-    vi.spyOn(growthApi, 'getProspectLinkageSuggestions').mockResolvedValue([]);
+  it('renders contact channels as editable inputs even on the edit route', async () => {
+    vi.spyOn(growthApi, 'getProspect').mockResolvedValue(makeProspect());
 
-    render(
-      <MemoryRouter initialEntries={['/prospects/prospect-1/edit']}>
-        <Routes>
-          <Route path="/prospects/:prospectId/edit" element={<ProspectFormPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderEditForm();
 
-    expect(await screen.findAllByText('Hidden for your role')).toHaveLength(4);
-    expect(screen.queryByLabelText('Contact name')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Contact phone')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Contact email')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Page URL')).not.toBeInTheDocument();
+    await screen.findByRole('heading', { name: 'Edit prospect' });
+    expect(screen.getByLabelText('Contact name')).toHaveValue('Owner');
+    expect(screen.getByLabelText('Contact phone')).toHaveValue('01700000000');
+    expect(screen.getByLabelText('Contact email')).toHaveValue('owner@example.com');
+    expect(screen.getByLabelText('Page URL')).toHaveValue('');
+    expect(screen.queryByText('Hidden for your role')).not.toBeInTheDocument();
   });
 
   it('stops at duplicate preflight and links the matching prospect for review', async () => {
@@ -118,36 +115,9 @@ describe('ProspectFormPage', () => {
         matchedFields: ['contactEmail'],
       }],
     });
-    const createProspect = vi.spyOn(growthApi, 'createProspect').mockResolvedValue({
-      id: 'new-prospect',
-      businessName: 'North Star',
-      contactName: null,
-      contactPhone: '01700000000',
-      contactEmail: 'owner@example.com',
-      pageUrl: null,
-      niche: null,
-      notes: null,
-      source: 'manual_entry',
-      sourceDetail: null,
-      sourceReference: null,
-      sourceRecordedAt: null,
-      status: 'new',
-      statusChangedAt: null,
-      disqualifiedReason: null,
-      ownerUserId: null,
-      assignedAt: null,
-      assignedBy: null,
-      linkedShopId: null,
-      linkedUserId: null,
-      linkedAt: null,
-      mergedIntoId: null,
-      mergedAt: null,
-      createdBy: null,
-      metadata: {},
-      createdAt: '2026-08-20T00:00:00.000Z',
-      updatedAt: '2026-08-20T00:00:00.000Z',
-      eligibleForNextPhase: false,
-    });
+    const createProspect = vi.spyOn(growthApi, 'createProspect').mockResolvedValue(
+      makeProspect({ id: 'new-prospect' }),
+    );
     renderCreateForm();
 
     await user.type(screen.getByLabelText(/Business name/), 'North Star');
@@ -187,69 +157,11 @@ describe('ProspectFormPage', () => {
 
   it('sends null for cleared optional fields during an edit', async () => {
     const user = userEvent.setup();
-    vi.spyOn(growthApi, 'getProspect').mockResolvedValue({
-      id: 'prospect-1',
-      businessName: 'North Star',
-      contactName: 'Owner',
-      contactPhone: '01700000000',
-      contactEmail: 'owner@example.com',
-      pageUrl: null,
-      niche: 'retail',
-      notes: 'Existing note',
-      source: 'manual_entry',
-      sourceDetail: 'Campaign',
-      sourceReference: null,
-      sourceRecordedAt: null,
-      status: 'new',
-      statusChangedAt: null,
-      disqualifiedReason: null,
-      ownerUserId: null,
-      assignedAt: null,
-      assignedBy: null,
-      linkedShopId: null,
-      linkedUserId: null,
-      linkedAt: null,
-      mergedIntoId: null,
-      mergedAt: null,
-      createdBy: null,
-      metadata: {},
-      createdAt: '2026-08-20T00:00:00.000Z',
-      updatedAt: '2026-08-20T00:00:00.000Z',
-      eligibleForNextPhase: false,
-      timeline: [],
-      timelinePagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
-    } satisfies Prospect);
+    vi.spyOn(growthApi, 'getProspect').mockResolvedValue(makeProspect());
     vi.spyOn(growthApi, 'checkProspectDuplicates').mockResolvedValue({ matches: [] });
-    const update = vi.spyOn(growthApi, 'updateProspect').mockResolvedValue({
-      id: 'prospect-1',
-      businessName: 'North Star',
-      contactName: 'Owner',
-      contactPhone: '01700000000',
-      contactEmail: 'owner@example.com',
-      pageUrl: null,
-      niche: null,
-      notes: null,
-      source: 'manual_entry',
-      sourceDetail: null,
-      sourceReference: null,
-      sourceRecordedAt: null,
-      status: 'new',
-      statusChangedAt: null,
-      disqualifiedReason: null,
-      ownerUserId: null,
-      assignedAt: null,
-      assignedBy: null,
-      linkedShopId: null,
-      linkedUserId: null,
-      linkedAt: null,
-      mergedIntoId: null,
-      mergedAt: null,
-      createdBy: null,
-      metadata: {},
-      createdAt: '2026-08-20T00:00:00.000Z',
-      updatedAt: '2026-08-20T00:00:00.000Z',
-      eligibleForNextPhase: false,
-    });
+    const update = vi.spyOn(growthApi, 'updateProspect').mockResolvedValue(
+      makeProspect({ notes: null, niche: null, sourceDetail: null }),
+    );
     renderEditForm();
 
     await screen.findByRole('heading', { name: 'Edit prospect' });

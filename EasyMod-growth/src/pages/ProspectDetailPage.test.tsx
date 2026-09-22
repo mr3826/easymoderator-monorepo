@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, growthApi, type Prospect } from '@/api/client';
+import { ApiError, growthApi, workspaceApi, type Prospect } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
 import { ProspectDetailPage } from './ProspectDetailPage';
 
@@ -14,7 +14,7 @@ const permissionMock = vi.mocked(usePermission);
 const reportApiError = vi.fn(() => false);
 
 vi.mock('@/auth/GrowthAuthProvider', () => ({
-  useGrowthAuth: () => ({ reportApiError }),
+  useGrowthAuth: () => ({ reportApiError, session: { internalUserId: 'me-1', displayName: 'Dana', role: 'SUPER_ADMIN', legacyRole: null, permissions: [] } }),
 }));
 
 const PROSPECT_ID = '11111111-1111-4111-8111-111111111111';
@@ -49,11 +49,15 @@ function makeProspect(overrides: Partial<Prospect> = {}): Prospect {
     metadata: {},
     createdAt: '2026-08-20T00:00:00.000Z',
     updatedAt: '2026-08-20T00:00:00.000Z',
-    eligibleForNextPhase: false,
     timeline: [],
     timelinePagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
     ...overrides,
   };
+}
+
+function stubPanels() {
+  vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
+  vi.spyOn(workspaceApi, 'listNotes').mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
 }
 
 function renderPage() {
@@ -75,16 +79,18 @@ describe('ProspectDetailPage', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    reportApiError.mockReturnValue(false);
   });
 
   function setup(prospect = makeProspect()) {
     permissionMock.mockReturnValue(true);
     reportApiError.mockReturnValue(false);
+    stubPanels();
     vi.spyOn(growthApi, 'getProspect').mockResolvedValue(prospect);
     vi.spyOn(growthApi, 'getProspectLinkageSuggestions').mockResolvedValue([]);
   }
 
-  it('offers only legal next statuses and caps reason fields', async () => {
+  it('hides shop-gated transition targets until a shop is linked', async () => {
     setup();
     renderPage();
 
@@ -92,10 +98,55 @@ describe('ProspectDetailPage', () => {
     const options = screen.getByLabelText('Move to status').querySelectorAll('option');
     expect([...options].map((option) => option.value)).toEqual([
       'qualified',
+      'disqualified',
+      'unreachable',
+    ]);
+    expect(screen.getByText('Link a Shop before onboarding/activation.')).toBeInTheDocument();
+  });
+
+  it('offers onboarding and converted targets when a shop is linked', async () => {
+    setup(makeProspect({ linkedShopId: OWNER_ID }));
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'North Star Retail' });
+    const options = screen.getByLabelText('Move to status').querySelectorAll('option');
+    expect([...options].map((option) => option.value)).toEqual([
+      'qualified',
+      'onboarding',
       'converted',
       'disqualified',
       'unreachable',
     ]);
+    expect(screen.queryByText('Link a Shop before onboarding/activation.')).not.toBeInTheDocument();
+  });
+
+  it('renders a readable badge for the onboarding status', async () => {
+    setup(makeProspect({ status: 'onboarding', linkedShopId: OWNER_ID }));
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'North Star Retail' });
+    const badge = screen.getAllByText('onboarding')[0];
+    expect(badge).toHaveClass('status-badge', 'status-onboarding');
+  });
+
+  it('embeds the follow-up and internal note panels for the prospect', async () => {
+    setup();
+    renderPage();
+
+    expect(await screen.findByText('Follow-ups')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Notes', level: 3 })).toBeInTheDocument();
+    expect(
+      await screen.findAllByText('Internal notes — never visible to merchants'),
+    ).toHaveLength(1);
+    await waitFor(() => expect(workspaceApi.listFollowups).toHaveBeenCalledWith({ prospectId: PROSPECT_ID, state: 'open' }));
+    await waitFor(() => expect(workspaceApi.listNotes).toHaveBeenCalledWith('prospect', PROSPECT_ID));
+  });
+
+  it('caps reason fields to 200 characters', async () => {
+    setup(makeProspect({ linkedShopId: OWNER_ID }));
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'North Star Retail' });
     expect(screen.getByLabelText(/Reason.*required for disqualification/)).toHaveAttribute('maxLength', '200');
   });
 
@@ -139,9 +190,10 @@ describe('ProspectDetailPage', () => {
 
   it('submits legal status transitions with their reason', async () => {
     const user = userEvent.setup();
-    setup();
+    setup(makeProspect({ linkedShopId: OWNER_ID }));
     const transition = vi.spyOn(growthApi, 'transitionProspectStatus').mockResolvedValue(makeProspect({
       status: 'converted',
+      linkedShopId: OWNER_ID,
     }));
     renderPage();
 

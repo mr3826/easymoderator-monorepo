@@ -10,6 +10,8 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../utils/database/database-setup');
 const {
   AuditLog,
+  GrowthOsFollowup,
+  GrowthOsNote,
   GrowthOsProspect,
   GrowthOsProspectEvent,
   GrowthOsUserRole,
@@ -30,33 +32,38 @@ const privateTimelineReason = 'growth-e2e-private-timeline-reason';
 const tenantName = 'Growth OS browser E2E tenant';
 const shopCode = 'GROWTH-E2E-01';
 
+// Canonical two-role model: SUPER_ADMIN (MFA mandatory) and GROWTH_USER.
+// The legacy FOUNDER row stays seeded (MFA on) so the alias mapping proves
+// both the canonical role resolution and the historical MFA assurance.
 const userDefinitions = {
-  founder: {
-    email: 'growth-e2e-founder@example.test',
-    full_name: 'Growth E2E Founder',
+  super: {
+    email: 'growth-e2e-super@example.test',
+    full_name: 'Growth E2E Super Admin',
     phone: '01700000101',
-    role: 'FOUNDER',
+    role: 'SUPER_ADMIN',
     shopRole: 'owner',
+    totp: true,
   },
-  executive: {
-    email: 'growth-e2e-executive@example.test',
-    full_name: 'Growth E2E Executive',
+  growth: {
+    email: 'growth-e2e-growth@example.test',
+    full_name: 'Growth E2E Growth User',
     phone: '01700000102',
-    role: 'BUSINESS_EXECUTIVE',
-    shopRole: 'admin',
+    role: 'GROWTH_USER',
+    shopRole: 'staff',
   },
-  marketer: {
-    email: 'growth-e2e-marketer@example.test',
-    full_name: 'Growth E2E Marketer',
+  legacy: {
+    email: 'growth-e2e-legacy@example.test',
+    full_name: 'Growth E2E Legacy Founder',
     phone: '01700000103',
-    role: 'MARKETER',
+    role: 'FOUNDER',
     shopRole: 'admin',
+    totp: true,
   },
   staleSession: {
     email: 'growth-e2e-stale@example.test',
     full_name: 'Growth E2E Stale Session',
     phone: '01700000104',
-    role: 'BUSINESS_EXECUTIVE',
+    role: 'GROWTH_USER',
     shopRole: 'staff',
   },
   merchant: {
@@ -82,37 +89,37 @@ const prospectDefinitions = [
     notes: 'North Star private notes',
     metadata: { privateMarker, fixture: true },
     status: 'new',
-    owner: 'founder',
+    owner: 'super',
   },
   {
-    key: 'executiveAssigned',
+    key: 'assignedGrowthStudio',
     source: 'self_signup',
-    sourceReference: 'growth-e2e:executive-assigned',
-    businessName: 'Executive Assigned Studio',
-    contactName: 'Executive Contact',
+    sourceReference: 'growth-e2e:assigned-growth-studio',
+    businessName: 'Assigned Growth Studio',
+    contactName: 'Growth Team Contact',
     contactPhone: '01700000201',
-    contactEmail: 'growth-e2e-executive-assigned@example.test',
-    pageUrl: 'https://facebook.com/growth-e2e-executive-assigned',
+    contactEmail: 'growth-e2e-assigned-studio@example.test',
+    pageUrl: 'https://facebook.com/growth-e2e-assigned-studio',
     niche: 'services',
-    notes: 'Assigned executive notes',
+    notes: 'Assigned Growth user notes',
     metadata: { fixture: true },
     status: 'qualified',
-    owner: 'executive',
+    owner: 'growth',
   },
   {
-    key: 'marketingRedacted',
+    key: 'campaignBakery',
     source: 'partner_form',
-    sourceReference: 'growth-e2e:marketing-redacted',
+    sourceReference: 'growth-e2e:campaign-bakery',
     businessName: 'Cedar Campaign Bakery',
-    contactName: 'Marketing Contact',
+    contactName: 'Campaign Contact',
     contactPhone: '01700000202',
-    contactEmail: 'growth-e2e-marketing@example.test',
+    contactEmail: 'growth-e2e-campaign@example.test',
     pageUrl: 'https://facebook.com/growth-e2e-cedar',
     niche: 'food',
     notes: privateMarker,
     metadata: { privateMarker, campaign: 'cedar' },
     status: 'contacted',
-    owner: 'marketer',
+    owner: 'growth',
     timelineReason: privateTimelineReason,
   },
   {
@@ -129,7 +136,7 @@ const prospectDefinitions = [
     metadata: { fixture: true },
     status: 'disqualified',
     disqualifiedReason: 'No response during qualification',
-    owner: 'founder',
+    owner: 'super',
   },
   {
     key: 'eventUnreachable',
@@ -144,7 +151,7 @@ const prospectDefinitions = [
     notes: 'Event follow-up notes',
     metadata: { fixture: true },
     status: 'unreachable',
-    owner: 'executive',
+    owner: 'growth',
   },
   {
     key: 'converted',
@@ -159,7 +166,7 @@ const prospectDefinitions = [
     notes: 'Converted fixture notes',
     metadata: { fixture: true },
     status: 'converted',
-    owner: 'founder',
+    owner: 'super',
     linkedShop: true,
   },
   {
@@ -175,7 +182,7 @@ const prospectDefinitions = [
     notes: 'Source record to tombstone',
     metadata: { fixture: true },
     status: 'contacted',
-    owner: 'founder',
+    owner: 'super',
   },
   {
     key: 'mergeTarget',
@@ -190,7 +197,22 @@ const prospectDefinitions = [
     notes: 'Target record remains active',
     metadata: { fixture: true },
     status: 'new',
-    owner: 'founder',
+    owner: 'super',
+  },
+  {
+    key: 'followUpStudio',
+    source: 'manual_entry',
+    sourceReference: 'growth-e2e:followup-studio',
+    businessName: 'Follow-up Studio',
+    contactName: 'Studio Contact',
+    contactPhone: '01700000210',
+    contactEmail: 'growth-e2e-followup-studio@example.test',
+    pageUrl: 'https://facebook.com/growth-e2e-followup-studio',
+    niche: 'services',
+    notes: 'Qualified studio carried by the seeded follow-up queue',
+    metadata: { fixture: true },
+    status: 'qualified',
+    owner: 'super',
   },
 ];
 
@@ -218,6 +240,9 @@ async function ensureTenant() {
     shop_name: 'Growth OS browser E2E shop',
     name: 'Growth OS browser E2E shop',
     is_active: true,
+    // Activation is deliberately left unset: entering onboarding must wait
+    // for activation instead of auto-converting, so the browser E2E can
+    // assert the full onboarding -> converted UI path.
     settings: { fixture: 'growth-e2e' },
   });
   return { tenant, shop };
@@ -233,7 +258,7 @@ async function ensureUser(definition, passwordHash, shop) {
       phone: definition.phone,
       token_version: 0,
       settings: {},
-      last_logged_shop_id: shop.id,
+      last_logged_shop_id: definition.role ? null : shop.id,
     },
   });
   await user.update({
@@ -243,8 +268,18 @@ async function ensureUser(definition, passwordHash, shop) {
     token_version: 0,
     refresh_token: null,
     settings: {},
-    last_logged_shop_id: shop.id,
+    last_logged_shop_id: definition.role ? null : shop.id,
   });
+
+  if (definition.role) {
+    // Growth identities are global internal accounts and must not retain an
+    // active merchant session or membership from a previous disposable seed.
+    await UserShop.update(
+      { is_active: false },
+      { where: { user_id: user.id, is_active: true } },
+    );
+    return user;
+  }
 
   const [membership] = await UserShop.findOrCreate({
     where: { user_id: user.id, shop_id: shop.id },
@@ -254,16 +289,22 @@ async function ensureUser(definition, passwordHash, shop) {
   return user;
 }
 
-async function setGrowthRole(user, role, founderId) {
+async function setGrowthRole(user, role, grantActorId) {
   await GrowthOsUserRole.destroy({ where: { user_id: user.id } });
   if (!role) return;
   await GrowthOsUserRole.create({
     user_id: user.id,
     role,
     is_active: true,
-    granted_by: founderId,
+    granted_by: grantActorId,
     metadata: { source: 'growth-e2e-fixture' },
   });
+}
+
+async function enableTotpFor(user) {
+  const { secret } = await generateTotpSecret(user.id);
+  await enableTotp(user.id, hotp(secret, Math.floor(Date.now() / 1000 / 30)));
+  return secret;
 }
 
 async function resetProspectFixtures() {
@@ -277,6 +318,10 @@ async function resetProspectFixtures() {
   const ids = existing.map((record) => record.id);
   if (ids.length === 0) return;
 
+  await GrowthOsFollowup.destroy({ where: { prospect_id: { [Op.in]: ids } } });
+  await GrowthOsNote.destroy({
+    where: { target_type: 'prospect', target_id: { [Op.in]: ids } },
+  });
   await GrowthOsProspectEvent.destroy({ where: { prospect_id: { [Op.in]: ids } } });
   await AuditLog.destroy({
     where: {
@@ -314,24 +359,24 @@ async function createProspectFixture(definition, users, shop) {
     disqualified_reason: definition.disqualifiedReason || null,
     owner_user_id: ownerUserId,
     assigned_at: ownerUserId ? now : null,
-    assigned_by: ownerUserId ? users.founder.id : null,
+    assigned_by: ownerUserId ? users.super.id : null,
     linked_shop_id: definition.linkedShop ? shop.id : null,
     linked_user_id: null,
     linked_at: definition.linkedShop ? now : null,
-    created_by: users.founder.id,
+    created_by: users.super.id,
     metadata: definition.metadata,
   });
 
   await GrowthOsProspectEvent.create({
     prospect_id: prospect.id,
     event_type: 'created',
-    actor_user_id: users.founder.id,
+    actor_user_id: users.super.id,
     reason: definition.timelineReason || 'growth-e2e fixture bootstrap',
     changed_fields: ['business_name', 'source', 'status'],
     metadata: definition.timelineReason ? { privateMarker } : { fixture: true },
   });
   await AuditLog.create({
-    user_id: users.founder.id,
+    user_id: users.super.id,
     shop_id: null,
     action: 'growth_os:prospect_created',
     resource_type: 'growth_os_prospect',
@@ -345,6 +390,54 @@ async function createProspectFixture(definition, users, shop) {
   return prospect;
 }
 
+async function seedFollowups(users, prospects) {
+  const now = Date.now();
+  const overdue = await GrowthOsFollowup.create({
+    prospect_id: prospects.followUpStudio.id,
+    owner_user_id: users.growth.id,
+    created_by: users.growth.id,
+    due_at: new Date(now - 36 * 60 * 60 * 1000),
+    action: 'E2E seeded overdue follow-up',
+    note: 'Open yesterday: appears in My Work with an overdue badge',
+    status: 'open',
+    createdAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
+    updatedAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
+  });
+  const upcoming = await GrowthOsFollowup.create({
+    prospect_id: prospects.northStar.id,
+    owner_user_id: users.super.id,
+    created_by: users.super.id,
+    due_at: new Date(now + 3 * 24 * 60 * 60 * 1000),
+    action: 'E2E seeded upcoming follow-up',
+    note: null,
+    status: 'open',
+    createdAt: new Date(now - 24 * 60 * 60 * 1000),
+    updatedAt: new Date(now - 24 * 60 * 60 * 1000),
+  });
+  return [overdue, upcoming];
+}
+
+async function seedNote(users, prospects) {
+  return GrowthOsNote.create({
+    target_type: 'prospect',
+    target_id: prospects.northStar.id,
+    author_user_id: users.super.id,
+    body: 'E2E seeded internal note on the North Star prospect',
+  });
+}
+
+async function logFixtureCounts(users) {
+  const userIds = Object.values(users).map((user) => user.id);
+  const [userCount, roles, prospects, followups, notes] = await Promise.all([
+    User.count({ where: { email: { [Op.in]: Object.values(userDefinitions).map((d) => d.email) } } }),
+    GrowthOsUserRole.count({ where: { user_id: { [Op.in]: userIds } } }),
+    GrowthOsProspect.count({ where: { source_reference: { [Op.like]: 'growth-e2e:%' } } }),
+    GrowthOsFollowup.count({ where: { action: { [Op.like]: 'E2E seeded %' } } }),
+    GrowthOsNote.count({ where: { body: { [Op.like]: 'E2E seeded internal note%' } } }),
+  ]);
+  return { users: userCount, roles, prospects, followups, notes };
+}
+
 async function main() {
   const { tenant, shop } = await ensureTenant();
   const passwordHash = await hashPassword(password);
@@ -354,35 +447,51 @@ async function main() {
     users[key] = await ensureUser(definition, passwordHash, shop);
   }
   for (const [key, definition] of Object.entries(userDefinitions)) {
-    await setGrowthRole(users[key], definition.role, users.founder.id);
+    await setGrowthRole(users[key], definition.role, users.super.id);
   }
 
-  const { secret: founderTotpSecret } = await generateTotpSecret(users.founder.id);
-  await enableTotp(
-    users.founder.id,
-    hotp(founderTotpSecret, Math.floor(Date.now() / 1000 / 30)),
-  );
+  const totpSecrets = {};
+  for (const [key, definition] of Object.entries(userDefinitions)) {
+    if (definition.totp) {
+      totpSecrets[key] = await enableTotpFor(users[key]);
+    }
+  }
 
   await resetProspectFixtures();
   const prospects = {};
   for (const definition of prospectDefinitions) {
     prospects[definition.key] = await createProspectFixture(definition, users, shop);
   }
+  const followups = await seedFollowups(users, prospects);
+  const note = await seedNote(users, prospects);
 
   fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
   fs.writeFileSync(fixturePath, `${JSON.stringify({
-    version: 1,
+    version: 2,
     password,
     privateMarker,
     privateTimelineReason,
     tenant: { id: tenant.id, name: tenant.name },
-    shop: { id: shop.id, name: shop.name, shopName: shop.shop_name },
+    shop: { id: shop.id, name: shop.name, shopName: shop.shop_name, uniqueCode: shop.unique_code },
+    emails: Object.fromEntries(Object.entries(userDefinitions).map(([key, definition]) => [
+      key,
+      definition.email,
+    ])),
+    totp: {
+      superUser: totpSecrets.super,
+      legacy: totpSecrets.legacy,
+    },
+    totpAlgorithm: 'SHA1',
+    totpIssuer: 'EasyMod',
+    totpPeriod: 30,
+    totpDigits: 6,
     users: Object.fromEntries(Object.entries(users).map(([key, user]) => [key, {
       id: user.id,
       email: user.email,
+      phone: user.phone,
       password,
       role: userDefinitions[key].role,
-      ...(key === 'founder' ? { totpSecret: founderTotpSecret } : {}),
+      ...(totpSecrets[key] ? { totpSecret: totpSecrets[key] } : {}),
     }])),
     prospects: Object.fromEntries(Object.entries(prospects).map(([key, prospect]) => [key, {
       id: prospect.id,
@@ -392,9 +501,15 @@ async function main() {
     }])),
   }, null, 2)}\n`, 'utf8');
 
+  const counts = await logFixtureCounts(users);
   console.log(`Growth browser E2E fixtures written to ${path.relative(repoRoot, fixturePath)}`);
   console.log(`Seeded ${Object.keys(users).length} users and ${Object.keys(prospects).length} prospects.`);
-  if (args.has('--print')) console.log(JSON.stringify({ fixturePath, users, prospects }, null, 2));
+  console.log(
+    'Fixture table counts: '
+    + `users=${counts.users} growth_roles=${counts.roles} prospects=${counts.prospects} `
+    + `followups=${counts.followups} notes=${counts.notes}`,
+  );
+  if (args.has('--print')) console.log(JSON.stringify({ fixturePath, users, prospects, followups, note }, null, 2));
 }
 
 main()

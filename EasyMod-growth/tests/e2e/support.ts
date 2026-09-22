@@ -1,7 +1,9 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Response } from '@playwright/test';
 
 const require = createRequire(import.meta.url);
 const backendRequire = createRequire(fileURLToPath(new URL('../../../EasyMod-backend/package.json', import.meta.url)));
@@ -12,6 +14,7 @@ const { hotp } = require('../../../EasyMod-backend/src/modules/auth/totp.service
 export interface E2EUser {
   id: string;
   email: string;
+  phone?: string;
   password: string;
   role: string | null;
   totpSecret?: string;
@@ -30,51 +33,127 @@ export interface E2EFixtures {
   privateMarker: string;
   privateTimelineReason: string;
   tenant: { id: string; name: string };
-  shop: { id: string; name: string; shopName: string };
-  users: Record<string, E2EUser>;
+  shop: { id: string; name: string; shopName: string; uniqueCode: string };
+  emails: Record<string, string>;
+  totp: { superUser: string; legacy: string };
+  totpAlgorithm: string;
+  totpIssuer: string;
+  totpPeriod: number;
+  totpDigits: number;
+  users: Record<'super' | 'growth' | 'legacy' | 'staleSession' | 'merchant', E2EUser>;
   prospects: Record<string, E2EProspect>;
 }
 
 const fixturePath = fileURLToPath(new URL('./.fixtures.json', import.meta.url));
 export const fixtures = JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as E2EFixtures;
 
+export const AUTH_STATE_DIR = path.join(os.tmpdir(), 'easymod-growth-e2e-auth');
+fs.mkdirSync(AUTH_STATE_DIR, { recursive: true });
+
+export type AuthRole = 'super' | 'growth' | 'legacyFounder' | 'merchant';
+
+export function authStatePath(role: AuthRole): string {
+  return path.join(AUTH_STATE_DIR, `${role}.json`);
+}
+
+export function runStamp(): string {
+  return `${Date.now()}`;
+}
+
+export function dateTimeLocalPlus(offsetMs: number): string {
+  const value = new Date(Date.now() + offsetMs);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+export function uniquePhone(seed = Date.now()): string {
+  // 01XXXXXXXXX shape required by the BD-normalizer in the identity code.
+  return `019${String(seed).slice(-9)}`;
+}
+
+// The backend marks a TOTP code as used for 90 seconds per user, so repeating
+// the same authenticator window for the same secret is a replay (400). Track
+// the last computed code per secret and wait one window when it would collide.
+const lastTotpCode = new Map<string, string>();
+
+async function freshTotpCode(secret: string): Promise<string> {
+  const period = fixtures.totpPeriod || 30;
+  let counter = Math.floor(Date.now() / 1000 / period);
+  let code = hotp(secret, counter);
+  if (lastTotpCode.get(secret) === code) {
+    const nextWindowStart = (counter + 1) * period * 1000;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, nextWindowStart - Date.now()) + 200));
+    counter = Math.floor(Date.now() / 1000 / period);
+    code = hotp(secret, counter);
+  }
+  lastTotpCode.set(secret, code);
+  return code;
+}
+
+export interface SignInOptions {
+  assertAuthorized?: boolean;
+  expectSigninDenied?: boolean;
+}
+
+export interface SignInResult {
+  signinStatus: number;
+  signinBody: {
+    message?: string;
+    code?: string;
+    requiresPasswordChange?: boolean;
+    data?: { requiresPasswordChange?: boolean };
+  } | null;
+}
+
 export async function signIn(
   page: Page,
   user: E2EUser,
-  { assertAuthorized = true }: { assertAuthorized?: boolean } = {},
-) {
+  { assertAuthorized = true, expectSigninDenied = false }: SignInOptions = {},
+): Promise<SignInResult> {
   await page.goto('/login');
   await expect(page.getByLabel('Email')).toBeVisible();
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Password').fill(user.password);
 
-  const signInResponse = page.waitForResponse((response) => (
+  const signinResponsePromise = page.waitForResponse((response) => (
     response.request().method() === 'POST'
     && response.url().includes('/api/auth/signin')
   ));
-  const sessionResponse = page.waitForResponse((response) => (
-    response.request().method() === 'GET'
-    && response.url().includes('/api/internal/growth-os/session')
-    && [200, 403, 503].includes(response.status())
-  ));
+  const sessionResponsePromise = expectSigninDenied
+    ? null
+    : page.waitForResponse((response) => (
+      response.request().method() === 'GET'
+      && response.url().includes('/api/internal/growth-os/session')
+      && [200, 403, 503].includes(response.status())
+    ));
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await signInResponse;
+  const signinResponse = await signinResponsePromise;
+  const signinBody = await signinResponse.json().catch(() => null) as SignInResult['signinBody'];
+
+  if (expectSigninDenied) {
+    return { signinStatus: signinResponse.status(), signinBody };
+  }
 
   if (user.totpSecret) {
     await expect(page.getByLabel('Verification code')).toBeVisible();
-    const counter = Math.floor(Date.now() / 1000 / 30);
-    await page.getByLabel('Verification code').fill(hotp(user.totpSecret, counter));
+    await page.getByLabel('Verification code').fill(await freshTotpCode(user.totpSecret));
     await page.getByRole('button', { name: 'Verify and sign in' }).click();
   }
 
-  await sessionResponse;
+  if (signinBody?.requiresPasswordChange || signinBody?.data?.requiresPasswordChange) {
+    await expect(page).toHaveURL(/\/change-password$/);
+    return { signinStatus: signinResponse.status(), signinBody };
+  }
+
+  if (sessionResponsePromise) await sessionResponsePromise;
 
   // LoginPage handles the success redirect, while denied sessions are routed
   // by ProtectedRoute. Re-entering the root makes both outcomes deterministic.
   await page.goto('/');
   if (assertAuthorized) {
-    await expect(page.getByRole('heading', { name: 'Prospect foundation ready' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   }
+  return { signinStatus: signinResponse.status(), signinBody };
 }
 
 export async function pageRequest(
@@ -83,10 +162,20 @@ export async function pageRequest(
   { method = 'GET', body }: { method?: string; body?: unknown } = {},
 ) {
   return page.evaluate(async ({ requestPath, requestMethod, requestBody }) => {
+    const isMutation = requestMethod !== 'GET';
+    const headers: Record<string, string> = {};
+    if (isMutation) {
+      const csrfResponse = await fetch('/api/csrf', { credentials: 'include' });
+      const csrfPayload = await csrfResponse.json().catch(() => null);
+      if (typeof csrfPayload?.csrfToken === 'string') {
+        headers['X-CSRF-Token'] = csrfPayload.csrfToken;
+      }
+      if (requestBody !== undefined) headers['Content-Type'] = 'application/json';
+    }
     const response = await fetch(requestPath, {
       method: requestMethod,
       credentials: 'include',
-      headers: requestBody === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
     });
     const responseBody = await response.json().catch(() => null);
@@ -126,4 +215,9 @@ export async function bumpTokenVersion(userId: string) {
   } finally {
     await redis.quit().catch(() => redis.disconnect());
   }
+}
+
+export async function waitForResponseJson(responsePromise: Promise<Response>) {
+  const response = await responsePromise;
+  return { status: response.status(), body: await response.json().catch(() => null) };
 }

@@ -40,7 +40,7 @@ npm run dev
 Default local URL:
 
 ```text
-http://localhost:5174
+http://127.0.0.1:5175
 ```
 
 The Vite dev server proxies `/api/*` to `http://localhost:3000`.
@@ -140,38 +140,30 @@ Rules:
 - every Growth OS backend route must run backend authorization middleware
 - role lookups are cached for 60 seconds with `growth-os:user:{userId}:role`
 
-Roles:
+Canonical roles:
 
-- `FOUNDER`
-- `GROWTH_MANAGER`
-- `BUSINESS_EXECUTIVE`
-- `MARKETER`
-- `CUSTOMER_SUCCESS`
-- `READ_ONLY_ANALYST`
+- `SUPER_ADMIN`
+- `GROWTH_USER`
+
+Historical role values remain database compatibility values only and are not
+valid bootstrap inputs.
 
 Initial permissions are intentionally minimal and foundation-oriented. Prompt 3 must extend permissions only for the prospect/lead module it implements.
 
-## Manual Role Bootstrap
+## Protected Role Bootstrap
 
-No Founder UI exists yet. Bootstrap the first Growth OS role directly in the database after migrations run:
+The first Growth OS role must be established through
+`.github/workflows/grant-growth-role.yml` after migrations run. The protected
+`growth-bootstrap` environment supplies `GROWTH_BOOTSTRAP_ACTOR_EMAIL`; the
+workflow accepts only an existing target email and the canonical
+`SUPER_ADMIN` role. The role service verifies that configured actor and refuses
+to bootstrap after an active Super Admin already exists. Do not use raw SQL or
+pass an actor identity as a workflow-dispatch input.
 
-```sql
-INSERT INTO growth_os_user_roles (user_id, role, is_active, metadata)
-VALUES ('<existing-user-id>', 'FOUNDER', true, '{"bootstrap": true}'::jsonb);
-```
-
-To revoke access:
-
-```sql
-UPDATE growth_os_user_roles
-SET is_active = false,
-    revoked_at = NOW(),
-    revoked_by = '<founder-user-id>'
-WHERE user_id = '<user-id>'
-  AND is_active = true;
-```
-
-Because role access is cached for 60 seconds, revocation may take up to 60 seconds to reflect unless the cache key is deleted.
+After the first Super Admin is established, use the authenticated Growth OS
+user-administration screen for grants, suspension, role changes, and revocation.
+Those operations remain transactional with required audit persistence and role
+cache/session invalidation.
 
 ## Deployment Preparation
 
@@ -276,13 +268,13 @@ Founder:
 2. Run migrations.
 3. Bootstrap `FOUNDER` in `growth_os_user_roles`.
 4. Start Growth OS: `cd EasyMod-growth && npm run dev`.
-5. Open `http://localhost:5174`.
+5. Open `http://127.0.0.1:5175`.
 6. Sign in with the founder account.
 7. Expected: Growth OS shell opens and shows the founder role.
 
 Merchant:
 
-1. Open `http://localhost:5174`.
+1. Open `http://127.0.0.1:5175`.
 2. Sign in with a normal merchant account with no Growth OS role.
 3. Expected: access denied.
 4. Directly request `GET /api/internal/growth-os/session`.
@@ -290,7 +282,7 @@ Merchant:
 
 Unauthenticated:
 
-1. Open `http://localhost:5174` in a clean browser session.
+1. Open `http://127.0.0.1:5175` in a clean browser session.
 2. Expected: login page.
 3. Directly request `GET /api/internal/growth-os/session`.
 4. Expected: `401`.

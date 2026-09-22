@@ -104,16 +104,26 @@ function searchWhere(value, GrowthOsProspect) {
   const search = String(value || '').trim();
   if (!search) return null;
   const operator = GrowthOsProspect.sequelize?.getDialect() === 'postgres' ? Op.iLike : Op.like;
-  const pattern = `%${search.toLowerCase().replace(/[\\%_]/g, '\\$&')}%`;
-  return {
-    [Op.or]: [
-      { normalized_business_name: { [operator]: pattern } },
-      { contact_name: { [operator]: pattern } },
-      { contact_phone: { [operator]: pattern } },
-      { contact_email: { [operator]: pattern } },
-      { page_url: { [operator]: pattern } },
-    ],
-  };
+  const rawPattern = `%${search.toLowerCase().replace(/[\\%_]/g, '\\$&')}%`;
+  // normalized_business_name is punctuation-free; normalize the search term
+  // before comparing it so names such as "north-star" remain discoverable.
+  const normalizedSearch = search.toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[\\%_]/g, '\\$&');
+  const normalizedPattern = `%${normalizedSearch}%`;
+  const predicates = [];
+  if (normalizedSearch) {
+    predicates.push({ normalized_business_name: { [operator]: normalizedPattern } });
+  }
+  predicates.push(
+    { contact_name: { [operator]: rawPattern } },
+    { contact_phone: { [operator]: rawPattern } },
+    { contact_email: { [operator]: rawPattern } },
+    { page_url: { [operator]: rawPattern } },
+  );
+  return { [Op.or]: predicates };
 }
 
 function prospectFilters(filters = {}, GrowthOsProspect) {

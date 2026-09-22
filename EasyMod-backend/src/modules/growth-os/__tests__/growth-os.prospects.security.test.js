@@ -74,6 +74,15 @@ jest.mock('../../../utils/cache.service', () => mockCacheService);
 jest.mock('../growth-os.repository', () => mockGrowthRepository);
 jest.mock('../growth-os.prospect.repository', () => mockProspectRepository);
 jest.mock('../growth-os.roles.service', () => mockRoleService);
+jest.mock('../growth-os.users.service', () => ({
+  listGrowthUsers: jest.fn(async () => []),
+  createGrowthUser: jest.fn(),
+  setGrowthUserStatus: jest.fn(),
+  changeGrowthUserRole: jest.fn(),
+  revokeGrowthUserAccess: jest.fn(),
+  resetGrowthUserPassword: jest.fn(),
+  revokeGrowthUserSessions: jest.fn(),
+}));
 
 const prospectService = require('../growth-os.prospect.service');
 const growthOsRoutes = require('../growth-os.routes');
@@ -134,7 +143,7 @@ function setIdentity({ id, role, mfaVerified = true }) {
   roleHolder.user = {
     userId: id,
     email: `${id}@example.test`,
-    shopId: SHOP_ID,
+    shopId: null,
     mfaVerified,
   };
   roleHolder.growthRole = role;
@@ -245,8 +254,10 @@ describe('Growth OS prospect route security', () => {
     expect(mockProspectRepository.listProspects).not.toHaveBeenCalled();
   });
 
-  it('applies the prospect permission matrix to every Growth role', async () => {
+  it('applies the prospect permission matrix to canonical and legacy Growth roles', async () => {
     const roles = [
+      'SUPER_ADMIN',
+      'GROWTH_USER',
       'FOUNDER',
       'GROWTH_MANAGER',
       'BUSINESS_EXECUTIVE',
@@ -254,16 +265,34 @@ describe('Growth OS prospect route security', () => {
       'CUSTOMER_SUCCESS',
       'READ_ONLY_ANALYST',
     ];
-    const readRoles = new Set(['FOUNDER', 'GROWTH_MANAGER', 'BUSINESS_EXECUTIVE', 'MARKETER']);
-    const updateRoles = new Set(['FOUNDER', 'GROWTH_MANAGER', 'BUSINESS_EXECUTIVE']);
-    const manageRoles = new Set(['FOUNDER', 'GROWTH_MANAGER']);
+    const readRoles = new Set([
+      'SUPER_ADMIN',
+      'GROWTH_USER',
+      'FOUNDER',
+      'GROWTH_MANAGER',
+      'BUSINESS_EXECUTIVE',
+      'MARKETER',
+    ]);
+    const updateRoles = new Set([
+      'SUPER_ADMIN',
+      'GROWTH_USER',
+      'FOUNDER',
+      'GROWTH_MANAGER',
+      'BUSINESS_EXECUTIVE',
+    ]);
+    const manageRoles = new Set([
+      'SUPER_ADMIN',
+      'GROWTH_USER',
+      'FOUNDER',
+      'GROWTH_MANAGER',
+    ]);
 
     for (const role of roles) {
       setIdentity({ id: `${role.toLowerCase()}-1`, role });
       const listResponse = await request(app).get('/api/internal/growth-os/prospects');
       const duplicateResponse = await request(app)
-        .get('/api/internal/growth-os/prospects/duplicate-check')
-        .query({ contactEmail: 'owner@example.test' });
+        .post('/api/internal/growth-os/prospects/duplicate-check')
+        .send({ contactEmail: 'owner@example.test' });
       const updateResponse = await request(app)
         .patch(`/api/internal/growth-os/prospects/${PROSPECT_ID}`)
         .send({ businessName: 'Updated name' });
@@ -299,6 +328,22 @@ describe('Growth OS prospect route security', () => {
       expect(mergeResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
       expect(suggestionsResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
     }
+  });
+
+  it('gives canonical GROWTH_USER full unredacted prospect visibility', async () => {
+    setIdentity({ id: 'growth-user-1', role: 'GROWTH_USER' });
+
+    const response = await request(app).get('/api/internal/growth-os/prospects');
+    const item = response.body.data.items.find((prospect) => prospect.id === PROSPECT_ID);
+
+    expect(response.status).toBe(200);
+    expect(item).toMatchObject({
+      businessName: 'North Star Retail',
+      contactName: 'Owner Name',
+      contactEmail: 'owner@example.test',
+      notes: 'Private working note',
+    });
+    expect(item.redacted).toBeUndefined();
   });
 
   it('redacts marketer contact fields while retaining the safe prospect shape', async () => {
@@ -370,6 +415,30 @@ describe('Growth OS prospect route security', () => {
         }),
       }),
     );
+  });
+
+  it('keeps new admin routes canonical SUPER_ADMIN-only while legacy FOUNDER retains roles.manage', async () => {
+    setIdentity({ id: 'canonical-super-admin-1', role: 'SUPER_ADMIN' });
+
+    const canonicalAdmin = await request(app).get('/api/internal/growth-os/admin/users');
+    expect(canonicalAdmin.status).toBe(200);
+
+    const querySearch = await request(app).get('/api/internal/growth-os/admin/users?search=owner%40example.com');
+    expect(querySearch.status).toBe(400);
+
+    setIdentity({ id: FOUNDER_ID, role: 'FOUNDER' });
+    const legacyRoleGrant = await request(app)
+      .post('/api/internal/growth-os/roles')
+      .send({ userId: FOREIGN_PROSPECT_ID, role: 'GROWTH_USER', reason: 'legacy role-management access' });
+    expect(legacyRoleGrant.status).toBe(201);
+    expect(mockRoleService.grantRole).toHaveBeenCalledWith(expect.objectContaining({
+      actorUserId: FOUNDER_ID,
+      targetUserId: FOREIGN_PROSPECT_ID,
+      role: 'GROWTH_USER',
+    }));
+
+    const legacyAdmin = await request(app).get('/api/internal/growth-os/admin/users');
+    expect(legacyAdmin.status).toBe(403);
   });
 
   it('enforces MFA for broad Growth roles before prospect access', async () => {
@@ -465,9 +534,9 @@ describe('Growth OS prospect route security', () => {
   it('rate-limits repeated duplicate-check lookups', async () => {
     setIdentity({ id: FOUNDER_ID, role: 'FOUNDER' });
     const responses = await Promise.all(Array.from({ length: 121 }, () => request(app)
-      .get('/api/internal/growth-os/prospects/duplicate-check')
+      .post('/api/internal/growth-os/prospects/duplicate-check')
       .set('X-Forwarded-For', '198.51.100.99')
-      .query({ contactEmail: 'owner@example.test' })));
+      .send({ contactEmail: 'owner@example.test' })));
 
     expect(responses.some((response) => response.status === 429)).toBe(true);
   });

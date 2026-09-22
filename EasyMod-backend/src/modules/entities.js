@@ -50,12 +50,16 @@ const GrowthOsUserRole = require('./growth-os/growth-os-user-role.entity');
 
 let growthOsProspect;
 let growthOsProspectEvent;
+let growthOsFollowup;
+let growthOsNote;
 let growthOsProspectAssociationsReady = false;
 
 function loadGrowthOsProspectEntities() {
     if (!growthOsProspect) {
         growthOsProspect = require('./growth-os/growth-os-prospect.entity');
         growthOsProspectEvent = require('./growth-os/growth-os-prospect-event.entity');
+        growthOsFollowup = require('./growth-os/growth-os-followup.entity');
+        growthOsNote = require('./growth-os/growth-os-note.entity');
     }
 
     if (!growthOsProspectAssociationsReady) {
@@ -79,10 +83,28 @@ function loadGrowthOsProspectEntities() {
         growthOsProspectEvent.belongsTo(growthOsProspect, { foreignKey: 'prospect_id', as: 'prospect' });
         growthOsProspectEvent.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
         User.hasMany(growthOsProspectEvent, { foreignKey: 'actor_user_id', as: 'growthOsProspectEvents' });
+
+        growthOsProspect.hasMany(growthOsFollowup, { foreignKey: 'prospect_id', as: 'followups' });
+        growthOsFollowup.belongsTo(growthOsProspect, { foreignKey: 'prospect_id', as: 'prospect' });
+        growthOsFollowup.belongsTo(User, { foreignKey: 'owner_user_id', as: 'ownerUser' });
+        growthOsFollowup.belongsTo(User, { foreignKey: 'created_by', as: 'createdByUser' });
+        User.hasMany(growthOsFollowup, { foreignKey: 'owner_user_id', as: 'ownedGrowthFollowups' });
+
+        // growth_os_notes targets are polymorphic (prospect|user|shop) and the
+        // service proves target existence per write, so only the author-side
+        // association is modelled here.
+        growthOsNote.belongsTo(User, { foreignKey: 'author_user_id', as: 'authorUser' });
+        User.hasMany(growthOsNote, { foreignKey: 'author_user_id', as: 'authoredGrowthNotes' });
+
         growthOsProspectAssociationsReady = true;
     }
 
-    return { GrowthOsProspect: growthOsProspect, GrowthOsProspectEvent: growthOsProspectEvent };
+    return {
+        GrowthOsProspect: growthOsProspect,
+        GrowthOsProspectEvent: growthOsProspectEvent,
+        GrowthOsFollowup: growthOsFollowup,
+        GrowthOsNote: growthOsNote,
+    };
 }
 
 // Phase 1 — Meta Integration Redesign: new unified channel entities
@@ -542,6 +564,7 @@ module.exports = {
     Tenant,
     Shop,
     UserShop,
+    Session,
     Category,
     Product,
     ProductVariant,
@@ -604,5 +627,13 @@ Object.defineProperties(module.exports, {
     GrowthOsProspectEvent: {
         enumerable: true,
         get: () => loadGrowthOsProspectEntities().GrowthOsProspectEvent,
+    },
+    GrowthOsFollowup: {
+        enumerable: true,
+        get: () => loadGrowthOsProspectEntities().GrowthOsFollowup,
+    },
+    GrowthOsNote: {
+        enumerable: true,
+        get: () => loadGrowthOsProspectEntities().GrowthOsNote,
     },
 });

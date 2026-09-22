@@ -1,20 +1,110 @@
 const { doubleCsrf } = require('csrf-csrf');
 const crypto = require('crypto');
 const config = require('../config/config');
+const { DEVELOPMENT_DEFAULTS } = require('../config/origins');
 const { AppError } = require('../utils/AppError');
 
 /**
  * Cookie-issuing authentication endpoints cannot use the double-submit token
- * before a browser session exists. In production, bind those requests to the
- * merchant app origin instead. Browsers include Origin on cross-origin and
- * same-origin POST requests, so a missing or sibling origin must fail closed.
+ * before a browser session exists. In production-like environments, bind those
+ * requests to the configured application origins instead. Browsers include
+ * Origin on cross-origin and same-origin POST requests, so a missing or sibling
+ * origin must fail closed.
  */
-const isTrustedAuthOrigin = (
+const AUTH_ORIGIN_ENVIRONMENTS = new Set(['production', 'staging']);
+const DEVELOPMENT_ORIGINS = [DEVELOPMENT_DEFAULTS.app, DEVELOPMENT_DEFAULTS.growth];
+
+function parseOrigin(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+
+    try {
+        const parsed = new URL(value.trim());
+        if (!['http:', 'https:'].includes(parsed.protocol)
+            || parsed.username
+            || parsed.password
+            || parsed.pathname !== '/'
+            || parsed.search
+            || parsed.hash) {
+            return null;
+        }
+        return parsed.origin;
+    } catch (_) {
+        return null;
+    }
+}
+
+function parseConfiguredOrigins(value) {
+    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+        return { valid: true, origins: new Set() };
+    }
+
+    const values = Array.isArray(value)
+        ? value
+        : typeof value === 'string'
+            ? value.split(',')
+            : null;
+    if (!values) return { valid: false, origins: new Set() };
+
+    const origins = new Set();
+    for (const candidate of values) {
+        const parsed = parseOrigin(candidate);
+        if (!parsed) return { valid: false, origins: new Set() };
+        origins.add(parsed);
+    }
+    return { valid: true, origins };
+}
+
+function getConfiguredOrigin(value, environmentNames) {
+    if (value !== undefined) return value;
+    return environmentNames.map((name) => process.env[name]).find(Boolean);
+}
+
+function isTrustedAuthOrigin(
     origin,
     environment = config.env,
-    appOrigin = config.origins?.app,
-    growthOrigin = config.origins?.growth,
-) => environment !== 'production' || [appOrigin, growthOrigin].includes(origin);
+    appOrigin,
+    growthOrigin,
+    corsOrigins,
+) {
+    const normalizedEnvironment = String(environment || '').trim().toLowerCase();
+
+    // Test requests are disposable and the application already disables CSRF
+    // validation for them. Keep this bypass isolated from deployed environments.
+    if (normalizedEnvironment === 'test') return true;
+
+    const parsedRequestOrigin = parseOrigin(origin);
+    if (!parsedRequestOrigin) return false;
+
+    const configuredCorsOrigins = corsOrigins === undefined
+        ? (process.env.CORS_ORIGINS ?? config.corsOrigins)
+        : corsOrigins;
+    const parsedCorsOrigins = parseConfiguredOrigins(configuredCorsOrigins);
+    if (!parsedCorsOrigins.valid) return false;
+
+    const allowedOrigins = parsedCorsOrigins.origins;
+    const configuredApplicationOrigin = getConfiguredOrigin(appOrigin, ['APP_URL', 'FRONTEND_URL']);
+    const configuredGrowthOrigin = getConfiguredOrigin(growthOrigin, ['GROWTH_FRONTEND_URL', 'GROWTH_URL']);
+    for (const candidate of [configuredApplicationOrigin, configuredGrowthOrigin]) {
+        if (candidate === undefined || candidate === null || candidate === '') continue;
+        const parsed = parseOrigin(candidate);
+        if (!parsed) return false;
+        allowedOrigins.add(parsed);
+    }
+
+    if (AUTH_ORIGIN_ENVIRONMENTS.has(normalizedEnvironment)) {
+        return allowedOrigins.has(parsedRequestOrigin);
+    }
+
+    if (normalizedEnvironment === 'development') {
+        // Development has no wildcard bypass. Keep the existing local frontend
+        // workflow working while requiring an exact configured/local origin.
+        for (const candidate of DEVELOPMENT_ORIGINS) allowedOrigins.add(candidate);
+    }
+
+    // Unknown environments are treated like production rather than inheriting
+    // a permissive non-production default.
+    return allowedOrigins.has(parsedRequestOrigin);
+}
 
 // Enhanced CSRF configuration with better error handling
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({

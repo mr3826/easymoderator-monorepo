@@ -19,8 +19,21 @@ const mockRedis = {
     status: 'ready'
 };
 
+const mockTransaction = { LOCK: { UPDATE: 'UPDATE' } };
+const mockInvalidateUserSessions = jest.fn().mockResolvedValue(2);
+
 jest.mock('src/utils/redis-client', () => ({
     getRedisClient: () => mockRedis
+}));
+
+jest.mock('src/utils/database/database-setup', () => ({
+    sequelize: {
+        transaction: jest.fn(async (callback) => callback(mockTransaction)),
+    },
+}));
+
+jest.mock('src/modules/auth/session-invalidation.service', () => ({
+    invalidateUserSessions: mockInvalidateUserSessions,
 }));
 
 // Mock User entity
@@ -174,6 +187,27 @@ describe('TOTP Service Security', () => {
             // The pending secret should be encrypted (contains IV:TAG:ENCRYPTED format)
             const encryptedSecret = updateCall[0].settings.totp_pending;
             expect(encryptedSecret).toMatch(/^[a-f0-9]{24}:[a-f0-9]{32}:[a-f0-9]+$/);
+        });
+
+        it('disables TOTP and revokes the existing access/session generation atomically', async () => {
+            const secret = await enableTestTotp();
+            const token = currentTotpToken(secret);
+
+            await expect(totpService.disableTotp('user-1', token)).resolves.toEqual({ disabled: true });
+
+            expect(mockUser.update).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    settings: expect.objectContaining({
+                        totp_secret: null,
+                        totp_pending: null,
+                        totp_enabled: false,
+                    }),
+                }),
+                { transaction: mockTransaction },
+            );
+            expect(mockInvalidateUserSessions).toHaveBeenCalledWith('user-1', {
+                transaction: mockTransaction,
+            });
         });
     });
 

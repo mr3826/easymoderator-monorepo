@@ -36,13 +36,6 @@ const emptyValues: ProspectFormValues = {
   sourceDetail: '',
 };
 
-const sensitiveFields: Array<keyof Pick<ProspectFormValues, 'contactName' | 'contactPhone' | 'contactEmail' | 'pageUrl'>> = [
-  'contactName',
-  'contactPhone',
-  'contactEmail',
-  'pageUrl',
-];
-
 function sourceLabel(source: string) {
   return source.replace(/_/g, ' ');
 }
@@ -70,25 +63,22 @@ function valuesFromProspect(prospect: Prospect): ProspectFormValues {
   };
 }
 
-function toPayload(values: ProspectFormValues, redacted: boolean, editing: boolean): ProspectFormPayload {
+function toPayload(values: ProspectFormValues, editing: boolean): ProspectFormPayload {
   const optionalValue = (value: string) => {
     const normalized = value.trim();
     return editing ? (normalized || null) : (normalized || undefined);
   };
   const payload: ProspectFormPayload = {
     businessName: values.businessName.trim(),
+    contactName: optionalValue(values.contactName),
+    contactPhone: optionalValue(values.contactPhone),
+    contactEmail: optionalValue(values.contactEmail),
+    pageUrl: optionalValue(values.pageUrl),
     niche: optionalValue(values.niche),
     notes: optionalValue(values.notes),
     source: values.source as ProspectSource,
     sourceDetail: optionalValue(values.sourceDetail),
   };
-
-  if (!redacted) {
-    payload.contactName = optionalValue(values.contactName);
-    payload.contactPhone = optionalValue(values.contactPhone);
-    payload.contactEmail = optionalValue(values.contactEmail);
-    payload.pageUrl = optionalValue(values.pageUrl);
-  }
 
   return payload;
 }
@@ -102,10 +92,9 @@ function duplicatePayload(values: ProspectFormValues, prospectId: string | undef
   };
 }
 
-function validate(values: ProspectFormValues, redacted: boolean) {
+function validate(values: ProspectFormValues) {
   if (!values.businessName.trim()) return 'Business name is required.';
   if (!values.source) return 'Source is required.';
-  if (redacted) return null;
 
   const hasChannel = [values.contactPhone, values.contactEmail, values.pageUrl]
     .some((value) => Boolean(value.trim()));
@@ -129,7 +118,6 @@ function Field({
   onChange,
   type = 'text',
   placeholder,
-  hidden,
   required = false,
 }: {
   id: keyof ProspectFormValues;
@@ -138,17 +126,12 @@ function Field({
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   type?: string;
   placeholder?: string;
-  hidden?: boolean;
   required?: boolean;
 }) {
   return (
-    <label htmlFor={hidden ? undefined : id}>
+    <label htmlFor={id}>
       {label}{required ? ' *' : ''}
-      {hidden ? (
-        <span className="redacted-input" aria-label={`${label}: Hidden for your role`}>Hidden for your role</span>
-      ) : (
-        <input id={id} name={id} type={type} value={value} onChange={onChange} placeholder={placeholder} required={required} />
-      )}
+      <input id={id} name={id} type={type} value={value} onChange={onChange} placeholder={placeholder} required={required} />
     </label>
   );
 }
@@ -159,7 +142,6 @@ export function ProspectFormPage() {
   const { reportApiError } = useGrowthAuth();
   const editing = Boolean(prospectId);
   const [values, setValues] = useState<ProspectFormValues>(emptyValues);
-  const [redacted, setRedacted] = useState(false);
   const [loading, setLoading] = useState(editing);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,7 +162,6 @@ export function ProspectFormPage() {
       .then((prospect) => {
         if (!active) return;
         setValues(valuesFromProspect(prospect));
-        setRedacted(prospect.redacted === true);
       })
       .catch((requestError: unknown) => {
         if (!active || reportApiError(requestError)) return;
@@ -213,13 +194,13 @@ export function ProspectFormPage() {
   }
 
   async function save(skipDuplicateCheck = false) {
-    const nextValidationError = validate(values, redacted);
+    const nextValidationError = validate(values);
     if (nextValidationError) {
       setValidationError(nextValidationError);
       return;
     }
 
-    const payload = toPayload(values, redacted, editing);
+    const payload = toPayload(values, editing);
     setSubmitting(true);
     setError(null);
     setValidationError(null);
@@ -359,10 +340,10 @@ export function ProspectFormPage() {
           </div>
           <p className="field-hint">At least one phone, email, or page URL is required.</p>
           <div className="form-grid">
-            <Field id="contactName" label="Contact name" value={values.contactName} onChange={handleInput('contactName')} hidden={redacted && sensitiveFields.includes('contactName')} />
-            <Field id="contactPhone" label="Contact phone" value={values.contactPhone} onChange={handleInput('contactPhone')} type="tel" placeholder="01XXXXXXXXX" hidden={redacted && sensitiveFields.includes('contactPhone')} />
-            <Field id="contactEmail" label="Contact email" value={values.contactEmail} onChange={handleInput('contactEmail')} type="email" placeholder="name@example.com" hidden={redacted && sensitiveFields.includes('contactEmail')} />
-            <Field id="pageUrl" label="Page URL" value={values.pageUrl} onChange={handleInput('pageUrl')} type="url" placeholder="https://..." hidden={redacted && sensitiveFields.includes('pageUrl')} />
+            <Field id="contactName" label="Contact name" value={values.contactName} onChange={handleInput('contactName')} />
+            <Field id="contactPhone" label="Contact phone" value={values.contactPhone} onChange={handleInput('contactPhone')} type="tel" placeholder="01XXXXXXXXX" />
+            <Field id="contactEmail" label="Contact email" value={values.contactEmail} onChange={handleInput('contactEmail')} type="email" placeholder="name@example.com" />
+            <Field id="pageUrl" label="Page URL" value={values.pageUrl} onChange={handleInput('pageUrl')} type="url" placeholder="https://..." />
           </div>
         </section>
 

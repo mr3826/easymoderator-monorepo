@@ -107,6 +107,7 @@ jest.mock('src/middleware/auth.middleware', () => ({
         req.user = { userId: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33', shopId: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44', role: 'owner' };
         next();
     },
+    authenticateForPasswordChange: (_req, _res, next) => next(),
     checkSubscriptionStatus: (_req, _res, next) => next(),
 }));
 

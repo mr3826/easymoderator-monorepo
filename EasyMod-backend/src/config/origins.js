@@ -11,7 +11,7 @@ const PRODUCTION_DEFAULTS = Object.freeze({
 const DEVELOPMENT_DEFAULTS = Object.freeze({
     marketing: 'http://localhost:5173',
     app: 'http://localhost:5173',
-    growth: 'http://localhost:5174',
+    growth: 'http://127.0.0.1:5175',
     api: 'http://localhost:3000',
     publicAssets: 'http://localhost:3000',
 });

@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const net = require('net');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -8,42 +9,111 @@ const repoRoot = path.resolve(__dirname, '..');
 const backendRoot = path.join(repoRoot, 'EasyMod-backend');
 const composeFile = path.join(repoRoot, 'docker-compose.test.yml');
 const seedScript = path.join(backendRoot, 'src', 'scripts', 'seed-growth-e2e.js');
-const projectName = `easymod-growth-e2e-${process.pid}`;
-const postgresPort = process.env.TEST_POSTGRES_PORT || '5432';
-const redisPort = process.env.TEST_REDIS_PORT || '6379';
+const runToken = process.pid;
+const projectName = `easymod-growth-e2e-${runToken}`;
 const useExistingServices = process.env.GROWTH_E2E_USE_EXISTING_SERVICES === 'true';
-const composeEnv = {
-    ...process.env,
-    TEST_POSTGRES_PORT: postgresPort,
-    TEST_REDIS_PORT: redisPort,
-};
-const testEnv = {
-    ...composeEnv,
-    NODE_ENV: 'test',
-    DB_SSL: 'false',
-    DATABASE_URL: `postgres://e2e:e2e@127.0.0.1:${postgresPort}/easymod_e2e`,
-    REDIS_URL: `redis://127.0.0.1:${redisPort}`,
-    REDIS_SESSION_DB: '0',
-    REDIS_CACHE_DB: '1',
-    REDIS_RATELIMIT_DB: '2',
-    GROWTH_OS_ENABLED: 'true',
-    PORT: '3000',
-    RUN_MIGRATIONS_ON_STARTUP: 'false',
-    START_EMBEDDED_WORKERS: 'false',
-    APP_SECRET: 'growth-e2e-app-secret-at-least-32-characters',
-    CHANNEL_ENCRYPTION_KEY: 'a'.repeat(64),
-    PAYMENT_ENCRYPTION_KEY: 'b'.repeat(64),
-    DELIVERY_ENCRYPTION_KEY: 'c'.repeat(64),
-    JWT_ACCESS_SECRET: 'growth-e2e-jwt-access-secret-at-least-32',
-    JWT_REFRESH_SECRET: 'growth-e2e-jwt-refresh-secret-at-least-32',
-    SESSION_SECRET: 'growth-e2e-session-secret-at-least-32-chars',
-    CSRF_SECRET: 'd'.repeat(64),
-    CORS_ORIGINS: 'http://127.0.0.1:5175,http://localhost:5175',
-    GIT_SHA: 'growth-e2e-local',
-};
-delete testEnv.SENTRY_DSN;
-delete testEnv.SLACK_ALERT_WEBHOOK_URL;
-delete testEnv.QDRANT_URL;
+
+// The browser E2E runs the full migration chain and truncates/creates
+// fixtures. It MUST address a loopback, disposable, per-run unique database.
+// Defaults match the CI service containers; local runs override ports with
+// free-port probing and namespace the database by run.
+function assertDisposableTarget(name, label) {
+    if (!/(?:^|[^a-z])(?:e2e|test)(?:[^a-z]|$)/i.test(String(name))) {
+        throw new Error(`Refusing Growth E2E: ${label} "${name}" does not name a disposable e2e/test resource.`);
+    }
+}
+
+function assertLoopback(host, label) {
+    if (!['127.0.0.1', 'localhost', '::1'].includes(String(host))) {
+        throw new Error(`Refusing Growth E2E: ${label} host "${host}" is not loopback.`);
+    }
+}
+
+function listenProbe(server) {
+    return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.once('listening', () => {
+            const { port } = server.address();
+            server.close(() => resolve(port));
+        });
+    });
+}
+
+async function pickFreePort(preferred) {
+    try {
+        return await listenProbe(net.createServer().listen(preferred, '127.0.0.1'));
+    } catch (_error) {
+        return listenProbe(net.createServer().listen(0, '127.0.0.1'));
+    }
+}
+
+async function resolvePorts() {
+    const envPg = parseInt(process.env.TEST_POSTGRES_PORT, 10);
+    const envRedis = parseInt(process.env.TEST_REDIS_PORT, 10);
+    const [postgresPort, redisPort] = await Promise.all([
+        useExistingServices && Number.isInteger(envPg)
+            ? Promise.resolve(envPg)
+            : pickFreePort(Number.isInteger(envPg) ? envPg : 55432),
+        useExistingServices && Number.isInteger(envRedis)
+            ? Promise.resolve(envRedis)
+            : pickFreePort(Number.isInteger(envRedis) ? envRedis : 56379),
+    ]);
+    return { postgresPort, redisPort };
+}
+
+const dbName = useExistingServices
+    ? (process.env.TEST_POSTGRES_DB || 'easymod_e2e')
+    : `easymod_growth_${runToken}_e2e`;
+const dbUser = process.env.TEST_POSTGRES_USER || 'e2e';
+const dbPassword = process.env.TEST_POSTGRES_PASSWORD || 'e2e';
+const dbHost = '127.0.0.1';
+const redisHost = '127.0.0.1';
+assertDisposableTarget(dbName, 'database');
+assertLoopback(dbHost, 'database');
+assertLoopback(redisHost, 'redis');
+
+let composeEnv;
+let testEnv;
+
+async function buildEnvironments() {
+    const { postgresPort, redisPort } = await resolvePorts();
+    composeEnv = {
+        ...process.env,
+        TEST_POSTGRES_PORT: String(postgresPort),
+        TEST_REDIS_PORT: String(redisPort),
+        TEST_POSTGRES_DB: dbName,
+        TEST_POSTGRES_USER: dbUser,
+        TEST_POSTGRES_PASSWORD: dbPassword,
+    };
+    testEnv = {
+        ...composeEnv,
+        NODE_ENV: 'test',
+        DB_SSL: 'false',
+        DATABASE_URL: `postgres://${dbUser}:${dbPassword}@${dbHost}:${postgresPort}/${dbName}`,
+        REDIS_URL: `redis://${redisHost}:${redisPort}`,
+        REDIS_SESSION_DB: '0',
+        REDIS_CACHE_DB: '1',
+        REDIS_RATELIMIT_DB: '2',
+        GROWTH_OS_ENABLED: 'true',
+        PORT: '3000',
+        RUN_MIGRATIONS_ON_STARTUP: 'false',
+        START_EMBEDDED_WORKERS: 'false',
+        APP_SECRET: 'growth-e2e-app-secret-at-least-32-characters',
+        CHANNEL_ENCRYPTION_KEY: 'a'.repeat(64),
+        PAYMENT_ENCRYPTION_KEY: 'b'.repeat(64),
+        DELIVERY_ENCRYPTION_KEY: 'c'.repeat(64),
+        JWT_ACCESS_SECRET: 'growth-e2e-jwt-access-secret-at-least-32',
+        JWT_REFRESH_SECRET: 'growth-e2e-jwt-refresh-secret-at-least-32',
+        SESSION_SECRET: 'growth-e2e-session-secret-at-least-32-chars',
+        CSRF_SECRET: 'd'.repeat(64),
+        CORS_ORIGINS: 'http://127.0.0.1:5175,http://localhost:5175',
+        GROWTH_E2E_PASSWORD: 'GrowthE2E-Password-2026!',
+        GIT_SHA: 'growth-e2e-local',
+    };
+    for (const key of ['SENTRY_DSN', 'SLACK_ALERT_WEBHOOK_URL', 'QDRANT_URL']) {
+        delete testEnv[key];
+    }
+}
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let activeChild = null;
@@ -163,6 +233,8 @@ async function main() {
     let servicesStarted = false;
 
     try {
+        await buildEnvironments();
+
         if (!useExistingServices) {
             const composeCheck = await run('docker', composeArgs('version'), composeEnv);
             if (composeCheck !== 0) {

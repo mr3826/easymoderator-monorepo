@@ -2,6 +2,23 @@ const AuditLog = require('./audit-log.entity');
 const IdempotencyKey = require('./idempotency-key.entity');
 const crypto = require('crypto');
 const { AppError } = require('../../utils/AppError');
+const { redactSecretiveValues } = require('../growth-os/growth-os.audit-sanitizer');
+
+function tenantAuditView(row) {
+    const data = typeof row?.get === 'function' ? row.get({ plain: true }) : row;
+    return {
+        id: data.id,
+        user_id: data.user_id,
+        shop_id: data.shop_id,
+        action: data.action,
+        resource_type: data.resource_type,
+        resource_id: data.resource_id,
+        created_at: data.created_at,
+        user: data.user
+            ? { id: data.user.id, full_name: data.user.full_name }
+            : null,
+    };
+}
 
 /**
  * Audit service for logging operations and handling idempotency
@@ -21,23 +38,29 @@ class AuditService {
         metadata = null,
         ipAddress = null,
         userAgent = null,
-        idempotencyKey = null
-    }) {
+         idempotencyKey = null
+    }, { transaction = null, required = false } = {}) {
         try {
-            await AuditLog.create({
+            const auditPayload = {
                 user_id: userId,
                 shop_id: shopId,
                 action,
                 resource_type: resourceType,
                 resource_id: resourceId,
-                old_values: oldValues,
-                new_values: newValues,
-                metadata,
+                old_values: redactSecretiveValues(oldValues),
+                new_values: redactSecretiveValues(newValues),
+                metadata: redactSecretiveValues(metadata),
                 ip_address: ipAddress,
                 user_agent: userAgent,
                 idempotency_key: idempotencyKey
-            });
+            };
+            if (transaction) {
+                await AuditLog.create(auditPayload, { transaction });
+            } else {
+                await AuditLog.create(auditPayload);
+            }
         } catch (error) {
+            if (required) throw error;
             // Log audit failure but don't fail the operation
             console.error('Failed to create audit log:', error);
         }
@@ -188,10 +211,10 @@ class AuditService {
                 {
                     model: require('../user/user.entity'),
                     as: 'user',
-                    attributes: ['id', 'full_name', 'email']
+                    attributes: ['id', 'full_name']
                 }
             ]
-        });
+        }).then((rows) => rows.map(tenantAuditView));
     }
 
     /**
@@ -220,10 +243,10 @@ class AuditService {
                 {
                     model: require('../user/user.entity'),
                     as: 'user',
-                    attributes: ['id', 'full_name', 'email']
+                    attributes: ['id', 'full_name']
                 }
             ]
-        });
+        }).then((rows) => rows.map(tenantAuditView));
     }
 }
 

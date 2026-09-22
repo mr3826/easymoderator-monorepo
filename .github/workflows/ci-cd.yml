@@ -115,6 +115,10 @@ jobs:
   changes:
     name: Detect changed services
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: none
+      pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend == 'true' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' }}
@@ -173,10 +177,10 @@ jobs:
                   frontend=true
                   ;;
               esac
-              # Mirrors growth-os.yml's own push paths, plus this workflow:
-              # editing the gate must exercise everything the gate gates.
+              # Any backend change can affect a server-backed Growth OS
+              # contract, so the reusable Growth verification must run too.
               case "$path" in
-                EasyMod-growth/*|EasyMod-backend/src/scripts/seed-growth-e2e.js|EasyMod-backend/src/database/*|scripts/run-growth-e2e.js|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
+                EasyMod-growth/*|EasyMod-extension/*|EasyMod-backend/*|scripts/run-growth-e2e.js|Caddyfile|docker-compose.prod.yml|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
                   growth=true
                   ;;
               esac
@@ -196,6 +200,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -257,6 +264,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -307,6 +317,9 @@ jobs:
     # Same condition as `test` so the deploy graph stays simple; the heavy steps
     # below are skipped when only the frontend changed.
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -596,6 +609,9 @@ jobs:
     if: |
       github.ref != 'refs/heads/main' &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -649,6 +665,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -1563,6 +1582,9 @@ jobs:
     # job-scope narrowing together form the invariant.
     permissions:
       contents: read
+      # The called workflow declares a main/manual-only publish job requiring
+      # package write permission. Its pull_request condition still skips that
+      # job; this ceiling is required for reusable-workflow validation.
       packages: write
 
   # ── 5. The one required PR context ─────────────────────────────────────────
@@ -1589,6 +1611,9 @@ jobs:
       - deployment-config
       - docker-build-validation
       - growth-os
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

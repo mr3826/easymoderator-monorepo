@@ -20,7 +20,17 @@ on:
     branches: [main]
     paths:
       - "EasyMod-growth/**"
+      - "EasyMod-extension/**"
+      - "EasyMod-backend/src/modules/growth-os/**"
+      - "EasyMod-backend/src/modules/entities.js"
+      # Auth sign-in/refresh and activation tracking are exercised by the
+      # browser gate (internal users, onboarding -> activation).
+      - "EasyMod-backend/src/modules/auth/auth.service.js"
+      - "EasyMod-backend/src/modules/auth/totp.controller.js"
+      - "EasyMod-backend/src/modules/analytics/growth-metrics.service.js"
       - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
+      - "EasyMod-backend/src/scripts/grant-growth-role.js"
+      - "EasyMod-backend/scripts/import-growth-prospects.js"
       # The browser gate runs the migration chain against its disposable
       # PostgreSQL before seeding fixtures, so a migration change can break it
       # without touching a single Growth file.
@@ -28,6 +38,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/run-growth-e2e.js"
+      - "Caddyfile"
+      - "docker-compose.prod.yml"
       - "docker-compose.test.yml"
       - ".github/workflows/growth-os.yml"
   # No pull_request trigger. A workflow-level paths filter means the workflow
@@ -81,6 +93,12 @@ jobs:
       # — the Dockerfile copies it into an isolated build stage with no root.
       - name: Install workspace dependencies
         run: npm ci
+
+      - name: Browser extension source validation
+        run: npm run validate:extension
+
+      - name: Browser extension tests
+        run: npm run test:extension
 
       # tsc --noEmit. The old JSX app's "test" was an alias for its build, which
       # proved nothing the build step below did not already prove.

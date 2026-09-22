@@ -86,6 +86,7 @@ describe('Growth OS prospect lifecycle', () => {
     mockAuditCreate.mockResolvedValue({ id: 'audit-1' });
     mockRepository.getModels.mockReturnValue({
       GrowthOsProspectEvent: { create: mockEventCreate },
+      Shop: { findByPk: jest.fn().mockResolvedValue(null) },
     });
     mockRepository.findDuplicateProspects.mockResolvedValue([]);
     mockRepository.findConflict.mockResolvedValue(null);
@@ -148,6 +149,37 @@ describe('Growth OS prospect lifecycle', () => {
     });
   });
 
+  it('keeps onboarding activation and its audit in one transaction', async () => {
+    const row = makeProspect({ status: 'qualified', linked_shop_id: 'shop-1' });
+    const shop = {
+      is_active: true,
+      settings: { first_ai_reply: { occurred_at: '2026-09-15T00:00:00.000Z' } },
+    };
+    mockRepository.findProspectById.mockResolvedValue(row);
+    mockRepository.getModels.mockReturnValue({
+      GrowthOsProspectEvent: { create: mockEventCreate },
+      Shop: { findByPk: jest.fn().mockResolvedValue(shop) },
+    });
+    mockAuditCreate
+      .mockResolvedValueOnce({ id: 'audit-onboarding' })
+      .mockRejectedValueOnce(new Error('audit database unavailable'));
+
+    await expect(prospectService.transition({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      prospectId: row.id,
+      status: 'onboarding',
+      reason: 'Verified onboarding handoff',
+    })).rejects.toMatchObject({
+      status: 503,
+      code: 'GROWTH_OS_PROSPECT_UNAVAILABLE',
+    });
+    expect(row.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'converted' }), {
+      transaction: mockTransaction,
+    });
+    expect(mockAuditCreate).toHaveBeenCalledTimes(2);
+  });
+
   it('requires a reason to disqualify and preserves it in the transition event', async () => {
     const row = makeProspect({ status: 'qualified' });
     mockRepository.findProspectById.mockResolvedValue(row);
@@ -208,21 +240,6 @@ describe('Growth OS prospect lifecycle', () => {
       disqualifiedReason: null,
     });
     expect(row.disqualified_reason).toBeNull();
-  });
-
-  it('derives next-phase eligibility only for qualified owned records with a channel', () => {
-    const base = makeProspect({ status: 'qualified', owner_user_id: 'owner-1' });
-    expect(prospectService.toApiProspect(base, { redacted: false }).eligibleForNextPhase).toBe(true);
-
-    for (const overrides of [
-      { status: 'new' },
-      { owner_user_id: null },
-      { normalized_phone: null, normalized_email: null, normalized_page: null },
-      { status: 'merged', merged_into_id: 'target-1' },
-    ]) {
-      expect(prospectService.toApiProspect(makeProspect({ ...base, ...overrides }), { redacted: false })
-        .eligibleForNextPhase).toBe(false);
-    }
   });
 
   it('redacts notes, metadata, event reasons, and event metadata in source scope', async () => {

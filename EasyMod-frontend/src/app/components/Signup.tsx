@@ -95,7 +95,6 @@ export default function Signup() {
         phone: data.phone.trim(),
         accepted_terms: true,
       });
-       trackFunnelEvent("signup_completed", { selected_plan: "SHURU" }, { onceKey: "signup_completed" });
 
       navigate("/dashboard");
     } catch (err: any) {

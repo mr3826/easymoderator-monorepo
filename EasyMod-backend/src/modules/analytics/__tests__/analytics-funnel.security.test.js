@@ -20,6 +20,7 @@ jest.mock('../../../utils/database/database-setup', () => ({
 jest.mock('../../entities', () => ({ AuditLog: { create: jest.fn() } }));
 jest.mock('../funnel-events.service', () => ({
     ALLOWED_FUNNEL_EVENTS: new Set(['landing_view', 'signup_started']),
+    PUBLIC_FUNNEL_EVENTS: new Set(['landing_view', 'signup_started']),
     recordFunnelEvent: mockRecordFunnelEvent,
 }));
 
