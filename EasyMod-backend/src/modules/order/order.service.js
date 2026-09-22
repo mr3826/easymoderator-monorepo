@@ -1508,7 +1508,14 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
             throw claimError;
         }
         if (claim.state === 'committed') {
-            const committedResult = synthesizeCourierResult(order, resolution.provider, dispatchRecord);
+            // The claim is now scoped to (shop_id, order_id) only, so this
+            // branch can be reached by a request for a DIFFERENT provider than
+            // the one that actually committed. Report the record's own
+            // provider — the courier that really booked the parcel — not the
+            // just-attempted resolution.provider, or persistDeliveryResult
+            // below would overwrite order.delivery_provider with a courier
+            // that never touched this order.
+            const committedResult = synthesizeCourierResult(order, dispatchRecord?.provider || resolution.provider, dispatchRecord);
             await persistDeliveryResult(order, committedResult);
             return committedResult;
         }

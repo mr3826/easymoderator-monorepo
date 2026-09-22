@@ -98,8 +98,12 @@ describe('canonical courier booking', () => {
 
         expect(deliveryService.resolveAiDefaultProvider).toHaveBeenCalledWith('shop-1');
         expect(mockCourierDispatch.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({
-            where: { shop_id: 'shop-1', order_id: 'order-1', provider: 'pathao' },
-            defaults: expect.objectContaining({ status: 'PENDING' }),
+            // Scoped to (shop_id, order_id) only — one active dispatch claim
+            // per order, regardless of provider. Provider is stored data now,
+            // not part of the claim's identity (see
+            // courier-dispatch-claim.service.js).
+            where: { shop_id: 'shop-1', order_id: 'order-1' },
+            defaults: expect.objectContaining({ provider: 'pathao', status: 'PENDING' }),
         }));
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledWith(
             'shop-1',
