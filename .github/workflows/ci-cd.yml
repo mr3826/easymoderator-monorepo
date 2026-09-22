@@ -764,9 +764,6 @@ jobs:
       github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
-    permissions:
-      contents: read
-      packages: write
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
       frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
