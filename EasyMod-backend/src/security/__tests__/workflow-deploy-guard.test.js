@@ -350,7 +350,7 @@ describe('production workflow branch safety', () => {
             'END { exit (broad || (db && uploads)) ? 0 : 1 }',
         );
         expect(backupWorkflow).toContain(
-            'Spaces lifecycle retention policy verified',
+            'Off-site lifecycle retention policy verified',
         );
     });
 
