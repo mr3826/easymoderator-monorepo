@@ -91,9 +91,12 @@ class ChannelProvider {
      *
      * @param {object} params
      * @param {string} params.userToken - Long-lived user access token
+     * @param {Record<string, {pageId: string, token: string, expiresAt: Date|null}>} [params.pageCredentials]
+     *   Server-only sink for credentials obtained during discovery. Implementations
+     *   must never include these credentials in the returned asset metadata.
      * @returns {Promise<Array<{ id: string, name: string, pictureUrl: string|null, [extra]: any }>>}
      */
-    async listManagedAssets({ userToken }) {
+    async listManagedAssets({ userToken, pageCredentials }) {
         throw new Error('not_implemented');
     }
 

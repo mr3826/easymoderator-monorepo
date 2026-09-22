@@ -142,6 +142,18 @@ function hasNonEmptyAccessToken(page) {
     return typeof page?.access_token === 'string' && page.access_token.trim().length > 0;
 }
 
+function retainPageCredential(pageCredentials, page) {
+    if (!pageCredentials || typeof pageCredentials !== 'object') return;
+    if (page?.id === null || page?.id === undefined || !hasNonEmptyAccessToken(page)) return;
+
+    const pageId = String(page.id);
+    pageCredentials[pageId] = {
+        pageId,
+        token: page.access_token,
+        expiresAt: null,
+    };
+}
+
 /**
  * Follow Graph cursors without reusing Meta's `paging.next` URL. Meta embeds
  * the user token in that URL, and using it would also drop the signed params
@@ -190,7 +202,7 @@ async function mapWithConcurrency(values, concurrency, mapper) {
     return results;
 }
 
-async function hydratePageById(pageId, userToken) {
+async function hydratePageById(pageId, userToken, pageCredentials) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
@@ -208,6 +220,7 @@ async function hydratePageById(pageId, userToken) {
             logger.warn('metaPageHydrationRejected', { pageId, reason: 'ACCESS_TOKEN_MISSING' });
             return { page: null, status: 'rejected' };
         }
+        retainPageCredential(pageCredentials, page);
         return { page, status: 'succeeded' };
     } catch (err) {
         // Never serialize the Graph error or request config: either can contain
@@ -321,7 +334,7 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    async listManagedAssets({ userToken }) {
+    async listManagedAssets({ userToken, pageCredentials }) {
         // The pages granted for Messenger are the authorization boundary. This
         // must run even when /me/accounts is empty so a Business Portfolio Page
         // can be recovered through its exact granted target ID.
@@ -358,6 +371,7 @@ class MetaMessengerProvider extends ChannelProvider {
             .filter((pageId) => !hasNonEmptyAccessToken(meAccountsById.get(pageId)));
         for (const [pageId, page] of meAccountsById) {
             if (selectedPageIds.has(pageId) && hasNonEmptyAccessToken(page)) {
+                retainPageCredential(pageCredentials, page);
                 pagesById.set(pageId, { ...page, source: 'ME_ACCOUNTS' });
             }
         }
@@ -365,7 +379,7 @@ class MetaMessengerProvider extends ChannelProvider {
         const hydrationResults = await mapWithConcurrency(
             targetsNeedingHydration,
             PAGE_HYDRATION_CONCURRENCY,
-            (pageId) => hydratePageById(pageId, userToken),
+            (pageId) => hydratePageById(pageId, userToken, pageCredentials),
         );
         const hydrationStats = {
             attempted: targetsNeedingHydration.length,
@@ -474,6 +488,9 @@ class MetaMessengerProvider extends ChannelProvider {
         return { appScopedUserId, pageScopedIdentities };
     }
 
+    // Retained for the provider contract's legacy direct-node callers. The
+    // approved OAuth connection path must use the credential captured during
+    // /me/accounts discovery instead of invoking this permission-gated edge.
     async getAssetAccessToken({ assetId, userToken }) {
         try {
             const resp = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(assetId)}`, {
