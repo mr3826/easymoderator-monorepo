@@ -724,11 +724,11 @@ infrastructure, registry state, or external service. The Growth image
 publication and prior CI receipts are recorded evidence, not actions performed
 by this document.
 
-## Platform audit reconciliation (2026-09-21)
+## Historical platform audit reconciliation (2026-09-21)
 
-The dated determination above remains historical. Current platform evidence is:
+The dated determination and the evidence below are historical to the audit date:
 
-- `origin/main` is `cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4`; the recorded
+- `origin/main` was `cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4`; the recorded
   `cf634fab...` current-main value is stale.
 - The current repository still contains the Growth backend/frontend surface and
   the separate path-filtered `growth-os.yml` pipeline. It is not part of the
@@ -743,3 +743,10 @@ The dated determination above remains historical. Current platform evidence is:
 - The release disposition remains `CONDITIONAL / NO-GO` until the three live
   Growth acts named in the historical determination have receipts from the
   current deployment.
+
+## Post-reconciliation state (2026-09-23)
+
+- `origin/main` is now `45f651927aae21db5aea9de62c675cbb6f8e5bbb` after PR #127
+  was validated and merged.
+- The production receipt remains the earlier `cf57db1e...` deployment; the merge
+  did not itself deploy or alter production.
