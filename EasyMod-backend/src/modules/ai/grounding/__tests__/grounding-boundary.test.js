@@ -146,6 +146,50 @@ describe('nonexistent product', () => {
         expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
     });
 
+    test('a related-product price from another shop is rejected at the final gate', () => {
+        const evidence = {
+            ...grounding.emptyEvidence(SHOP),
+            productStatus: grounding.ProductEvidenceStatus.NOT_FOUND,
+            relatedProducts: [{
+                id: 'other-shop-product',
+                shopId: OTHER_SHOP,
+                facts: { price: { state: grounding.FactState.KNOWN, value: 690 } },
+            }],
+        };
+
+        const verdict = grounding.evaluateCandidate({
+            candidate: 'The alternative costs 690 taka.',
+            evidence,
+            language: 'mixed',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.text).not.toContain('690');
+    });
+
+    test('a wrong price for a same-shop related product is rejected', () => {
+        const evidence = {
+            ...grounding.emptyEvidence(SHOP),
+            productStatus: grounding.ProductEvidenceStatus.NOT_FOUND,
+            relatedProducts: [{
+                id: 'related-product',
+                shopId: SHOP,
+                facts: { price: { state: grounding.FactState.KNOWN, value: 690 } },
+            }],
+        };
+
+        const verdict = grounding.evaluateCandidate({
+            candidate: 'The alternative costs 999 taka.',
+            evidence,
+            language: 'mixed',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.text).not.toContain('999');
+    });
+
     test('a fabricated price for an absent product is rejected at the gate', async () => {
         productSearch.searchByAttributes.mockResolvedValue([]);
         const result = await routeMessage('chiffon saree ache?');
