@@ -633,6 +633,45 @@ describe('MetaMessengerProvider', () => {
             });
         });
 
+        test('preserves acknowledged text when a later attachment call fails', async () => {
+            axios.post
+                .mockResolvedValueOnce({ data: { message_id: 'mid_text_partial' } })
+                .mockRejectedValueOnce({
+                    response: {
+                        status: 400,
+                        data: {
+                            error: {
+                                code: 100,
+                                error_subcode: 2018001,
+                                type: 'OAuthException',
+                                message: 'Attachment URL could not be fetched',
+                            },
+                        },
+                    },
+                });
+
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_PARTIAL',
+                normalizedMessage: {
+                    text: 'Photo attached',
+                    attachments: [{ type: 'image', url: 'https://cdn.example.com/broken.jpg' }],
+                },
+                decision,
+            })).rejects.toMatchObject({
+                providerMessageIds: ['mid_text_partial'],
+                providerComponents: [
+                    expect.objectContaining({ type: 'text', status: 'ACKNOWLEDGED', providerMessageId: 'mid_text_partial' }),
+                    expect.objectContaining({ type: 'image', status: 'FAILED', attempted: true }),
+                ],
+                providerFailure: expect.objectContaining({
+                    metaCode: 100,
+                    metaSubcode: 2018001,
+                }),
+            });
+            expect(axios.post).toHaveBeenCalledTimes(2);
+        });
+
         test('fails closed when Meta accepts a request without returning a message ID', async () => {
             axios.post.mockResolvedValueOnce({ data: {} });
 
