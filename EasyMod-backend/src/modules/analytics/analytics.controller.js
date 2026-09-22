@@ -1,7 +1,7 @@
 const { validationResult } = require('express-validator');
 const KnowledgeGap = require('./knowledge-gap.entity');
 const enhancedAnalyticsService = require('./analytics-enhanced.service');
-const { recordFunnelEvent, ALLOWED_FUNNEL_EVENTS } = require('./funnel-events.service');
+const { recordFunnelEvent, ALLOWED_FUNNEL_EVENTS, PUBLIC_FUNNEL_EVENTS } = require('./funnel-events.service');
 const { AuditLog } = require('../entities');
 const { sequelize } = require('../../utils/database/database-setup');
 
@@ -24,21 +24,29 @@ class AnalyticsController {
                 });
             }
 
-            const { event, metadata = {} } = req.body || {};
+            const { event, metadata = {}, correlationId = null } = req.body || {};
             if (!ALLOWED_FUNNEL_EVENTS.has(event)) {
                 return res.status(400).json({
                     success: false,
                     error: { code: 'INVALID_FUNNEL_EVENT', message: 'Unsupported funnel event.' }
                 });
             }
+            if (!PUBLIC_FUNNEL_EVENTS.has(event)) {
+                return res.status(403).json({
+                    success: false,
+                    error: { code: 'FUNNEL_EVENT_SERVER_ONLY', message: 'Internal lifecycle milestones are recorded by the server.' },
+                });
+            }
 
             const row = await recordFunnelEvent({
                 event,
-                userId: req.user?.userId || null,
-                shopId: req.user?.shopId || null,
+                // Public marketing events cannot claim an internal actor or tenant.
+                userId: null,
+                shopId: null,
                 metadata,
                 req,
                 onceKey: req.get('idempotency-key') || req.get('x-idempotency-key') || null,
+                correlationId,
             });
 
             res.status(200).json({ success: true, data: { id: row.id } });

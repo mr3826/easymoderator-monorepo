@@ -4,7 +4,8 @@ const fs = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
 
-process.env.EASYMOD_UPLOAD_ROOT = path.resolve(__dirname, '../../../../.attachment-integration-uploads');
+const uploadRoot = path.resolve(__dirname, '../../../../.attachment-integration-uploads');
+process.env.EASYMOD_UPLOAD_ROOT = uploadRoot;
 process.env.PUBLIC_BASE_URL = 'https://assets.test.invalid';
 
 const { sequelize } = require('../../../utils/database/database-setup');
@@ -116,7 +117,7 @@ describe('durable conversation attachment projection on PostgreSQL', () => {
         await sequelize.query('DELETE FROM public.tenants WHERE id = :tenantId', {
             replacements: { tenantId: ids.tenant },
         });
-        await fs.rm(path.dirname(absolutePathForKey(storageKey)), { recursive: true, force: true });
+        await fs.rm(uploadRoot, { recursive: true, force: true });
     });
 
     test('reload returns a fresh URL while leaving the message row byte-identical', async () => {
@@ -126,8 +127,10 @@ describe('durable conversation attachment projection on PostgreSQL', () => {
         );
         const before = JSON.stringify(beforeRows[0].metadata);
 
+        const beforeExpiry = Math.floor(Date.now() / 1000) + 15 * 60;
         const result = await conversationService.getMessages(ids.conversation, ids.shop);
         const projected = result.messages.find((message) => message.id === ids.message);
+        const afterExpiry = Math.floor(Date.now() / 1000) + 15 * 60;
         const [afterRows] = await sequelize.query(
             'SELECT metadata FROM public.messages WHERE id = :messageId',
             { replacements: { messageId: ids.message } },
@@ -136,9 +139,9 @@ describe('durable conversation attachment projection on PostgreSQL', () => {
         expect(projected.metadata.attachment_storage_key).toBe(storageKey);
         expect(projected.metadata.attachment_available).toBe(true);
         expect(projected.metadata.image_url).not.toBe(originalMetadata.image_url);
-        expect(new URL(projected.metadata.image_url).searchParams.get('expires')).toBe(
-            String(Math.floor(Date.now() / 1000) + 15 * 60),
-        );
+        const expires = Number(new URL(projected.metadata.image_url).searchParams.get('expires'));
+        expect(expires).toBeGreaterThanOrEqual(beforeExpiry);
+        expect(expires).toBeLessThanOrEqual(afterExpiry);
         expect(JSON.stringify(afterRows[0].metadata)).toBe(before);
     });
 });

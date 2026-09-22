@@ -19,6 +19,7 @@ const {
   canManageAll,
   canRead,
 } = require('./growth-os.prospect.scope');
+const { redactSecretiveValues, redactSensitiveUrl } = require('./growth-os.audit-sanitizer');
 
 const logger = createLogger('GrowthOsProspectService');
 
@@ -232,6 +233,7 @@ function buildCreateValues(data = {}, { actorUserId = null, internal = false } =
   if (internal && data.source_recorded_at !== undefined && data.source_recorded_at !== null) {
     values.source_recorded_at = dateValue(data.source_recorded_at, 'sourceRecordedAt');
   }
+  if (values.page_url !== undefined) values.page_url = redactSensitiveUrl(values.page_url);
 
   const identity = assertIdentity(values);
   assertLifecycleValues({ ...values, ...identity });
@@ -267,6 +269,7 @@ function buildUpdateValues(current, data = {}) {
   assertStringLength(values.source_detail, 'sourceDetail', 160);
   assertStringLength(values.source_reference, 'sourceReference', 255);
   if (hasField(data, 'metadata')) values.metadata = assertMetadata(values.metadata);
+  if (values.page_url !== undefined) values.page_url = redactSensitiveUrl(values.page_url);
 
   const nextValues = {
     ...current,
@@ -289,6 +292,30 @@ function plain(record) {
   return typeof record?.toJSON === 'function' ? record.toJSON() : { ...record };
 }
 
+const AUDIT_SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp)/i;
+const AUDIT_URL_KEY = /(?:page[_-]?url|source[_-]?url|redirect[_-]?uri|callback[_-]?url)/i;
+
+function sanitizeAuditValue(value, depth = 0) {
+  if (depth > 8) return '[redacted]';
+  if (typeof value === 'string') {
+    const redacted = redactSecretiveValues(value);
+    return redacted.length > 2000 ? `${redacted.slice(0, 2000)}…` : redacted;
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeAuditValue(item, depth + 1));
+  if (value && typeof value === 'object') {
+    const sanitized = {};
+    for (const [key, child] of Object.entries(value)) {
+      sanitized[key] = AUDIT_URL_KEY.test(key)
+        ? redactSensitiveUrl(child)
+        : AUDIT_SENSITIVE_KEY.test(key)
+          ? '[redacted]'
+          : sanitizeAuditValue(child, depth + 1);
+    }
+    return sanitized;
+  }
+  return value;
+}
+
 function auditSnapshot(record) {
   if (!record) return null;
   const data = plain(record);
@@ -300,20 +327,19 @@ function auditSnapshot(record) {
   delete data.assignedBy;
   delete data.linkedUser;
   delete data.linkedShop;
-  return data;
+  return sanitizeAuditValue(data);
 }
 
 function toApiProspect(record, scope) {
   const data = plain(record);
   const redacted = scope?.redacted === true;
-  const anyChannel = Boolean(data.normalized_phone || data.normalized_email || data.normalized_page);
   const response = {
     id: data.id,
     businessName: data.business_name,
     contactName: redacted ? null : data.contact_name,
     contactPhone: redacted ? null : data.contact_phone,
     contactEmail: redacted ? null : data.contact_email,
-    pageUrl: redacted ? null : data.page_url,
+    pageUrl: redacted ? null : redactSensitiveUrl(data.page_url),
     niche: data.niche,
     notes: redacted ? null : data.notes,
     source: data.source,
@@ -335,12 +361,6 @@ function toApiProspect(record, scope) {
     metadata: redacted ? null : (data.metadata || {}),
     createdAt: data.created_at,
     updatedAt: data.updated_at,
-    eligibleForNextPhase: Boolean(
-      data.status === 'qualified'
-      && data.status !== 'merged'
-      && data.owner_user_id
-      && anyChannel,
-    ),
   };
   if (redacted) response.redacted = true;
   return response;
@@ -403,9 +423,9 @@ async function writeProspectEvent({
       event_type: eventType,
       from_value: fromValue || null,
       to_value: toValue || null,
-      reason: reason || null,
+      reason: redactSecretiveValues(reason || null),
       changed_fields: changedFields,
-      metadata,
+      metadata: redactSecretiveValues(metadata),
     }, { transaction });
   } catch (_error) {
     logServiceError('Growth OS prospect event write failed', _error, {
@@ -434,9 +454,9 @@ async function writeAudit({
       action,
       resource_type: 'growth_os_prospect',
       resource_id: prospectId,
-      old_values: oldValues,
-      new_values: newValues,
-      metadata: { source: 'growth_os_prospect', ...metadata },
+      old_values: sanitizeAuditValue(oldValues),
+      new_values: sanitizeAuditValue(newValues),
+      metadata: sanitizeAuditValue({ source: 'growth_os_prospect', ...metadata }),
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
     }, { transaction });
@@ -625,7 +645,7 @@ class GrowthOsProspectService {
     return { data: toApiProspect(result.prospect, scope), created: result.created };
   }
 
-  async createImported({ data, source, sourceReference, dryRun = true }) {
+  async createImported({ data, source, sourceReference, dryRun = true, runId = null, reservations = null }) {
     const payload = {
       ...data,
       source,
@@ -638,6 +658,22 @@ class GrowthOsProspectService {
       normalized_email: values.normalized_email,
       normalized_page: values.normalized_page,
     };
+    const reservationKeys = [
+      identity.normalized_phone ? `phone:${identity.normalized_phone}` : null,
+      identity.normalized_email ? `email:${identity.normalized_email}` : null,
+      identity.normalized_page ? `page:${identity.normalized_page}` : null,
+    ].filter(Boolean);
+    const sourceReservations = reservations?.sourceReferences;
+    const identityReservations = reservations?.identityKeys;
+    if (dryRun && (sourceReservations?.has(sourceReference)
+      || reservationKeys.some((key) => identityReservations?.has(key)))) {
+      return {
+        created: false,
+        skippedDuplicate: true,
+        conflictingProspectId: null,
+        dryRun: true,
+      };
+    }
     const existing = await runWithDatabaseProtection(() => repository.findBySourceReference(
       values.source,
       values.source_reference,
@@ -659,8 +695,24 @@ class GrowthOsProspectService {
         dryRun,
       };
     }
-    if (dryRun) return { created: false, wouldCreate: true, skippedDuplicate: false, dryRun: true };
-    const result = await this._create({ data: payload, internal: true, importMode: true });
+    if (dryRun) {
+      sourceReservations?.add(sourceReference);
+      for (const key of reservationKeys) identityReservations?.add(key);
+      return { created: false, wouldCreate: true, skippedDuplicate: false, dryRun: true };
+    }
+    const result = await this._create({
+      data: payload,
+      internal: true,
+      importMode: true,
+      audit: {
+        metadata: {
+          source: values.source,
+          source_reference: values.source_reference,
+          import_run_id: runId,
+          importer: 'growth-prospect-import',
+        },
+      },
+    });
     return {
       created: result.created,
       skippedDuplicate: result.skippedDuplicate,
@@ -845,7 +897,7 @@ class GrowthOsProspectService {
     const scope = assertReadScope(access, userId);
     if (!isProspectStatus(status)) throw invalidInput('status is invalid.');
     const db = getSequelize();
-    return runWithDatabaseProtection(() => db.transaction(async (transaction) => {
+    const result = await runWithDatabaseProtection(() => db.transaction(async (transaction) => {
       const prospect = await repository.findProspectById(prospectId, {
         scope,
         transaction,
@@ -869,6 +921,12 @@ class GrowthOsProspectService {
       if (status === 'converted' && !prospect.linked_shop_id) {
         throw invalidInput('converted prospects require linkedShopId.');
       }
+      if (status === 'onboarding' && !prospect.linked_shop_id) {
+        throw invalidInput('onboarding prospects require a linked shop first.');
+      }
+      if (prospect.status === 'onboarding' && status === 'qualified' && !normalizedReason) {
+        throw invalidInput('A reason is required to return a prospect from onboarding.');
+      }
       const oldValues = auditSnapshot(prospect);
       await prospect.update({
         status,
@@ -889,8 +947,38 @@ class GrowthOsProspectService {
         newValues: auditSnapshot(prospect),
         ...mutationAudit(audit),
       }, transaction);
+      if (status === 'onboarding' && prospect.linked_shop_id) {
+        const { Shop } = repository.getModels();
+        const shop = await Shop.findByPk(prospect.linked_shop_id, {
+          attributes: ['settings', 'is_active'],
+          transaction,
+          lock: transaction.LOCK?.UPDATE,
+        });
+        if (shop?.is_active === true && shop.settings?.first_ai_reply?.occurred_at) {
+          const activationOldValues = auditSnapshot(prospect);
+          await prospect.update({
+            status: 'converted',
+            status_changed_at: new Date(),
+          }, { transaction });
+          await recordMutation({
+            prospectId: prospect.id,
+            actorUserId: userId,
+            eventType: 'activated',
+            fromValue: activationOldValues.status,
+            toValue: 'converted',
+            reason: 'first_successful_ai_reply',
+            changedFields: ['status', 'status_changed_at'],
+            metadata: { shop_id: prospect.linked_shop_id },
+            action: 'growth_os:prospect_activated',
+            oldValues: activationOldValues,
+            newValues: auditSnapshot(prospect),
+            ...mutationAudit(audit),
+          }, transaction);
+        }
+      }
       return toApiProspect(prospect, scope);
     }));
+    return result;
   }
 
   async link({ userId, access, prospectId, shopId, linkedUserId, reason, audit = {} }) {
@@ -1090,6 +1178,59 @@ class GrowthOsProspectService {
         throw error;
       }
     });
+  }
+
+  /**
+   * Complete canonical activation for prospects linked to a shop after its
+   * first successful AI reply. An external transaction keeps the shop
+   * milestone, prospect transition, and audit row atomic.
+   */
+  async markLinkedShopsActivated({ shopId, conversationId = null, actorUserId = null, transaction: externalTransaction = null } = {}) {
+    if (!shopId) return { activated: 0 };
+    const db = getSequelize();
+    const { GrowthOsProspect, Shop } = repository.getModels();
+    const activate = async (transaction) => {
+      const inOnboarding = await GrowthOsProspect.findAll({
+        attributes: ['id', 'status'],
+        where: { linked_shop_id: shopId, status: 'onboarding' },
+        include: [{ model: Shop, as: 'linkedShop', required: true, attributes: ['is_active', 'settings'], where: { is_active: true } }],
+        transaction,
+      });
+      let activated = 0;
+      for (const candidate of inOnboarding) {
+        if (!candidate.linkedShop?.settings?.first_ai_reply?.occurred_at) continue;
+        const prospect = await repository.findProspectById(candidate.id, {
+          scope: null,
+          transaction,
+          lock: true,
+          include: false,
+        });
+        if (!prospect || prospect.status !== 'onboarding') return;
+        if (!canTransition(prospect.status, 'converted')) return;
+        const oldValues = auditSnapshot(prospect);
+        await prospect.update({
+          status: 'converted',
+          status_changed_at: new Date(),
+        }, { transaction });
+        await recordMutation({
+          prospectId: prospect.id,
+          actorUserId,
+          eventType: 'activated',
+          fromValue: oldValues.status,
+          toValue: 'converted',
+          reason: 'first_successful_ai_reply',
+          changedFields: ['status', 'status_changed_at'],
+          metadata: { shop_id: shopId, conversation_id: conversationId },
+          action: 'growth_os:prospect_activated',
+          oldValues,
+          newValues: auditSnapshot(prospect),
+        }, transaction);
+        activated += 1;
+      }
+      return { activated };
+    };
+    if (externalTransaction) return activate(externalTransaction);
+    return runWithDatabaseProtection(() => db.transaction(activate), { operation: 'activation_transition' });
   }
 }
 

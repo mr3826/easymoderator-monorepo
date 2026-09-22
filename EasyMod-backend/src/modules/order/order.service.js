@@ -398,10 +398,11 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
         await trackOrderUsage(order, shopId, requestId, logger);
         try {
             require('../analytics/funnel-events.service')
-                .recordFunnelEvent({
+                .recordInternalFunnelEvent({
                     event: 'first_order_captured',
                     shopId,
                     onceKey: shopId,
+                    oncePerEntity: true,
                     metadata: {
                         order_id: order.id,
                         channel: order.channel || null,

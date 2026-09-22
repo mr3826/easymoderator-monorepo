@@ -23,6 +23,7 @@ const signup = async (req, res, next) => {
 
         const { accessToken, refreshToken, ...safeResult } = result;
 
+        res.set('Cache-Control', 'no-store');
         res.status(201).json({
             success: true,
             message: 'User registered successfully',
@@ -53,6 +54,7 @@ const signin = async (req, res, next) => {
 
         const { accessToken, refreshToken, ...safeResult } = result;
 
+        res.set('Cache-Control', 'no-store');
         res.status(200).json({
             success: true,
             message: 'Login successful',
@@ -98,6 +100,7 @@ const refresh = async (req, res, next) => {
             console.error('Failed to log token refresh audit:', auditError);
         }
 
+        res.set('Cache-Control', 'no-store');
         res.status(200).json({
             success: true,
             message: 'Access token refreshed successfully',
@@ -112,7 +115,7 @@ const refresh = async (req, res, next) => {
                 shopId: null,
                 action: 'TOKEN_REFRESH_FAILED',
                 resourceType: 'USER',
-                resourceId: null,
+                resourceId: 'unknown',
                 metadata: {
                     ip_address: req.ip,
                     user_agent: req.get('User-Agent'),
@@ -136,6 +139,7 @@ const me = async (req, res, next) => {
     try {
         const result = await authService.getAuthContext(req.user.userId, req.user.shopId);
 
+        res.set('Cache-Control', 'no-store');
         res.status(200).json({
             success: true,
             data: result
@@ -201,6 +205,24 @@ const resetPassword = async (req, res, next) => {
     }
 };
 
+/**
+ * Complete the forced password change for a temporary invite/reset session.
+ */
+const changeTemporaryPassword = async (req, res, next) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        await authService.changeTemporaryPassword(req.user.userId, currentPassword, newPassword);
+        clearAuthCookies(res, req);
+
+        res.status(200).json({
+            success: true,
+            message: 'Password changed successfully. Please sign in again.',
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     signup,
     signin,
@@ -208,5 +230,6 @@ module.exports = {
     me,
     logout,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    changeTemporaryPassword,
 };

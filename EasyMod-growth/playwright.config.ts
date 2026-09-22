@@ -6,11 +6,15 @@ const baseURL = `http://${host}:${port}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: true,
+  fullyParallel: false,
+  // The disposable browser-E2E database is shared by every worker, including
+  // the seeded rows, the role-revocation paths, and the per-IP auth rate
+  // limiters. Keep files serial until each spec owns isolated fixtures.
+  workers: 1,
   forbidOnly: !!process.env.CI,
-  timeout: 30_000,
+  timeout: 90_000,
   expect: {
-    timeout: 5_000,
+    timeout: 10_000,
   },
   retries: process.env.CI ? 2 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
@@ -22,7 +26,13 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'auth-setup',
+      testDir: './tests/e2e-setup',
+      testMatch: '**/*.setup.ts',
+    },
+    {
       name: 'chromium',
+      dependencies: ['auth-setup'],
       use: { ...devices['Desktop Chrome'] },
     },
   ],

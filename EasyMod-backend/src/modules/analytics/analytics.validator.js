@@ -38,6 +38,11 @@ const validateFunnelEvent = [
         .isString().withMessage('path must be a string')
         .bail()
         .isLength({ max: 500 }).withMessage('path must not exceed 500 characters'),
+    body('correlationId')
+        .optional({ values: 'null' })
+        .isString().withMessage('correlationId must be a string')
+        .bail()
+        .isLength({ max: 128 }).withMessage('correlationId must not exceed 128 characters'),
     idempotencyHeader('idempotency-key'),
     idempotencyHeader('x-idempotency-key'),
 ];

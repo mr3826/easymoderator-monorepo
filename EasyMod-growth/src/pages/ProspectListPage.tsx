@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Filter, Plus, RefreshCw, Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ApiError,
   growthApi,
@@ -16,8 +16,20 @@ import { usePermission } from '@/auth/usePermission';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 const PAGE_SIZE = 20;
-const initialFilters: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters {
+  const filters: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
+  const status = searchParams.get('status');
+  const source = searchParams.get('source');
+  if (status && (PROSPECT_STATUSES as readonly string[]).includes(status)) {
+    filters.status = status as ProspectStatus;
+  }
+  if (source && (PROSPECT_SOURCES as readonly string[]).includes(source)) {
+    filters.source = source as ProspectSource;
+  }
+  return filters;
+}
 
 function codeLabel(value: string) {
   return value.replace(/_/g, ' ');
@@ -30,8 +42,7 @@ function formatDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
 }
 
-function formatContact(value: string | null, redacted: boolean | undefined) {
-  if (redacted) return 'Hidden for your role';
+function formatValue(value: string | null) {
   return value || 'Not provided';
 }
 
@@ -53,10 +64,10 @@ function ProspectRow({ prospect }: { prospect: ProspectListItem }) {
           {prospect.businessName}
         </Link>
         <span className="table-subtext">
-          {formatContact(prospect.contactName, prospect.redacted)}
+          {formatValue(prospect.contactName)}
         </span>
       </th>
-      <td>{formatContact(prospect.contactPhone, prospect.redacted)}</td>
+      <td>{formatValue(prospect.contactPhone)}</td>
       <td>
         <span className="source-code">{codeLabel(prospect.source)}</span>
         {prospect.sourceDetail ? <span className="table-subtext">{prospect.sourceDetail}</span> : null}
@@ -69,9 +80,6 @@ function ProspectRow({ prospect }: { prospect: ProspectListItem }) {
       </td>
       <td>{prospect.linkedShopId || prospect.linkedUserId ? 'Linked' : 'Not linked'}</td>
       <td>
-        <span className={prospect.eligibleForNextPhase ? 'eligible-yes' : 'eligible-no'}>
-          {prospect.eligibleForNextPhase ? 'Eligible' : 'Not eligible'}
-        </span>
         <span className="table-subtext">Created {formatDate(prospect.createdAt)}</span>
       </td>
     </tr>
@@ -87,8 +95,10 @@ function LoadingRows() {
 }
 
 export function ProspectListPage() {
-  const [filters, setFilters] = useState<ProspectListFilters>(initialFilters);
-  const [draftFilters, setDraftFilters] = useState<ProspectListFilters>(initialFilters);
+  const [searchParams] = useSearchParams();
+  const [initialState] = useState(() => makeInitialFilters(searchParams));
+  const [filters, setFilters] = useState<ProspectListFilters>(initialState);
+  const [draftFilters, setDraftFilters] = useState<ProspectListFilters>(initialState);
   const [result, setResult] = useState<ProspectListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,8 +139,8 @@ export function ProspectListPage() {
   }
 
   function resetFilters() {
-    setDraftFilters(initialFilters);
-    setFilters(initialFilters);
+    setDraftFilters(initialState);
+    setFilters(initialState);
     setFilterValidationError(null);
   }
 
@@ -291,7 +301,7 @@ export function ProspectListPage() {
                     <th scope="col">Owner</th>
                     <th scope="col">Status</th>
                     <th scope="col">Linkage</th>
-                    <th scope="col">Next phase</th>
+                    <th scope="col">Created</th>
                   </tr>
                 </thead>
                 <tbody>{result.items.map((prospect) => <ProspectRow key={prospect.id} prospect={prospect} />)}</tbody>

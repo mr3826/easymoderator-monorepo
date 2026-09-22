@@ -12,8 +12,27 @@ const emailService = require('../../utils/email.service');
 const { passwordResetEmail } = require('../../utils/email-templates/password-reset');
 const cacheService = require('../../utils/cache.service');
 const { getOrigins, joinOrigin } = require('../../config/origins');
+const { getTemporaryPasswordState } = require('./temporary-password');
+const { invalidateUserSessions } = require('./session-invalidation.service');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
+const getTemporaryPasswordAuthData = (user) => {
+    const state = getTemporaryPasswordState(user);
+    if (state.expired) {
+        throw new AppError(
+            'Temporary password has expired. Request a new one.',
+            401,
+            'AUTH_TEMPORARY_PASSWORD_EXPIRED',
+        );
+    }
+    if (!state.required) return null;
+
+    return {
+        requiresPasswordChange: true,
+        temporaryPasswordExpiresAt: state.expiresAt.toISOString(),
+    };
+};
 
 // ── Token blacklist (Redis) ────────────────────────────────────────────
 
@@ -245,7 +264,7 @@ const createUserWithShop = async (userData) => {
 
         try {
             require('../analytics/funnel-events.service')
-                .recordFunnelEvent({
+                .recordInternalFunnelEvent({
                     event: 'signup_completed',
                     userId: user.id,
                     shopId: shop.id,
@@ -282,6 +301,33 @@ const createUserWithShop = async (userData) => {
 };
 
 /**
+ * True when the user currently holds an active Growth OS internal role.
+ * Used solely to allow shop-less sign-in/refresh for internal staff accounts.
+ * This is NOT an authorization decision: Growth API requests are still
+ * authorized per-request by the strict Growth OS middleware. Failing any
+ * lookup here returns false (deny), which only affects users who would
+ * otherwise receive the existing "no associated shops" 403.
+ */
+const getActiveGrowthOsRole = async (userId) => {
+    if (!userId) return false;
+    try {
+        const { GrowthOsUserRole } = require('../entities');
+        return await GrowthOsUserRole.findOne({
+            attributes: ['id'],
+            where: {
+                user_id: userId,
+                is_active: true,
+                revoked_at: { [Op.is]: null },
+            },
+        });
+    } catch (_error) {
+        return undefined;
+    }
+};
+
+const hasActiveGrowthOsRole = async (userId) => Boolean(await getActiveGrowthOsRole(userId));
+
+/**
  * Authenticate user (with lockout check)
  */
 const authenticateUser = async (email, password) => {
@@ -316,38 +362,53 @@ const authenticateUser = async (email, password) => {
     // Successful login — clear any failed attempt counters
     await clearFailedLogins(email);
 
+    const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
+    if (activeGrowthOsRole === undefined) {
+        throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+    }
+    const isGrowthOsUser = Boolean(activeGrowthOsRole);
+    const temporaryPasswordAuthData = getTemporaryPasswordAuthData(user);
+
     // 2FA check — if enabled, return a short-lived temp token instead of full JWT
     if (user.settings?.totp_enabled) {
         const { saveTempToken } = require('./totp.service');
         const tempToken = crypto.randomBytes(32).toString('hex');
-        await saveTempToken(user.id, tempToken);
-        return { requires2fa: true, tempToken };
+        await saveTempToken(user.id, tempToken, user.token_version);
+        return {
+            requires2fa: true,
+            tempToken,
+            ...(temporaryPasswordAuthData || {}),
+        };
     }
 
-    // Check if user has any shops
-    if (!user.shops || user.shops.length === 0) {
+    // Determine which shop to log into. Users with no active shop membership
+    // may only obtain a session when they hold an active Growth OS internal
+    // role; the token then carries a null shopId, which every shop-scoped
+    // merchant route rejects on scope. Everyone else keeps the historical
+    // 403 behaviour unchanged.
+    if (!isGrowthOsUser && (!user.shops || user.shops.length === 0)) {
         throw new AppError('User has no associated shops', 403);
     }
 
-    // Determine which shop to log into
-    let loggedShopId;
-
     // If user has last_logged_shop_id and it's still accessible, use it
-    if (user.last_logged_shop_id) {
-        const hasAccessToLastShop = user.shops.some(shop => shop.id === user.last_logged_shop_id);
-        if (hasAccessToLastShop) {
-            loggedShopId = user.last_logged_shop_id;
+    let loggedShopId = null;
+    if (!isGrowthOsUser && user.shops && user.shops.length > 0) {
+        if (user.last_logged_shop_id) {
+            const hasAccessToLastShop = user.shops.some(shop => shop.id === user.last_logged_shop_id);
+            if (hasAccessToLastShop) {
+                loggedShopId = user.last_logged_shop_id;
+            }
         }
-    }
 
-    // Otherwise, use the first shop (or first owner shop if available)
-    if (!loggedShopId) {
-        const ownerShop = user.shops.find(shop => shop.UserShop.role === 'owner');
-        loggedShopId = ownerShop ? ownerShop.id : user.shops[0].id;
-    }
+        // Otherwise, use the first shop (or first owner shop if available)
+        if (!loggedShopId) {
+            const ownerShop = user.shops.find(shop => shop.UserShop.role === 'owner');
+            loggedShopId = ownerShop ? ownerShop.id : user.shops[0].id;
+        }
 
-    // Update last logged shop
-    await user.update({ last_logged_shop_id: loggedShopId });
+        // Update last logged shop
+        await user.update({ last_logged_shop_id: loggedShopId });
+    }
 
     // Generate tokens with shopId and token_version included
     const accessToken = generateAccessToken({
@@ -356,11 +417,23 @@ const authenticateUser = async (email, password) => {
         shopId: loggedShopId,
         tokenVersion: user.token_version,
         mfaVerified: false,
+        ...(temporaryPasswordAuthData
+            ? {
+                passwordChangeRequired: true,
+                temporaryPasswordExpiresAt: temporaryPasswordAuthData.temporaryPasswordExpiresAt,
+            }
+            : {}),
     });
     const refreshToken = generateRefreshToken({
         userId: user.id,
         tokenVersion: user.token_version,
         mfaVerified: false,
+        ...(temporaryPasswordAuthData
+            ? {
+                passwordChangeRequired: true,
+                temporaryPasswordExpiresAt: temporaryPasswordAuthData.temporaryPasswordExpiresAt,
+            }
+            : {}),
     });
 
     // Hash and save refresh token using SHA-256 (not bcrypt)
@@ -368,7 +441,9 @@ const authenticateUser = async (email, password) => {
     await user.update({ refresh_token: hashedRefreshToken });
 
     // Get the logged shop details
-    const loggedShop = user.shops.find(shop => shop.id === loggedShopId);
+    const loggedShop = loggedShopId
+        ? user.shops.find(shop => shop.id === loggedShopId)
+        : null;
 
     // Return user data without password
     const userResponse = {
@@ -379,12 +454,14 @@ const authenticateUser = async (email, password) => {
         profile_picture: user.profile_picture
     };
 
-    const currentShop = {
-        id: loggedShop.id,
-        unique_code: loggedShop.unique_code,
-        shop_name: loggedShop.shop_name,
-        role: loggedShop.UserShop.role
-    };
+    const currentShop = loggedShop
+        ? {
+            id: loggedShop.id,
+            unique_code: loggedShop.unique_code,
+            shop_name: loggedShop.shop_name,
+            role: loggedShop.UserShop.role
+        }
+        : null;
 
     return {
         user: userResponse,
@@ -396,8 +473,57 @@ const authenticateUser = async (email, password) => {
             role: shop.UserShop.role
         })),
         accessToken,
-        refreshToken
+        refreshToken,
+        ...(temporaryPasswordAuthData || {}),
     };
+};
+
+/**
+ * Complete the forced change for a temporary invite/reset password. The
+ * authenticated temporary session is the only caller allowed to reach this
+ * route; changing the password also invalidates every existing session.
+ */
+const changeTemporaryPassword = async (userId, currentPassword, newPassword) => {
+    const t = await sequelize.transaction();
+    try {
+        const user = await User.findByPk(userId, {
+            transaction: t,
+            lock: t.LOCK?.UPDATE,
+        });
+        if (!user) {
+            throw new AppError('Password change session is no longer valid.', 401, 'AUTH_PASSWORD_CHANGE_SESSION_INVALID');
+        }
+
+        const temporaryPasswordAuthData = getTemporaryPasswordAuthData(user);
+        if (!temporaryPasswordAuthData) {
+            throw new AppError(
+                'Password change is not required for this account.',
+                400,
+                'AUTH_PASSWORD_CHANGE_NOT_REQUIRED',
+            );
+        }
+
+        if (!(await comparePassword(currentPassword, user.password))) {
+            throw new AppError('Current password is incorrect.', 401, 'AUTH_INVALID_CURRENT_PASSWORD');
+        }
+        if (await comparePassword(newPassword, user.password)) {
+            throw new AppError('Choose a password different from the temporary password.', 400, 'AUTH_PASSWORD_MUST_DIFFER');
+        }
+
+        await user.update({
+            password: await hashPassword(newPassword),
+            must_change_password: false,
+            temporary_password_expires_at: null,
+        }, { transaction: t });
+
+        await invalidateUserSessions(userId, { transaction: t });
+        await t.commit();
+    } catch (error) {
+        await t.rollback();
+        throw error;
+    }
+
+    return { success: true };
 };
 
 /**
@@ -496,7 +622,9 @@ const resetPassword = async (rawToken, newPassword) => {
         await user.update({
             password: hashedPassword,
             refresh_token: null,
-            token_version: sequelize.literal('token_version + 1')
+            token_version: sequelize.literal('token_version + 1'),
+            must_change_password: false,
+            temporary_password_expires_at: null,
         }, { transaction: t });
         await t.commit();
     } catch (err) {
@@ -515,6 +643,13 @@ const resetPassword = async (rawToken, newPassword) => {
 /**
  * Validate refresh token and generate new access token
  */
+const clearStaleShopSession = async (user) => {
+    await sequelize.transaction(async (transaction) => {
+        await invalidateUserSessions(user.id, { transaction });
+        await user.update({ last_logged_shop_id: null }, { transaction });
+    });
+};
+
 const validateRefreshToken = async (refreshToken) => {
     const { verifyRefreshToken } = require('../../utils/jwt.util');
 
@@ -533,14 +668,39 @@ const validateRefreshToken = async (refreshToken) => {
             throw new AppError('Invalid refresh token', 401);
         }
 
+        // A temporary session may only be used to complete the forced change;
+        // it must never be extended through the refresh-token path.
+        if (getTemporaryPasswordState(user).required) {
+            throw new AppError('Invalid refresh token', 401);
+        }
+
         // Compare refresh token with stored hash using SHA-256 (not bcrypt - too expensive)
         const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
         if (tokenHash !== user.refresh_token) {
             throw new AppError('Invalid refresh token', 401);
         }
 
-        // Require valid shopId - reject if user has no active shop session
-        if (!user.last_logged_shop_id) {
+        const selectedShopId = user.last_logged_shop_id || null;
+
+        // Refresh tokens can outlive a UserShop deactivation. Merchant data
+        // requires an active membership; an internal Growth role is not a
+        // substitute for merchant scope. Clean stale context and credentials
+        // atomically before rejecting the refresh.
+        if (selectedShopId) {
+            const activeMembership = await UserShop.findOne({
+                attributes: ['id'],
+                where: {
+                    user_id: user.id,
+                    shop_id: selectedShopId,
+                    is_active: true,
+                },
+            });
+
+            if (!activeMembership) {
+                await clearStaleShopSession(user);
+                throw new AppError('Invalid refresh token', 401);
+            }
+        } else if (!(await hasActiveGrowthOsRole(user.id))) {
             throw new AppError('No active shop session found. Please login again.', 401);
         }
 
@@ -548,12 +708,12 @@ const validateRefreshToken = async (refreshToken) => {
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
-            shopId: user.last_logged_shop_id,
+            shopId: selectedShopId,
             tokenVersion: user.token_version,
             mfaVerified: decoded.mfaVerified === true,
         });
 
-        return { accessToken, userId: user.id, shopId: user.last_logged_shop_id };
+        return { accessToken, userId: user.id, shopId: selectedShopId };
     } catch (error) {
         throw new AppError('Invalid or expired refresh token', 401);
     }
@@ -575,7 +735,29 @@ const getAuthContext = async (userId, shopIdFromToken) => {
         }]
     });
 
-    if (!user || !user.shops || user.shops.length === 0) {
+    if (!user) throw new AppError('User has no associated shops', 403);
+
+    const userResponse = {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        phone: user.phone,
+        profile_picture: user.profile_picture,
+        // EasyModerator operator role (null for normal merchants). Read by the
+        // frontend PlatformAdminRoute guard to gate the /admin section.
+        platform_role: user.platform_role || null
+    };
+
+    // Internal Growth users intentionally have no merchant shop membership.
+    // Preserve the legacy auth shape while returning a null shop context.
+    const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
+    if (activeGrowthOsRole === undefined) {
+        throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+    }
+    if (activeGrowthOsRole) {
+        return { user: userResponse, currentShop: null, allShops: [] };
+    }
+    if (!user.shops || user.shops.length === 0) {
         throw new AppError('User has no associated shops', 403);
     }
 
@@ -590,17 +772,6 @@ const getAuthContext = async (userId, shopIdFromToken) => {
     }
 
     const currentShop = user.shops.find(shop => shop.id === resolvedShopId) || user.shops[0];
-
-    const userResponse = {
-        id: user.id,
-        email: user.email,
-        full_name: user.full_name,
-        phone: user.phone,
-        profile_picture: user.profile_picture,
-        // EasyModerator operator role (null for normal merchants). Read by the
-        // frontend PlatformAdminRoute guard to gate the /admin section.
-        platform_role: user.platform_role || null
-    };
 
     return {
         user: userResponse,
@@ -636,11 +807,16 @@ const logoutUser = async (accessToken, decoded) => {
 module.exports = {
     createUserWithShop,
     authenticateUser,
+    changeTemporaryPassword,
+    getTemporaryPasswordAuthData,
     requestPasswordReset,
     resetPassword,
     validateRefreshToken,
     getAuthContext,
     logoutUser,
     isTokenBlacklisted,
-    generateUniqueShopCode
+    generateUniqueShopCode,
+    hasActiveGrowthOsRole,
+    getActiveGrowthOsRole,
+    invalidateUserSessions
 };

@@ -2,16 +2,10 @@ import { publicApiRequest } from "@/shared/lib/http/public-client";
 
 export type FunnelEvent =
   | "landing_view"
-  | "signup_started"
-  | "signup_completed"
-  | "facebook_connect_started"
-  | "facebook_connect_succeeded"
-  | "shop_profile_completed"
-  | "first_product_added"
-  | "first_inbound_message"
-  | "first_ai_reply_sent"
-  | "first_order_captured"
-  | "first_rto_flag";
+  | "signup_started";
+
+// Privileged lifecycle milestones are recorded by trusted backend producers;
+// browser code must not be able to forge them.
 
 const SESSION_KEY = "easymod:funnel_session";
 

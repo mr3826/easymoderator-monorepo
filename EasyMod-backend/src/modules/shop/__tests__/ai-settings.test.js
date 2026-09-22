@@ -89,6 +89,7 @@ jest.mock('src/utils/structured-logger', () => ({
 // ── Inject authenticated user ──────────────────────────────────────────────
 jest.mock('src/middleware/auth.middleware', () => ({
     authenticate:            (req, res, next) => { req.user = { userId: 'user-1', shopId: 'shop-1', role: 'owner' }; next(); },
+    authenticateForPasswordChange: (req, res, next) => next(),
     checkSubscriptionStatus: (req, res, next) => next(),
 }));
 

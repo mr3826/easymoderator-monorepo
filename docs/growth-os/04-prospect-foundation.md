@@ -34,7 +34,8 @@ source-reference unique indexes without being deleted.
 The service derives normalized fields and never accepts them from the client.
 PostgreSQL partial unique indexes are the race-safe detector. The service maps a
 unique violation to `409 GROWTH_OS_PROSPECT_DUPLICATE` with the conflicting id.
-`GET /prospects/duplicate-check` is a read-only preflight and is rate limited.
+`POST /prospects/duplicate-check` is a read-only preflight and is rate limited;
+identity values stay in the request body rather than URLs or access logs.
 
 ## Lifecycle
 
@@ -47,9 +48,7 @@ any live row -> merged only through merge
 ```
 
 Merged rows are terminal. Conversion requires an existing linked shop.
-Disqualification and reopening require a reason. `eligibleForNextPhase` is
-derived when a row is shaped for the API: qualified, owned, not merged, and
-reachable through at least one channel.
+Disqualification and reopening require a reason.
 
 ## Authorization
 
@@ -75,7 +74,7 @@ All paths are under `/api/internal/growth-os`:
 | --- | --- | --- |
 | GET | `/prospects` | `read_all` or `read_assigned` or `read_source_scope` |
 | POST | `/prospects` | `manage_all` |
-| GET | `/prospects/duplicate-check` | any prospect read permission |
+| POST | `/prospects/duplicate-check` | any prospect read permission; identity fields are sent in the body |
 | GET | `/prospects/:id` | any prospect read permission |
 | PATCH | `/prospects/:id` | `manage_all` or `update_assigned` |
 | POST | `/prospects/:id/status` | `manage_all` or `update_assigned` |
@@ -92,11 +91,18 @@ available.
 ## Import
 
 `EasyMod-backend/scripts/import-growth-prospects.js` reads legacy `crm_lead`
-audit rows and all `partner_applications`, preserves source references, and
-writes an `imported` timeline event. It performs no source-table writes, handles
-rows independently, is dry-run by default, and requires `--apply` to persist.
-Rerunning the importer is safe through `(source, source_reference)` uniqueness;
-merged tombstones do not satisfy the source-reference lookup or unique index.
+audit rows and `partner_applications` in deterministic keyset batches, preserves
+source references and historical timestamps/statuses, and writes an `imported`
+timeline event. It performs no source-table writes, handles rows independently,
+is dry-run by default, and requires `--apply` to persist. Use `--batch-size`,
+`--run-id`, and `--receipt <path>` to make the bounded execution and its
+structured receipt explicit. Dry-run reserves source references and normalized
+identity within the run, so duplicate input rows receive the same decisions as
+apply mode. Rerunning is intentionally idempotent rather than checkpointed:
+each source row is re-read, and `(source, source_reference)` plus database
+identity uniqueness prevent duplicate writes. Merged tombstones do not satisfy
+the source-reference lookup or unique index. Import event and audit metadata
+contains the run ID. Inactive linked shops are not treated as converted.
 
 ## Explicit Boundaries
 

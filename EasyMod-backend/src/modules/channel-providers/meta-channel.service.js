@@ -386,11 +386,13 @@ class MetaChannelService {
      * List all channels for a shop, ordered by creation time.
      *
      * @param {string} shopId
+     * @param {object} [options]
+     * @param {object} [options.transaction] - Existing Sequelize transaction
      * @returns {Promise<MetaChannel[]>}
      */
-    async listByShop(shopId) {
+    async listByShop(shopId, { transaction = null } = {}) {
         if (!shopId) return [];
-        return MetaChannel.findAll({
+        const options = {
             where: { shop_id: shopId },
             order: [['created_at', 'ASC']],
             include: [{
@@ -399,7 +401,9 @@ class MetaChannelService {
                 attributes: ['purpose_label'],
                 required: false
             }]
-        });
+        };
+        if (transaction) options.transaction = transaction;
+        return MetaChannel.findAll(options);
     }
 
     /**
@@ -409,21 +413,37 @@ class MetaChannelService {
      * @param {string} channelId
      * @param {'CONNECTED'|'TOKEN_EXPIRED'|'REVOKED'|'DISCONNECTED'|'ERROR'} status
      * @param {string|null} [lastError]
+     * @param {object} [options]
+     * @param {object} [options.transaction] - Existing Sequelize transaction
+     * @param {string} [options.shopId] - Expected owning shop for scoped updates
      * @returns {Promise<MetaChannel>}
      */
-    async updateStatus(channelId, status, lastError = null) {
+    async updateStatus(channelId, status, lastError = null, options = {}) {
+        // Support updateStatus(channelId, status, { transaction }) while
+        // preserving the existing lastError positional argument.
+        if (lastError && typeof lastError === 'object' && !Array.isArray(lastError)) {
+            options = lastError;
+            lastError = null;
+        }
+        const transaction = options?.transaction || null;
+        const shopId = options?.shopId || null;
         if (!VALID_STATUSES.includes(status)) {
             throw new Error(`MetaChannelService.updateStatus: invalid status "${status}"`);
         }
-        const channel = await MetaChannel.findByPk(channelId);
-        if (!channel) throw new Error(`MetaChannelService.updateStatus: channel ${channelId} not found`);
+        const channel = transaction
+            ? await MetaChannel.findByPk(channelId, { transaction })
+            : await MetaChannel.findByPk(channelId);
+        if (!channel || (shopId && !sameId(channel.shop_id, shopId))) {
+            throw new Error(`MetaChannelService.updateStatus: channel ${channelId} not found`);
+        }
 
         channel.status = status;
         channel.last_error = lastError ?? null;
         if (status === 'DISCONNECTED') {
             channel.disconnected_at = new Date();
         }
-        await channel.save();
+        if (transaction) await channel.save({ transaction });
+        else await channel.save();
         logger.info('MetaChannelService.updateStatus', { channelId, status });
         return channel;
     }

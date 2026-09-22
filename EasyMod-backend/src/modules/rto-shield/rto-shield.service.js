@@ -276,10 +276,11 @@ class RtoShieldService {
     if (isRto) {
       try {
         require('../analytics/funnel-events.service')
-          .recordFunnelEvent({
+          .recordInternalFunnelEvent({
             event: 'first_rto_flag',
             shopId,
             onceKey: shopId,
+            oncePerEntity: true,
             metadata: {
               delivery_attempts: newAttempts,
               rto_count: newRtoCount,

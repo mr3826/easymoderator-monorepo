@@ -24,6 +24,7 @@ const {
 
 const config = require('../../config/config');
 const { normalizeQdrantUrl } = require('../../config/url-normalizer');
+const { AppError } = require('../../utils/AppError');
 
 // Vector store: Qdrant only (Pinecone removed 2026-05-31 — one vector store).
 // Qdrant REST API uses paths without a /v1/ prefix (both old and current versions).
@@ -34,6 +35,13 @@ const qdrantCollection = process.env.QDRANT_COLLECTION || 'knowledge_documents';
 const qdrantFallbackCollection = String(process.env.QDRANT_FALLBACK_COLLECTION || '').trim() || null;
 const qdrantApiKey = process.env.QDRANT_API_KEY;
 const perTenantMode = process.env.QDRANT_PER_TENANT === 'true';
+
+// RAG collections contain merchant-domain data, not Growth administration data.
+// Every service path must have a selected merchant shop before touching Qdrant.
+const requireShopId = (shopId) => {
+    if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
+    return shopId;
+};
 
 if ((config.env === 'production' || config.env === 'staging') && qdrantUrl && qdrantUrl.includes('6333') && !qdrantApiKey) {
     console.warn('⚠️  QDRANT_API_KEY should be set when using Qdrant in production. Run Qdrant on VPC-internal IP only.');
@@ -51,7 +59,8 @@ const toPointId = (documentId) => {
 };
 
 const resolveCollectionName = (shopId, baseCollection = qdrantCollection) => {
-    if (perTenantMode && shopId) return `${baseCollection}_${shopId}`;
+    const scopedShopId = requireShopId(shopId);
+    if (perTenantMode) return `${baseCollection}_${scopedShopId}`;
     return baseCollection;
 };
 
@@ -242,10 +251,10 @@ const setCollectionState = async (collection, state) => {
 };
 
 const buildShopFilter = (shopId, extraFilters) => {
-    if (!shopId) return extraFilters;
+    const scopedShopId = requireShopId(shopId);
 
     const shopFilter = {
-        must: [{ key: 'shopId', match: { value: shopId } }],
+        must: [{ key: 'shopId', match: { value: scopedShopId } }],
     };
 
     if (!extraFilters) return shopFilter;
@@ -300,7 +309,7 @@ const ingestData = async ({ text, metadata = {} }) => {
     const content = normalizeText(text);
     if (!content) throw new Error('No text provided for ingestion');
 
-    const shopId = metadata.shopId || null;
+    const shopId = requireShopId(metadata.shopId);
 
     try {
         // Writes follow the configured provider identity. A provider/model/
@@ -371,11 +380,12 @@ const embedQueryForBinding = (content, binding) => getEmbeddingResult(content, {
 });
 
 const queryData = async ({ query, limit = 5, filters, shopId }) => {
+    const scopedShopId = requireShopId(shopId);
     const content = normalizeText(query);
     if (!content) throw new Error('Query text is required');
 
-    const primaryBinding = await ensureCollection(shopId, { forQuery: true, allowCreate: false });
-    const searchFilter = perTenantMode ? filters : buildShopFilter(shopId, filters);
+    const primaryBinding = await ensureCollection(scopedShopId, { forQuery: true, allowCreate: false });
+    const searchFilter = perTenantMode ? filters : buildShopFilter(scopedShopId, filters);
 
     let primaryEmbedding;
     try {
@@ -391,7 +401,7 @@ const queryData = async ({ query, limit = 5, filters, shopId }) => {
             throw controlled;
         }
 
-        const fallbackBinding = await ensureCollection(shopId, {
+        const fallbackBinding = await ensureCollection(scopedShopId, {
             baseCollection: qdrantFallbackCollection,
             forQuery: true,
             allowCreate: false,
@@ -422,7 +432,7 @@ const queryData = async ({ query, limit = 5, filters, shopId }) => {
 };
 
 const deletePoint = async (id, shopId) => {
-    const binding = await ensureCollection(shopId, { allowCreate: false });
+    const binding = await ensureCollection(requireShopId(shopId), { allowCreate: false });
     return qdrantJson(qdrantPath(binding.collection, '/points/delete?wait=true'), {
         method: 'POST',
         body: JSON.stringify({ points: [toPointId(id)] }),

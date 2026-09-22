@@ -17,6 +17,7 @@ export function LoginPage() {
       : '/';
     return <Navigate to={redirectTo} replace />;
   }
+  if (auth.status === 'password-change-required') return <Navigate to="/change-password" replace />;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,6 +74,9 @@ export function LoginPage() {
               <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
             </label>
             {auth.error ? <p className="form-error">{auth.error}</p> : null}
+            {typeof location.state === 'object' && location.state && 'passwordChanged' in location.state && location.state.passwordChanged ? (
+              <p className="state-copy" role="status">Password changed. Sign in with your new password.</p>
+            ) : null}
             <button className="primary-button" type="submit" disabled={submitting}>
               <LogIn aria-hidden="true" />
               <span>{submitting ? 'Signing in' : 'Sign in'}</span>

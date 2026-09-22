@@ -21,6 +21,11 @@ const growthWorkflowPath = path.resolve(
     '../../../../.github/workflows/growth-os.yml',
 );
 const growthWorkflow = fs.readFileSync(growthWorkflowPath, 'utf8');
+const grantGrowthRoleWorkflowPath = path.resolve(
+    __dirname,
+    '../../../../.github/workflows/grant-growth-role.yml',
+);
+const grantGrowthRoleWorkflow = fs.readFileSync(grantGrowthRoleWorkflowPath, 'utf8');
 
 describe('production workflow branch safety', () => {
     test('build and deploy jobs are restricted to main', () => {
@@ -114,6 +119,12 @@ describe('production workflow branch safety', () => {
         const browserBlock = growthWorkflow.match(/\n  browser-e2e:\n([\s\S]*?)\n  build-and-push:/)?.[1];
         expect(browserBlock).toContain('permissions:\n      contents: read');
         expect(browserBlock).not.toContain('packages: write');
+    });
+
+    test('keeps Growth role bootstrap on the configured production environment', () => {
+        expect(grantGrowthRoleWorkflow).toContain("if: github.ref == 'refs/heads/main'");
+        expect(grantGrowthRoleWorkflow).toContain('environment: production');
+        expect(grantGrowthRoleWorkflow).not.toContain('environment: growth-bootstrap');
     });
 
     test('manual deployment probes cannot execute branch-controlled code with production secrets', () => {

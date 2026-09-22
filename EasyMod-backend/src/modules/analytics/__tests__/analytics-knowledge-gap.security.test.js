@@ -47,6 +47,7 @@ jest.mock('../../growth-os/growth-os.middleware', () => ({
 }));
 jest.mock('../funnel-events.service', () => ({
     ALLOWED_FUNNEL_EVENTS: new Set(),
+    PUBLIC_FUNNEL_EVENTS: new Set(),
     recordFunnelEvent: jest.fn(),
 }));
 

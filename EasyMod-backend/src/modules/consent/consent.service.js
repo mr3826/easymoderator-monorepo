@@ -315,10 +315,11 @@ class ConsentService {
                 });
                 try {
                     require('../analytics/funnel-events.service')
-                        .recordFunnelEvent({
+                        .recordInternalFunnelEvent({
                             event: 'first_inbound_message',
                             shopId,
                             onceKey: shopId,
+                            oncePerEntity: true,
                             metadata: { channel_id: channelId, customer_id: customerId, platform: pf },
                         })
                         .catch(() => {});

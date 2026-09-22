@@ -96,7 +96,7 @@ namespace (`EasyMod-growth/README.md:7-16`).
 | `MISSING` | There is no Growth follow-up, task, due date, SLA, reminder, or next-action subsystem. | The prospect migration has identity, status, ownership, linkage, merge, and metadata fields but no action or due field (`20260820_002_growth_os_prospects.js:53-93`). The foundation explicitly excludes follow-up tasks (`docs/growth-os/04-prospect-foundation.md:101-106`). |
 | `VERIFIED` | Notes are a mutable field, not an append-only activity stream. | `notes` is a single prospect column (`20260820_002_growth_os_prospects.js:56-63`), and notes are part of the ordinary update field set (`growth-os.prospect.service.js:248-285`). |
 | `MISSING` | Lifecycle stops at converted and has no demo, trial, retention, or referral states. | The allowed transition map ends at `converted` and `merged` (`growth-os.prospect.lifecycle.js:34-43`). |
-| `PARTIAL` | A real activation metric exists, but the Growth dashboard does not consume it. | The backend exposes founder-only activation/retention analytics (`analytics.routes.js:154-173`), while `DashboardPage` renders static status cards and performs no analytics fetch (`EasyMod-growth/src/pages/DashboardPage.tsx:4-37`). |
+| `PARTIAL` | A real activation metric exists, but the Growth overview does not consume the founder-only analytics endpoint directly. | The backend exposes founder-only activation/retention analytics (`analytics.routes.js:154-173`), while `HomePage` loads the operational overview through `workspaceApi.home` (`EasyMod-growth/src/pages/HomePage.tsx:32-57`). |
 | `PARTIAL` | Paid state exists in billing but not as a Growth funnel concept. | `subscriptions.status` includes paid and trial states (`EasyMod-backend/src/modules/subscription/subscription.entity.js:63-71`), but the Growth prospect lifecycle has no paid state (`growth-os.prospect.lifecycle.js:5-43`). |
 | `PARTIAL` | Six roles are defined, but several permissions have no current Growth work surface. | Customer Success and Analyst receive session/report or future-work permissions but no prospect read permission (`growth-os.permissions.js:52-61`); the current Growth router exposes only session, roles, and prospect routes (`growth-os.routes.js:63-138`). |
 | `MISSING` | Bulk import has no SPA entry point. | Import is an executable script (`import-growth-prospects.js:234-245`), while the router has no import route (`growth-os.routes.js:63-138`). |
@@ -136,9 +136,8 @@ Prospect -> Contact -> Qualification -> [manual handoff outside the system]
 
 The correct next investment is not to implement all missing funnel nouns. It is
 to make the existing qualified queue actionable with one due timestamp and one
-next-action description. The existing `eligibleForNextPhase` predicate already
-identifies qualified, owned, reachable records (`growth-os.prospect.service.js:306-344`);
-the missing piece is when and why the operator should act.
+next-action description. The missing piece is when and why the operator should
+act.
 
 ## 4. Architecture and Automation State
 
@@ -285,7 +284,7 @@ Gate effect: closes `FIRST_GROWTH_ROLLOUT` and
 `PHASE_B_POST_DEPLOY_GATE`. The current deployment guard and bootstrap failure
 path are explicit in `.github/workflows/ci-cd.yml:668-669`, `:870-883`.
 
-#### P0-3 Bootstrap the first Founder through the audited workflow
+#### P0-3 Bootstrap the first Super Admin through the protected workflow
 
 **Status: `OPEN`.**
 
@@ -298,18 +297,21 @@ Files and surfaces:
 
 Acceptance criteria:
 
-1. Identify an existing production app user and an explicit operator actor.
-   The workflow must not create or mutate the user account
-   (`grant-growth-role.yml:11-13`).
-2. Dispatch `grant-growth-role.yml` with the target email, `FOUNDER`, and the
-   actor email or UUID. Do not execute the raw SQL in
-   `docs/growth-os/02-application-foundation.md:154-174`.
+1. Identify an existing production app user and configure the explicit
+   `GROWTH_BOOTSTRAP_ACTOR_EMAIL` secret in the protected `growth-bootstrap`
+   environment. The workflow must not accept an actor as dispatch input or
+   create/mutate the user account.
+2. Dispatch `grant-growth-role.yml` with the target email and canonical
+   `SUPER_ADMIN` role. Do not execute raw SQL; the old SQL procedure has been
+   removed from the supported runbook.
 3. Capture the role-service result and the `growth_os:role_granted` audit row.
-   The transaction must include role creation, audit, and cache invalidation.
+   The transaction must include role creation, audit, and cache invalidation,
+   and the one-time bootstrap must refuse to run after an active Super Admin
+   exists.
 4. Complete the existing TOTP step-up so the authenticated session has
-   `mfaVerified=true`; a password-only Founder session must remain denied.
-5. Verify the Founder can load the Growth session and prospect list from the
-   live host, while a merchant without the role receives `403`.
+   `mfaVerified=true`; a password-only Super Admin session must remain denied.
+5. Verify the Super Admin can load the Growth session and prospect list from
+   the live host, while a merchant without the role receives `403`.
 
 Gate effect: closes `OPERATOR_BOOTSTRAP_GATE`. The supported workflow delegates
 to the tested backend role service (`grant-growth-role.yml:3-9`, `:64-68`).
@@ -423,10 +425,10 @@ gap and makes "who is next?" answerable for a two-person team.
 
 Files and surfaces:
 
-- `EasyMod-growth/src/pages/DashboardPage.tsx:4-37`.
+- `EasyMod-growth/src/pages/HomePage.tsx:32-229`.
 - `EasyMod-backend/src/modules/analytics/analytics.routes.js:154-173`.
 - `EasyMod-backend/src/modules/analytics/growth-metrics.service.js:140-222`.
-- Growth frontend API client and dashboard tests.
+- Growth frontend API client and home tests.
 
 Acceptance criteria:
 
@@ -629,7 +631,7 @@ list was recovered:
 | Defer demos | `VERIFIED DECISION` | No demo workflow until the qualified queue has a follow-up loop. | Q1/Q2/Q3: the current pain is dropped follow-up, and production evidence shows pre-launch scale (`EXECUTION_STATE.md:282-289`). |
 | Defer trials | `VERIFIED DECISION` | Billing trial states remain authoritative; do not create a second Growth trial system yet. | Q5/Q6: subscriptions already own billing state (`subscription.entity.js:63-71`), while Growth has no trial behavior. |
 | Defer retention and churn scoring | `VERIFIED DECISION` | Keep the existing observed order-based metric; wait for real cohorts and interventions. | Q2/Q7: current metrics contract calls targets and hypotheses unapproved (`03-metrics-definitions.md:21-32`). |
-| Defer command center | `VERIFIED DECISION` | Make the dashboard truthful and the queue actionable before adding a cross-funnel command center. | Q1/Q3/Q4: static dashboard plus no next-action field does not justify another surface (`DashboardPage.tsx:4-37`). |
+| Defer command center | `VERIFIED DECISION` | Make the operational overview truthful and the queue actionable before adding a cross-funnel command center. | Q1/Q3/Q4: the existing overview plus no next-action field does not justify another surface (`HomePage.tsx`). |
 | Defer referral/testimonial | `VERIFIED DECISION` | Revisit after merchants have completed and valued the core product. | Q2/Q7: referral is only a source value today and no outcome loop is evidenced (`growth-os.prospect.lifecycle.js:26-32`). |
 | Reject AI outreach copilot | `VERIFIED DECISION` | No model, prompt, external send, or AI cost in Growth OS now. | Q4/Q6: automation and AI are absent by design; human-audited next action is safer (`growth-os.routes.js:1-14`). |
 | Reject lead scoring | `VERIFIED DECISION` | Do not score sparse, unvalidated records before a due-action queue exists. | Q2/Q3/Q7: there are no approved target values and no real prospect history (`03-metrics-definitions.md:21-32`; `EXECUTION_STATE.md:282-289`). |
