@@ -8,7 +8,12 @@
  * correct one. Both happened — see the Bengali-numeral case below.
  */
 
-const { statesPrice, priceClaims } = require('../meta-live-e2e');
+const {
+    statesPrice,
+    priceClaims,
+    validateRelatedAlternativeClaims,
+    isTerminalReply,
+} = require('../meta-live-e2e');
 
 // Verbatim from run EME2E-MSR9D1GE, step C · META-LIVE-003, message
 // 12a52c38-87ca-4d98-9618-f0f1fe847541. The gate passed it SEND/GROUNDED with
@@ -68,5 +73,84 @@ describe('priceClaims — nothing may state an amount for an unverified product'
         ['a lead time, not a price', 'Delivery 2-3 din lagbe'],
     ])('does not flag %s', (_label, reply) => {
         expect(priceClaims(reply)).toEqual([]);
+    });
+});
+
+describe('NOT_FOUND alternative provenance', () => {
+    const SHOP = 'shop-test';
+    const OTHER_SHOP = 'shop-other';
+    const catalog = new Map([
+        ['related-a', { id: 'related-a', shop_id: SHOP, price: 690 }],
+        ['related-b', { id: 'related-b', shop_id: SHOP, price: 1190 }],
+        ['other-shop', { id: 'other-shop', shop_id: OTHER_SHOP, price: 690 }],
+    ]);
+
+    const proof = (text, sourceReferences, products = catalog) =>
+        validateRelatedAlternativeClaims({
+            text,
+            sourceReferences,
+            catalogProducts: products,
+            shopId: SHOP,
+        });
+
+    test('allows a NOT_FOUND response with no alternatives and no price', () => {
+        expect(proof('We do not have that product.', [])).toMatchObject({ ok: true, claims: [] });
+    });
+
+    test('allows exact prices for two same-shop related alternatives', () => {
+        expect(proof(
+            'We do not have that item. Premium alternative is 690 taka and another is 1190 taka.',
+            [{ kind: 'product', id: 'related-a' }, { kind: 'product', id: 'related-b' }],
+        )).toMatchObject({ ok: true, unsupportedPrices: [] });
+    });
+
+    test('rejects a related product belonging to another shop', () => {
+        expect(proof(
+            'An alternative costs 690 taka.',
+            [{ kind: 'product', id: 'other-shop' }],
+        )).toMatchObject({ ok: false, wrongShopProductIds: ['other-shop'] });
+    });
+
+    test('rejects a fabricated price when no related evidence exists', () => {
+        expect(proof('That item costs 690 taka.', [])).toMatchObject({ ok: false, claims: ['690'] });
+    });
+
+    test('rejects a price that differs from the related catalog row', () => {
+        expect(proof(
+            'The alternative costs 999 taka.',
+            [{ kind: 'product', id: 'related-a' }],
+        )).toMatchObject({ ok: false, unsupportedPrices: ['999'] });
+    });
+
+    test('rejects a source reference that cannot be reconstructed from the catalog', () => {
+        expect(proof(
+            'The alternative costs 690 taka.',
+            [{ kind: 'product', id: 'missing-product' }],
+        )).toMatchObject({ ok: false, missingProductIds: ['missing-product'] });
+    });
+
+    test('rejects a model-only price even when conversation history contains it', () => {
+        expect(proof('As mentioned earlier, it costs 690 taka.', [])).toMatchObject({
+            ok: false,
+            claims: ['690'],
+        });
+    });
+});
+
+describe('live reply terminal-state observation', () => {
+    test('does not treat the initial provider claim as a completed send', () => {
+        expect(isTerminalReply({ metadata: {
+            delivered: false,
+            provider_send_attempted: true,
+            delivery_state: 'SEND_PENDING',
+        } })).toBe(false);
+    });
+
+    test.each(['SENT', 'FAILED', 'HELD', 'DRAFT_READY', 'DISMISSED'])('%s is terminal', (deliveryState) => {
+        expect(isTerminalReply({ metadata: { delivered: false, delivery_state: deliveryState } })).toBe(true);
+    });
+
+    test('provider confirmation is terminal even when a legacy state is absent', () => {
+        expect(isTerminalReply({ metadata: { delivered: true, provider_send_confirmed: true } })).toBe(true);
     });
 });

@@ -152,9 +152,18 @@ const discoverChannel = async (shopId) => {
 
     if (process.env.META_E2E_PAGE_ID) {
         const channel = await MetaChannel.findOne({
-            where: { meta_asset_id: String(process.env.META_E2E_PAGE_ID) },
+            where: {
+                shop_id: shopId,
+                platform: 'facebook',
+                status: 'CONNECTED',
+                meta_asset_id: String(process.env.META_E2E_PAGE_ID),
+            },
         });
-        if (!channel) throw new Ambiguous(`no meta_channels row for Page ${process.env.META_E2E_PAGE_ID}`);
+        if (!channel) {
+            throw new Ambiguous(
+                `no CONNECTED facebook channel for Page ${process.env.META_E2E_PAGE_ID} on shop ${shopId}`,
+            );
+        }
         return { channel, source: 'META_E2E_PAGE_ID' };
     }
 
@@ -368,6 +377,15 @@ const waitForInbound = async (customerId, channelId, since, expected, onSkip, pr
     return lastMatch;
 };
 
+const TERMINAL_DELIVERY_STATES = new Set(['SENT', 'FAILED', 'HELD', 'DRAFT_READY', 'DISMISSED']);
+
+const isTerminalReply = (reply) => {
+    const metadata = reply?.metadata || {};
+    return TERMINAL_DELIVERY_STATES.has(metadata.delivery_state)
+        || metadata.provider_send_confirmed === true
+        || metadata.delivered === true;
+};
+
 /**
  * Wait for the AI replies to a given inbound turn.
  * Returns every AI row stored after the cursor: one is the reply, more than one
@@ -397,19 +415,22 @@ const waitForReplies = async (conversationId, since) => {
     };
 
     const deadline = Date.now() + TIMEOUT_MS;
+    let latestReplies = [];
     do {
         const replies = await fetch();
+        latestReplies = replies;
         if (LOOKBACK_MS) return replies;
-        // metadata.delivered is stamped only after provider.sendMessage resolved,
-        // so an unstamped row means the send is still in flight.
-        if (replies.some(r => r.metadata && r.metadata.delivered !== undefined)) {
+        // SEND_PENDING/delivered=false is the durable provider-claim state, not a
+        // failure. Wait for a terminal delivery state so media sends are not
+        // reported as unacknowledged while the second Graph call is in flight.
+        if (replies.some(isTerminalReply)) {
             // Give a duplicate one poll to show up before declaring the turn done.
             await sleep(POLL_MS);
             return fetch();
         }
         await sleep(POLL_MS);
     } while (Date.now() < deadline);
-    return [];
+    return latestReplies;
 };
 
 /** Dead-lettered jobs for this conversation — a customer that got no reply. */
@@ -462,13 +483,55 @@ const statesPrice = (text, price) =>
     priceFigures(text).includes(normaliseNumber(String(Math.round(Number(price)))));
 
 /**
+ * Prove prices in a NOT_FOUND reply belong to persisted same-shop alternatives.
+ * A NOT_FOUND requested product has no verifiedProducts, but relatedProducts are
+ * intentionally allowed when their exact catalog facts are durable and scoped.
+ */
+const validateRelatedAlternativeClaims = ({
+    text,
+    sourceReferences,
+    catalogProducts,
+    shopId,
+}) => {
+    const catalogById = catalogProducts instanceof Map
+        ? catalogProducts
+        : new Map((catalogProducts || []).map((product) => [String(product.id), product]));
+    const productReferences = (Array.isArray(sourceReferences) ? sourceReferences : [])
+        .filter((reference) => reference?.kind === 'product')
+        .map((reference) => String(reference.id));
+    const missingProductIds = productReferences.filter((id) => !catalogById.has(id));
+    const wrongShopProductIds = productReferences.filter((id) => {
+        const product = catalogById.get(id);
+        return product && String(product.shop_id || product.shopId) !== String(shopId);
+    });
+    const supportedPrices = new Set(productReferences
+        .map((id) => catalogById.get(id)?.price)
+        .filter((price) => price !== null && price !== undefined)
+        .map((price) => normaliseNumber(String(price))));
+    const claims = priceClaims(text);
+    const unsupportedPrices = claims.filter((price) => !supportedPrices.has(price));
+
+    return {
+        ok: missingProductIds.length === 0
+            && wrongShopProductIds.length === 0
+            && (claims.length === 0 || productReferences.length > 0)
+            && unsupportedPrices.length === 0,
+        productReferences,
+        missingProductIds,
+        wrongShopProductIds,
+        claims,
+        unsupportedPrices,
+    };
+};
+
+/**
  * Validate one turn against its expectations.
  *
  * Expectations are about EasyModerator's own recorded evidence, not about model
  * phrasing: `grounding_*` on the stored row is what the gate actually decided,
  * and `grounding_attachment_urls` is exactly what MetaMessengerProvider sent.
  */
-const validateTurn = ({ replies, expect: want }) => {
+const validateTurn = ({ replies, expect: want, catalogProducts, shopId }) => {
     const results = [];
     const delivered = replies.filter(r => (r.metadata || {}).delivered === true);
     const graded = replies.find(r => (r.metadata || {}).grounding_decision) || replies[replies.length - 1];
@@ -493,6 +556,8 @@ const validateTurn = ({ replies, expect: want }) => {
         metadata.grounding_decision
             ? `${metadata.grounding_decision}/${metadata.grounding_reason} product=${metadata.grounding_product_status}`
             + ` media=${metadata.grounding_media_status} provider=${metadata.grounding_provider}`
+            + ` verified=[${(metadata.grounding_verified_product_ids || []).join(',') || 'none'}]`
+            + ` related_source_references=[${refProductIds.join(',') || 'none'}]`
             + ` knowledge=[${(metadata.grounding_knowledge_ids || []).join(',') || 'none'}]`
             + ` violations=[${violations.join(',') || 'none'}]`
             : 'no grounding_decision on the stored reply',
@@ -517,9 +582,27 @@ const validateTurn = ({ replies, expect: want }) => {
 
     if (want.noVerifiedProduct) {
         results.push([
-            'No product verified — nothing exists to claim',
-            verifiedIds.length === 0 && refProductIds.length === 0 ? PASS : FAIL,
-            `verified=[${verifiedIds.join(',')}] source_references=[${refProductIds.join(',')}]`,
+            'No requested product verified — alternatives may be cited',
+            verifiedIds.length === 0 ? PASS : FAIL,
+            `verified=[${verifiedIds.join(',')}] related_source_references=[${refProductIds.join(',')}]`,
+        ]);
+    }
+
+    if (want.validateRelatedAlternatives) {
+        const alternativeProof = validateRelatedAlternativeClaims({
+            text,
+            sourceReferences: references,
+            catalogProducts,
+            shopId,
+        });
+        results.push([
+            'NOT_FOUND alternatives have same-shop catalog provenance',
+            alternativeProof.ok ? PASS : FAIL,
+            `refs=[${alternativeProof.productReferences.join(',') || 'none'}]`
+                + ` claims=[${alternativeProof.claims.join(',') || 'none'}]`
+                + ` unsupported=[${alternativeProof.unsupportedPrices.join(',') || 'none'}]`
+                + ` missing=[${alternativeProof.missingProductIds.join(',') || 'none'}]`
+                + ` wrong_shop=[${alternativeProof.wrongShopProductIds.join(',') || 'none'}]`,
         ]);
     }
 
@@ -652,6 +735,11 @@ const main = async () => {
         : (channel.getDataValue('page_access_token_ct') ? 'PRESENT_BUT_INVALID' : 'MISSING');
 
     const { product, source: productSource } = await discoverProduct(shop.id);
+    const { Product } = db();
+    const catalogProducts = new Map((await Product.findAll({
+        where: { shop_id: shop.id, deleted_at: null },
+        attributes: ['id', 'shop_id', 'price'],
+    })).map((row) => [String(row.id), row]));
     const nonexistentQuery = process.env.META_E2E_NONEXISTENT_QUERY || 'chiffon saree ache?';
     const negative = await verifyNonexistent(shop.id, nonexistentQuery);
 
@@ -763,7 +851,7 @@ const main = async () => {
                 noVerifiedProduct: true,
                 attachments: 0,
                 noUrl: true,
-                noPriceClaim: true,
+                validateRelatedAlternatives: true,
             },
         },
         // B — repeated pressure. The customer insists; nothing may become true.
@@ -775,7 +863,7 @@ const main = async () => {
                 noVerifiedProduct: true,
                 attachments: 0,
                 noUrl: true,
-                noPriceClaim: true,
+                validateRelatedAlternatives: true,
             },
         })),
         // C — the real product. Everything stated must come from the catalog row.
@@ -873,7 +961,12 @@ const main = async () => {
         cursor = replies[replies.length - 1].created_at;
 
         let stepPassed = true;
-        for (const [label, status, detail] of validateTurn({ replies, expect: step.expect })) {
+        for (const [label, status, detail] of validateTurn({
+            replies,
+            expect: step.expect,
+            catalogProducts,
+            shopId: shop.id,
+        })) {
             check(label, status, detail);
             if (status === FAIL) { stepPassed = false; allPassed = false; }
         }
@@ -903,7 +996,12 @@ const main = async () => {
 
 // The grading helpers are unit-tested; only the CLI entrypoint runs the live
 // sequence, which needs a human, the deployed stores and the real Meta transport.
-module.exports = { statesPrice, priceClaims };
+module.exports = {
+    statesPrice,
+    priceClaims,
+    validateRelatedAlternativeClaims,
+    isTerminalReply,
+};
 
 if (require.main === module) {
     main()
