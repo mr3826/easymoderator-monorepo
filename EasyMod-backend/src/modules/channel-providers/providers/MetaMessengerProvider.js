@@ -488,33 +488,6 @@ class MetaMessengerProvider extends ChannelProvider {
         return { appScopedUserId, pageScopedIdentities };
     }
 
-    // Retained for the provider contract's legacy direct-node callers. The
-    // approved OAuth connection path must use the credential captured during
-    // /me/accounts discovery instead of invoking this permission-gated edge.
-    async getAssetAccessToken({ assetId, userToken }) {
-        try {
-            const resp = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(assetId)}`, {
-                params: {
-                    fields: 'access_token',
-                    access_token: userToken,
-                    appsecret_proof: appsecretProof(userToken)
-                }
-            });
-            const token = resp.data?.access_token;
-            if (!hasNonEmptyAccessToken({ access_token: token })) {
-                throw new AppError(
-                    'Meta did not return a Page access token',
-                    502,
-                    'META_PAGE_ACCESS_TOKEN_MISSING',
-                );
-            }
-            return { token, expiresAt: null };  // Page tokens are non-expiring
-        } catch (err) {
-            if (err instanceof AppError) throw err;
-            throw metaError(err, 'getAssetAccessToken');
-        }
-    }
-
     async refreshAssetToken({ channel }) {
         // Page Access Tokens derived from a long-lived User Access Token survive as long as
         // the user token. To refresh, exchange the current page token as the fb_exchange_token.
