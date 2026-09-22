@@ -6,6 +6,12 @@
 **Last updated:** 2026-08-20 (Messenger-only launch; Facebook only)
 **Dashboard audit:** every value below verified against the live dashboard on 2026-08-20.
 
+> **Status note, 2026-09-22 (updated).** The app is **Live**; `public_profile` and all three `pages_*` permissions are at **Advanced Access**; compliance is clean and App Review was approved on 2026-09-20. Statements below that the app is still in Development are superseded.
+>
+> The login product is confirmed as **Facebook Login for Business**, driven by the **User access token** Login Configuration `1685388446490514`. The configuration — not the runtime `scope` parameter — owns the Page permissions, and the login dialog now carries `config_id`. The system-user configuration `35885387384409543` is preserved but **not** the production login path. This resolved the "Feature unavailable" login outage.
+>
+> **Tech Provider Access Verification is submitted and in review** (deadline 2026-11-21). That is a separate external-merchant gate: until it clears, merchants with no role on the app may still be restricted, independently of the OAuth implementation. Details: [incident record](incidents/2026-09-22-meta-login-unavailable.md).
+
 Paste-ready values for the Meta App Dashboard. Process and video script live in
 [META_APP_REVIEW_MASTER_GUIDE.md](META_APP_REVIEW_MASTER_GUIDE.md).
 

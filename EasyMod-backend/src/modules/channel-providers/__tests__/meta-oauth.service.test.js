@@ -69,19 +69,47 @@ jest.mock('../meta-channel.service', () => ({
 const stateStore = require('../oauth-state.store');
 const oauthService = require('../meta-oauth.service');
 
-describe('initiateOAuth (facebook) scopes', () => {
+describe('initiateOAuth (facebook) permission surface', () => {
     beforeEach(() => jest.clearAllMocks());
 
-    test('never injects business_management or any Instagram scope', async () => {
+    // Under Facebook Login for Business the Meta Login Configuration owns the
+    // permission set, so the service must not negotiate permissions at all.
+    // It still passes an empty `scopes` to keep the ChannelProvider contract;
+    // what matters is that it never populates it. See
+    // docs/incidents/2026-09-22-meta-login-unavailable.md.
+    test('requests no runtime permissions and never injects business_management or Instagram', async () => {
         await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
         const { scopes } = mockBuildAuthUrl.mock.calls[0][0];
-        // The service delegates the concrete scope list to
-        // MetaMessengerProvider.DEFAULT_SCOPES (asserted in the provider test);
-        // it must never add Instagram or the high-sensitivity business_management.
+
+        expect(scopes).toEqual([]);
         expect(scopes).not.toContain('business_management');
         expect(scopes).not.toContain('instagram_basic');
         expect(scopes).not.toContain('instagram_manage_messages');
         expect(scopes).not.toContain('instagram_manage_comments');
+    });
+
+    // The provider owns config_id; the service must not invent one or reach
+    // around the provider to build its own authorization URL.
+    test('delegates the authorization URL to the provider and returns it unchanged', async () => {
+        mockBuildAuthUrl.mockResolvedValueOnce('https://www.facebook.com/v22.0/dialog/oauth?config_id=stub');
+        const result = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(mockBuildAuthUrl).toHaveBeenCalledTimes(1);
+        expect(result.redirectUrl).toBe('https://www.facebook.com/v22.0/dialog/oauth?config_id=stub');
+    });
+
+    // A provider that fails closed on a missing configuration must surface as a
+    // failed initiation, not as a half-built dialog or a swallowed error.
+    test('propagates a fail-closed provider error instead of returning a URL', async () => {
+        mockBuildAuthUrl.mockRejectedValueOnce(
+            Object.assign(new Error('Facebook login is not configured.'), {
+                status: 500,
+                code: 'META_LOGIN_CONFIG_ID_INVALID',
+            }),
+        );
+
+        await expect(oauthService.initiateOAuth('user-1', 'shop-1', 'facebook'))
+            .rejects.toMatchObject({ code: 'META_LOGIN_CONFIG_ID_INVALID' });
     });
 
     test('builds an OAuth redirect URL + facebook-prefixed state', async () => {
@@ -103,6 +131,100 @@ describe('initiateOAuth (facebook) scopes', () => {
                 reconnectAssetId: 'PAGE_1',
             }),
         );
+    });
+});
+
+describe('initiateOAuth state binding', () => {
+    const config = require('../../../config/config');
+    const REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+    let savedRedirect;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        savedRedirect = config.metaOAuthRedirectUri;
+        config.metaOAuthRedirectUri = REDIRECT;
+    });
+
+    afterEach(() => {
+        config.metaOAuthRedirectUri = savedRedirect;
+    });
+
+    test('state is platform:shop:user plus a 128-bit hex nonce', async () => {
+        const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(state).toMatch(/^facebook:shop-1:user-1:[0-9a-f]{32}$/);
+    });
+
+    test('draws the nonce from the CSPRNG (crypto.randomBytes, 16 bytes)', async () => {
+        // The format and uniqueness tests below would also pass for Math.random().
+        const crypto = require('crypto');
+        const spy = jest.spyOn(crypto, 'randomBytes');
+        try {
+            await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+            expect(spy).toHaveBeenCalledWith(16);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('every initiation gets a fresh nonce', async () => {
+        const states = new Set();
+        for (let i = 0; i < 25; i += 1) {
+            const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+            states.add(state);
+        }
+        expect(states.size).toBe(25);
+    });
+
+    test('returns, stores and dials with the same state value', async () => {
+        const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(stateStore.put).toHaveBeenCalledWith(
+            state,
+            expect.objectContaining({ userId: 'user-1', shopId: 'shop-1', platform: 'facebook' }),
+        );
+        expect(mockBuildAuthUrl.mock.calls[0][0].state).toBe(state);
+    });
+
+    test('binds the exact redirect URI into both the stored state and the dialog request', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(stateStore.put.mock.calls[0][1].redirectUri).toBe(REDIRECT);
+        expect(mockBuildAuthUrl.mock.calls[0][0].redirectUri).toBe(REDIRECT);
+    });
+
+    test('passes no scopes, leaving the consent request to the provider allowlist', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(mockBuildAuthUrl.mock.calls[0][0].scopes).toEqual([]);
+    });
+});
+
+// The 403 paths for a different user, shop or platform are covered by the
+// test.each in 'OAuth callback null-state guards'. Only the redirect binding is
+// added here. The state store and provider are mocked in this file: single-use
+// consumption and TTL are covered by the oauth-state store tests, and note that
+// handleCallback consumes the state (take) before it checks who is calling.
+describe('OAuth callback redirect URI binding', () => {
+    const config = require('../../../config/config');
+    let savedRedirect;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        savedRedirect = config.metaOAuthRedirectUri;
+    });
+
+    afterEach(() => {
+        config.metaOAuthRedirectUri = savedRedirect;
+    });
+
+    test('exchanges the code with the redirect URI stored in state, not live config', async () => {
+        config.metaOAuthRedirectUri = 'https://changed.example.com/channels/oauth-callback';
+
+        await oauthService.handleCallback('auth-code', 'state-ok', 'user-xyz', 'shop-abc');
+
+        expect(mockExchangeCode).toHaveBeenCalledWith({
+            code: 'auth-code',
+            redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
+        });
     });
 });
 

@@ -29,6 +29,7 @@ function validEnv(overrides = {}) {
         META_APP_SECRET: secret('e'),
         META_WEBHOOK_VERIFY_TOKEN: secret('f'),
         META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/channels/oauth-callback',
+        META_LOGIN_CONFIG_ID: '1685388446490514',
         PAYMENT_ENCRYPTION_KEY: secret('1'),
         DELIVERY_ENCRYPTION_KEY: secret('2'),
         CHANNEL_ENCRYPTION_KEY: secret('3'),
@@ -196,5 +197,42 @@ describe('production configuration validation', () => {
         }));
 
         expect(result.invalid).toContain('META_OAUTH_REDIRECT_URI');
+    });
+
+    // Facebook Login for Business drift protection. Meta owns the permission
+    // set through a dashboard Login Configuration; a deployment that does not
+    // name that configuration sends the legacy classic-Login contract, which
+    // merchants see only as "Feature unavailable". That must fail the deploy,
+    // not the merchant. See docs/incidents/2026-09-22-meta-login-unavailable.md.
+    test('requires META_LOGIN_CONFIG_ID for Facebook Login for Business', () => {
+        const env = validEnv();
+        delete env.META_LOGIN_CONFIG_ID;
+        const result = validateProductionConfig(env);
+
+        expect(result.valid).toBe(false);
+        expect(result.missing).toContain('META_LOGIN_CONFIG_ID');
+        expect(result.requirements).toContain('META_LOGIN_CONFIG_ID');
+    });
+
+    test.each([
+        ['non-numeric', 'not-a-config-id'],
+        ['placeholder', 'CHANGE_ME'],
+        ['quoted', '"1685388446490514"'],
+        ['too short', '12345'],
+        ['comma-joined pair', '1685388446490514,35885387384409543'],
+        ['parameter injection', '1685388446490514&scope=business_management'],
+        ['decimal', '1685388446490514.0'],
+    ])('rejects a %s META_LOGIN_CONFIG_ID', (_label, value) => {
+        const result = validateProductionConfig(validEnv({ META_LOGIN_CONFIG_ID: value }));
+        expect(result.invalid).toContain('META_LOGIN_CONFIG_ID');
+        expect(result.valid).toBe(false);
+    });
+
+    test('accepts a well-formed Meta Login Configuration ID', () => {
+        const result = validateProductionConfig(validEnv({
+            META_LOGIN_CONFIG_ID: '1685388446490514',
+        }));
+        expect(result.invalid).not.toContain('META_LOGIN_CONFIG_ID');
+        expect(result.valid).toBe(true);
     });
 });

@@ -152,6 +152,10 @@ function buildRenderedEnv(source = process.env) {
         META_OAUTH_REDIRECT_URI: required('META_OAUTH_REDIRECT_URI'),
         META_APP_ID: required('META_APP_ID'),
         META_APP_SECRET: required('META_APP_SECRET'),
+        // Facebook Login for Business configuration ID. Public, but
+        // environment-specific — rendered from the repository variable so a
+        // deployment can never inherit a developer's configuration.
+        META_LOGIN_CONFIG_ID: required('META_LOGIN_CONFIG_ID'),
         META_WEBHOOK_VERIFY_TOKEN: required('META_WEBHOOK_VERIFY_TOKEN'),
         META_USER_PROFILE_ENABLED: source.META_USER_PROFILE_ENABLED || 'false',
         ...bkashSection,

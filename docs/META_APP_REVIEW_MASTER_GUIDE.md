@@ -11,6 +11,12 @@ satisfy it and it does not satisfy App Review. See §1a.
 (`EasyMod-frontend/src`). Where a doc and the UI disagree, the UI wins and the
 doc is wrong.
 
+> **Status note, 2026-09-22 (updated).** The app is **Live**; `public_profile` and all three `pages_*` permissions are at **Advanced Access**; compliance is clean and App Review was approved on 2026-09-20. Statements below that the app is still in Development are superseded.
+>
+> The login product is confirmed as **Facebook Login for Business**, driven by the **User access token** Login Configuration `1685388446490514`. The configuration — not the runtime `scope` parameter — owns the Page permissions, and the login dialog now carries `config_id`. The system-user configuration `35885387384409543` is preserved but **not** the production login path. This resolved the "Feature unavailable" login outage.
+>
+> **Tech Provider Access Verification is submitted and in review** (deadline 2026-11-21). That is a separate external-merchant gate: until it clears, merchants with no role on the app may still be restricted, independently of the OAuth implementation. Details: [incident record](incidents/2026-09-22-meta-login-unavailable.md).
+
 This is the single runbook from opening the App Dashboard to pressing Submit.
 Paste-ready field values live in [meta-app-review-submission.md](meta-app-review-submission.md).
 The recording script lives in
