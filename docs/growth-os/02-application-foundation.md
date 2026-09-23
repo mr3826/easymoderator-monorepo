@@ -174,8 +174,10 @@ The current workflow below is the only supported bootstrap path.
 
 The first Growth OS role must be established through
 `.github/workflows/grant-growth-role.yml` after migrations run. The protected
-`production` environment supplies `GROWTH_BOOTSTRAP_ACTOR_EMAIL`; GitHub has no
-configured `growth-bootstrap` environment. The
+`production` environment is the intended source for
+`GROWTH_BOOTSTRAP_ACTOR_EMAIL`; GitHub has no configured `growth-bootstrap`
+environment, and the required production secret is currently not provisioned.
+The
 workflow accepts only an existing target email and the canonical
 `SUPER_ADMIN` role. The role service verifies that configured actor and refuses
 to bootstrap after an active Super Admin already exists. Do not use raw SQL or
