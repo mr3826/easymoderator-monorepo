@@ -4,8 +4,8 @@ Updated: 2026-09-23
 
 ## Current execution
 
-- `CURRENT_MAIN`: `7c407ea0671b1695a09f8b5459baadaf524daf8e`
-- `BASE_MAIN`: current `origin/main` after PR #141 merge
+- `CURRENT_MAIN`: current `origin/main` (verify with `git rev-parse origin/main`)
+- `BASE_MAIN`: current `origin/main`; post-release documentation/test commits are not deployed
 - `WORKTREE`: `D:\easymod\production-conversation-reply-engine`
 - `BRANCH`: `main`
 - `PHASE`: production release receipt verified; Growth operator bootstrap remains open
