@@ -17,7 +17,7 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `696a83c9f75737c2609873f0c09c6498bcfb6332`; current `origin/main` is `7c407ea0671b1695a09f8b5459baadaf524daf8e` with documentation/test-only changes after deployment. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-23 deployment `6605458886`; [Actions run 35812554066](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35812554066) |
+| Production commit SHA | Runtime is `696a83c9f75737c2609873f0c09c6498bcfb6332`; current `origin/main` is intentionally read dynamically because post-release documentation/test commits are not deployed. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-23 deployment `6605458886`; [Actions run 35812554066](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35812554066) |
 | Latest migration on `main` | `20260914_001_add_temporary_password_controls`; production reports 56 migrations, threshold values were preserved, and the schema audit reported `No drift found.` | 2026-09-23 deploy log and public `/api/version` |
 | Backend / worker version | `ghcr.io/mr3826/easymoderator-backend@sha256:008b6154382050bd3bd4f937451352d3fa96dc36a604ef517eceb8e408ad23a5` | 2026-09-23 candidate pull and in-container version receipt |
 | Frontend build version | `ghcr.io/mr3826/easymoderator-frontend@sha256:d1afe8a00ea33519b402cfda2f3d279e4b1041f1fbd6962298e8323178a2cd4f` | 2026-09-23 candidate pull receipt; public frontend origin returned HTTP 200 |
