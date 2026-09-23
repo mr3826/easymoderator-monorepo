@@ -247,7 +247,7 @@ jobs:
           VITE_APP_URL: ${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
           VITE_MARKETING_URL: ${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
           VITE_META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_ENV: production
 
       # Frontend unit tests (Vitest) are a blocking launch gate.
@@ -493,7 +493,7 @@ jobs:
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
           QDRANT_VECTOR_SIZE: ${{ vars.QDRANT_VECTOR_SIZE || '384' }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
@@ -647,7 +647,7 @@ jobs:
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
             VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
             VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
-            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
             VITE_ENV=production
             VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
 
@@ -845,7 +845,7 @@ jobs:
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
             VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
             VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
-            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
             VITE_ENV=production
             VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
           cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
@@ -950,11 +950,10 @@ jobs:
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
           QDRANT_VECTOR_SIZE: ${{ vars.QDRANT_VECTOR_SIZE || '384' }}
-          # Backend alerting (finding F-06). The backend reads SENTRY_DSN, a
-          # separate name from the frontend's VITE_SENTRY_DSN. Fall back to the
-          # frontend DSN so ops alerts have a sink even before a dedicated
-          # backend project exists — both currently share one Sentry project.
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
+              # Backend alerting (finding F-06). The backend reads its own
+              # SENTRY_DSN secret; never cross the server/browser configuration
+              # boundary by falling back to the frontend's VITE_SENTRY_DSN.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}

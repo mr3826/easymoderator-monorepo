@@ -39,7 +39,10 @@ jobs:
   grant:
     name: Set Growth OS role on production
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # The protected production environment currently requires reviewer mr3826.
+    # Bind dispatch authority to that same reviewed operator identity instead of
+    # treating GITHUB_ACTOR as audit-only metadata.
+    if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'
     environment: production
     steps:
       - name: Derive pinned SSH host fingerprint
