@@ -12,6 +12,8 @@ const fs = require('fs');
 const path = require('path');
 
 const migration = require('../migrations/20260611_003_schema_drift_sweep');
+const updatedAtMigration = require('../migrations/20260908_001_remove_messages_updated_at');
+const { TARGETED_CONTRACTS } = require('../../../scripts/schema-drift-audit');
 
 const runUp = async () => {
     const statements = [];
@@ -20,6 +22,18 @@ const runUp = async () => {
         query: async (sql) => { statements.push(sql); return [[]]; },
     };
     await migration.up(fakeSequelize);
+    return statements.join('\n');
+};
+
+const runUpdatedAt = async (method, rows = []) => {
+    const statements = [];
+    await updatedAtMigration[method]({
+        getDialect: () => 'postgres',
+        query: async (sql) => {
+            statements.push(sql);
+            return [rows];
+        },
+    });
     return statements.join('\n');
 };
 
@@ -113,5 +127,39 @@ describe('order-number SQL ↔ schema alignment', () => {
             path.join(__dirname, '..', '..', 'modules', 'order', 'order.service.js'), 'utf8');
         expect(serviceSrc).toMatch(/INSERT INTO order_sequences \(shop_id, next_number\)/);
         expect(serviceSrc).not.toMatch(/order_sequences[^\n]*\bcounter\b/);
+    });
+});
+
+describe('20260908_001_remove_messages_updated_at rollback contract', () => {
+    test('exports the custom-runner migration contract', () => {
+        expect(updatedAtMigration.name).toBe('20260908_001_remove_messages_updated_at');
+        expect(typeof updatedAtMigration.up).toBe('function');
+        expect(typeof updatedAtMigration.down).toBe('function');
+    });
+
+    test('up drops the legacy column idempotently', async () => {
+        expect(await runUpdatedAt('up')).toContain('DROP COLUMN IF EXISTS "updated_at"');
+    });
+
+    test('down is a no-op when the legacy column is already present', async () => {
+        const sql = await runUpdatedAt('down', [{ '?column?': 1 }]);
+        expect(sql).toContain('information_schema.columns');
+        expect(sql).not.toContain('ADD COLUMN');
+        expect(sql).not.toContain('NOW()');
+    });
+
+    test('down fails closed when the legacy column is absent', async () => {
+        await expect(runUpdatedAt('down')).rejects.toThrow(
+            'Rollback blocked: 20260908_001 removed messages.updated_at',
+        );
+    });
+
+    test('schema drift audit keeps messages.updated_at forbidden', () => {
+        expect(TARGETED_CONTRACTS).toContainEqual({
+            key: 'messages.updated_at',
+            table: 'messages',
+            column: 'updated_at',
+            absent: true,
+        });
     });
 });
