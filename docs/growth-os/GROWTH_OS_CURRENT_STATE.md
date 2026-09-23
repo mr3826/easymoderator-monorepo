@@ -753,7 +753,9 @@ The dated determination and the evidence below are historical to the audit date:
 
 ## Current production reconciliation (2026-09-23)
 
-- `origin/main` and production now run `696a83c9f75737c2609873f0c09c6498bcfb6332`.
+- `origin/main` is `7c407ea0671b1695a09f8b5459baadaf524daf8e`; production runs the
+  code-equivalent `696a83c9f75737c2609873f0c09c6498bcfb6332`. The intervening
+  main commits changed only documentation and tests.
 - The bounded production workflow used the existing `production` environment;
   GitHub has no `growth-bootstrap` environment. `PRODUCTION_DEPLOY_ENABLED` was
   restored to `false` after the successful cutover.

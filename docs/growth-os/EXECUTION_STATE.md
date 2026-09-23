@@ -4,12 +4,12 @@ Updated: 2026-09-23
 
 ## Current execution
 
-- `CURRENT_MAIN`: `696a83c9f75737c2609873f0c09c6498bcfb6332`
-- `BASE_MAIN`: current `origin/main` after PR #129 merge
+- `CURRENT_MAIN`: `7c407ea0671b1695a09f8b5459baadaf524daf8e`
+- `BASE_MAIN`: current `origin/main` after PR #141 merge
 - `WORKTREE`: `D:\easymod\production-conversation-reply-engine`
 - `BRANCH`: `main`
 - `PHASE`: production release receipt verified; Growth operator bootstrap remains open
-- `STATUS`: CI, migration, schema, backend version, and public smoke receipts pass; live Growth digest and operator bootstrap remain unverified
+- `STATUS`: CI, migration, schema, backend version, and public smoke receipts pass; post-release main changes are docs/tests only, while live Growth digest and operator bootstrap remain unverified
 - `RELEASE_STATUS`: CONDITIONAL — merchant production is running the verified main SHA; Growth operator gates remain open
 - `PRODUCTION_CHANGED`: YES — bounded workflow dispatch `35812554066`
 
