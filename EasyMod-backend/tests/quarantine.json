@@ -25,7 +25,7 @@
     {
       "file": "src/modules/ai/__tests__/chatbot-rag.test.js",
       "cause": "stale API contract — superseded delivery mechanism",
-      "detail": "All 30 cases drive POST /api/ai-chatbot/process. ai-chatbot.routes.js exists but is required by nothing, so the route is not mounted and every request 404s. message-worker.js replaced that HTTP entry point with a direct call and says so at line 7.",
+      "detail": "All 30 cases target the retired chatbot HTTP/controller contract. Twenty-three request assertions drive POST /api/ai-chatbot/process and receive 404 because the route is intentionally unmounted; two prompt assertions cascade from the same stale setup. message-worker.js replaced that HTTP entry point with a direct call and says so at line 7.",
       "repair": "Retarget the suite at AIChatbotController.processNewIntent(message, history, entities, language, aiSettings, ingestionResult, imageUrls) — the function message-worker actually calls — and assert on its returned { response, confidence, source, grounding } instead of res.body. The mocks (rag.service, llm.service, entities) already fit; the input shape and assertions are the work.",
       "meanwhile": "The happy path through this pipeline is covered end-to-end by tests/meta-e2e (real signed webhook → real queue → worker → grounding gate). The confidence gate, FAQ threshold and input-validation branches are NOT covered anywhere."
     },
