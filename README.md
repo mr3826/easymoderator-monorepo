@@ -121,13 +121,20 @@ configuration, and rollback instructions live in
 
 ## Deployment
 
-Production deploys are driven by pushes to `main` through `.github/workflows/ci-cd.yml`:
+Production verification and image publication are driven by pushes to `main`
+through `.github/workflows/ci-cd.yml`; a push does not switch production traffic.
+The production cutover is a separate, manually confirmed step:
 
-1. Detect backend/frontend changes.
-2. Run the test/build gate.
-3. Build and push GHCR images.
-4. SSH to the DigitalOcean droplet.
-5. Sync `/opt/easymod`, run Docker Compose, run migrations, and verify `/health/ready`.
+1. Detect backend/frontend changes and run the required test/build gates.
+2. Build and push SHA-tagged GHCR images by immutable digest.
+3. Dispatch the same workflow from the current `main` SHA with
+   `PRODUCTION_DEPLOY_ENABLED=true` and the exact
+   `DEPLOY-<full main SHA>` confirmation.
+4. The `production` environment policy gates the deploy job; GitHub currently
+   has no configured reviewer rule, so this is not a substitute for protected
+   `main` and human environment approval.
+5. Sync `/opt/easymod`, run the candidate image migration, replace services,
+   and verify `/health/ready`, `/health/live`, and version/digest receipts.
 
 The backend configuration preflight runs before traffic is served and before CI
 replaces a production container. For Phase 1 changes, run the merge-blocking
@@ -145,7 +152,10 @@ npm run build
 
 Manual production changes should not bypass this path unless there is an incident and the workaround is documented afterward.
 
-The manual workflow input `wipe_db_first=WIPE` is destructive and is reserved for confirmed production resets. It drops and recreates the runtime database named by production `DATABASE_URL`, flushes Redis queues/cache/session state, clears backend uploads, removes the active Qdrant vector-store volume, recreates services, bootstraps schema, seeds migration history, and verifies `/health/ready`.
+The current production cutover deliberately rejects the destructive
+`wipe_db_first=WIPE` path. Confirmed database resets, if ever required during
+an incident, must use a separately reviewed recovery procedure rather than the
+normal deployment gate.
 
 The manual workflow input `seed_admin=SEED` creates or updates the production review account from `SEED_ADMIN_*` environment values. The seed grants `SUPER_ADMIN`, ensures an owner shop, resets the configured password, and keeps that shop on an active Growth subscription paid through the next 12 months. The password is supplied by GitHub Secrets, never committed.
 

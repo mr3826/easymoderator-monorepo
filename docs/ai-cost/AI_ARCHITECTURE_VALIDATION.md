@@ -209,5 +209,5 @@ new `vision-policy.service.js`.
 Tests: `gemini-first-routing.test.js` (17), `retrieval-behaviour.test.js` (9),
 `intent-router.test.js` (+2). **115 suites / 1377 tests passing.**
 
-Harness: `scripts/retrieval-eval/{dataset.js,run-eval.js}` — 86 labelled queries,
+Harness: `EasyMod-backend/scripts/retrieval-eval/{dataset.js,run-eval.js}` — 86 labelled queries,
 36 products, 7 engines, real Postgres, real Gemini embeddings.

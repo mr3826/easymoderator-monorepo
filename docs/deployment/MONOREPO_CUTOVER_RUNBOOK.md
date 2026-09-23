@@ -1,8 +1,8 @@
 # EasyModerator monorepo cutover runbook
 
 This is the authoritative cutover contract for the monorepo deployment path.
-It is intentionally separate from the historical Cloud Run runbook in
-`EasyMod-backend/docs/deployment-runbook.md`.
+It intentionally supersedes the retired Cloud Run deployment procedure; that
+historical procedure is not part of the current checkout.
 
 ## Safety gates
 

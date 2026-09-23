@@ -1,5 +1,12 @@
 # Growth OS Application Foundation
 
+> **Historical bootstrap note:** The raw SQL role snippets in this dated
+> document are retained as history only. Do not use them for production access
+> changes. Use the audited `grant-growth-role.yml` workflow, which delegates to
+> the transactional role service, preserves the last-Founder guard, writes the
+> audit row, and invalidates the authorization cache. The current release state
+> and operator procedure are maintained in `docs/growth-os/EXECUTION_STATE.md`.
+
 Date: 2026-07-18
 Status: Prompt 2 foundation implemented
 Verdict: CONDITIONALLY READY for Prompt 3 after manual role bootstrap and browser verification
@@ -150,11 +157,25 @@ valid bootstrap inputs.
 
 Initial permissions are intentionally minimal and foundation-oriented. Prompt 3 must extend permissions only for the prospect/lead module it implements.
 
+## Manual Role Bootstrap (Historical, Do Not Execute)
+
+No Founder UI existed when this document was written. The following SQL is a
+historical record of the old procedure and must not be executed against a
+current environment:
+
+```sql
+INSERT INTO growth_os_user_roles (user_id, role, is_active, metadata)
+VALUES ('<existing-user-id>', 'FOUNDER', true, '{"bootstrap": true}'::jsonb);
+```
+
+The current workflow below is the only supported bootstrap path.
+
 ## Protected Role Bootstrap
 
 The first Growth OS role must be established through
 `.github/workflows/grant-growth-role.yml` after migrations run. The protected
-`growth-bootstrap` environment supplies `GROWTH_BOOTSTRAP_ACTOR_EMAIL`; the
+`production` environment supplies `GROWTH_BOOTSTRAP_ACTOR_EMAIL`; GitHub has no
+configured `growth-bootstrap` environment. The
 workflow accepts only an existing target email and the canonical
 `SUPER_ADMIN` role. The role service verifies that configured actor and refuses
 to bootstrap after an active Super Admin already exists. Do not use raw SQL or
@@ -188,7 +209,8 @@ Docker Compose service:
 growth-frontend
 ```
 
-Default image:
+Historical development placeholder only. Production must resolve the image to
+an immutable `@sha256:<digest>` reference; never deploy this mutable tag:
 
 ```text
 ghcr.io/mr3826/easymod-growth:latest
