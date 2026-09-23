@@ -298,7 +298,7 @@ Files and surfaces:
 Acceptance criteria:
 
 1. Identify an existing production app user and configure the explicit
-   `GROWTH_BOOTSTRAP_ACTOR_EMAIL` secret in the protected `growth-bootstrap`
+   `GROWTH_BOOTSTRAP_ACTOR_EMAIL` secret in the protected `production`
    environment. The workflow must not accept an actor as dispatch input or
    create/mutate the user account.
 2. Dispatch `grant-growth-role.yml` with the target email and canonical
@@ -750,3 +750,13 @@ The dated determination and the evidence below are historical to the audit date:
   was validated and merged.
 - The production receipt remains the earlier `cf57db1e...` deployment; the merge
   did not itself deploy or alter production.
+
+## Current production reconciliation (2026-09-23)
+
+- `origin/main` and production now run `696a83c9f75737c2609873f0c09c6498bcfb6332`.
+- The bounded production workflow used the existing `production` environment;
+  GitHub has no `growth-bootstrap` environment. `PRODUCTION_DEPLOY_ENABLED` was
+  restored to `false` after the successful cutover.
+- Public Growth readiness returned HTTP 200, but the running Growth image digest,
+  authenticated Founder bootstrap, and live authenticated browser walkthrough
+  remain unverified. The Growth release verdict therefore remains conditional.
