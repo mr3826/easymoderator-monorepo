@@ -17,7 +17,6 @@ jest.mock('../oauth-state.store', () => ({
 const mockBuildAuthUrl = jest.fn().mockResolvedValue('https://www.facebook.com/v22.0/dialog/oauth?scope=stub');
 const mockSubscribeWebhook = jest.fn().mockResolvedValue(undefined);
 const mockVerifyWebhookSubscription = jest.fn();
-const mockGetAssetAccessToken = jest.fn().mockResolvedValue({ token: 'page-tok', expiresAt: null });
 const mockExchangeCode = jest.fn().mockResolvedValue({ userToken: 'user-tok' });
 const mockListManagedAssets = jest.fn().mockResolvedValue([]);
 const mockGetOAuthIdentity = jest.fn().mockResolvedValue({
@@ -34,7 +33,6 @@ jest.mock('../provider.registry', () => ({
         exchangeCode: mockExchangeCode,
         listManagedAssets: mockListManagedAssets,
         getOAuthIdentity: mockGetOAuthIdentity,
-        getAssetAccessToken: mockGetAssetAccessToken,
         subscribeWebhook: mockSubscribeWebhook,
         verifyWebhookSubscription: mockVerifyWebhookSubscription,
     }),
@@ -376,7 +374,6 @@ describe('connectPage() webhook verify wiring', () => {
         mockUpsertFromOAuth.mockResolvedValue(CHANNEL);
         mockFindByShopAndAsset.mockResolvedValue(CHANNEL);
         mockConfirmWebhookActive.mockResolvedValue(CHANNEL);
-        mockGetAssetAccessToken.mockResolvedValue({ token: 'page-tok', expiresAt: null });
         mockSubscribeWebhook.mockResolvedValue(undefined);
         stateStore.get.mockResolvedValue({
             userToken: 'stored-user-token',
@@ -438,7 +435,6 @@ describe('connectPage() webhook verify wiring', () => {
             code: 'META_PAGE_TASKS_REQUIRED',
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 
@@ -471,7 +467,6 @@ describe('connectPage() webhook verify wiring', () => {
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
             pageAccessToken: PAGE_TOKEN_SENTINEL,
         }));
@@ -502,7 +497,6 @@ describe('connectPage() webhook verify wiring', () => {
             code: 'META_PAGE_ACCESS_TOKEN_MISSING',
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
         expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
@@ -512,7 +506,6 @@ describe('connectPage() webhook verify wiring', () => {
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
             displayName: 'Stored Page Name',
             pageAccessToken: PAGE_TOKEN_SENTINEL,
@@ -597,7 +590,6 @@ describe('connectPage() webhook verify wiring', () => {
             message: expect.stringContaining('was not selected'),
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 
@@ -623,7 +615,6 @@ describe('connectPage() webhook verify wiring', () => {
             oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
         ).rejects.toMatchObject({ status: 403 });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 
@@ -651,7 +642,6 @@ describe('connectPage() webhook verify wiring', () => {
 
         await oauthService.connectPage(secondPageId, 'Browser supplied name', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
             metaAssetId: secondPageId,
             displayName: 'Page B',
@@ -685,7 +675,6 @@ describe('connectPage() webhook verify wiring', () => {
             code: 'META_PAGE_ACCESS_TOKEN_MISSING',
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
         expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
@@ -717,7 +706,6 @@ describe('connectPage() webhook verify wiring', () => {
             code: 'META_RECONNECT_TARGET_MISMATCH',
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 
