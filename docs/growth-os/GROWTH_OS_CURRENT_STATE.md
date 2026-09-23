@@ -744,7 +744,7 @@ The dated determination and the evidence below are historical to the audit date:
   Growth acts named in the historical determination have receipts from the
   current deployment.
 
-## Post-reconciliation state (2026-09-23)
+## Historical intermediate reconciliation (before the 2026-09-23 release)
 
 - `origin/main` is now `45f651927aae21db5aea9de62c675cbb6f8e5bbb` after PR #127
   was validated and merged.
