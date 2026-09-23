@@ -1,17 +1,17 @@
 # Growth OS Execution State
 
-Updated: 2026-08-21
+Updated: 2026-09-23
 
 ## Current execution
 
-- `CURRENT_MAIN`: `cf634fab5d47477f9cda4113237561471454a8ae`
-- `BASE_MAIN`: latest `origin/main` after PR #46 squash merge
-- `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
-- `BRANCH`: `docs/growth-os-restore-receipt`
-- `PHASE`: Phase C — safety mechanism published; rollout authorization pending
-- `STATUS`: pre-deploy receipts pass; post-merge restore mechanism receipt passes; human authorization and live release evidence remain blocked
-- `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
-- `PRODUCTION_CHANGED`: NO
+- `CURRENT_MAIN`: `696a83c9f75737c2609873f0c09c6498bcfb6332`
+- `BASE_MAIN`: current `origin/main` after PR #129 merge
+- `WORKTREE`: `D:\easymod\production-conversation-reply-engine`
+- `BRANCH`: `main`
+- `PHASE`: production release receipt verified; Growth operator bootstrap remains open
+- `STATUS`: CI, migration, schema, backend version, and public smoke receipts pass; live Growth digest and operator bootstrap remain unverified
+- `RELEASE_STATUS`: CONDITIONAL — merchant production is running the verified main SHA; Growth operator gates remain open
+- `PRODUCTION_CHANGED`: YES — bounded workflow dispatch `35812554066`
 
 ## Phase 1 base proof
 

@@ -17,33 +17,31 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | `cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4` — GitHub production deployment record targets the `main` workflow SHA. GitHub currently reports `main` unprotected; runtime `/api/version` read-back was not present in this deployment receipt. | 2026-09-20 deployment `6559205914`; [Actions run 35545761329](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35545761329) |
-| Latest migration on `main` | No new migration was applied during this cutover; the candidate reached `20260908_001`, preserved the repair ledger threshold, and reported `No drift found.` | 2026-09-20 deploy log; schema audit and migration ledger checks |
-| Backend / worker version | `ghcr.io/mr3826/easymoderator-backend@sha256:9e046b07177a5514d39649fdf14a6012d4c4edc3ef5ccfc0378c090e98258ffd` | 2026-09-20 candidate build/pull receipt; runtime read-back pending |
-| Frontend build version | `ghcr.io/mr3826/easymoderator-frontend@sha256:097b0a93b73d2b0730ed0aa01e1b7619ea8916f0cabca27fe7e53188084e514c` | 2026-09-20 candidate build/pull receipt; runtime read-back pending |
-| Growth image version | Existing running Growth image was carried forward; `GROWTH_BOOTSTRAP_DIGEST` was empty, so no independent current digest receipt exists. | 2026-09-20 deploy log; `GROWTH_IMAGE_DIGEST=NOT_VERIFIED` |
-| Deployment workflow | Manual production deploy succeeded at `2026-09-20T23:59:13Z`; candidate migration completed before service replacement. The deploy gate was restored to `PRODUCTION_DEPLOY_ENABLED=false` on 2026-09-21. | [Actions run 35545761329](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35545761329) |
+| Production commit SHA | `696a83c9f75737c2609873f0c09c6498bcfb6332`; public `/api/version` and `/health/ready` report this exact SHA. | 2026-09-23 deployment `6605458886`; [Actions run 35812554066](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35812554066) |
+| Latest migration on `main` | `20260914_001_add_temporary_password_controls`; production reports 56 migrations, threshold values were preserved, and the schema audit reported `No drift found.` | 2026-09-23 deploy log and public `/api/version` |
+| Backend / worker version | `ghcr.io/mr3826/easymoderator-backend@sha256:008b6154382050bd3bd4f937451352d3fa96dc36a604ef517eceb8e408ad23a5` | 2026-09-23 candidate pull and in-container version receipt |
+| Frontend build version | `ghcr.io/mr3826/easymoderator-frontend@sha256:d1afe8a00ea33519b402cfda2f3d279e4b1041f1fbd6962298e8323178a2cd4f` | 2026-09-23 candidate pull receipt; public frontend origin returned HTTP 200 |
+| Growth image version | Existing running Growth image was carried forward; `GROWTH_BOOTSTRAP_DIGEST` was empty, so the running Growth digest remains `NOT_VERIFIED`. Public Growth readiness returned HTTP 200. | 2026-09-23 deploy log and public smoke check |
+| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 35812554066](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35812554066) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Verification limits
 
 The receipt above proves the GitHub deployment target, candidate image pulls,
-database authentication, migration ordering, schema audit, and backend
-readiness for that run. It does not yet prove public `/api/version` identity,
-frontend/Growth/Caddy/TLS read-back, worker canary behavior, media restore,
-Qdrant recovery, Redis recovery, or a live rollback. The platform audit tracks
-those as `NOT_VERIFIED`; the next deployment uses a fail-closed backend
+database authentication, migration ordering, schema audit, backend version
+identity, backend readiness, and public backend/frontend/Growth HTTP smoke
+responses. It does not yet prove frontend asset-digest identity, the running
+Growth image digest, worker canary behavior, media restore, Qdrant recovery,
+Redis recovery, or a live rollback. The deployment uses a fail-closed
 `/api/version.gitSha` check before reporting success.
 
 ## Commercial model rollout status
 
-The Shuru/Growth/Partner commercial model is deployed by main commit
-`6b556eb332d64f5ded0926e7e957c17dd5abad7f`. The public plan endpoint returns the
-three expected plans, but the live entity/schema audit on 2026-09-01 found
-three latent missing columns: `orders.metadata`,
-`subscriptions.threshold_debt`, and `subscriptions.usage_reset_at`. The
-commercial release is therefore not incident-clear until the forward repair
-migration and post-migration schema audit pass in production.
+The Shuru/Growth/Partner commercial model and the Growth control-plane migrations
+are deployed by main commit `696a83c9f75737c2609873f0c09c6498bcfb6332`. The
+2026-09-23 production migration and schema audit completed successfully with no
+drift; the earlier repair-ledger evidence remains preserved in the dated audit
+history.
 
 ## Post-deploy verification (run on the droplet after each deploy)
 
