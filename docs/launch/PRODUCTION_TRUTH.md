@@ -17,12 +17,12 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `696a83c9f75737c2609873f0c09c6498bcfb6332`; current `origin/main` is intentionally read dynamically because post-release documentation/test commits are not deployed. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-23 deployment `6605458886`; [Actions run 35812554066](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35812554066) |
+| Production commit SHA | Runtime is `81437a6aacbf9e2d519816d5824a18ecfe7d332b`; current `origin/main` is intentionally read dynamically because later workflow/docs/test commits are not deployed. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-23 deployment [Actions run 35862031156](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35862031156) |
 | Latest migration on `main` | `20260914_001_add_temporary_password_controls`; production reports 56 migrations, threshold values were preserved, and the schema audit reported `No drift found.` | 2026-09-23 deploy log and public `/api/version` |
-| Backend / worker version | `ghcr.io/mr3826/easymoderator-backend@sha256:008b6154382050bd3bd4f937451352d3fa96dc36a604ef517eceb8e408ad23a5` | 2026-09-23 candidate pull and in-container version receipt |
-| Frontend build version | `ghcr.io/mr3826/easymoderator-frontend@sha256:d1afe8a00ea33519b402cfda2f3d279e4b1041f1fbd6962298e8323178a2cd4f` | 2026-09-23 candidate pull receipt; public frontend origin returned HTTP 200 |
+| Backend / worker version | Exact immutable image and in-container version verified by deployment run `35862031156`. | 2026-09-23 deployment receipt |
+| Frontend build version | Exact immutable image verified by deployment run `35862031156`; public frontend origin returned HTTP 200. | 2026-09-23 deployment receipt |
 | Growth image version | Existing running Growth image was carried forward; `GROWTH_BOOTSTRAP_DIGEST` was empty, so the running Growth digest remains `NOT_VERIFIED`. Public Growth readiness returned HTTP 200. | 2026-09-23 deploy log and public smoke check |
-| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 35812554066](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35812554066) |
+| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 35862031156](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35862031156) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Verification limits
@@ -37,8 +37,8 @@ Redis recovery, or a live rollback. The deployment uses a fail-closed
 
 ## Commercial model rollout status
 
-The Shuru/Growth/Partner commercial model and the Growth control-plane migrations
-are deployed by main commit `696a83c9f75737c2609873f0c09c6498bcfb6332`. The
+The rollback-safe runtime and current Growth control-plane migrations are deployed
+by main commit `81437a6aacbf9e2d519816d5824a18ecfe7d332b`. The
 2026-09-23 production migration and schema audit completed successfully with no
 drift; the earlier repair-ledger evidence remains preserved in the dated audit
 history.

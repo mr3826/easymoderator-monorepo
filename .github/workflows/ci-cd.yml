@@ -1203,14 +1203,9 @@ jobs:
             # deploy. Recover by resetting the persistence volume so Redis starts
             # clean. On a WIPE run this is always correct (clean first-run state);
             # otherwise only reset when Redis is genuinely unhealthy.
-            reset_redis_volume() {
-              docker compose --env-file .env.prod -f docker-compose.prod.yml rm -sf redis 2>/dev/null || true
-              RVOL=$(docker volume ls -q | grep -E 'redis_data$' | head -1 || true)
-              if [ -n "$RVOL" ]; then docker volume rm "$RVOL" 2>/dev/null || true; fi
-            }
             if [ "$WIPE_DB" = "WIPE" ]; then
-              echo "==> WIPE run: resetting Redis persistence volume for a clean start"
-              reset_redis_volume
+              echo "ERROR: Redis volume recovery is disabled in production; use a reviewed manual recovery procedure"
+              exit 1
             else
               docker compose --env-file .env.prod -f docker-compose.prod.yml restart redis 2>/dev/null || true
               RSTATE=starting
@@ -1221,8 +1216,8 @@ jobs:
                 sleep 5
               done
               if [ "$RSTATE" != "healthy" ]; then
-                echo "==> Redis $RSTATE — resetting its persistence volume to recover"
-                reset_redis_volume
+                echo "ERROR: Redis is $RSTATE; refusing automatic volume deletion. Manual recovery is required"
+                exit 1
               fi
             fi
 

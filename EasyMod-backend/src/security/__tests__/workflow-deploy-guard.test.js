@@ -136,6 +136,12 @@ describe('production workflow branch safety', () => {
         expect(workflow).not.toContain('SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}');
     });
 
+    test('fails closed instead of deleting Redis persistence during deployment recovery', () => {
+        expect(workflow).toContain('refusing automatic volume deletion');
+        expect(workflow).not.toContain('reset_redis_volume');
+        expect(workflow).not.toContain('RVOL=$(docker volume');
+    });
+
     test('manual deployment probes cannot execute branch-controlled code with production secrets', () => {
         const deploymentConfigBlock = workflow.match(/\n  deployment-config:\n([\s\S]*?)\n  # ── 2d\./)?.[1];
 
