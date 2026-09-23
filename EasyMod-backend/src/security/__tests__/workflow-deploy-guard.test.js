@@ -122,9 +122,18 @@ describe('production workflow branch safety', () => {
     });
 
     test('keeps Growth role bootstrap on the configured production environment', () => {
-        expect(grantGrowthRoleWorkflow).toContain("if: github.ref == 'refs/heads/main'");
+        expect(grantGrowthRoleWorkflow).toContain(
+            "if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'",
+        );
         expect(grantGrowthRoleWorkflow).toContain('environment: production');
         expect(grantGrowthRoleWorkflow).not.toContain('environment: growth-bootstrap');
+    });
+
+    test('keeps browser and server Sentry configuration boundaries separate', () => {
+        expect(workflow).toContain('VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}');
+        expect(workflow.match(/VITE_SENTRY_DSN=\$\{\{ vars\.VITE_SENTRY_DSN \}\}/g)).toHaveLength(2);
+        expect(workflow).toContain('SENTRY_DSN: ${{ secrets.SENTRY_DSN }}');
+        expect(workflow).not.toContain('SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}');
     });
 
     test('manual deployment probes cannot execute branch-controlled code with production secrets', () => {
