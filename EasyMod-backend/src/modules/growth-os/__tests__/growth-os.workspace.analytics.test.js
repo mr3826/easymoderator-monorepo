@@ -33,7 +33,7 @@ describe('Growth workspace analytics', () => {
       { prospect_id: row.id, event_type: 'status_changed', to_value: 'contacted', created_at: new Date(new Date(row.source_recorded_at).getTime() + 3600000).toISOString() },
       { prospect_id: row.id, event_type: 'status_changed', to_value: 'qualified', created_at: new Date(new Date(row.source_recorded_at).getTime() + 7200000).toISOString() },
       { prospect_id: row.id, event_type: 'followup_created', to_value: null, created_at: new Date(new Date(row.source_recorded_at).getTime() + 10800000).toISOString() },
-      { prospect_id: row.id, event_type: 'status_changed', to_value: 'converted', created_at: new Date(new Date(row.source_recorded_at).getTime() + 14400000).toISOString() },
+      { prospect_id: row.id, event_type: 'activated', to_value: 'converted', created_at: new Date(new Date(row.source_recorded_at).getTime() + 14400000).toISOString() },
     ]);
 
     mockProspect.findAll

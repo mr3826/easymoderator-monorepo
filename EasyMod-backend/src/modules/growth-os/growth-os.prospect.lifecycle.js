@@ -46,10 +46,10 @@ const ALLOWED_TRANSITIONS = Object.freeze({
   new: Object.freeze(['contacted', 'disqualified', 'unreachable']),
   contacted: Object.freeze(['qualifying', 'disqualified', 'unreachable']),
   qualifying: Object.freeze(['qualified', 'disqualified', 'unreachable']),
-  // qualified -> converted remains legal so legacy imports/backfills can
-  // complete without walking through onboarding; the operator flow uses
-  // qualified -> onboarding -> converted.
-  qualified: Object.freeze(['onboarding', 'converted', 'disqualified', 'unreachable']),
+  // Direct conversion is reserved for internal imports/backfills that set the
+  // initial status. Operator/API transitions must record onboarding first so
+  // activation is tied to the first successful AI reply.
+  qualified: Object.freeze(['onboarding', 'disqualified', 'unreachable']),
   onboarding: Object.freeze(['converted', 'qualified', 'disqualified', 'unreachable']),
   disqualified: Object.freeze(['qualifying']),
   unreachable: Object.freeze(['contacted']),

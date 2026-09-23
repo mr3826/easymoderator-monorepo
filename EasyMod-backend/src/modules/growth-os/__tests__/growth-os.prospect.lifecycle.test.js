@@ -120,7 +120,7 @@ describe('Growth OS prospect lifecycle', () => {
     expect(() => assertTransition('merged', 'new')).toThrow('Invalid prospect lifecycle transition');
   });
 
-  it('requires a linked shop at the service boundary before conversion', async () => {
+  it('requires onboarding before operator conversion', async () => {
     const row = makeProspect({ status: 'qualified', linked_shop_id: null });
     mockRepository.findProspectById.mockResolvedValue(row);
 
@@ -131,22 +131,10 @@ describe('Growth OS prospect lifecycle', () => {
       status: 'converted',
       reason: 'Converted after verified shop linkage',
     })).rejects.toMatchObject({
-      status: 400,
-      code: 'GROWTH_OS_PROSPECT_INVALID_INPUT',
+      status: 409,
+      code: 'GROWTH_OS_PROSPECT_INVALID_TRANSITION',
     });
     expect(row.update).not.toHaveBeenCalled();
-
-    row.linked_shop_id = 'shop-1';
-    await expect(prospectService.transition({
-      userId: 'founder-1',
-      access: ALL_PROSPECT_ACCESS,
-      prospectId: row.id,
-      status: 'converted',
-      reason: 'Converted after verified shop linkage',
-    })).resolves.toMatchObject({ status: 'converted', linkedShopId: 'shop-1' });
-    expect(row.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'converted' }), {
-      transaction: mockTransaction,
-    });
   });
 
   it('keeps onboarding activation and its audit in one transaction', async () => {

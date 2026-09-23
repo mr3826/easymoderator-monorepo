@@ -359,6 +359,12 @@ describe('Growth OS prospect route security', () => {
       contactPhone: null,
       contactEmail: null,
       pageUrl: null,
+      disqualifiedReason: null,
+      ownerUserId: null,
+      assignedBy: null,
+      linkedShopId: null,
+      linkedUserId: null,
+      createdBy: null,
       redacted: true,
     });
     expect(JSON.stringify(response.body)).not.toContain('owner@example.test');
