@@ -53,7 +53,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "e2e": "node e2e/run-maestro.js"
   },
   "private": true
 }

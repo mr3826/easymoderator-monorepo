@@ -1,0 +1,41 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod Wave 2.5 session expiry recovery
+tags:
+  - mobile-e2e
+  - wave25
+  - session-recovery
+env:
+  E2E_API_BASE_URL: http://127.0.0.1:4000
+  E2E_EMAIL: mobile-dev@easymod.test
+  E2E_PASSWORD: MobileDev123!
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: login-email-input
+    timeout: 30000
+- tapOn:
+    id: login-email-input
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: login-password-input
+- inputText: ${E2E_PASSWORD}
+- tapOn:
+    id: login-submit
+- extendedWaitUntil:
+    visible: home-attention-list
+    timeout: 30000
+- runScript:
+    file: ../scripts/revoke-all-sessions.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      email: ${E2E_EMAIL}
+      password: ${E2E_PASSWORD}
+- swipe:
+    direction: DOWN
+- extendedWaitUntil:
+    visible: login-email-input
+    timeout: 30000
+- assertNotVisible:
+    id: home-attention-list
+- takeScreenshot: wave25-session-recovery
