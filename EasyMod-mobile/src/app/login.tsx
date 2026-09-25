@@ -72,10 +72,14 @@ export default function LoginScreen() {
   const [verificationError, setVerificationError] = useState<VerificationError | null>(null);
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
   const [verificationClosed, setVerificationClosed] = useState(false);
+  // Synchronous guards: `submitting` state disables the buttons only after a re-render, so two
+  // taps in the same frame would otherwise both send a request (two sessions, two rate-limit hits).
+  const signInInFlight = useRef(false);
   const verificationInFlight = useRef(false);
   const verificationGeneration = useRef(0);
 
   const handleSubmit = async () => {
+    if (signInInFlight.current) return;
     setFormError(null);
 
     if (!email.trim()) {
@@ -87,6 +91,7 @@ export default function LoginScreen() {
       return;
     }
 
+    signInInFlight.current = true;
     setSubmitting(true);
     try {
       const result = await signIn(email.trim(), password);
@@ -106,6 +111,7 @@ export default function LoginScreen() {
         }
       }
     } finally {
+      signInInFlight.current = false;
       setSubmitting(false);
     }
   };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import i18n from '@/i18n';
 import { useAuth } from '@/auth/AuthProvider';
@@ -171,4 +171,41 @@ it.each([
 
   const error = await screen.findByTestId(`login-2fa-error-${code}`);
   expect(error.props.children).toBe(i18n.t(`auth.twoFactor.errors.${code}`));
+});
+
+it('sends one sign-in request when the submit button is tapped twice before it re-renders', async () => {
+  let resolveSignIn: (value: { ok: boolean; message?: string }) => void = () => undefined;
+  const signIn = jest.fn(
+    () => new Promise<{ ok: boolean; message?: string }>((resolve) => {
+      resolveSignIn = resolve;
+    }),
+  );
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor: jest.fn(),
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+
+  // Both taps land on the same rendered handler, before `submitting` disables the button.
+  const [submit] = screen.UNSAFE_root.findAll(
+    (node) => node.props.testID === 'login-submit' && typeof node.props.onPress === 'function',
+  );
+  const { onPress } = submit.props;
+  act(() => {
+    void onPress();
+    void onPress();
+  });
+
+  expect(signIn).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolveSignIn({ ok: false, message: 'Invalid credentials' });
+  });
+  expect(await screen.findByTestId('login-error')).toHaveTextContent('Invalid credentials');
 });
