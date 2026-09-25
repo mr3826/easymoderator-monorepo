@@ -26,19 +26,37 @@ function isConsumedChallenge(result: VerifyTwoFactorOutcome): boolean {
   );
 }
 
-function verificationErrorMessage(result: VerifyTwoFactorOutcome, t: (key: string) => string): string {
-  if (result.kind === 'rateLimited') return t('auth.twoFactor.errors.rateLimited');
-  if (result.kind === 'unauthorized' || result.kind === 'notFound') return t('auth.twoFactor.errors.expired');
+type TwoFactorErrorCode =
+  | 'codeRequired'
+  | 'rateLimited'
+  | 'expired'
+  | 'replay'
+  | 'invalidCode'
+  | 'network'
+  | 'timeout'
+  | 'generic';
+
+interface VerificationError {
+  /** Stable, locale-independent identity of the error (also the device-E2E testID suffix). */
+  code: TwoFactorErrorCode;
+  message: string;
+}
+
+function localizedError(code: TwoFactorErrorCode, t: (key: string) => string): VerificationError {
+  return { code, message: t(`auth.twoFactor.errors.${code}`) };
+}
+
+function verificationErrorFor(result: VerifyTwoFactorOutcome, t: (key: string) => string): VerificationError {
+  if (result.kind === 'rateLimited') return localizedError('rateLimited', t);
+  if (result.kind === 'unauthorized' || result.kind === 'notFound') return localizedError('expired', t);
 
   const serverMessage = result.message?.toLowerCase() ?? '';
-  if (serverMessage.includes('already used')) return t('auth.twoFactor.errors.replay');
-  if (result.kind === 'validation' || serverMessage.includes('invalid totp')) {
-    return t('auth.twoFactor.errors.invalidCode');
-  }
-  if (result.kind === 'network') return t('auth.twoFactor.errors.network');
-  if (result.kind === 'timeout') return t('auth.twoFactor.errors.timeout');
-  if (result.kind === 'server') return t('auth.twoFactor.errors.generic');
-  return result.message ?? t('auth.twoFactor.errors.generic');
+  if (serverMessage.includes('already used')) return localizedError('replay', t);
+  if (result.kind === 'validation' || serverMessage.includes('invalid totp')) return localizedError('invalidCode', t);
+  if (result.kind === 'network') return localizedError('network', t);
+  if (result.kind === 'timeout') return localizedError('timeout', t);
+  if (result.kind === 'server') return localizedError('generic', t);
+  return { code: 'generic', message: result.message ?? t('auth.twoFactor.errors.generic') };
 }
 
 export default function LoginScreen() {
@@ -51,7 +69,7 @@ export default function LoginScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [twoFactorTempToken, setTwoFactorTempToken] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
-  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<VerificationError | null>(null);
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
   const [verificationClosed, setVerificationClosed] = useState(false);
   const verificationInFlight = useRef(false);
@@ -97,7 +115,7 @@ export default function LoginScreen() {
 
     setVerificationError(null);
     if (!/^\d{6}$/.test(verificationCode)) {
-      setVerificationError(t('auth.twoFactor.errors.codeRequired'));
+      setVerificationError(localizedError('codeRequired', t));
       return;
     }
 
@@ -108,7 +126,7 @@ export default function LoginScreen() {
       const result = await verifyTwoFactor(twoFactorTempToken, verificationCode);
       if (generation !== verificationGeneration.current) return;
       if (!result.ok) {
-        setVerificationError(verificationErrorMessage(result, t));
+        setVerificationError(verificationErrorFor(result, t));
         if (isConsumedChallenge(result)) {
           // The backend consumes the tempToken before validating the code. Wipe it immediately
           // while retaining the closed screen so the user can see the localized error.
@@ -161,8 +179,12 @@ export default function LoginScreen() {
           </View>
 
           {verificationError ? (
-            <Text style={styles.errorText} accessibilityRole="alert">
-              {verificationError}
+            <Text
+              style={styles.errorText}
+              accessibilityRole="alert"
+              testID={`login-2fa-error-${verificationError.code}`}
+            >
+              {verificationError.message}
             </Text>
           ) : null}
 
@@ -234,7 +256,7 @@ export default function LoginScreen() {
         </View>
 
         {formError ? (
-          <Text style={styles.errorText} accessibilityRole="alert">
+          <Text style={styles.errorText} accessibilityRole="alert" testID="login-error">
             {formError}
           </Text>
         ) : null}

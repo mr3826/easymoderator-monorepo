@@ -36,6 +36,11 @@ describe('tab shell', () => {
     expect(screen.getByText(i18n.t('mobile.tabs.quickAction'))).toBeTruthy();
     expect(screen.getByText(i18n.t('mobile.tabs.orders'))).toBeTruthy();
     expect(screen.getByText(i18n.t('mobile.tabs.more'))).toBeTruthy();
+
+    // Device E2E navigates by these stable ids, never by the localized labels.
+    for (const id of ['tab-home', 'tab-inbox', 'tab-quick-action', 'tab-orders', 'tab-more']) {
+      expect(screen.getByTestId(id)).toBeTruthy();
+    }
   });
 
   it('renders the Inbox placeholder after navigating to the Inbox tab', async () => {

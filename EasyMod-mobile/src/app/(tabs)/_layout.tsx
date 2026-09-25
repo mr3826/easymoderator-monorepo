@@ -6,7 +6,8 @@ import { brandColors } from '@/theme/tokens';
 
 /**
  * The Phase 1 tab shell (MOBILE_ARCHITECTURE.md §3): Home · Inbox · + (quick action) · Orders ·
- * More. Each screen is a placeholder for now — Phase 2+ builds the real feature screens.
+ * More. Each screen is a placeholder for now — Phase 2+ builds the real feature screens. Tab buttons
+ * carry stable testIDs (`tab-*`) so device E2E does not depend on the Bengali/English labels.
  */
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -23,6 +24,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: t('mobile.tabs.home'),
+          tabBarButtonTestID: 'tab-home',
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
       />
@@ -30,6 +32,7 @@ export default function TabsLayout() {
         name="inbox"
         options={{
           title: t('mobile.tabs.inbox'),
+          tabBarButtonTestID: 'tab-inbox',
           tabBarIcon: ({ color, size }) => <Inbox color={color} size={size} />,
         }}
       />
@@ -37,6 +40,7 @@ export default function TabsLayout() {
         name="quick-action"
         options={{
           title: t('mobile.tabs.quickAction'),
+          tabBarButtonTestID: 'tab-quick-action',
           tabBarIcon: ({ color, size }) => <PlusCircle color={color} size={size} />,
         }}
       />
@@ -44,6 +48,7 @@ export default function TabsLayout() {
         name="orders"
         options={{
           title: t('mobile.tabs.orders'),
+          tabBarButtonTestID: 'tab-orders',
           tabBarIcon: ({ color, size }) => <Package color={color} size={size} />,
         }}
       />
@@ -51,6 +56,7 @@ export default function TabsLayout() {
         name="more"
         options={{
           title: t('mobile.tabs.more'),
+          tabBarButtonTestID: 'tab-more',
           tabBarIcon: ({ color, size }) => <Menu color={color} size={size} />,
         }}
       />

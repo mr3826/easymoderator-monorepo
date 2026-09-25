@@ -146,3 +146,29 @@ it('cancels the challenge without navigating into the authenticated app', async 
   await waitFor(() => expect(screen.getByTestId('login-email-input')).toBeTruthy());
   expect(cancelTwoFactor).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+  [{ ok: false, kind: 'validation', message: 'Invalid TOTP token' }, 'invalidCode'],
+  [{ ok: false, kind: 'unauthorized', message: 'Invalid or expired session. Please login again.' }, 'expired'],
+  [{ ok: false, kind: 'rateLimited', message: 'Too many 2FA attempts.' }, 'rateLimited'],
+] as const)('exposes a stable, locale-independent error identity for %j', async (outcome, code) => {
+  const signIn = jest.fn().mockResolvedValue({ ok: false, requires2fa: true, tempToken: 'fake-temp-token' });
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor: jest.fn().mockResolvedValue(outcome),
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+  fireEvent.press(screen.getByTestId('login-submit'));
+  fireEvent.changeText(await screen.findByTestId('login-2fa-input'), '123456');
+  fireEvent.press(screen.getByTestId('login-2fa-submit'));
+
+  const error = await screen.findByTestId(`login-2fa-error-${code}`);
+  expect(error.props.children).toBe(i18n.t(`auth.twoFactor.errors.${code}`));
+});
