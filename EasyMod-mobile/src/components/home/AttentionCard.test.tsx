@@ -117,6 +117,28 @@ describe('AttentionCard localization and long content', () => {
     expect(screen.queryByText(item.reason)).toBeNull();
   });
 
+  it('renders the HITL-handoff variant of a tier 2 inbox signal distinctly from a plain unanswered one', async () => {
+    const unanswered = HOME_ATTENTION_ITEMS.find((candidate) => candidate.signal_type === 'INBOX_NEEDS_REPLY');
+    if (!unanswered) throw new Error('inbox fixture missing');
+    const handoff: AttentionItem = {
+      ...unanswered,
+      id: 'inbox_needs_reply:conversation:handoff',
+      reason_code: 'HITL_REQUIRED',
+      reason: 'This conversation was handed off to you by the AI',
+    };
+
+    const { unmount } = render(<AttentionCard item={handoff} onPress={jest.fn()} />);
+    expect(screen.getByText(i18n.t('mobile.home.reasons.HITL_REQUIRED'))).toBeTruthy();
+    expect(screen.queryByText(i18n.t('mobile.home.reasons.CUSTOMER_UNANSWERED'))).toBeNull();
+    unmount();
+
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
+    render(<AttentionCard item={handoff} onPress={jest.fn()} />);
+    expect(screen.getByText(handoff.reason)).toBeTruthy();
+  });
+
   it('wraps long server reasons instead of hard-clipping them', async () => {
     const item = HOME_ATTENTION_ITEMS.find((candidate) => candidate.signal_type === 'DRAFT_ORDER');
     if (!item) throw new Error('draft fixture missing');

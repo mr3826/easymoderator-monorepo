@@ -507,6 +507,15 @@ describe('HomeScreen locale and shop boundaries', () => {
     );
   });
 
+  it('shows the overflow indicator when the server capped the list (truncated_count > 0)', async () => {
+    mockHomeData({ attention: attentionResponse([HOME_ATTENTION_ITEMS[0]], { truncated_count: 4 }) });
+    renderHome();
+
+    expect(await screen.findByTestId('attention-overflow')).toHaveTextContent(
+      i18n.t('mobile.home.attention.overflow', { count: 4 }),
+    );
+  });
+
   it('uses distinct shop query keys and never renders the previous shop response after a switch', async () => {
     await act(async () => {
       await i18n.changeLanguage('en');
