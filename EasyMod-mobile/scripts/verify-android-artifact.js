@@ -52,7 +52,10 @@ const FORBIDDEN_PERMISSIONS = [
   'android.permission.SYSTEM_ALERT_WINDOW',
 ];
 
-const run = (command, args) => execFileSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// Windows can only spawn a .bat build tool (apksigner.bat) through cmd.exe; CI runs on Linux.
+const run = (command, args) => (process.platform === 'win32' && command.endsWith('.bat')
+  ? execFileSync('cmd.exe', ['/d', '/s', '/c', command, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  : execFileSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const zipEntries = (file) => run('unzip', ['-Z1', file]).split('\n').filter(Boolean);
 
@@ -101,9 +104,14 @@ function main() {
   }
 
   const manifestTree = run(aapt2, ['dump', 'xmltree', '--file', 'AndroidManifest.xml', options.apk]);
+  // Boolean application attributes: aapt2 prints `android:allowBackup(0x01010280)=false`; older
+  // aapt printed `=(type 0x12)0x0`. Anything else (absent, or a resource reference) is null.
   const attribute = (name) => {
-    const match = manifestTree.match(new RegExp(`android:${name}\\([^)]*\\)=\\(type 0x12\\)(0x[0-9a-f]+)`, 'i'));
-    return match ? match[1] !== '0x0' : null;
+    const match = manifestTree.match(
+      new RegExp(`android:${name}\\(0x[0-9a-f]+\\)=(?:(true|false)\\b|\\(type 0x12\\)(0x[0-9a-f]+))`, 'i'),
+    );
+    if (!match) return null;
+    return match[1] !== undefined ? match[1] === 'true' : match[2] !== '0x0';
   };
   const debuggable = attribute('debuggable');
   const cleartext = attribute('usesCleartextTraffic');
@@ -123,6 +131,11 @@ function main() {
     failures.push(`apksigner verify failed: ${error.message.split('\n')[0]}`);
   }
   const debugSigned = /CN=Android Debug/.test(signerDn || '');
+  const signingNote = !signerDn
+    ? 'UNVERIFIED: the signing certificate could not be read'
+    : debugSigned
+      ? 'NOT_DISTRIBUTABLE: signed with the Android debug certificate (no release keystore is provisioned)'
+      : null;
 
   const manifest = {
     sourceSha: process.env.GIT_SHA || process.env.GITHUB_SHA || 'unknown',
@@ -143,8 +156,8 @@ function main() {
     signing: {
       certificateDn: signerDn,
       certificateSha256: signerDigest,
-      distributable: !debugSigned,
-      note: debugSigned ? 'NOT_DISTRIBUTABLE: signed with the Android debug certificate (no release keystore is provisioned)' : null,
+      distributable: Boolean(signerDn) && !debugSigned,
+      note: signingNote,
     },
     toolchain: {
       node: process.version,
