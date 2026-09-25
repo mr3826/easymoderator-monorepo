@@ -387,6 +387,11 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
       .send({ shopId: shop.id, reason: 'Restored verified shop link' });
     expect(relinked.status).toBe(200);
 
+    const onboarding = await asFounder()
+      .post(`${API_ROOT}/${prospectId}/status`)
+      .send({ status: 'onboarding', reason: 'Shop linkage verified' });
+    expect(onboarding.status).toBe(200);
+
     const converted = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)
       .send({ status: 'converted', reason: 'Shop linkage verified' });
