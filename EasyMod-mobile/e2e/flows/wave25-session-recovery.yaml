@@ -12,7 +12,8 @@ env:
 - launchApp:
     clearState: true
 - extendedWaitUntil:
-    visible: login-email-input
+    visible:
+      id: login-email-input
     timeout: 30000
 - tapOn:
     id: login-email-input
@@ -23,7 +24,8 @@ env:
 - tapOn:
     id: login-submit
 - extendedWaitUntil:
-    visible: home-attention-list
+    visible:
+      id: home-attention-list
     timeout: 30000
 - runScript:
     file: ../scripts/revoke-all-sessions.js
@@ -34,7 +36,8 @@ env:
 - swipe:
     direction: DOWN
 - extendedWaitUntil:
-    visible: login-email-input
+    visible:
+      id: login-email-input
     timeout: 30000
 - assertNotVisible:
     id: home-attention-list

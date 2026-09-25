@@ -47,7 +47,8 @@ onFlowComplete:
 - takeScreenshot: offline-cold-restart
 - setAirplaneMode: disabled
 - extendedWaitUntil:
-    notVisible: home-offline-cached
+    notVisible:
+      id: home-offline-cached
     timeout: 60000
 - swipe:
     direction: DOWN

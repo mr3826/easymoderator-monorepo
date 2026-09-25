@@ -46,6 +46,14 @@ tags:
 - takeScreenshot: two-factor-invalid
 - tapOn:
     id: login-2fa-cancel
+# Cancel returns to the password step. The form keeps what was typed, so relaunch
+# (no state cleared) for empty fields before signing in again.
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 30000
+- stopApp
+- launchApp
 
 # 2. An expired challenge (attempt 2) refuses even the right code.
 - runFlow:
@@ -80,6 +88,14 @@ tags:
     timeout: 30000
 - tapOn:
     id: login-2fa-cancel
+# Cancel returns to the password step. The form keeps what was typed, so relaunch
+# (no state cleared) for empty fields before signing in again.
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 30000
+- stopApp
+- launchApp
 
 # 3. The right code on a fresh challenge (attempt 3) signs in.
 - runFlow:
@@ -136,6 +152,14 @@ tags:
           timeout: 30000
       - tapOn:
           id: login-2fa-cancel
+      # Cancel returns to the password step. The form keeps what was typed, so relaunch
+      # (no state cleared) for empty fields before signing in again.
+      - extendedWaitUntil:
+          visible:
+            id: login-email-input
+          timeout: 30000
+      - stopApp
+      - launchApp
 - runFlow:
     file: ../support/sign-in.yaml
     env:

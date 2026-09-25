@@ -11,7 +11,8 @@ env:
 - launchApp:
     clearState: true
 - extendedWaitUntil:
-    visible: login-email-input
+    visible:
+      id: login-email-input
     timeout: 30000
 - tapOn:
     id: login-email-input
@@ -22,7 +23,8 @@ env:
 - tapOn:
     id: login-submit
 - extendedWaitUntil:
-    visible: home-attention-list
+    visible:
+      id: home-attention-list
     timeout: 30000
 - scrollUntilVisible:
     element:
@@ -32,14 +34,16 @@ env:
 - tapOn:
     id: attention-card-draft_order:order:efc22718-691a-5966-8ac9-9f025c36da8b
 - extendedWaitUntil:
-    visible: deeplink-found
+    visible:
+      id: deeplink-found
     timeout: 30000
 - assertVisible:
     text: "অর্ডার #efc22718-691a-5966-8ac9-9f025c36da8b — সম্পূর্ণ বিস্তারিত পরবর্তী আপডেটে আসছে।"
 - takeScreenshot: wave25-order-navigation
 - back
 - extendedWaitUntil:
-    visible: home-attention-list
+    visible:
+      id: home-attention-list
     timeout: 30000
 - scrollUntilVisible:
     element:
@@ -49,10 +53,12 @@ env:
 - tapOn:
     id: attention-card-inbox_needs_reply:conversation:.*
 - extendedWaitUntil:
-    visible: deeplink-found
+    visible:
+      id: deeplink-found
     timeout: 30000
 - takeScreenshot: wave25-conversation-navigation
 - back
 - extendedWaitUntil:
-    visible: home-attention-list
+    visible:
+      id: home-attention-list
     timeout: 30000

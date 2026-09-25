@@ -11,7 +11,8 @@ env:
 - launchApp:
     clearState: true
 - extendedWaitUntil:
-    visible: login-email-input
+    visible:
+      id: login-email-input
     timeout: 30000
 - tapOn:
     id: login-email-input
@@ -22,14 +23,16 @@ env:
 - tapOn:
     id: login-submit
 - extendedWaitUntil:
-    visible: home-attention-list
+    visible:
+      id: home-attention-list
     timeout: 30000
 - assertVisible:
     id: today-summary
 - swipe:
     direction: DOWN
 - extendedWaitUntil:
-    visible: today-summary
+    visible:
+      id: today-summary
     timeout: 30000
 - assertVisible:
     id: home-attention-list
