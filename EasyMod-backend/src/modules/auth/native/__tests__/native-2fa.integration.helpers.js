@@ -35,6 +35,23 @@ async function makeUserWithShop(label) {
     return fixture;
 }
 
+const extraShops = [];
+
+/** Gives an existing fixture user an additional active membership in a fresh shop. */
+async function addShopMembership(fixture, label) {
+    const suffix = uuidv4();
+    const tenant = await Tenant.create({ name: `Native 2FA ${label} ${suffix}` });
+    const shop = await Shop.create({
+        unique_code: `N2X-${suffix}`.slice(0, 20),
+        tenant_id: tenant.id,
+        shop_name: `Native 2FA Shop ${label}`,
+        name: `Native 2FA Shop ${label}`,
+    });
+    await UserShop.create({ user_id: fixture.user.id, shop_id: shop.id, role: 'staff', is_active: true });
+    extraShops.push({ shop, tenant });
+    return shop;
+}
+
 function currentCode(secret, offset = 0) {
     return totpService.hotp(secret, Math.floor(Date.now() / 1000 / 30) + offset);
 }
@@ -64,8 +81,9 @@ async function issueChallenge(label) {
 
 async function cleanupFixtures() {
     const userIds = fixtures.map(({ user }) => user.id);
-    const shopIds = fixtures.map(({ shop }) => shop.id);
-    const tenantIds = fixtures.map(({ tenant }) => tenant.id);
+    const shopIds = [...fixtures, ...extraShops].map(({ shop }) => shop.id);
+    const tenantIds = [...fixtures, ...extraShops].map(({ tenant }) => tenant.id);
+    extraShops.length = 0;
     if (userIds.length === 0) return;
 
     await Session.destroy({ where: { user_id: { [Op.in]: userIds } } });
@@ -84,5 +102,6 @@ module.exports = {
     currentCode,
     invalidCode,
     issueChallenge,
+    addShopMembership,
     cleanupFixtures,
 };

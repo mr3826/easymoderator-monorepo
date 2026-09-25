@@ -104,6 +104,24 @@ const signin = async ({ email, password }, req) => {
 };
 
 /**
+ * Chooses the shop a new native session is bound to from the user's *current*
+ * active memberships, with the same precedence as the password path
+ * (auth.service resolveAuthenticatedUser): the last-used shop if still active,
+ * else an owned shop, else any active shop. Memberships can change during the
+ * five-minute 2FA challenge, so `last_logged_shop_id` alone is not proof.
+ */
+const resolveActiveShopId = async (user) => {
+    const memberships = await UserShop.findAll({
+        attributes: ['shop_id', 'role'],
+        where: { user_id: user.id, is_active: true },
+        order: [['createdAt', 'ASC']],
+    });
+    if (memberships.length === 0) return null;
+    if (memberships.some((m) => m.shop_id === user.last_logged_shop_id)) return user.last_logged_shop_id;
+    return (memberships.find((m) => m.role === 'owner') || memberships[0]).shop_id;
+};
+
+/**
  * POST /api/auth/native/2fa/verify
  * Mirrors totp.controller.js's `verify` step-2 flow exactly (same
  * totpService calls), diverging only at the point of token issuance.
@@ -118,7 +136,7 @@ const verifyTwoFactor = async ({ tempToken, token }, req) => {
     const user = await User.findByPk(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const shopId = user.last_logged_shop_id || null;
+    const shopId = await resolveActiveShopId(user);
     if (!shopId) {
         throw new AppError('No active shop session found. Please login again.', 401);
     }
