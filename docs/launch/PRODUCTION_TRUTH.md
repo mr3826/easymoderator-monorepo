@@ -17,12 +17,12 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `81437a6aacbf9e2d519816d5824a18ecfe7d332b`; current `origin/main` is intentionally read dynamically because later workflow/docs/test commits are not deployed. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-23 deployment [Actions run 35862031156](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35862031156) |
+| Production commit SHA | Runtime is `3f2bbead4c790ae31eb7a937f539032b9d16b515`; current `origin/main` is intentionally read dynamically because later documentation-only commits are not deployed. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-25 deployment [Actions run 36126750919](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36126750919) |
 | Latest migration on `main` | `20260914_001_add_temporary_password_controls`; production reports 56 migrations, threshold values were preserved, and the schema audit reported `No drift found.` | 2026-09-23 deploy log and public `/api/version` |
 | Backend / worker version | Exact immutable image and in-container version verified by deployment run `35862031156`. | 2026-09-23 deployment receipt |
 | Frontend build version | Exact immutable image verified by deployment run `35862031156`; public frontend origin returned HTTP 200. | 2026-09-23 deployment receipt |
 | Growth image version | Existing running Growth image was carried forward; `GROWTH_BOOTSTRAP_DIGEST` was empty, so the running Growth digest remains `NOT_VERIFIED`. Public Growth readiness returned HTTP 200. | 2026-09-23 deploy log and public smoke check |
-| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 35862031156](https://github.com/mr3826/easymoderator-monorepo/actions/runs/35862031156) |
+| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 36126750919](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36126750919) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Verification limits

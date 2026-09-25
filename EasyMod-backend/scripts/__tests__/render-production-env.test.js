@@ -267,6 +267,7 @@ describe('image-understanding switches are settable in production', () => {
         const env = buildRenderedEnv(validSource());
         expect(env.AI_PHOTO_MATCH_ENABLED).toBe('true');   // customer photos: on
         expect(env.AI_VISION_ENABLED).toBe('false');       // merchant images: off
+        expect(env.GROWTH_OS_ENABLED).toBe('true');
     });
 
     test('AI_PHOTO_MATCH_ENABLED=false actually reaches .env.prod', () => {
