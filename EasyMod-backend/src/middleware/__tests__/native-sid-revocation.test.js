@@ -17,8 +17,10 @@ jest.mock('src/utils/cache.service', () => ({
 }));
 
 const mockUser = { id: 'user-1', token_version: 1 };
+const mockUserShopFindOne = jest.fn();
 jest.mock('src/modules/entities', () => ({
     User: { findByPk: jest.fn(async () => mockUser) },
+    UserShop: { findOne: (...args) => mockUserShopFindOne(...args) },
 }));
 
 jest.mock('src/modules/auth/auth.service', () => ({
@@ -56,9 +58,12 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
         jest.clearAllMocks();
         mockSessionFindByPk.mockResolvedValue({
             id: 'sid-1',
+            user_id: 'user-1',
+            shop_id: 'shop-1',
             is_active: true,
             expires_at: new Date(Date.now() + 60_000),
         });
+        mockUserShopFindOne.mockResolvedValue({ id: 'membership-1' });
     });
 
     test('REGRESSION: a token with no sid claim (every existing web token) never queries the sessions table and authenticates exactly as before', async () => {
@@ -79,7 +84,7 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
 
     test('a token with a sid claim for an active session authenticates and attaches sid to req.user', async () => {
         const token = sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, sid: 'sid-1' });
-        const { req, err } = await runMiddleware(token);
+        const { req, err } = await runMiddleware(token, { path: '/api/mobile/attention' });
 
         expect(mockSessionFindByPk).toHaveBeenCalledWith('sid-1', expect.any(Object));
         expect(err).toBeUndefined();
@@ -140,5 +145,96 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
 
         expect(err).toBeDefined();
         expect(err.status).toBe(401);
+    });
+
+    describe('native read allowlist (audit P1-9)', () => {
+        const nativeToken = () => sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, sid: 'sid-1' });
+        const ENTITY_ID = '0b9f2c1e-5d4a-4c3b-9a8f-7e6d5c4b3a21';
+
+        test.each([
+            ['/api/mobile/today'],
+            ['/api/mobile/attention?limit=20'],
+            [`/api/order/${ENTITY_ID}`],
+            [`/api/conversation/${ENTITY_ID}`],
+        ])('allows a native GET of the mobile read surface %s', async (originalUrl) => {
+            const { req, err } = await runMiddleware(nativeToken(), { originalUrl });
+
+            expect(err).toBeUndefined();
+            expect(req.user.sid).toBe('sid-1');
+        });
+
+        test.each([
+            ['/api/auth/me'],
+            ['/api/order'],
+            ['/api/order/not-a-uuid'],
+            [`/api/order/${ENTITY_ID}/timeline`],
+            ['/api/analytics/funnel'],
+            ['/api/customer/export'],
+            ['/api/shop/settings'],
+        ])('refuses a native GET outside the mobile read surface: %s', async (originalUrl) => {
+            const { req, err } = await runMiddleware(nativeToken(), { originalUrl });
+
+            expect(err).toBeDefined();
+            expect(err.status).toBe(403);
+            expect(err.code).toBe('NATIVE_ROUTE_NOT_ALLOWED');
+            expect(req.user).toBeUndefined();
+        });
+
+        test('still allows native auth/session routes with any method', async () => {
+            const { err } = await runMiddleware(nativeToken(), {
+                method: 'POST',
+                originalUrl: '/api/auth/native/switch-shop',
+            });
+
+            expect(err).toBeUndefined();
+        });
+
+        test('does not apply the allowlist or membership lookup to sid-less web tokens', async () => {
+            const token = sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1 });
+            const { err } = await runMiddleware(token, { originalUrl: '/api/analytics/funnel' });
+
+            expect(err).toBeUndefined();
+            expect(mockUserShopFindOne).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('native session binding and live membership (audit P1-9 / P0-2)', () => {
+        const nativeToken = () =>
+            sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, sid: 'sid-1' });
+        const activeSession = (overrides) => ({
+            id: 'sid-1',
+            user_id: 'user-1',
+            shop_id: 'shop-1',
+            is_active: true,
+            expires_at: new Date(Date.now() + 60_000),
+            ...overrides,
+        });
+
+        test('rejects an access token whose shop no longer matches its session (superseded by switch-shop)', async () => {
+            mockSessionFindByPk.mockResolvedValue(activeSession({ shop_id: 'shop-2' }));
+            const { req, err } = await runMiddleware(nativeToken(), { originalUrl: '/api/mobile/today' });
+
+            expect(err.status).toBe(401);
+            expect(req.user).toBeUndefined();
+        });
+
+        test('rejects a sid that belongs to a different user', async () => {
+            mockSessionFindByPk.mockResolvedValue(activeSession({ user_id: 'user-2' }));
+            const { err } = await runMiddleware(nativeToken(), { originalUrl: '/api/mobile/today' });
+
+            expect(err.status).toBe(401);
+        });
+
+        test('rejects a native token as soon as its shop membership is deactivated', async () => {
+            mockUserShopFindOne.mockResolvedValue(null);
+            const { req, err } = await runMiddleware(nativeToken(), { originalUrl: '/api/mobile/today' });
+
+            expect(mockUserShopFindOne).toHaveBeenCalledWith(expect.objectContaining({
+                where: { user_id: 'user-1', shop_id: 'shop-1', is_active: true },
+            }));
+            expect(err.status).toBe(401);
+            expect(err.code).toBe('NATIVE_SHOP_ACCESS_REVOKED');
+            expect(req.user).toBeUndefined();
+        });
     });
 });

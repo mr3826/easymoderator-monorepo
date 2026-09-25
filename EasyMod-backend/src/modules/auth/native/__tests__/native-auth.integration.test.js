@@ -13,6 +13,11 @@
  */
 process.env.MOBILE_API_ENABLED = 'true';
 
+// Native tokens may only reach the mobile read surface (auth.middleware
+// NATIVE_READ_ROUTES), so "is this native session still accepted?" is probed
+// on a route the app actually calls. Web tokens keep probing /api/auth/me.
+const NATIVE_SESSION_PROBE = '/api/mobile/today';
+
 const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
@@ -192,7 +197,7 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         }, shop.id)).rejects.toMatchObject({ status: 404 });
 
         const meRes = await request(app)
-            .get('/api/auth/me')
+            .get(NATIVE_SESSION_PROBE)
             .set('Authorization', `Bearer ${accessToken}`);
         expect(meRes.status).toBe(401);
     });
@@ -261,7 +266,7 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         });
 
         const nativeBefore = await request(app)
-            .get('/api/auth/me')
+            .get(NATIVE_SESSION_PROBE)
             .set('Authorization', `Bearer ${nativeAccessToken}`);
         expect(nativeBefore.status).toBe(200);
 
@@ -276,7 +281,7 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(logoutRes.status).toBe(200);
 
         const nativeAfter = await request(app)
-            .get('/api/auth/me')
+            .get(NATIVE_SESSION_PROBE)
             .set('Authorization', `Bearer ${nativeAccessToken}`);
         expect(nativeAfter.status).toBe(401);
 
@@ -357,10 +362,10 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(refreshB.status).toBe(200);
 
         const meA = await request(app)
-            .get('/api/auth/me')
+            .get(NATIVE_SESSION_PROBE)
             .set('Authorization', `Bearer ${refreshA.body.data.accessToken}`);
         const meB = await request(app)
-            .get('/api/auth/me')
+            .get(NATIVE_SESSION_PROBE)
             .set('Authorization', `Bearer ${refreshB.body.data.accessToken}`);
         expect(meA.status).toBe(200);
         expect(meB.status).toBe(200);
@@ -427,9 +432,16 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(decoded.shopId).toBe(shop2.id);
         expect(decoded.sid).toBe(sid);
 
+        // The session now belongs to shop2, so the pre-switch shop1 token is
+        // refused immediately rather than until its 15-minute expiry.
+        const staleShopToken = await request(app)
+            .get(NATIVE_SESSION_PROBE)
+            .set('Authorization', `Bearer ${accessToken}`);
+        expect(staleShopToken.status).toBe(401);
+
         const switchForbidden = await request(app)
             .post('/api/auth/native/switch-shop')
-            .set('Authorization', `Bearer ${accessToken}`)
+            .set('Authorization', `Bearer ${switchOk.body.data.accessToken}`)
             .send({ shopId: shop3.id });
         expect(switchForbidden.status).toBe(403);
     });
@@ -500,7 +512,7 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(revokeRes.status).toBe(200);
 
         const afterRevoke = await request(app)
-            .get('/api/auth/me')
+            .get(NATIVE_SESSION_PROBE)
             .set('Authorization', `Bearer ${accessToken}`);
         expect(afterRevoke.status).toBe(401);
     });
