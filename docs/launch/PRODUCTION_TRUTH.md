@@ -91,6 +91,40 @@ check before reporting success.
   No role grant or manual data mutation was performed. A real existing shop-less
   target identity is still required.
 
+## 2026-09-25 autonomous credential audit receipt
+
+- `AUDIT_MAIN`: `aea32dddb65dd86bddf36dd080e0dd89c8ed18c8` before this
+  documentation-only receipt.
+- `RUNTIME`: backend/worker remains `bbc1024af831549436afb074ca5037925137d402`;
+  Growth SPA remains `50b659bb4949afaec78a462818b3573d0f99e3e0`; Growth image
+  digest remains verified as
+  `sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`.
+- `DEPLOYMENT_GATE`: `PRODUCTION_DEPLOY_ENABLED=false`.
+- `BOOTSTRAP_ACTOR_CONFIG`: `GROWTH_BOOTSTRAP_ACTOR_EMAIL` is intentionally
+  absent after temporary candidate checks. It must be a protected production
+  environment secret containing an existing actor account email, not a password,
+  token, or fabricated identity.
+- `BOOTSTRAP_TARGET_CONFIG`: the workflow input is a non-secret existing user
+  email. The role service rejects active merchant memberships and requires an
+  empty active-Super-Admin set for first bootstrap. Growth user creation is not
+  available before the first Super Admin, so no autonomous account-provisioning
+  route exists.
+- `BOOTSTRAP_RESULTS`: protected runs reached the role service and failed closed
+  for merchant-linked or nonexistent candidates. No role, account, session, or
+  production data mutation occurred.
+- `SENTRY_BACKEND_CONFIG`: repository secret `SENTRY_DSN` is present and is
+  consumed only by backend/worker runtime configuration. Its value is not
+  printed or copied.
+- `SENTRY_BROWSER_CONFIG`: `VITE_SENTRY_DSN` is absent from repository and
+  production environment variables. The frontend code treats it as optional and
+  does not receive the backend secret by fallback.
+- `SENTRY_RECEIPT`: not proven. The approved test-alert route requires an
+  authenticated `SUPER_ADMIN`; no valid Growth session exists.
+- `AUTHENTICATED_GROWTH`: not proven. No eligible shop-less target account or
+  supported pre-bootstrap account creation route exists in the current state.
+- `MOBILE`: no mobile worktree, branch, dirty file, source, CI, or concurrent
+  agent state was modified.
+
 ## Commercial model rollout status
 
 The rollback-safe runtime and current Growth control-plane migrations are deployed
