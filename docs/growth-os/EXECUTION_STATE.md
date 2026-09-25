@@ -907,3 +907,37 @@ frontend changes remain untouched.
   policy in audit snapshots requires an explicit retention/redaction policy
   decision first; `growth_os_followup` audit rows remain outside the bounded
   privileged-audit allowlist by design until that policy lands.
+
+## Owner discovery and actionable work queues receipt (2026-09-25)
+
+- `BATCH`: PR #162 implemented the next evidence-backed phase without schema
+  changes: eligible owner discovery, server-validated assignment, human-readable
+  owner projections, `owner=me`, `owner=unassigned`, and UUID owner filters,
+  plus Home and analytics queue destinations.
+- `ELIGIBILITY`: an active, non-revoked Growth role with either
+  `growth_os.prospects.manage_all` or both
+  `growth_os.prospects.read_assigned` and
+  `growth_os.prospects.update_assigned`; the same predicate is used by discovery
+  and assignment mutation validation.
+- `VALIDATION`: disposable PostgreSQL/Redis integration `14/14` suites and
+  `89/89` tests; Growth frontend `23/23` files and `135/135` tests; Growth
+  browser E2E `31` tests locally; CI backend integration, Growth build/browser
+  E2E, security, Docker, dependency, and merge gates passed; quarantine remains
+  `2/2`.
+- `MERGED_SHA`: `ccae4b97af3eeb4765c5e78911d74a817ff750a2` from PR #162.
+- `DEPLOYMENT_RUN`: `36156435580` completed successfully with `target=all`.
+- `PRODUCTION_VERSION`: public `/version` returned the exact merged SHA and
+  migration count 57.
+- `PRODUCTION_HEALTH`: backend and Growth readiness/root returned HTTP 200;
+  unauthenticated Growth session and prospect APIs returned HTTP 401.
+- `DEPLOYMENT_GATE`: restored to `PRODUCTION_DEPLOY_ENABLED=false`.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL`; no operator
+  identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL`; DSN provisioning and human receipt
+  remain unavailable.
+- `ROLLBACK_STATUS`: `MECHANISM_VERIFIED`; previous runtime SHA is
+  `61f92dbc60b6dbde80357b143d47961ef65120e0`, no migration rollback is needed,
+  and live rollback was not rehearsed in this phase.
+- `DEFERRED_NEXT`: improve analytics drill-through coverage and define the
+  prospect audit-snapshot PII retention/redaction policy before expanding into
+  reminders, workload scheduling, or automation.
