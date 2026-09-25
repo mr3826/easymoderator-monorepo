@@ -212,7 +212,7 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
     GrowthOsProspectEvent.findAll({
       attributes: ['prospect_id', 'event_type', 'to_value', 'created_at'],
       include: eventInclude,
-      where: { event_type: { [Op.in]: ['status_changed', 'followup_created'] } },
+      where: { event_type: { [Op.in]: ['status_changed', 'followup_created', 'activated'] } },
       order: [['created_at', 'ASC'], ['id', 'ASC']],
       raw: true,
     }),
@@ -268,7 +268,7 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
       medianHoursToFirstContact: medianHours(durationHours(prospectRows, firstContact)),
       medianHoursToQualification: medianHours(durationHours(prospectRows, qualification)),
       medianHoursToFirstFollowup: medianHours(durationHours(prospectRows, followup)),
-      medianHoursCreatedToActivated: medianHours(durationHours(activatedRows, eventTimesByProspect(eventRows, 'status_changed', 'converted'))),
+       medianHoursCreatedToActivated: medianHours(durationHours(activatedRows, eventTimesByProspect(eventRows, 'activated', 'converted'))),
     },
     leadToActivation: created > 0 ? Math.round((activated / created) * 1000) / 10 : null,
     notAvailable: NOT_AVAILABLE_METRICS,

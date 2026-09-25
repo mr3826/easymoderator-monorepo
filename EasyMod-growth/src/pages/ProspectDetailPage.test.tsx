@@ -104,7 +104,7 @@ describe('ProspectDetailPage', () => {
     expect(screen.getByText('Link a Shop before onboarding/activation.')).toBeInTheDocument();
   });
 
-  it('offers onboarding and converted targets when a shop is linked', async () => {
+  it('offers onboarding but not direct converted targets when a shop is linked', async () => {
     setup(makeProspect({ linkedShopId: OWNER_ID }));
     renderPage();
 
@@ -113,7 +113,6 @@ describe('ProspectDetailPage', () => {
     expect([...options].map((option) => option.value)).toEqual([
       'qualified',
       'onboarding',
-      'converted',
       'disqualified',
       'unreachable',
     ]);
@@ -188,22 +187,22 @@ describe('ProspectDetailPage', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Saving' })).not.toBeInTheDocument());
   });
 
-  it('submits legal status transitions with their reason', async () => {
+  it('submits the onboarding status transition with its reason', async () => {
     const user = userEvent.setup();
     setup(makeProspect({ linkedShopId: OWNER_ID }));
     const transition = vi.spyOn(growthApi, 'transitionProspectStatus').mockResolvedValue(makeProspect({
-      status: 'converted',
+      status: 'onboarding',
       linkedShopId: OWNER_ID,
     }));
     renderPage();
 
     await screen.findByRole('heading', { name: 'North Star Retail' });
-    await user.selectOptions(screen.getByLabelText('Move to status'), 'converted');
+    await user.selectOptions(screen.getByLabelText('Move to status'), 'onboarding');
     await user.type(screen.getByLabelText(/Reason.*required for disqualification/), 'Shop linkage verified');
     await user.click(screen.getByRole('button', { name: 'Update lifecycle' }));
 
     expect(transition).toHaveBeenCalledWith(PROSPECT_ID, {
-      status: 'converted',
+      status: 'onboarding',
       reason: 'Shop linkage verified',
     });
   });

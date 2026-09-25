@@ -6,6 +6,7 @@ const { RedisStore } = require('rate-limit-redis');
 const { authenticate } = require('../../middleware/auth.middleware');
 const validate = require('../../middleware/validate.middleware');
 const { AppError } = require('../../utils/AppError');
+const config = require('../../config/config');
 const { requireGrowthOsAccess } = require('./growth-os.middleware');
 const { hasProspectReadAccess } = require('./growth-os.prospect.scope');
 const ctrl = require('./growth-os.controller');
@@ -62,7 +63,23 @@ function buildRateLimitStore(prefix) {
   return undefined;
 }
 
-const prospectLookupLimiter = rateLimit({
+function requireDistributedRateLimit(req, res, next) {
+  if (config.env === 'development' || config.env === 'test') return next();
+  try {
+    const { rateLimitRedis } = require('../../config/redis');
+    if (rateLimitRedis && rateLimitRedis._isMemoryFallback !== true
+      && rateLimitRedis.status === 'ready') return next();
+  } catch (_error) {
+    // Fall through to the fail-closed response below.
+  }
+  return next(new AppError(
+    'Growth OS rate limiting is temporarily unavailable.',
+    503,
+    'GROWTH_OS_RATE_LIMIT_UNAVAILABLE',
+  ));
+}
+
+const prospectLookupRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
@@ -75,9 +92,15 @@ const prospectLookupLimiter = rateLimit({
   },
 });
 
+const prospectLookupLimiter = (req, res, next) => requireDistributedRateLimit(
+  req,
+  res,
+  (error) => (error ? next(error) : prospectLookupRateLimit(req, res, next)),
+);
+
 // All Growth OS/admin mutations are per-user+IP limited (closes audit
 // finding SEC-03: mutation endpoints previously had no quota bound).
-const growthMutationLimiter = rateLimit({
+const growthMutationRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 40,
   standardHeaders: true,
@@ -90,6 +113,12 @@ const growthMutationLimiter = rateLimit({
     message: 'Too many Growth OS mutations. Please slow down.',
   },
 });
+
+const growthMutationLimiter = (req, res, next) => requireDistributedRateLimit(
+  req,
+  res,
+  (error) => (error ? next(error) : growthMutationRateLimit(req, res, next)),
+);
 
 router.use(authenticate, requireGrowthOsAccess());
 router.use((_req, res, next) => {
