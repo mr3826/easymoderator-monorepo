@@ -17,10 +17,10 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `bbc1024af831549436afb074ca5037925137d402`; current `origin/main` is the same SHA after PR #167. PR #167 changes only the protected deploy workflow; the Growth application image was intentionally pinned to the already-built PR #166 image. | 2026-09-25 deployment [Actions run 36185036774](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36185036774) and public `/version` |
+| Production commit SHA | Runtime is `bbc1024af831549436afb074ca5037925137d402`; current `origin/main` is `e5d6f973ae55ab497801d2c4e4f09c5690db5769` after workflow-only PRs #167 and #169. The Growth application image remains pinned to the already-built PR #166 image. | 2026-09-25 deployment [Actions run 36185036774](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36185036774), public `/version`, and current `origin/main` |
 | Latest migration on `main` | `20260925_001_growth_os_followup_cancel_event_type`; production reports 57 migrations and public `/version` reports this as the latest migration. | 2026-09-25 deployment and public `/version` |
 | Backend / worker version | Backend and worker use the exact `bbc1024a` candidate image; public `/version` reports `bbc1024af831549436afb074ca5037925137d402`. | 2026-09-25 deployment receipt and public probe |
-| Growth frontend build version | Growth SPA build-info reports `50b659bb4949afaec78a462818b3573d0f99e3e0`, the runtime-affecting PR #166 merge SHA. The workflow-only PR #167 did not change Growth source, so the existing published Growth artifact was reused intentionally. | 2026-09-25 deployment, public `build-info.json`, and published digest |
+| Growth frontend build version | Growth SPA build-info reports `50b659bb4949afaec78a462818b3573d0f99e3e0`, the runtime-affecting PR #166 merge SHA. Workflow-only PRs #167 and #169 did not change Growth source, so the existing published Growth artifact was reused intentionally. | 2026-09-25 deployment, public `build-info.json`, and published digest |
 | Growth image version | `ghcr.io/mr3826/easymoderator-growth-os@sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`; deployment used explicit `growth_image_override`, recreated `easymod-growth-frontend-1`, and public `build-info.json` now reports `50b659bb`. | 2026-09-25 deployment run `36185036774` and public probe |
 | Deployment workflow | Exact-SHA manual production deploy succeeded with the explicit Growth digest override. Candidate DB authentication, migrations, schema audit, service replacement, health, version, and rollback checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 36185036774](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36185036774) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
@@ -59,6 +59,10 @@ check before reporting success.
 - `IMPLEMENTATION_MERGE_SHA`: `50b659bb4949afaec78a462818b3573d0f99e3e0` from PR #166.
 - `DEPLOY_CONTRACT_MERGE_SHA`: `bbc1024af831549436afb074ca5037925137d402` from PR #167;
   workflow-only change adding the explicit `growth_image_override` dispatch input.
+- `BOOTSTRAP_WORKFLOW_FIX`: PR #169, merged as
+  `e5d6f973ae55ab497801d2c4e4f09c5690db5769`; the audited role grant now
+  executes inside the running backend container without requiring Compose image
+  variables from `.env.prod`.
 - `GROWTH_IMAGE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`.
 - `DEPLOYMENT_RUN`: `36185036774` — exact-SHA `target=all` deployment completed
   successfully with `growth_image_override` set to the published digest.
@@ -81,6 +85,11 @@ check before reporting success.
   identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available.
 - `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL`; DSN provisioning and human-visible
   event receipt remain unavailable.
+- `BOOTSTRAP_PROOF`: the corrected audited workflow reached the production role
+  service. `info@easymod.tech` was rejected because it has an active merchant
+  membership; `founder@easymod.tech` and `growth@easymod.tech` were not found.
+  No role grant or manual data mutation was performed. A real existing shop-less
+  target identity is still required.
 
 ## Commercial model rollout status
 

@@ -958,6 +958,10 @@ frontend changes remain untouched.
   `bbc1024af831549436afb074ca5037925137d402`; workflow-only `growth_image_override`
   support was required because the prior deploy path carried the running Growth
   digest forward and could not rotate an already-running Growth container.
+- `BOOTSTRAP_WORKFLOW_FIX_PR`: `#169`, merged as
+  `e5d6f973ae55ab497801d2c4e4f09c5690db5769`; the audited role grant now
+  executes inside the running backend container without requiring Compose image
+  variables from `.env.prod`.
 - `ENGINEERING_SCOPE`: canonical `Asia/Dhaka` business-day semantics; exact Home,
   My Work, follow-up, stalled, converted-window, Analytics, and Sources
   metric/destination parity; bounded prospect date/stage filters; URL state
@@ -968,7 +972,7 @@ frontend changes remain untouched.
 - `VALIDATION`: Growth frontend `23/23` files and `136/136` tests; TypeScript
   check and production build passed; Growth OS backend targeted suite `10/10`
   files and `71/71` tests; security suite `45/45`; migration suite `49/49`;
-  deploy-guard suite `27/27`; CI PostgreSQL/Redis integration, Growth build and
+  deploy-guard suite `28/28`; CI PostgreSQL/Redis integration, Growth build and
   browser E2E, Meta-shaped E2E, security, Docker, dependency, deployment-dry-run,
   and merge gates passed; quarantine remains `2/2`.
 - `DATABASE`: no new migration, table, column, or index; production remains at
@@ -977,7 +981,8 @@ frontend changes remain untouched.
 - `PRODUCTION_RUNTIME`: backend/worker exact runtime SHA is
   `bbc1024af831549436afb074ca5037925137d402`; the Growth SPA intentionally uses
   the existing published runtime-affecting artifact `50b659bb` because PR #167
-  changed only deployment workflow code.
+  changed only deployment workflow code. PR #169 also changes only the audited
+  bootstrap execution path.
 - `GROWTH_IMAGE`: exact digest
   `sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`;
   public `build-info.json` reports `50b659bb` after the explicit override deploy.
@@ -990,10 +995,17 @@ frontend changes remain untouched.
 - `ROLLBACK_STATUS`: `MECHANISM_VERIFIED`; protected rollback checks completed,
   but no live production rollback was executed.
 - `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL` — no eligible
-  operator identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available.
+  shop-less operator identity is available. The corrected audited workflow
+  reached the role service: `info@easymod.tech` was rejected for active merchant
+  membership; `founder@easymod.tech` and `growth@easymod.tech` were not found.
+  No role grant or manual data mutation was performed.
 - `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL` — DSN provisioning and human-visible
   event receipt remain unavailable.
-- `POST_DEPLOY_MAIN`: `bbc1024af831549436afb074ca5037925137d402` is the current
-  `origin/main`; the backend runtime matches it. The Growth image's
+- `BOOTSTRAP_WORKFLOW_RUNS`: `36190311748` and `36190777841` failed closed before
+  production mutation; `36192440171` proved the Compose interpolation fix; and
+  `36193382364`/`36193473306` proved target-account validation.
+- `POST_DEPLOY_MAIN`: `e5d6f973ae55ab497801d2c4e4f09c5690db5769` is the current
+  `origin/main`; the backend runtime remains the previously deployed
+  `bbc1024af831549436afb074ca5037925137d402`. The Growth image's
   `50b659bb` identity is intentional and documented above, not a stale/unverified
   artifact.
