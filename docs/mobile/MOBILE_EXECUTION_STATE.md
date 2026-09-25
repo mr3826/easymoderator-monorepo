@@ -3,6 +3,23 @@
 This is the living ledger and phase-receipt log for the mobile program. Every phase appends a
 receipt in the format below (master brief §25) and updates the flag/file ledger.
 
+## Current checkpoint - Wave 2.5 Runtime Qualification (2026-09-17)
+
+- Integration branch: `feature/mobile-app` at `04bb4d5f8ec90baf241253b1dacfef48c5a6b3f6`; the
+  worktree is `D:/easymod/mob` and contains uncommitted Wave 2 changes. Do not reset or clean it.
+- `origin/main` remains `77790a833da372a03899686a365d7a40b2a95a67`; no mobile work landed on `main`.
+- Wave 1 lanes are verified from current refs/source: development environment, native-auth contract,
+  Attention/Today APIs, and deep-link abstraction/tests (PRs #121/#122/#123/#124/#125).
+- Wave 2 Home now consumes the server-ranked Attention and Today contracts with deliberate loading,
+  partial, empty, error, offline, stale, refresh, localization, action, and shop-cache states.
+- Wave 2.5 core runtime qualification is PASS: a bundled x86 release preview installed/launched on
+  `Nexus_5_API_24`, Maestro exercised Bengali login/Home/Today/all six tiers/deep-link navigation,
+  and disposable backend shop-scoped resolution passed.
+- Current mobile verification: 16 Jest suites, 163 tests, typecheck, and lint pass; disposable backend
+  integration is 20 suites/104 tests and native 2FA limiter/security coverage passes.
+- Optional empty/error/offline/session-recovery/2FA fixture branches remain explicit preflight gaps;
+  they are not represented as core device PASS.
+
 ## Feature flag ledger (ADR M-010)
 
 | Flag | Default | Current production state | Gates |
@@ -340,3 +357,136 @@ The next native proof must run from a short, clean checkout with deterministic
 Node 22/JDK 17/Android SDK inputs, perform a clean Expo prebuild, build the
 required release/debug ABI set, install and launch the APK, and execute device
 flows without changing machine-wide settings.
+
+### Phase 2 - Home / Needs Attention
+
+```text
+PHASE=WAVE_2_HOME
+STATUS=CONDITIONAL (implementation and automated gates pass; native/device gates remain open)
+
+BRANCH=feature/mobile-app
+HEAD_SHA=04bb4d5f8ec90baf241253b1dacfef48c5a6b3f6
+BASE_MAIN_SHA=77790a833da372a03899686a365d7a40b2a95a67
+MAIN_CURRENT_SHA=77790a833da372a03899686a365d7a40b2a95a67 (origin/main; local main is stale)
+MAIN_UNTOUCHED=YES
+
+HANDOFF_ALIGNMENT=PASS
+
+FEATURES_COMPLETED=
+- Merchant-first Home with Today summary from GET /api/mobile/today.
+- Server-ranked Needs Attention feed from GET /api/mobile/attention.
+- All supported seeded attention signal variants, including courier indeterminate.
+- Loading, partial, success, empty, API error, retry, offline, cached-read-only, stale, and no-shop states.
+- Pull-to-refresh coalescing, no local ranking, no duplicate refresh batch, and shop-scoped query keys.
+- Existing deep-link action abstraction for supported order and conversation entities.
+- Bengali/English strings, long-content coverage, responsive flex safeguards, and stale-safe no-mutation cards.
+- Auth epoch, refresh-token snapshot, SecureStore write serialization, and query-cache transition safety.
+- Native session expiry checks, server-enforced native read-only mutation policy, flag-off 404 ordering,
+  refresh-token logout proof, cookie-free transport, and timeout coverage.
+- Terminal/cancelled/refunded order filtering, expected-order-value semantics, stable attention reason
+  codes, Bengali dynamic-reason mapping, fail-closed deep-link resolution, and explicit 2FA handoff state.
+
+WAVE_1_DRIFT_FOUND=
+- Documentation still described Phase 0/1 status and stale feature-flag/AVD/cleartext claims.
+- The checked-out integration worktree differed from the candidate mobile/p2-home worktree; no Wave 1
+  source regression was found in the feature branch.
+
+WAVE_1_DRIFT_FIXED=
+- Reconciled CURRENT_STATE, DEV_SETUP, MOBILE_ARCHITECTURE, MOBILE_API_CAPABILITY_MATRIX, and this ledger.
+- Added docs/mobile/AGENT_HANDOFF.md.
+- Preserved and regression-tested the Wave 1 auth contract while closing stale refresh/cache transitions
+  and the native session/read-only security gaps found during final review.
+
+ARCHITECTURE_DECISIONS=
+- Reused the existing typed API client, TanStack Query, AuthProvider, feature flags, i18n, and openDeepLink.
+- Kept backend classification/ranking and entity authorization authoritative.
+- Kept offline behavior read-only and in-memory; persisted query storage remains deferred.
+- Added only additive Today/Attention response fields; native mutation safety is enforced server-side.
+
+FILES_CHANGED=
+- EasyMod-mobile Home components, hooks, mobile query schemas/keys, error localization, auth transition
+  safety, tab shell wiring, locale keys, and focused Jest/RNTL fixtures/tests.
+- `.github/workflows/mobile-ci.yml` now runs the verified isolated mobile suite with `--runInBand
+  --forceExit`; no production or release workflow was changed.
+- EasyMod-backend native auth middleware/service, CSRF/route gating, Attention/Today services and
+  integration/security tests.
+- docs/mobile/AGENT_HANDOFF.md and current-state/execution/setup/architecture/capability documentation.
+
+API_CHANGES=ADDITIVE (`expected_order_value`, `revenue_basis`, stable `reason_code`; legacy `revenue` alias retained)
+DB_CHANGES=NONE
+
+SECURITY_REVIEW=PASS_WITH_GATES; native expiry/read-only/CSRF controls tested; device and live-entity gates remain.
+UNIT_TESTS=PASS (16 suites, 143 tests; typecheck and lint pass; Jest requires --forceExit for open handles)
+INTEGRATION_TESTS=PASS (disposable backend: 17 suites/96 tests; mobile day-window/semantic tests pass)
+E2E_TESTS=NOT_CONFIGURED (no Detox/Maestro/device runner exists; Jest integration is not claimed as E2E)
+
+ANDROID_NATIVE_BUILD=BLOCKED_BY_DOCUMENTED_LOCAL_WINDOWS_PATH_LIMIT
+WEB_REGRESSION=UNCHANGED
+BACKEND_REGRESSION=PASS (security 49 suites/450 tests and disposable integration 17 suites/96 tests)
+SECURITY_REGRESSION=PASS (49 suites/450 tests)
+
+PRODUCTION_IMPACT=NONE
+META_IMPACT=NONE
+BILLING_IMPACT=NONE
+
+KNOWN_RISKS=
+- Cold-launch protected deep links still wait for auth bootstrap; the current resolver fails closed until
+  real shop-scoped entity APIs exist.
+- Live wrong-shop/deleted-entity resolution is safe-by-default but not proven against a real entity resolver.
+- Full 2FA verification UI/API flow remains deferred after the explicit requires2fa/tempToken handoff.
+- Native cookie/CSRF behavior is covered by server/client tests but not a production-like device round trip.
+- Small-device visual/performance and installable Android behavior remain unverified until the native gate opens.
+- The local Windows worktree path can reproduce react-native-reanimated CMAKE_OBJECT_PATH_MAX failures.
+
+DEFERRED_ITEMS=
+- Supported shallow/Linux Android build and first internal beta.
+- Device E2E runner and low-end Android visual/performance pass.
+- Production deep-link entity resolution and fresh entity-state handling.
+- Dedicated 2FA verify flow and its security/rate-limit contract.
+- Persisted read-only cache, duplicate-ID client policy, and Track D production fixes.
+
+NEXT_RECOMMENDED_WAVE=Resolve native build and device/E2E gates, then authorize internal beta; do not merge to main automatically.
+```
+
+### Wave 2.5 - Runtime Qualification (2026-09-17)
+
+```text
+PHASE=WAVE_2_5_RUNTIME_QUALIFICATION
+STATUS=PASS_CORE_RUNTIME
+BRANCH=feature/mobile-app
+HEAD_SHA=04bb4d5f8ec90baf241253b1dacfef48c5a6b3f6
+BASE_MAIN_SHA=77790a833da372a03899686a365d7a40b2a95a67
+MAIN_CURRENT_SHA=2f07a0ef85f9c0a43243375791541b5151d194e4 (local main)
+MAIN_UNTOUCHED=YES
+
+ANDROID_SUPPORTED_BUILD=PASS_LOCAL_X86_PREVIEW
+ANDROID_INSTALL=PASS
+ANDROID_LAUNCH=PASS
+ANDROID_ARTIFACT=EasyMod-mobile/android/app/build/outputs/apk/release/app-release.apk
+ANDROID_SHA256=5DAF20E50C0E1014DFA384C096A768F282F86348160C492BDA5630FEE296A212
+DEVICE_E2E_FRAMEWORK=Maestro 2.6.0
+DEVICE_E2E_CORE_HOME=PASS
+SIX_ATTENTION_TIERS_DEVICE=PASS
+SHOP_SCOPED_RUNTIME_TEST=PASS
+CROSS_SHOP_REAL_BACKEND_DENIAL=PASS
+STALE_ENTITY_RUNTIME=PASS_SAFE_NOT_FOUND_AND_FRESH_SERVER_RESOLUTION
+MOBILE_2FA_FLOW=PASS_CONTRACT_AND_UI
+MOBILE_2FA_SECURITY=PASS
+AUTH_CONTRACT=PASS
+TYPECHECK=PASS
+LINT=PASS
+UNIT_TESTS=PASS (16 suites, 163 tests)
+INTEGRATION_TESTS=PASS (20 suites, 104 tests)
+SECURITY_REGRESSION=PASS (existing 49 suites/450 tests plus native 2FA limiter coverage)
+CI_STATUS=CONFIGURED (native debug + Maestro Metro path-filtered; no remote run triggered)
+FILES_CHANGED=mobile runtime/auth/2FA/deep-link/Home/E2E/CI plus concise mobile docs; no production files
+API_CHANGES=NONE beyond existing additive mobile contracts; native 2FA limiter is route policy only
+DB_CHANGES=NONE
+PRODUCTION_IMPACT=NONE
+META_IMPACT=NONE
+BILLING_IMPACT=NONE
+KNOWN_RISKS=all-ABI Windows Gradle daemon instability; optional empty/error/offline/session-recovery/2FA device fixtures remain explicit preflight gaps
+DEFERRED_ITEMS=dedicated fixture toggles and supplementary device flows; Wave 3 write-policy modeling
+WAVE_2_FINAL_STATUS=PASS_CORE_RUNTIME
+WAVE_3_STATUS=PLANNING_READY_SHARED_INBOX_NEEDS_ME
+```
