@@ -3,6 +3,7 @@
 const { Op } = require('sequelize');
 const { sanitizeErrorMessage } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
+const { getEligibleGrowthAssigneeRoles, resolveCanonicalRole } = require('./growth-os.permissions');
 
 const logger = createLogger('GrowthOsProspectRepository');
 
@@ -133,6 +134,7 @@ function prospectFilters(filters = {}, GrowthOsProspect) {
   if (filters.source) where.source = filters.source;
   const ownerUserId = filters.ownerUserId || filters.owner_user_id;
   if (ownerUserId) where.owner_user_id = ownerUserId;
+  if (filters.ownerUnassigned) where.owner_user_id = { [Op.is]: null };
 
   if (filters.linked !== undefined && filters.linked !== null) {
     const linked = filters.linked === true || filters.linked === 'true';
@@ -338,6 +340,46 @@ async function findActiveGrowthRoleForUser(userId, { transaction, lock = false }
   ));
 }
 
+async function listEligibleGrowthAssignees({ search = '', limit = 100 } = {}) {
+  const { GrowthOsUserRole, User } = getModels();
+  const normalizedSearch = String(search || '').trim();
+  const userWhere = normalizedSearch
+    ? {
+      [Op.or]: [
+        { full_name: { [Op.iLike]: `%${normalizedSearch}%` } },
+        { email: { [Op.iLike]: `%${normalizedSearch}%` } },
+      ],
+    }
+    : undefined;
+  const rows = await GrowthOsUserRole.findAll({
+    where: {
+      role: { [Op.in]: getEligibleGrowthAssigneeRoles() },
+      is_active: true,
+      revoked_at: { [Op.is]: null },
+    },
+    include: [{
+      model: User,
+      as: 'user',
+      required: true,
+      attributes: ['id', 'full_name', 'email'],
+      ...(userWhere ? { where: userWhere } : {}),
+    }],
+    order: [['role', 'ASC'], ['granted_at', 'ASC'], ['user_id', 'ASC']],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 100),
+  }).catch((error) => logRepositoryError('list eligible Growth assignees', error));
+
+  const byUser = new Map();
+  for (const row of rows) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, row);
+  }
+  return [...byUser.values()].map((row) => ({
+    userId: row.user_id,
+    displayName: row.user?.full_name || row.user?.email || 'Unnamed Growth operator',
+    email: row.user?.email || null,
+    role: resolveCanonicalRole(row.role),
+  }));
+}
+
 async function findShopById(shopId, { transaction } = {}) {
   if (!shopId) return null;
   const { Shop } = getModels();
@@ -419,6 +461,7 @@ module.exports = {
   listProspectEvents,
   findUserById,
   findActiveGrowthRoleForUser,
+  listEligibleGrowthAssignees,
   findShopById,
   lockProspectsByIds,
   findLinkageSuggestions,

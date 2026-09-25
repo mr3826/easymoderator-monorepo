@@ -59,10 +59,17 @@ const listProspects = {
     source: Joi.string().valid(...PROSPECT_SOURCES),
     ownerUserId: uuid,
     owner_user_id: uuid,
+    owner: Joi.alternatives().try(Joi.valid('me', 'unassigned'), uuid),
     q: Joi.string().trim().max(200),
     linked: Joi.boolean().truthy('true').falsy('false'),
     page: Joi.number().integer().min(1).default(1),
     pageSize: Joi.number().integer().min(1).max(100).default(20),
+  }),
+};
+
+const eligibleAssignees = {
+  query: Joi.object({
+    search: Joi.string().trim().max(120).allow('').default(''),
   }),
 };
 
@@ -118,6 +125,7 @@ module.exports = {
   createProspect,
   updateProspect,
   listProspects,
+  eligibleAssignees,
   duplicateCheck,
   assignProspect,
   transitionProspect,

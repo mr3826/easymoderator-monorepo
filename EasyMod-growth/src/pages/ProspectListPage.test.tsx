@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { growthApi, type ProspectListItem, type ProspectListResponse } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
 import { ProspectListPage } from './ProspectListPage';
@@ -32,6 +32,8 @@ const prospect: ProspectListItem = {
   statusChangedAt: null,
   disqualifiedReason: null,
   ownerUserId: 'owner-1',
+  ownerDisplayName: 'Owner One',
+  ownerEmail: 'owner@example.test',
   assignedAt: null,
   assignedBy: null,
   linkedShopId: null,
@@ -62,6 +64,15 @@ function renderPage(route = '/prospects') {
 }
 
 describe('ProspectListPage', () => {
+  beforeEach(() => {
+    vi.spyOn(growthApi, 'getEligibleAssignees').mockResolvedValue([{
+      userId: '11111111-1111-4111-8111-111111111111',
+      displayName: 'Owner One',
+      email: 'owner@example.test',
+      role: 'GROWTH_USER',
+    }]);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -79,7 +90,7 @@ describe('ProspectListPage', () => {
     expect(screen.queryByText('Hidden for your role')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'New prospect' })).toHaveAttribute('href', '/prospects/new');
     expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument();
-    expect(screen.getByText('owner-1')).toBeInTheDocument();
+    expect(screen.getAllByText('Owner One').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Not linked').length).toBeGreaterThanOrEqual(1);
   });
 
@@ -119,7 +130,7 @@ describe('ProspectListPage', () => {
     await user.type(screen.getByLabelText('Search'), 'North Star');
     await user.selectOptions(screen.getByLabelText('Lifecycle status'), 'qualified');
     await user.selectOptions(screen.getByLabelText('Source'), 'manual_entry');
-    await user.type(screen.getByLabelText('Owner user ID'), '11111111-1111-4111-8111-111111111111');
+     await user.selectOptions(screen.getByLabelText('Owner'), '11111111-1111-4111-8111-111111111111');
     await user.selectOptions(screen.getByLabelText('Linkage'), 'true');
     await user.selectOptions(screen.getByLabelText('Rows per page'), '50');
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
@@ -128,7 +139,7 @@ describe('ProspectListPage', () => {
       q: 'North Star',
       status: 'qualified',
       source: 'manual_entry',
-      ownerUserId: '11111111-1111-4111-8111-111111111111',
+       owner: '11111111-1111-4111-8111-111111111111',
       linked: 'true',
       page: 1,
       pageSize: 50,

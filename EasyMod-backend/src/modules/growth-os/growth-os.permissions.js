@@ -158,6 +158,17 @@ function getPermissionsForRole(rawRole) {
   return [...PERMISSIONS_BY_ROLE[rawRole]];
 }
 
+function isEligibleGrowthAssigneeRole(rawRole) {
+  const permissions = getPermissionsForRole(rawRole);
+  return permissions.includes('growth_os.prospects.manage_all')
+    || (permissions.includes('growth_os.prospects.read_assigned')
+      && permissions.includes('growth_os.prospects.update_assigned'));
+}
+
+function getEligibleGrowthAssigneeRoles() {
+  return Object.keys(PERMISSIONS_BY_ROLE).filter(isEligibleGrowthAssigneeRole);
+}
+
 function hasPermission(role, permission) {
   return getPermissionsForRole(role).includes(permission);
 }
@@ -175,5 +186,7 @@ module.exports = {
   resolveCanonicalRole,
   getRolePriority,
   getPermissionsForRole,
+  isEligibleGrowthAssigneeRole,
+  getEligibleGrowthAssigneeRoles,
   hasPermission,
 };

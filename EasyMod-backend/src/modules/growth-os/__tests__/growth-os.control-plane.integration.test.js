@@ -256,6 +256,30 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       expect(secondRow.role).toBe('SUPER_ADMIN');
     });
 
+    test('SUPER_ADMIN gets bounded eligible owner projections; workspace users cannot enumerate them', async () => {
+      const owners = await api(superAdmin, 'get', '/prospect-owners');
+      expect(owners.status).toBe(200);
+      expect(owners.body.data.map((owner) => owner.userId)).toEqual(expect.arrayContaining([
+        superAdmin.id,
+        secondSuper.id,
+        growthUser.id,
+      ]));
+      expect(owners.body.data[0]).toEqual(expect.objectContaining({ userId: expect.any(String), displayName: expect.any(String) }));
+      expect(owners.body.data[0]).not.toHaveProperty('mfaEnabled');
+
+      const workspaceOwnerView = await api(growthUser, 'get', '/prospect-owners');
+      expect(workspaceOwnerView.status).toBe(200);
+      expect(workspaceOwnerView.body.data[0]).not.toHaveProperty('mfaEnabled');
+
+      const mine = await api(growthUser, 'get', '/prospects?owner=me');
+      expect(mine.status).toBe(200);
+      expect(mine.body.data.items.every((item) => item.ownerUserId === growthUser.id)).toBe(true);
+
+      const unassigned = await api(superAdmin, 'get', '/prospects?owner=unassigned');
+      expect(unassigned.status).toBe(200);
+      expect(unassigned.body.data.items.every((item) => item.ownerUserId === null)).toBe(true);
+    });
+
     test('insight route returns masked detail for GROWTH_USER', async () => {
       const insight = await api(growthUser, 'get', `/merchants/${shop.id}`);
       expect(insight.status).toBe(200);

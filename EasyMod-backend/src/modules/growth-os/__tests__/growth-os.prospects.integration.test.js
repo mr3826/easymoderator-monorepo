@@ -637,11 +637,12 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
 
     const response = await asFounder()
       .post(`${API_ROOT}/${prospectId}/assign`)
-      .send({ ownerUserId: merchant.id, reason: 'Reject non-operator owner' });
+      .send({ ownerUserId: marketer.id, reason: 'Reject read-only source role' });
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_OWNER');
     expect((await GrowthOsProspect.findByPk(prospectId)).owner_user_id).toBeNull();
+
   });
 
   it('allows a new source record to reuse a merged source reference', async () => {

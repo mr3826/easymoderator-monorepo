@@ -55,6 +55,18 @@ exports.listProspects = async (req, res, next) => {
   }
 };
 
+exports.listEligibleAssignees = async (req, res, next) => {
+  try {
+    const data = await service.listEligibleAssignees({
+      access: req.growthOs,
+      search: req.query.search,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(error, req, res, next);
+  }
+};
+
 exports.checkDuplicates = async (req, res, next) => {
   try {
     res.set('Cache-Control', 'no-store');
