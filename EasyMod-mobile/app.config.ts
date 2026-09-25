@@ -48,6 +48,28 @@ function resolveApiBaseUrl(variant: AppVariant): string {
   return url;
 }
 
+function resolveBuildNumber(config: ConfigContext['config']): string {
+  const configured =
+    process.env.APP_BUILD_NUMBER ??
+    process.env.EAS_BUILD_NUMBER ??
+    process.env.EAS_BUILD_VERSION ??
+    process.env.BUILD_NUMBER;
+  if (configured) return configured;
+
+  const versionCode = config.android?.versionCode;
+  return versionCode ? String(versionCode) : 'local';
+}
+
+function resolveGitSha(): string {
+  return (
+    process.env.GIT_SHA ??
+    process.env.EAS_BUILD_GIT_COMMIT_HASH ??
+    process.env.GITHUB_SHA ??
+    process.env.CI_COMMIT_SHA ??
+    'unknown'
+  );
+}
+
 const APP_IDS: Record<AppVariant, string> = {
   development: 'tech.easymod.merchant.dev',
   preview: 'tech.easymod.merchant.preview',
@@ -77,6 +99,8 @@ type ExpoConfigWithLegacyNewArchFlag = ExpoConfig & { newArchEnabled?: boolean }
 export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
   const variant = resolveVariant();
   const apiBaseUrl = resolveApiBaseUrl(variant);
+  const buildNumber = resolveBuildNumber(config);
+  const gitSha = resolveGitSha();
 
   return {
     ...config,
@@ -147,6 +171,8 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
       ...config.extra,
       appVariant: variant,
       apiBaseUrl,
+      buildNumber,
+      gitSha,
     },
   };
 };

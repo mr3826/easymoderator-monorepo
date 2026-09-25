@@ -92,7 +92,7 @@ const refresh = async (req, res, next) => {
  */
 const logout = async (req, res, next) => {
     try {
-        await nativeAuthService.logout(req);
+        await nativeAuthService.logout(req, req.body?.refresh_token);
         res.status(200).json({ success: true, message: 'Logged out successfully' });
     } catch (error) {
         next(error);

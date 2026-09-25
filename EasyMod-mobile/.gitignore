@@ -54,3 +54,4 @@ yarn-error.*
 
 # test/coverage output
 coverage/
+e2e/artifacts/

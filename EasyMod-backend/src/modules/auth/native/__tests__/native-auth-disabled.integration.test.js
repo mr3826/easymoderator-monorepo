@@ -38,4 +38,17 @@ describe('native auth routes when MOBILE_API_ENABLED is off (default, ADR M-010)
         const res = await request(app)[method](path).send({});
         expect(res.status).toBe(404);
     });
+
+    test('production-like native POST reaches the flag gate instead of failing CSRF first', async () => {
+        const previousEnvironment = config.env;
+        config.env = 'production';
+        try {
+            const res = await request(app)
+                .post('/api/auth/native/signin')
+                .send({ email: 'disabled@example.test', password: 'not-used' });
+            expect(res.status).toBe(404);
+        } finally {
+            config.env = previousEnvironment;
+        }
+    });
 });

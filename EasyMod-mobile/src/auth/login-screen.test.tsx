@@ -1,0 +1,148 @@
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+import i18n from '@/i18n';
+import { useAuth } from '@/auth/AuthProvider';
+import LoginScreen from '@/app/login';
+
+jest.mock('@/auth/AuthProvider', () => ({ useAuth: jest.fn() }));
+
+const mockedUseAuth = jest.mocked(useAuth);
+
+beforeEach(() => {
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn: jest.fn(),
+    verifyTwoFactor: jest.fn(),
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+});
+
+it('renders a localized verification state for the explicit MFA handoff', async () => {
+  const signIn = jest.fn().mockResolvedValue({ ok: false, requires2fa: true, tempToken: 'fake-temp-token' });
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor: jest.fn(),
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+  fireEvent.press(screen.getByTestId('login-submit'));
+
+  await waitFor(() => {
+    expect(screen.getByText(i18n.t('auth.twoFactor.title'))).toBeTruthy();
+  });
+  expect(signIn).toHaveBeenCalledWith('merchant@example.test', 'password');
+  expect(screen.getByTestId('login-2fa-input').props.keyboardType).toBe('number-pad');
+  expect(screen.getByTestId('login-2fa-input').props.maxLength).toBe(6);
+});
+
+it('sanitizes pasted input and verifies with the in-memory challenge token', async () => {
+  const signIn = jest.fn().mockResolvedValue({ ok: false, requires2fa: true, tempToken: 'fake-temp-token' });
+  const verifyTwoFactor = jest.fn().mockResolvedValue({ ok: true });
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor,
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+  fireEvent.press(screen.getByTestId('login-submit'));
+  await screen.findByTestId('login-2fa-input');
+
+  fireEvent.changeText(screen.getByTestId('login-2fa-input'), '12a345678');
+  expect(screen.getByTestId('login-2fa-input').props.value).toBe('123456');
+  fireEvent.press(screen.getByTestId('login-2fa-submit'));
+
+  await waitFor(() => expect(verifyTwoFactor).toHaveBeenCalledWith('fake-temp-token', '123456'));
+});
+
+it('rejects an incomplete code locally without sending it to the backend', async () => {
+  const signIn = jest.fn().mockResolvedValue({ ok: false, requires2fa: true, tempToken: 'fake-temp-token' });
+  const verifyTwoFactor = jest.fn();
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor,
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+  fireEvent.press(screen.getByTestId('login-submit'));
+  await screen.findByTestId('login-2fa-input');
+  fireEvent.changeText(screen.getByTestId('login-2fa-input'), '12345');
+  fireEvent.press(screen.getByTestId('login-2fa-submit'));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(i18n.t('auth.twoFactor.errors.codeRequired'));
+  expect(verifyTwoFactor).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['invalidCode', 'validation', 'Invalid TOTP token'],
+  ['replay', 'validation', 'TOTP token already used. Please wait for the next code.'],
+  ['expired', 'unauthorized', 'Invalid or expired session. Please login again.'],
+  ['rateLimited', 'rateLimited', 'Too many 2FA attempts. Please try again later.'],
+] as const)('localizes the backend %s verification error', async (errorKey, kind, message) => {
+  const signIn = jest.fn().mockResolvedValue({ ok: false, requires2fa: true, tempToken: 'fake-temp-token' });
+  const verifyTwoFactor = jest.fn().mockResolvedValue({ ok: false, kind, message });
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor,
+    cancelTwoFactor: jest.fn().mockResolvedValue(undefined),
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+  fireEvent.press(screen.getByTestId('login-submit'));
+  await screen.findByTestId('login-2fa-input');
+  fireEvent.changeText(screen.getByTestId('login-2fa-input'), '123456');
+  fireEvent.press(screen.getByTestId('login-2fa-submit'));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(i18n.t(`auth.twoFactor.errors.${errorKey}`));
+  if (errorKey !== 'rateLimited') {
+    expect(screen.getByTestId('login-2fa-submit').props.disabled).toBe(true);
+  }
+});
+
+it('cancels the challenge without navigating into the authenticated app', async () => {
+  const signIn = jest.fn().mockResolvedValue({ ok: false, requires2fa: true, tempToken: 'fake-temp-token' });
+  const cancelTwoFactor = jest.fn().mockResolvedValue(undefined);
+  mockedUseAuth.mockReturnValue({
+    status: 'signedOut',
+    user: null,
+    signIn,
+    verifyTwoFactor: jest.fn(),
+    cancelTwoFactor,
+    logout: jest.fn(),
+  });
+
+  render(<LoginScreen />);
+  fireEvent.changeText(screen.getByTestId('login-email-input'), 'merchant@example.test');
+  fireEvent.changeText(screen.getByTestId('login-password-input'), 'password');
+  fireEvent.press(screen.getByTestId('login-submit'));
+  await screen.findByTestId('login-2fa-input');
+  fireEvent.press(screen.getByTestId('login-2fa-cancel'));
+
+  await waitFor(() => expect(screen.getByTestId('login-email-input')).toBeTruthy());
+  expect(cancelTwoFactor).toHaveBeenCalledTimes(1);
+});

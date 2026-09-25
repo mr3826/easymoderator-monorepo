@@ -55,10 +55,9 @@ function unwrapEnvelope(body: unknown): unknown {
 
 /**
  * `signin` and `2fa/verify` return an identical `data` shape on success
- * (`native-auth.controller.js`) — this schema is exported (only) so
+ * (`native-auth.controller.js`) — this schema is exported so
  * `native-auth-contract.test.ts` can parse the committed backend fixture with the exact same
- * production schema this module validates real responses with, for BOTH endpoints, since there is
- * no separate mobile-side 2fa/verify request function yet to exercise directly.
+ * production schema both request functions use to validate real responses.
  */
 export const signinDataSchema = z.object({
   accessToken: z.string(),
@@ -67,6 +66,16 @@ export const signinDataSchema = z.object({
   shopId: z.string().nullable(),
   user: backendUserSchema,
 });
+
+/** The backend's successful password step when TOTP verification is still required. */
+export const requires2faDataSchema = z.object({
+  requires2fa: z.literal(true),
+  tempToken: z.string().min(1),
+});
+export type TwoFactorRequired = z.infer<typeof requires2faDataSchema>;
+
+/** Sign-in has two successful response states: a session, or an explicit MFA handoff. */
+export const signinResponseDataSchema = z.union([signinDataSchema, requires2faDataSchema]);
 
 /** Exported for the same reason as `signinDataSchema` above. */
 export const refreshDataSchema = z.object({
@@ -88,6 +97,7 @@ export interface RefreshedSession {
 }
 
 export type AuthResult<T> = { ok: true; data: T } | { ok: false; error: NormalizedError };
+export type SignInResult = AuthResult<AuthUser | TwoFactorRequired>;
 
 export interface AuthClientDeps {
   transport?: Transport;
@@ -105,7 +115,8 @@ export async function signIn(
   email: string,
   password: string,
   deps: AuthClientDeps = {},
-): Promise<AuthResult<AuthUser>> {
+): Promise<SignInResult> {
+  const requestEpoch = beginAuthTransition();
   const transport = deps.transport ?? fetchTransport;
 
   let res;
@@ -115,27 +126,125 @@ export async function signIn(
       body: { email, password },
       skipAuth: true,
     });
-  } catch {
-    return { ok: false, error: normalizeApiError({ isNetworkError: true }) };
+  } catch (error) {
+    finishAuthTransition(requestEpoch);
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    return { ok: false, error: normalizeApiError(isTimeout ? { isTimeout: true } : { isNetworkError: true }) };
   }
 
   const body = await parseJsonSafe(res);
   if (!res.ok) {
+    finishAuthTransition(requestEpoch);
     return { ok: false, error: normalizeApiError({ status: res.status, body }) };
   }
 
-  const parsed = signinDataSchema.safeParse(unwrapEnvelope(body));
+  const parsed = signinResponseDataSchema.safeParse(unwrapEnvelope(body));
   if (!parsed.success) {
+    finishAuthTransition(requestEpoch);
     return {
       ok: false,
       error: { kind: 'unknown', message: 'Unexpected sign-in response shape from server.', retryable: false },
     };
   }
 
+  if ('requires2fa' in parsed.data) {
+    if (!isCurrentAuthEpoch(requestEpoch)) {
+      return { ok: false, error: supersededAuthError };
+    }
+    // The temporary credential is returned to the caller only as an explicit contract state. Clear
+    // any previous session before the caller presents the dedicated verification screen.
+    setAccessToken(null);
+    await clearRefreshTokenForEpoch(requestEpoch);
+    finishAuthTransition(requestEpoch);
+    return { ok: true, data: parsed.data };
+  }
+
   const { accessToken, refreshToken, shopId, user } = parsed.data;
-  setAccessToken(accessToken);
-  await setRefreshToken(refreshToken);
+  if (!isCurrentAuthEpoch(requestEpoch)) {
+    return { ok: false, error: supersededAuthError };
+  }
+
+  try {
+    setAccessToken(accessToken);
+    await writeRefreshTokenForEpoch(requestEpoch, refreshToken);
+  } catch (error) {
+    finishAuthTransition(requestEpoch);
+    throw error;
+  }
+  if (!isCurrentAuthEpoch(requestEpoch)) {
+    return { ok: false, error: supersededAuthError };
+  }
+
+  refreshBlocked = false;
   return { ok: true, data: { ...user, shopId } };
+}
+
+/**
+ * Completes the native password/TOTP handoff. The tempToken stays in the caller's memory only;
+ * this function installs a session only after the server returns the full token response.
+ */
+export async function verifyTwoFactor(
+  tempToken: string,
+  token: string,
+  deps: AuthClientDeps = {},
+): Promise<AuthResult<AuthUser>> {
+  const requestEpoch = beginAuthTransition();
+  const transport = deps.transport ?? fetchTransport;
+
+  let res;
+  try {
+    res = await transport.request('/api/auth/native/2fa/verify', {
+      method: 'POST',
+      body: { tempToken, token },
+      skipAuth: true,
+    });
+  } catch (error) {
+    finishAuthTransition(requestEpoch);
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    return { ok: false, error: normalizeApiError(isTimeout ? { isTimeout: true } : { isNetworkError: true }) };
+  }
+
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    finishAuthTransition(requestEpoch);
+    return { ok: false, error: normalizeApiError({ status: res.status, body }) };
+  }
+
+  const parsed = signinDataSchema.safeParse(unwrapEnvelope(body));
+  if (!parsed.success) {
+    finishAuthTransition(requestEpoch);
+    return {
+      ok: false,
+      error: { kind: 'unknown', message: 'Unexpected two-factor response shape from server.', retryable: false },
+    };
+  }
+
+  const { accessToken, refreshToken, shopId, user } = parsed.data;
+  if (!isCurrentAuthEpoch(requestEpoch)) {
+    return { ok: false, error: supersededAuthError };
+  }
+
+  try {
+    setAccessToken(accessToken);
+    await writeRefreshTokenForEpoch(requestEpoch, refreshToken);
+  } catch (error) {
+    finishAuthTransition(requestEpoch);
+    throw error;
+  }
+  if (!isCurrentAuthEpoch(requestEpoch)) {
+    return { ok: false, error: supersededAuthError };
+  }
+
+  refreshBlocked = false;
+  return { ok: true, data: { ...user, shopId } };
+}
+
+/** Invalidates a pending native MFA request without creating a session or calling another auth path. */
+export async function cancelTwoFactor(): Promise<void> {
+  const requestEpoch = beginAuthTransition();
+  setAccessToken(null);
+  await clearRefreshTokenForEpoch(requestEpoch);
+  finishAuthTransition(requestEpoch);
 }
 
 // --- Single-flight refresh guard -------------------------------------------------------------
@@ -148,9 +257,64 @@ export async function signIn(
 // in-flight promise so exactly one HTTP call to `/refresh` is made no matter how many callers ask.
 
 let inFlightRefresh: Promise<RefreshedSession | null> | null = null;
+let authEpoch = 0;
+let refreshBlocked = false;
+let secureStoreWrite: Promise<void> = Promise.resolve();
 
-async function performRefresh(transport: Transport): Promise<RefreshedSession | null> {
+const supersededAuthError: NormalizedError = {
+  kind: 'unknown',
+  message: 'Authentication state changed before the request completed.',
+  retryable: false,
+};
+
+/** Invalidates work from the previous auth state and prevents refresh until the transition settles. */
+function beginAuthTransition(): number {
+  authEpoch += 1;
+  refreshBlocked = true;
+  inFlightRefresh = null;
+  return authEpoch;
+}
+
+function isCurrentAuthEpoch(epoch: number): boolean {
+  return authEpoch === epoch;
+}
+
+function finishAuthTransition(epoch: number): void {
+  if (isCurrentAuthEpoch(epoch)) refreshBlocked = false;
+}
+
+async function isCurrentRefresh(epoch: number, refreshToken: string): Promise<boolean> {
+  if (!isCurrentAuthEpoch(epoch) || refreshBlocked) return false;
+  const currentRefreshToken = await getRefreshToken();
+  return isCurrentAuthEpoch(epoch) && !refreshBlocked && currentRefreshToken === refreshToken;
+}
+
+/** Serializes SecureStore writes so logout/sign-in cannot reorder an older async write. */
+function enqueueSecureStoreWrite(operation: () => Promise<void>): Promise<void> {
+  const next = secureStoreWrite.then(operation, operation);
+  secureStoreWrite = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+function writeRefreshTokenForEpoch(epoch: number, refreshToken: string): Promise<void> {
+  return enqueueSecureStoreWrite(async () => {
+    if (isCurrentAuthEpoch(epoch)) await setRefreshToken(refreshToken);
+  });
+}
+
+function clearRefreshTokenForEpoch(epoch: number): Promise<void> {
+  return enqueueSecureStoreWrite(async () => {
+    if (isCurrentAuthEpoch(epoch)) await clearRefreshToken();
+  });
+}
+
+async function performRefresh(transport: Transport, epoch: number): Promise<RefreshedSession | null> {
   const refreshToken = await getRefreshToken();
+  if (!isCurrentAuthEpoch(epoch)) return null;
+
   if (!refreshToken) {
     setAccessToken(null);
     return null;
@@ -166,23 +330,28 @@ async function performRefresh(transport: Transport): Promise<RefreshedSession | 
     });
     const body = await parseJsonSafe(res);
 
+    if (!(await isCurrentRefresh(epoch, refreshToken))) return null;
+
     if (!res.ok) {
       // Includes the reuse-detected-compromise case (ADR M-004): the server revokes the whole
       // session family, so the client's only correct move is to drop everything and sign out.
       setAccessToken(null);
-      await clearRefreshToken();
+      await clearRefreshTokenForEpoch(epoch);
       return null;
     }
 
     const parsed = refreshDataSchema.safeParse(unwrapEnvelope(body));
     if (!parsed.success) {
       setAccessToken(null);
-      await clearRefreshToken();
+      await clearRefreshTokenForEpoch(epoch);
       return null;
     }
 
+    if (!(await isCurrentRefresh(epoch, refreshToken))) return null;
+
     setAccessToken(parsed.data.accessToken);
-    await setRefreshToken(parsed.data.refreshToken);
+    await writeRefreshTokenForEpoch(epoch, parsed.data.refreshToken);
+    if (!isCurrentAuthEpoch(epoch)) return null;
     return {
       accessToken: parsed.data.accessToken,
       user: { ...parsed.data.user, shopId: parsed.data.shopId },
@@ -190,7 +359,7 @@ async function performRefresh(transport: Transport): Promise<RefreshedSession | 
   } catch {
     // Network failure during refresh: leave the refresh token in place (it may still be valid),
     // but the caller gets no access token for this attempt.
-    setAccessToken(null);
+    if (await isCurrentRefresh(epoch, refreshToken)) setAccessToken(null);
     return null;
   }
 }
@@ -203,29 +372,42 @@ async function performRefresh(transport: Transport): Promise<RefreshedSession | 
  * `user` after an app relaunch, since the backend's refresh response now returns it too.
  */
 export function refreshAccessToken(deps: AuthClientDeps = {}): Promise<RefreshedSession | null> {
+  if (refreshBlocked) return Promise.resolve(null);
+
   if (!inFlightRefresh) {
     const transport = deps.transport ?? fetchTransport;
-    inFlightRefresh = performRefresh(transport).finally(() => {
-      inFlightRefresh = null;
-    });
+    const refreshPromise = performRefresh(transport, authEpoch);
+    inFlightRefresh = refreshPromise;
+    void refreshPromise.then(
+      () => {
+        if (inFlightRefresh === refreshPromise) inFlightRefresh = null;
+      },
+      () => {
+        if (inFlightRefresh === refreshPromise) inFlightRefresh = null;
+      },
+    );
   }
   return inFlightRefresh;
 }
 
-/** Test-only escape hatch: clears the in-flight refresh promise between tests. */
+/** Test-only escape hatch: invalidates in-flight auth work between tests. */
 export function __resetRefreshGuardForTests(): void {
+  authEpoch += 1;
+  refreshBlocked = false;
   inFlightRefresh = null;
 }
 
 export async function logout(deps: AuthClientDeps = {}): Promise<void> {
+  const requestEpoch = beginAuthTransition();
   const transport = deps.transport ?? fetchTransport;
-  const refreshToken = await getRefreshToken();
   const currentAccessToken = getAccessToken();
+  const refreshToken = await getRefreshToken();
+  if (!isCurrentAuthEpoch(requestEpoch)) return;
 
   try {
     await transport.request('/api/auth/native/logout', {
       method: 'POST',
-      body: { refreshToken },
+      body: { refresh_token: refreshToken },
       headers: currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : undefined,
     });
   } catch {
@@ -234,6 +416,8 @@ export async function logout(deps: AuthClientDeps = {}): Promise<void> {
     // "Logout" must always end up logged out on-device, even if offline.
   }
 
+  if (!isCurrentAuthEpoch(requestEpoch)) return;
+
   setAccessToken(null);
-  await clearRefreshToken();
+  await clearRefreshTokenForEpoch(requestEpoch);
 }

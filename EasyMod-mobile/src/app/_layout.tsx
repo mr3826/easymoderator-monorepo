@@ -45,15 +45,12 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts(fontsToLoad);
+  useFonts(fontsToLoad);
 
   useEffect(() => {
-    if (fontsLoaded) {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
-
-  if (!fontsLoaded) return null;
+    // Font loading is progressive; a missing font asset must not block auth or navigation.
+    void SplashScreen.hideAsync();
+  }, []);
 
   return (
     <ErrorBoundary>

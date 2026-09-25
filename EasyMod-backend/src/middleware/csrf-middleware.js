@@ -17,9 +17,8 @@ const isTrustedAuthOrigin = (
 ) => environment !== 'production' || [appOrigin, growthOrigin].includes(origin);
 
 /**
- * ADR M-004: native auth endpoints that issue tokens before a client holds
- * any credential at all (signin, the 2FA step, and refresh — which rotates a
- * body-supplied refresh token rather than reading a cookie). These carry no
+ * ADR M-004: native auth endpoints that use only body credentials (signin, the
+ * 2FA step, refresh, and logout with a refresh_token). These carry no
  * Authorization header yet, so they cannot be covered by the Bearer-based
  * exemption below; they are exempted by exact path instead, and — per the
  * ADR's Consequences section — WITHOUT the isTrustedAuthOrigin check, since a
@@ -30,7 +29,11 @@ const NATIVE_ANONYMOUS_AUTH_PATHS = new Set([
     '/api/auth/native/signin',
     '/api/auth/native/2fa/verify',
     '/api/auth/native/refresh',
+    '/api/auth/native/logout',
 ]);
+
+const isNativeAuthPath = (path) => typeof path === 'string'
+    && (path === '/api/auth/native' || path.startsWith('/api/auth/native/'));
 
 /**
  * True when the request carries none of the cookies a browser session would
@@ -50,9 +53,9 @@ const hasNoCookies = (req) => {
  * when it carries `Authorization: Bearer`, it carries NO cookies of any kind,
  * and MOBILE_API_ENABLED is on — a request that also carries a cookie is
  * deliberately NOT exempted and still runs the normal check below, even if it
- * also has a Bearer header. Native's own pre-credential endpoints (signin,
- * 2fa/verify, refresh) are exempted by exact path instead, under the exact
- * same "no cookies at all" guard, since they have no Bearer token yet either.
+ * also has a Bearer header. Native's own body-credential endpoints (signin,
+ * 2fa/verify, refresh, logout) are exempted by exact path instead, under the
+ * exact same "no cookies at all" guard, since they may have no Bearer token.
  *
  * Exported as a pure, request-shape function (mirrors isTrustedAuthOrigin)
  * so the hybrid Bearer+cookie case the ADR calls out as most likely to
@@ -143,6 +146,12 @@ const csrfProtectionMiddleware = (req, res, next) => {
         return next();
     }
 
+    // Disabled native routes must reach their own indistinguishable 404 gate.
+    // Do not make a production request reveal CSRF state before that gate runs.
+    if (!config.mobileApiEnabled && isNativeAuthPath(req.path)) {
+        return next();
+    }
+
     // ADR M-004: mobile native auth (body/header token transport, zero
     // cookies). See isNativeCsrfExempt above for the exact condition — a
     // request that also carries any cookie is NOT exempted and falls through
@@ -151,9 +160,9 @@ const csrfProtectionMiddleware = (req, res, next) => {
         return next();
     }
 
-    // Anonymous authentication flows do not act on an existing authenticated
-    // account. Keep this exact: logout, 2FA setup/enable/disable and session
-    // management remain CSRF-protected.
+    // Web anonymous authentication flows do not act on an existing
+    // authenticated account. Keep this list exact; native logout is handled
+    // by the no-cookie body-token exemption above.
     const anonymousAuthPaths = new Set([
         '/api/auth/signup',
         '/api/auth/signin',

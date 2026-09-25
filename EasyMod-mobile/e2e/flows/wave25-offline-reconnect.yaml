@@ -1,0 +1,49 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod Wave 2.5 offline and reconnect
+tags:
+  - mobile-e2e
+  - wave25
+  - offline
+onFlowStart:
+  - runFlow: ../support/restore-online.yaml
+onFlowComplete:
+  - runFlow: ../support/restore-online.yaml
+env:
+  E2E_EMAIL: mobile-dev@easymod.test
+  E2E_PASSWORD: MobileDev123!
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: login-email-input
+    timeout: 30000
+- tapOn:
+    id: login-email-input
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: login-password-input
+- inputText: ${E2E_PASSWORD}
+- tapOn:
+    id: login-submit
+- extendedWaitUntil:
+    visible: home-attention-list
+    timeout: 30000
+- assertVisible:
+    id: today-summary
+- setAirplaneMode: enabled
+- extendedWaitUntil:
+    visible: home-offline-cached
+    timeout: 30000
+- assertVisible:
+    id: home-attention-list
+- takeScreenshot: wave25-offline-cached
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    notVisible: home-offline-cached
+    timeout: 30000
+- swipe:
+    direction: DOWN
+- extendedWaitUntil:
+    visible: today-summary
+    timeout: 30000
+- takeScreenshot: wave25-reconnected

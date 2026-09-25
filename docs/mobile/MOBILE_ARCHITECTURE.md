@@ -70,8 +70,9 @@ fixes them directly.
   full sign-out on refresh-reuse-detected (ADR M-004).
 - Push: native FCM via `getDevicePushTokenAsync`, registered against the existing subscriptions
   endpoint (ADR M-007).
-- Offline: persisted read-only TanStack Query cache for an explicit allowlist, no mutation queue
-  (ADR M-011).
+- Offline: no mutation queue (ADR M-011). Wave 2 Home can show read-only in-memory TanStack Query
+  data when available; persisted query storage remains a later implementation gate and must not be
+  implied by the current Home behavior.
 - i18n: i18next, `bn` default, extending the web app's existing key namespace
   (`CURRENT_STATE.md` §12) rather than a parallel translation set.
 - Design tokens copied from the web app's brand tokens (`CURRENT_STATE.md` §12): `#00A651` /

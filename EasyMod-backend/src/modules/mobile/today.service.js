@@ -12,9 +12,16 @@ const { Order } = require('../entities');
 const { getMerchantDayWindowUtc } = require('./mobile-day-window.util');
 const attentionService = require('./attention.service');
 
-// D3: a draft order is not a committed order yet — it is surfaced as its own
-// attention item (tier 3), not counted in the day's order volume/revenue.
+const {
+    COMMITTED_ORDER_STATUSES,
+    activeOrderWhere,
+} = attentionService;
+
+// Drafts are surfaced as their own attention item (tier 3), not counted in
+// the day's committed order volume/expected value. The positive status
+// allowlist also excludes terminal, cancelled, refunded, and legacy statuses.
 const DRAFT_STATUS = 'draft';
+const REVENUE_BASIS = 'expected_order_value';
 
 async function getToday(shopId, shopTimezone, now = new Date()) {
     const window = getMerchantDayWindowUtc(shopTimezone, now);
@@ -25,6 +32,7 @@ async function getToday(shopId, shopTimezone, now = new Date()) {
             where: {
                 shop_id: shopId,
                 created_at: { [Op.gte]: startUtc, [Op.lt]: endUtc },
+                ...activeOrderWhere(COMMITTED_ORDER_STATUSES),
             },
             attributes: ['id', 'order_status', 'total'],
         }),
@@ -40,9 +48,13 @@ async function getToday(shopId, shopTimezone, now = new Date()) {
         attentionService.collectAllSignals(shopId, now),
     ]);
 
-    const realOrders = ordersToday.filter((order) => order.order_status !== DRAFT_STATUS);
+    // Keep the defensive status check because this value is merchant-facing
+    // and must remain correct if a future query change broadens the result.
+    const realOrders = ordersToday.filter((order) => COMMITTED_ORDER_STATUSES.includes(order.order_status));
     const orderCount = realOrders.length;
-    const revenue = realOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+    const expectedOrderValue = Math.round(
+        realOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0) * 100,
+    ) / 100;
 
     const countBySignal = (...signalTypes) => signals.items
         .filter((item) => signalTypes.includes(item.signal_type))
@@ -61,7 +73,11 @@ async function getToday(shopId, shopTimezone, now = new Date()) {
         order_count: orderCount,
         // Order-derived expectation, not a settlement fact (MOBILE_PRODUCT_SPEC.md §5) —
         // `total` is what the order says it is worth, not confirmed collected cash.
-        revenue: Math.round(revenue * 100) / 100,
+        expected_order_value: expectedOrderValue,
+        // Compatibility alias retained for existing mobile clients. Both fields
+        // intentionally carry the same order-derived expectation.
+        revenue: expectedOrderValue,
+        revenue_basis: REVENUE_BASIS,
         delivered_count: deliveredTodayCount,
         pending_actions: pendingActions,
         timezone_used: window.timezoneUsed,
@@ -71,4 +87,4 @@ async function getToday(shopId, shopTimezone, now = new Date()) {
     };
 }
 
-module.exports = { getToday, DRAFT_STATUS };
+module.exports = { getToday, DRAFT_STATUS, REVENUE_BASIS };

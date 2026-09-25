@@ -23,6 +23,8 @@ const config = require('../../../../config/config');
 const { hashPassword } = require('../../../../utils/password.util');
 const { generateAccessToken } = require('../../../../utils/jwt.util');
 const { User, Tenant, Shop, UserShop, Session, AuditLog } = require('../../../entities');
+const providerRegistry = require('../../../channel-providers/provider.registry');
+const nativeAuthService = require('../native-auth.service');
 const totpService = require('../../totp.service');
 
 const app = require('../../../../app');
@@ -158,6 +160,43 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(afterRevokeRes.status).toBe(401);
     });
 
+    test('native refresh, switch-shop, and authenticated sid requests fail closed after user_sessions.expires_at', async () => {
+        const fixture = await makeUserWithShop('expired-session');
+        track(fixture);
+        const { user, shop } = fixture;
+
+        const signinRes = await request(app)
+            .post('/api/auth/native/signin')
+            .send({ email: user.email, password: PASSWORD });
+        expect(signinRes.status).toBe(200);
+        const { accessToken, refreshToken, sid } = signinRes.body.data;
+
+        await Session.update(
+            { expires_at: new Date(Date.now() - 1_000) },
+            { where: { id: sid } },
+        );
+
+        const refreshRes = await request(app)
+            .post('/api/auth/native/refresh')
+            .send({ refresh_token: refreshToken });
+        expect(refreshRes.status).toBe(401);
+
+        const switchRes = await request(app)
+            .post('/api/auth/native/switch-shop')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .send({ shopId: shop.id });
+        expect(switchRes.status).toBe(401);
+
+        await expect(nativeAuthService.switchShop({
+            user: { userId: user.id, sid, mfaVerified: false },
+        }, shop.id)).rejects.toMatchObject({ status: 404 });
+
+        const meRes = await request(app)
+            .get('/api/auth/me')
+            .set('Authorization', `Bearer ${accessToken}`);
+        expect(meRes.status).toBe(401);
+    });
+
     test('two concurrent refreshes of the same not-yet-rotated token fail closed on the loser, without revoking the session or logging reuse-detected', async () => {
         const fixture = await makeUserWithShop('concurrent-refresh');
         track(fixture);
@@ -248,6 +287,44 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
             .get('/api/auth/me')
             .set('Authorization', `Bearer ${webAccessToken}`);
         expect(webAfter.status).toBe(200);
+    });
+
+    test('native logout accepts refresh_token revocation when access has expired and ignores camelCase body names', async () => {
+        const fixture = await makeUserWithShop('logout-refresh');
+        track(fixture);
+        const { user } = fixture;
+
+        const signinRes = await request(app)
+            .post('/api/auth/native/signin')
+            .send({ email: user.email, password: PASSWORD });
+        expect(signinRes.status).toBe(200);
+        const { accessToken, refreshToken, sid } = signinRes.body.data;
+        const accessClaims = jwt.decode(accessToken);
+        delete accessClaims.iat;
+        delete accessClaims.exp;
+        const expiredAccessToken = jwt.sign(accessClaims, config.jwtAccessSecret, {
+            algorithm: 'HS256',
+            expiresIn: -1,
+        });
+
+        const camelCaseRes = await request(app)
+            .post('/api/auth/native/logout')
+            .set('Authorization', `Bearer ${expiredAccessToken}`)
+            .send({ refreshToken });
+        expect(camelCaseRes.status).toBe(401);
+        expect((await Session.findByPk(sid)).is_active).toBe(true);
+
+        const logoutRes = await request(app)
+            .post('/api/auth/native/logout')
+            .set('Authorization', `Bearer ${expiredAccessToken}`)
+            .send({ refresh_token: refreshToken });
+        expect(logoutRes.status).toBe(200);
+        expect((await Session.findByPk(sid)).is_active).toBe(false);
+
+        const refreshAfterLogout = await request(app)
+            .post('/api/auth/native/refresh')
+            .send({ refresh_token: refreshToken });
+        expect(refreshAfterLogout.status).toBe(401);
     });
 
     test('concurrent multi-device native logins for the same user do not invalidate each other', async () => {
@@ -357,6 +434,50 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         expect(switchForbidden.status).toBe(403);
     });
 
+    test('native sid tokens cannot invoke web conversation mutations or trigger a provider send, while web tokens remain eligible for the route', async () => {
+        const fixture = await makeUserWithShop('readonly-route');
+        track(fixture);
+        const { user, shop } = fixture;
+
+        const nativeSignin = await request(app)
+            .post('/api/auth/native/signin')
+            .send({ email: user.email, password: PASSWORD });
+        expect(nativeSignin.status).toBe(200);
+
+        const freshUser = await User.findByPk(user.id);
+        const webAccessToken = generateAccessToken({
+            userId: freshUser.id,
+            email: freshUser.email,
+            shopId: shop.id,
+            tokenVersion: freshUser.token_version,
+            mfaVerified: false,
+        });
+        const provider = providerRegistry.getProvider('facebook');
+        const sendSpy = jest.spyOn(provider, 'sendMessage');
+
+        try {
+            const nativeMutation = await request(app)
+                .post(`/api/conversation/${uuidv4()}/messages`)
+                .set('Authorization', `Bearer ${nativeSignin.body.data.accessToken}`)
+                .send({ content: 'native pilot mutation', sender: 'agent' });
+            expect(nativeMutation.status).toBe(403);
+            expect(nativeMutation.body.code).toBe('NATIVE_READ_ONLY');
+            expect(sendSpy).not.toHaveBeenCalled();
+
+            // A sid-less web token must still reach the existing route policy;
+            // this malformed body is rejected by its normal route validator,
+            // not by the native-only read-only guard.
+            const webMutation = await request(app)
+                .post(`/api/conversation/${uuidv4()}/messages`)
+                .set('Authorization', `Bearer ${webAccessToken}`)
+                .send({});
+            expect(webMutation.status).toBe(400);
+            expect(webMutation.body.code).not.toBe('NATIVE_READ_ONLY');
+        } finally {
+            sendSpy.mockRestore();
+        }
+    });
+
     test('lists and revokes this user\'s own device sessions', async () => {
         const fixture = await makeUserWithShop('sessions-list');
         track(fixture);
@@ -423,6 +544,37 @@ describe('native auth (ADR M-004) on PostgreSQL and Redis', () => {
         });
         expect(auditRow).not.toBeNull();
         expect(auditRow.metadata?.source).toBe('MOBILE');
+    });
+
+    test('native 2fa verification rejects the sixth invalid attempt from one IP with 429', async () => {
+        const previousTrustProxy = app.get('trust proxy');
+        app.set('trust proxy', 1);
+        try {
+            const responses = [];
+            for (let index = 0; index < 6; index += 1) {
+                responses.push(
+                    await request(app)
+                        .post('/api/auth/native/2fa/verify')
+                        .set('X-Forwarded-For', '203.0.113.42')
+                        .send({
+                            tempToken: `test-only-invalid-temp-token-${index}`,
+                            token: '000000',
+                        }),
+                );
+            }
+
+            expect(responses.slice(0, 5).map((response) => response.status)).toEqual([
+                401,
+                401,
+                401,
+                401,
+                401,
+            ]);
+            expect(responses[5].status).toBe(429);
+            expect(responses[5].body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+        } finally {
+            app.set('trust proxy', previousTrustProxy);
+        }
     });
 
     test('a refresh audit row written WITHOUT X-EM-Client carries no metadata.source (unchanged shape)', async () => {
