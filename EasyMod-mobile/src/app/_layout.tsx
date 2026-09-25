@@ -28,11 +28,18 @@ function RootNavigator() {
   const pendingDeepLinkVersion = useSyncExternalStore(subscribePendingDeepLink, getPendingDeepLinkVersion);
 
   // Replay a parked inbound entity link (see `+native-intent.ts`) once the protected screens exist.
-  // Child effects run first, so the Stack below is mounted by the time this navigates.
+  // Child effects run first, so the Stack below is mounted by the time this navigates. The replay
+  // waits one macrotask: for a link that arrives while the app is running, Expo Router awaits
+  // `redirectSystemPath` and only then navigates to the `/` it returned, after this effect has
+  // already committed; opening the entity first would be undone by that navigation. The link is
+  // taken inside the timer, so a superseded run leaves it parked for the next one.
   useEffect(() => {
-    if (status !== 'signedIn') return;
-    const link = takePendingDeepLink();
-    if (link) openDeepLink(link.kind, link.id);
+    if (status !== 'signedIn') return undefined;
+    const timer = setTimeout(() => {
+      const link = takePendingDeepLink();
+      if (link) openDeepLink(link.kind, link.id);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [status, pendingDeepLinkVersion]);
 
   // While bootstrapping (attempting a silent refresh from a stored refresh token), render

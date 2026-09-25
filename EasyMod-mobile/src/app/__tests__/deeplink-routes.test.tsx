@@ -252,4 +252,25 @@ describe('inbound links that arrive before the signed-in shell exists', () => {
     expect(await screen.findByText(i18n.t('mobile.deeplink.conversation.foundTitle'))).toBeTruthy();
     expect(rendered.getPathname()).toBe('/conversation/convo-after-login');
   });
+
+  it('opens a link that arrives while the signed-in app is already running (warm link)', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
+    const rendered = renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    // Expo Router's order for a warm link (build/link/linking.js): it awaits redirectSystemPath,
+    // and only then navigates to the path it returned. Parking the link commits React (and the
+    // replay effect) first, so the replay must not be undone by that later navigation to `/`.
+    let href: string | null = null;
+    act(() => {
+      href = redirectSystemPath!({ path: 'easymodmerchantdev://order/order-warm', initial: false }) as string;
+    });
+    expect(href).toBe('/');
+    act(() => {
+      router.navigate(href!);
+    });
+
+    expect(await screen.findByText(i18n.t('mobile.deeplink.order.foundTitle'))).toBeTruthy();
+    expect(rendered.getPathname()).toBe('/order/order-warm');
+  });
 });
