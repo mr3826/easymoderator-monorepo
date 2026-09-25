@@ -144,7 +144,7 @@ describe('ProspectDetailPage', () => {
       await screen.findAllByText('Internal notes — never visible to merchants'),
     ).toHaveLength(1);
     await waitFor(() => expect(workspaceApi.listFollowups).toHaveBeenCalledWith({ prospectId: PROSPECT_ID, state: 'open' }));
-    await waitFor(() => expect(workspaceApi.listNotes).toHaveBeenCalledWith('prospect', PROSPECT_ID));
+    await waitFor(() => expect(workspaceApi.listNotes).toHaveBeenCalledWith('prospect', PROSPECT_ID, { page: 1, pageSize: 20 }));
   });
 
   it('caps reason fields to 200 characters', async () => {

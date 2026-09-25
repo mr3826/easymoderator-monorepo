@@ -10,6 +10,7 @@ const repository = require('./growth-os.prospect.repository');
 const { resolveProspectScope } = require('./growth-os.prospect.scope');
 const { NOTE_TARGET_TYPES } = require('./growth-os-note.entity');
 const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
+const { getBusinessDayBounds } = require('./growth-os.time');
 
 const FOLLOWUP_STATUSES = Object.freeze(['open', 'completed', 'cancelled']);
 const MAX_PAGE_SIZE = 100;
@@ -215,9 +216,7 @@ async function listFollowups({
     where.status = 'open';
     if (state === 'overdue') where.due_at = { [Op.lt]: new Date() };
     if (state === 'due_today') {
-      const start = new Date();
-      start.setUTCHours(0, 0, 0, 0);
-      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      const { start, end } = getBusinessDayBounds();
       where.due_at = { [Op.gte]: start, [Op.lt]: end };
     }
   } else if (state !== 'all') {

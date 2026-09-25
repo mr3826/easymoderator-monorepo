@@ -23,7 +23,13 @@ function makeAnalytics(overrides: Partial<GrowthAnalyticsResponse> = {}): Growth
     lostReasons: {},
     timing: { medianHoursToFirstContact: null, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
     leadToActivation: null,
-    cohort: { basis: 'source_recorded_at', importedAt: 'created_at', eventAt: 'prospect_events.created_at' },
+    cohort: {
+      basis: 'source_recorded_at',
+      importedAt: 'created_at',
+      eventAt: 'prospect_events.created_at',
+      sourceRecordedFrom: '2026-06-15T08:00:00.000Z',
+      sourceRecordedTo: '2026-09-13T08:00:00.000Z',
+    },
     notAvailable: [],
     ...overrides,
   };
@@ -54,8 +60,11 @@ describe('SourcesPage', () => {
 
     expect(await screen.findByText('facebook')).toBeInTheDocument();
     expect(screen.getByText('manual entry')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'facebook' })).toHaveAttribute('href', '/prospects?source=facebook');
-    expect(screen.getByRole('link', { name: 'manual entry' })).toHaveAttribute('href', '/prospects?source=manual_entry');
+    expect(screen.getByRole('link', { name: 'facebook' }).getAttribute('href')).toContain('source=facebook');
+    expect(screen.getByRole('link', { name: 'facebook' }).getAttribute('href')).toContain('sourceRecordedAfter=');
+    expect(screen.getByRole('link', { name: 'facebook' }).getAttribute('href')).toContain('sourceRecordedBefore=');
+    expect(screen.getByRole('link', { name: 'manual entry' }).getAttribute('href')).toContain('source=manual_entry');
+    expect(screen.getByRole('link', { name: 'manual entry' }).getAttribute('href')).toContain('sourceRecordedAfter=');
 
     const [facebookRow, manualRow] = screen.getAllByRole('row').slice(1);
     expect(within(facebookRow).getByText('facebook')).toBeInTheDocument();

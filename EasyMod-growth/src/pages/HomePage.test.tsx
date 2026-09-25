@@ -17,6 +17,12 @@ vi.mock('@/auth/GrowthAuthProvider', () => ({
 function makeHome(overrides: Partial<HomeResponse> = {}): HomeResponse {
   return {
     generatedAt: '2026-09-13T08:00:00.000Z',
+    windows: {
+      attentionSince: '2026-09-06T08:00:00.000Z',
+      attentionUntil: '2026-09-13T08:00:00.000Z',
+      stalledBefore: '2026-08-29T08:00:00.000Z',
+      businessTimeZone: 'Asia/Dhaka',
+    },
     myWork: {
       followupsOverdueMine: 2,
       followupsOpenMine: 5,
@@ -28,8 +34,10 @@ function makeHome(overrides: Partial<HomeResponse> = {}): HomeResponse {
       unassignedQualified: 0,
       onboardingOpen: 3,
       onboardingStalledOver15d: 1,
+      qualifiedStalledOver15d: 2,
       convertedLast7d: 2,
       followupsOverdueInScope: 6,
+      followupsDueTodayInScope: 3,
     },
     ...overrides,
   };
@@ -62,9 +70,27 @@ describe('HomePage', () => {
     expect(screen.getByText('New leads (last 7 days)')).toBeInTheDocument();
     expect(screen.getAllByText('12')).toHaveLength(1);
     expect(screen.getByText('Onboarding stalled (15+ days)')).toBeInTheDocument();
+    expect(screen.getByText('Qualified stalled (15+ days)')).toBeInTheDocument();
     expect(screen.getByText('Overdue follow-ups in scope')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review in My Work' })).toHaveAttribute('href', '/my-work');
+    expect(screen.getByText('Due today in scope')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review in My Work' })).toHaveAttribute('href', '/my-work?state=overdue');
+    expect(screen.getByRole('link', { name: 'Open My Work' })).toHaveAttribute('href', '/my-work?state=open');
     expect(screen.getByRole('link', { name: 'Open prospects' })).toHaveAttribute('href', '/prospects?owner=me');
+    const overdueScopeLink = screen.getByText('Overdue follow-ups in scope').closest('a');
+    expect(overdueScopeLink).toHaveAttribute('href', '/follow-ups?state=overdue');
+    const dueTodayLink = screen.getByText('Due today in scope').closest('a');
+    expect(dueTodayLink).toHaveAttribute('href', '/follow-ups?state=due_today');
+    const newLeadsLink = screen.getByText('New leads (last 7 days)').closest('a');
+    expect(newLeadsLink?.getAttribute('href')).toContain('status=new');
+    expect(newLeadsLink?.getAttribute('href')).toContain('createdAfter=');
+    expect(newLeadsLink?.getAttribute('href')).toContain('createdBefore=');
+    const convertedLink = screen.getByText('Converted (last 7 days)').closest('a');
+    expect(convertedLink?.getAttribute('href')).toContain('statusChangedAfter=');
+    expect(convertedLink?.getAttribute('href')).toContain('statusChangedBefore=');
+    const stalledOnboardingLink = screen.getByText('Onboarding stalled (15+ days)').closest('a');
+    expect(stalledOnboardingLink?.getAttribute('href')).toBe('/prospects?status=onboarding&stalled=true');
+    const stalledQualifiedLink = screen.getByText('Qualified stalled (15+ days)').closest('a');
+    expect(stalledQualifiedLink?.getAttribute('href')).toBe('/prospects?status=qualified&stalled=true');
   });
 
   it('keeps super-admin sections hidden when the payload has no privileged fields', async () => {

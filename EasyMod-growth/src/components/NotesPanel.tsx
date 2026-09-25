@@ -8,15 +8,10 @@ import {
 } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { usePermission } from '@/auth/usePermission';
+import { formatGrowthDateTime } from '@/growthTime';
 
 const MAX_NOTE_LENGTH = 4000;
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return 'Not provided';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
+const PAGE_SIZE = 20;
 
 function errorMessage(error: unknown) {
   if (error instanceof ApiError || error instanceof Error) return error.message;
@@ -33,6 +28,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
   const [formError, setFormError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [page, setPage] = useState(1);
 
   const allowed = canManageNotes;
 
@@ -41,7 +37,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
     let active = true;
     setLoading(true);
     setError(null);
-    workspaceApi.listNotes(targetType, targetId)
+    workspaceApi.listNotes(targetType, targetId, { page, pageSize: PAGE_SIZE })
       .then((nextResult) => {
         if (active) setResult(nextResult);
       })
@@ -55,7 +51,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
     return () => {
       active = false;
     };
-  }, [allowed, reportApiError, reloadToken, targetId, targetType]);
+  }, [allowed, page, reportApiError, reloadToken, targetId, targetType]);
 
   if (!allowed) return null;
 
@@ -75,6 +71,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
     try {
       await workspaceApi.createNote({ targetType, targetId, body: trimmed });
       setBody('');
+      setPage(1);
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -89,6 +86,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
     setFormError(null);
     try {
       await workspaceApi.deleteNote(note.id);
+      setPage(1);
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -99,6 +97,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
   }
 
   const notes = result?.items ?? [];
+  const totalPages = result ? Math.max(1, Math.ceil(result.total / (result.pageSize || PAGE_SIZE))) : 1;
 
   return (
     <section className="content-card" aria-labelledby="notes-panel-title">
@@ -130,7 +129,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
               <div>
                 <p>{note.body}</p>
                 <span className="table-subtext">
-                  {note.authorUserId || 'Unknown author'} · {formatDate(note.createdAt)}
+                  {note.authorUserId || 'Unknown author'} · {formatGrowthDateTime(note.createdAt)}
                 </span>
               </div>
               {note.authorUserId && note.authorUserId === session?.internalUserId ? (
@@ -138,16 +137,38 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
                   className="secondary-button"
                   type="button"
                   disabled={busyId !== null}
-                  aria-label={`Delete note ${formatDate(note.createdAt)}`}
+                  aria-label={`Delete note ${formatGrowthDateTime(note.createdAt)}`}
                   onClick={() => void removeNote(note)}
                 >
                   <Trash2 aria-hidden="true" />
                   <span>Delete</span>
                 </button>
               ) : null}
-            </li>
-          ))}
-        </ul>
+             </li>
+           ))}
+         </ul>
+       ) : null}
+
+      {!loading && !error && result && totalPages > 1 ? (
+        <div className="pagination-row" aria-label="Notes pagination">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            Previous
+          </button>
+          <span className="table-subtext">Page {page} of {totalPages}</span>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            Next
+          </button>
+        </div>
       ) : null}
 
       <form className="action-form" onSubmit={addNote} aria-label="Add an internal note">

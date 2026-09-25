@@ -1,6 +1,6 @@
 'use strict';
 
-const SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp)/i;
+const SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp|contact[_-]?email|contact[_-]?phone|normalized[_-]?email|normalized[_-]?phone)/i;
 const SENSITIVE_ASSIGNMENT = /(["']?)([a-z0-9_-]*(?:password|token|secret|key|otp|totp|authorization|cookie|credential)s?)\1\s*([:=])\s*(?:"[^"]*"|'[^']*'|[^,\s;]+)/gi;
 const URL_KEY = /(?:page[_-]?url|source[_-]?url|redirect[_-]?uri|callback[_-]?url)/i;
 

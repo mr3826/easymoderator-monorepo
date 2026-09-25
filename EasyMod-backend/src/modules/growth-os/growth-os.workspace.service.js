@@ -10,6 +10,7 @@ const { Op, fn, col, literal } = require('sequelize');
 const { AppError } = require('../../utils/AppError');
 const { resolveProspectScope } = require('./growth-os.prospect.scope');
 const { escapeLike, likePattern } = require('./growth-os.merchants.service');
+const { getBusinessDayBounds } = require('./growth-os.time');
 
 const HOME_WINDOW_DAYS = 7;
 const ATTENTION_WINDOW_DAYS = 30;
@@ -38,9 +39,13 @@ async function getHome({ access, userId, isSuperAdmin }) {
   const scope = resolveProspectScope(access, userId);
   const baseWhere = scope.where;
 
-  const dayStart = new Date();
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const now = new Date();
+  const generatedAt = new Date();
+  const dayBounds = getBusinessDayBounds(generatedAt);
+  const dayStart = dayBounds.start;
+  const dayEnd = dayBounds.end;
+  const now = generatedAt;
+  const attentionSince = new Date(generatedAt.getTime() - HOME_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const stalledBefore = new Date(generatedAt.getTime() - 15 * 24 * 60 * 60 * 1000);
 
   const followupScopeInclude = scope.kind === 'all'
     ? []
@@ -61,22 +66,41 @@ async function getHome({ access, userId, isSuperAdmin }) {
     onboardingNow,
     convertedWindow,
     staleOnboarding,
+    stalledQualified,
     overdueWindow,
+    dueTodayWindow,
   ] = await Promise.all([
-    GrowthOsFollowup.count({ where: { status: 'open', owner_user_id: userId, due_at: { [Op.lt]: dayStart } } }),
-    GrowthOsFollowup.count({ where: { status: 'open', owner_user_id: userId } }),
+    GrowthOsFollowup.count({
+      where: { status: 'open', owner_user_id: userId, due_at: { [Op.lt]: now } },
+      include: followupScopeInclude,
+    }),
+    GrowthOsFollowup.count({
+      where: { status: 'open', owner_user_id: userId },
+      include: followupScopeInclude,
+    }),
     GrowthOsProspect.count({ where: { ...baseWhere, owner_user_id: userId, status: { [Op.ne]: 'merged' } } }),
-    GrowthOsProspect.count({ where: { ...baseWhere, status: 'new', created_at: { [Op.gte]: dayFloor(HOME_WINDOW_DAYS) } } }),
+    GrowthOsProspect.count({ where: { ...baseWhere, status: 'new', created_at: { [Op.gte]: attentionSince, [Op.lte]: now } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified' } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified', owner_user_id: { [Op.is]: null } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding' } }),
-    GrowthOsProspect.count({ where: { ...baseWhere, status: 'converted', status_changed_at: { [Op.gte]: dayFloor(HOME_WINDOW_DAYS) } } }),
-    GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding', status_changed_at: { [Op.lt]: dayFloor(15) } } }),
+    GrowthOsProspect.count({ where: { ...baseWhere, status: 'converted', status_changed_at: { [Op.gte]: attentionSince, [Op.lte]: now } } }),
+    GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding', status_changed_at: { [Op.lt]: stalledBefore } } }),
+    GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified', status_changed_at: { [Op.lt]: stalledBefore } } }),
     GrowthOsFollowup.count({ where: { status: 'open', due_at: { [Op.lt]: now } }, include: followupScopeInclude }),
+    GrowthOsFollowup.count({
+      where: { status: 'open', due_at: { [Op.gte]: dayStart, [Op.lt]: dayEnd } },
+      include: followupScopeInclude,
+    }),
   ]);
 
   const home = {
-    generatedAt: new Date().toISOString(),
+    generatedAt: generatedAt.toISOString(),
+    windows: {
+      attentionSince: attentionSince.toISOString(),
+      attentionUntil: now.toISOString(),
+      stalledBefore: stalledBefore.toISOString(),
+      businessTimeZone: dayBounds.timeZone,
+    },
     myWork: {
       followupsOverdueMine: followupsMineOverdue,
       followupsOpenMine: mineFollowupsAll,
@@ -88,8 +112,10 @@ async function getHome({ access, userId, isSuperAdmin }) {
       unassignedQualified,
       onboardingOpen: onboardingNow,
       onboardingStalledOver15d: staleOnboarding,
+      qualifiedStalledOver15d: stalledQualified,
       convertedLast7d: convertedWindow,
       followupsOverdueInScope: overdueWindow,
+      followupsDueTodayInScope: dueTodayWindow,
     },
   };
 
@@ -173,10 +199,11 @@ function durationHours(prospectRows, eventTimes, cohortField = 'source_recorded_
 async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
   const window = Math.min(Math.max(parseInt(windowDays, 10) || 90, 7), 365);
   const since = dayFloor(window);
+  const until = new Date();
   const { GrowthOsProspect, GrowthOsProspectEvent, Shop } = getModels();
   const scope = resolveProspectScope(access, userId);
   const baseWhere = { ...scope.where, status: { [Op.ne]: 'merged' } };
-  const cohortWhere = { ...baseWhere, source_recorded_at: { [Op.gte]: since } };
+  const cohortWhere = { ...baseWhere, source_recorded_at: { [Op.gte]: since, [Op.lte]: until } };
   const eventInclude = [{
     association: 'prospect',
     required: true,
@@ -275,7 +302,13 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
     },
     leadToActivation: created > 0 ? Math.round((activated / created) * 1000) / 10 : null,
     notAvailable: NOT_AVAILABLE_METRICS,
-    cohort: { basis: 'source_recorded_at', importedAt: 'created_at', eventAt: 'prospect_events.created_at' },
+     cohort: {
+       basis: 'source_recorded_at',
+       importedAt: 'created_at',
+       eventAt: 'prospect_events.created_at',
+       sourceRecordedFrom: since.toISOString(),
+       sourceRecordedTo: until.toISOString(),
+     },
   };
 }
 

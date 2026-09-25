@@ -15,6 +15,7 @@ const {
   User,
 } = require('../../entities');
 const prospectRepository = require('../growth-os.prospect.repository');
+const prospectService = require('../growth-os.prospect.service');
 const app = require('../../../app');
 
 const API_ROOT = '/api/internal/growth-os/prospects';
@@ -392,9 +393,25 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
       .send({ status: 'onboarding', reason: 'Shop linkage verified' });
     expect(onboarding.status).toBe(200);
 
-    const converted = await asFounder()
+    // Manual conversion is no longer an operator action; only the canonical
+    // first-successful-AI-reply activation path may move a prospect from
+    // onboarding to converted. This guards the analytics activation count.
+    const rejectedManualConversion = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)
-      .send({ status: 'converted', reason: 'Shop linkage verified' });
+      .send({ status: 'converted', reason: 'Attempted operator conversion' });
+    expect(rejectedManualConversion.status).toBe(409);
+    expect(rejectedManualConversion.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_TRANSITION');
+
+    await shop.update({
+      settings: {
+        ...(shop.settings || {}),
+        first_ai_reply: { occurred_at: new Date().toISOString(), first_conversation_id: null },
+      },
+    });
+    const activation = await prospectService.markLinkedShopsActivated({ shopId: shop.id });
+    expect(activation.activated).toBe(1);
+
+    const converted = await asFounder().get(`${API_ROOT}/${prospectId}`);
     expect(converted.status).toBe(200);
     expect(converted.body.data).toMatchObject({
       status: 'converted',

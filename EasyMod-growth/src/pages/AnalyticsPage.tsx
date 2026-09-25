@@ -69,7 +69,7 @@ export function AnalyticsPage() {
   const funnelSteps = [
     { label: 'Created', value: data.funnel.created },
     { label: 'Contacted or beyond', value: data.funnel.contactedOrBeyond },
-    { label: 'Qualified', value: data.funnel.qualified },
+    { label: 'Qualified or beyond', value: data.funnel.qualified },
     { label: 'Onboarding', value: data.funnel.onboarding },
     { label: 'Growth activated', value: data.funnel.activated },
   ];
@@ -77,6 +77,10 @@ export function AnalyticsPage() {
   const statusRows = Object.entries(data.byStatus ?? {})
     .filter((entry): entry is [ProspectStatus, number] => typeof entry[1] === 'number')
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  const cohortQuery = new URLSearchParams();
+  if (data.cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', data.cohort.sourceRecordedFrom);
+  if (data.cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', data.cohort.sourceRecordedTo);
+  const cohortSuffix = cohortQuery.toString() ? `&${cohortQuery.toString()}` : '';
 
   return (
     <main className="page-content" aria-labelledby="analytics-title">
@@ -119,7 +123,9 @@ export function AnalyticsPage() {
      <li key={step.label}>
               <span>{step.label}</span>
               <span className="funnel-bar" style={{ width: `${Math.round((step.value / funnelMax) * 100)}%` }} aria-hidden="true" />
-               <strong>{step.label === 'Qualified' ? <Link to="/prospects?status=qualified">{step.value.toLocaleString()}</Link> : step.value.toLocaleString()}</strong>
+               <strong>{step.label === 'Qualified or beyond'
+                 ? <Link to={`/prospects?stage=qualified${cohortSuffix}`}>{step.value.toLocaleString()}</Link>
+                 : step.value.toLocaleString()}</strong>
             </li>
           ))}
         </ul>
@@ -172,7 +178,7 @@ export function AnalyticsPage() {
                     <th scope="row">
                       <span className={`status-badge ${statusClass(status)}`}>{codeLabel(status)}</span>
                     </th>
-                     <td><Link to={`/prospects?status=${encodeURIComponent(status)}`}>{count.toLocaleString()}</Link></td>
+                     <td><Link to={`/prospects?status=${encodeURIComponent(status)}${cohortSuffix}`}>{count.toLocaleString()}</Link></td>
                   </tr>
                 ))}
               </tbody>

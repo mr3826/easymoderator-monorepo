@@ -83,7 +83,7 @@ export function App() {
                 >
                   <Route path="prospects/:prospectId/edit" element={<ProspectFormPage />} />
                 </Route>
-                <Route element={<RequirePermission permission="growth_os.prospects.read_all" />}>
+                <Route element={<RequirePermission permission={REPORT_READ_PERMISSIONS} />}>
                   <Route path="analytics" element={<AnalyticsPage />} />
                 </Route>
                 <Route

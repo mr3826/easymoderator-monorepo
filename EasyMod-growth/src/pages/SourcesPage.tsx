@@ -83,6 +83,10 @@ export function SourcesPage() {
   }
 
   const rows = buildRows(data);
+  const cohortQuery = new URLSearchParams();
+  if (data.cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', data.cohort.sourceRecordedFrom);
+  if (data.cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', data.cohort.sourceRecordedTo);
+  const cohortSuffix = cohortQuery.toString() ? `&${cohortQuery.toString()}` : '';
 
   return (
     <main className="page-content" aria-labelledby="sources-title">
@@ -133,7 +137,7 @@ export function SourcesPage() {
                 {rows.map((row) => (
                   <tr key={row.source}>
                     <th scope="row">
-                      <Link className="table-link" to={`/prospects?source=${encodeURIComponent(row.source)}`}>
+                      <Link className="table-link" to={`/prospects?source=${encodeURIComponent(row.source)}${cohortSuffix}`}>
                         {codeLabel(row.source)}
                       </Link>
                     </th>
