@@ -25,7 +25,7 @@ function errorMessage(error: unknown) {
 
 export function NotesPanel({ targetType, targetId }: { targetType: InternalNote['targetType']; targetId: string }) {
   const { reportApiError, session } = useGrowthAuth();
-  const canNoteMerchantTargets = usePermission('growth_os.admin.merchants.mutate');
+  const canManageNotes = usePermission('growth_os.notes.manage');
   const [result, setResult] = useState<InternalNoteListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +34,7 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
-  const merchantTarget = targetType === 'user' || targetType === 'shop';
-  const allowed = !merchantTarget || canNoteMerchantTargets;
+  const allowed = canManageNotes;
 
   useEffect(() => {
     if (!allowed) return undefined;

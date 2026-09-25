@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
+import { GrowthUnavailablePage } from '@/pages/GrowthUnavailablePage';
 
 export function LoginPage() {
   const auth = useGrowthAuth();
@@ -17,6 +18,8 @@ export function LoginPage() {
       : '/';
     return <Navigate to={redirectTo} replace />;
   }
+  if (auth.status === 'mfa-required') return <Navigate to="/enroll-mfa" replace />;
+  if (auth.status === 'unavailable') return <GrowthUnavailablePage />;
   if (auth.status === 'password-change-required') return <Navigate to="/change-password" replace />;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -49,6 +52,10 @@ export function LoginPage() {
             <h1 id="login-title">Growth OS</h1>
           </div>
         </div>
+
+        {auth.status === 'access-denied' ? (
+          <p className="form-error" role="alert">This account is not authorized for Growth OS. Sign in with another account.</p>
+        ) : null}
 
         {auth.twoFactorRequired ? (
           <form className="login-form" onSubmit={onVerify}>

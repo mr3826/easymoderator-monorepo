@@ -9,6 +9,9 @@ const reportApiError = vi.fn(() => false);
 vi.mock('@/auth/GrowthAuthProvider', () => ({
   useGrowthAuth: () => ({ reportApiError, session: { internalUserId: 'user-1' } }),
 }));
+vi.mock('@/auth/usePermission', () => ({
+  usePermission: () => true,
+}));
 
 function makeFollowup(overrides: Partial<Followup> = {}): Followup {
   return {

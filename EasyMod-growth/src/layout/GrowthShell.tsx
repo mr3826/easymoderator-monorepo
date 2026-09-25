@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
-import { PROSPECT_READ_PERMISSIONS, type PermissionInput } from '@/auth/usePermission';
+import { PROSPECT_READ_PERMISSIONS, REPORT_READ_PERMISSIONS, type PermissionInput } from '@/auth/usePermission';
 
 type NavEntry = { to: string; label: string; icon: typeof Home; end?: boolean; permission?: PermissionInput };
 type NavGroup = { id: string; label: string; entries: NavEntry[] };
@@ -36,10 +36,11 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Growth',
     entries: [
       { to: '/prospects', label: 'Prospects', icon: UsersRound, permission: PROSPECT_READ_PERMISSIONS },
-      { to: '/pipeline', label: 'Pipeline', icon: Workflow, permission: 'growth_os.followups.manage' },
+      { to: '/quick-add', label: 'Quick Add', icon: PlusCircle, permission: 'growth_os.prospects.manage_all' },
+      { to: '/pipeline', label: 'Pipeline', icon: Workflow, permission: PROSPECT_READ_PERMISSIONS },
       { to: '/follow-ups', label: 'Follow-ups', icon: PlusCircle, permission: 'growth_os.followups.manage' },
-      { to: '/sources', label: 'Sources', icon: Tags, permission: 'growth_os.prospects.read_all' },
-      { to: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'growth_os.prospects.read_all' },
+      { to: '/sources', label: 'Sources', icon: Tags, permission: REPORT_READ_PERMISSIONS },
+      { to: '/analytics', label: 'Analytics', icon: BarChart3, permission: REPORT_READ_PERMISSIONS },
     ],
   },
   {

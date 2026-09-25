@@ -44,6 +44,12 @@ vi.mock('@/pages/ProspectDetailPage', () => ({
 vi.mock('@/pages/ProspectFormPage', () => ({
   ProspectFormPage: () => <div>Prospect form route</div>,
 }));
+vi.mock('@/pages/AnalyticsPage', () => ({
+  AnalyticsPage: () => <div>Analytics route</div>,
+}));
+vi.mock('@/pages/SourcesPage', () => ({
+  SourcesPage: () => <div>Sources route</div>,
+}));
 
 vi.mock('@/pages/AccessDeniedPage', () => ({
   AccessDeniedPage: () => <div>Access denied route</div>,
@@ -95,12 +101,12 @@ describe('Growth prospect route permissions', () => {
     expect(screen.getByText('Access denied route')).toBeInTheDocument();
   });
 
-  it('does not treat source-scoped prospect access as reporting access', () => {
-    authState.permissions = ['growth_os.prospects.read_source_scope'];
+  it('allows source-scoped reporting only with the report permission', () => {
+    authState.permissions = ['growth_os.reports.read_source_scope'];
 
     renderAt('/sources');
 
-    expect(screen.getByText('Access denied route')).toBeInTheDocument();
+    expect(screen.getByText('Sources route')).toBeInTheDocument();
   });
 
   it('guards follow-up routes with the follow-up permission', () => {

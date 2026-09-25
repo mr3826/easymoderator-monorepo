@@ -11,6 +11,7 @@ import {
   type ProspectSource,
 } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
+import { usePermission } from '@/auth/usePermission';
 
 interface QuickAddValues {
   businessName: string;
@@ -60,6 +61,7 @@ function validate(values: QuickAddValues): string | null {
 
 export function QuickAddPage() {
   const { reportApiError } = useGrowthAuth();
+  const canManageFollowups = usePermission('growth_os.followups.manage');
   const [values, setValues] = useState<QuickAddValues>(initialValues);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -219,7 +221,9 @@ export function QuickAddPage() {
             </Link>
           </div>
           {scheduleError ? <div className="inline-state error-state" role="alert"><p>{scheduleError}</p></div> : null}
-          {scheduledAt ? (
+          {!canManageFollowups ? (
+            <p className="state-copy">Prospect created. Your role cannot schedule follow-ups.</p>
+          ) : scheduledAt ? (
             <p className="state-copy">First follow-up scheduled. Review it on the prospect record at any time.</p>
           ) : (
             <form className="action-form" onSubmit={scheduleFirstFollowup}>

@@ -15,6 +15,9 @@ const reportApiError = vi.fn(() => false);
 vi.mock('@/auth/GrowthAuthProvider', () => ({
   useGrowthAuth: () => ({ reportApiError }),
 }));
+vi.mock('@/auth/usePermission', () => ({
+  usePermission: () => true,
+}));
 
 function makeProspect(overrides: Partial<ProspectListItem> = {}): ProspectListItem {
   return {

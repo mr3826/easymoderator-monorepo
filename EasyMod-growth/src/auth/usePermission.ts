@@ -8,6 +8,11 @@ export const PROSPECT_READ_PERMISSIONS = [
   'growth_os.prospects.read_source_scope',
 ] as const;
 
+export const REPORT_READ_PERMISSIONS = [
+  'growth_os.reports.read_all',
+  'growth_os.reports.read_source_scope',
+] as const;
+
 export function usePermission(permission: PermissionInput): boolean {
   const { session } = useGrowthAuth();
   if (!session) return false;

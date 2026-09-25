@@ -9,6 +9,7 @@ const WORKSPACE_PERMISSIONS = [
   'growth_os.prospects.read_all',
   'growth_os.prospects.manage_all',
   'growth_os.followups.manage',
+  'growth_os.reports.read_all',
   'growth_os.notes.manage',
   'growth_os.search.read',
   'growth_os.merchants.read_insight',

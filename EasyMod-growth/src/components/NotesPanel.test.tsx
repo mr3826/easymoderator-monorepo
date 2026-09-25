@@ -57,7 +57,7 @@ describe('NotesPanel', () => {
     expect(screen.getByRole('button', { name: /Delete note/ })).toBeInTheDocument();
   });
 
-  it('hides user and shop note surfaces unless the merchant mutate permission is granted', async () => {
+  it('hides all note surfaces unless the notes permission is granted', async () => {
     permissionMock.mockReturnValue(false);
     const listNotes = vi.spyOn(workspaceApi, 'listNotes').mockResolvedValue(list([makeNote()]));
 
@@ -65,7 +65,7 @@ describe('NotesPanel', () => {
 
     expect(container.firstChild).toBeNull();
     expect(listNotes).not.toHaveBeenCalled();
-    expect(permissionMock).toHaveBeenCalledWith('growth_os.admin.merchants.mutate');
+    expect(permissionMock).toHaveBeenCalledWith('growth_os.notes.manage');
   });
 
   it('creates notes and restricts delete affordances to the author', async () => {

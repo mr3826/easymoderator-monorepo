@@ -18,9 +18,11 @@ export function EnrollMfaPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(null);
     growthApi.setupTwoFactor()
       .then((data) => { if (!cancelled) setSetup(data); })
       .catch((error) => {
@@ -32,7 +34,7 @@ export function EnrollMfaPage() {
         setLoadError(error instanceof Error ? error.message : 'Unable to start MFA enrollment.');
       });
     return () => { cancelled = true; };
-  }, [navigate]);
+  }, [loadAttempt, navigate]);
 
   const enable = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -55,6 +57,9 @@ export function EnrollMfaPage() {
     return (
       <MessageState eyebrow="MFA enrollment" title="MFA enrollment is unavailable">
         <p>{loadError}</p>
+        <button className="primary-button" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+          Retry enrollment setup
+        </button>
       </MessageState>
     );
   }
@@ -74,6 +79,9 @@ export function EnrollMfaPage() {
           <p className="mfa-done" role="status">
             MFA enabled. Sign in again to complete verification.
           </p>
+          <button className="secondary-button" type="button" onClick={() => navigate('/login', { replace: true })}>
+            Back to sign in
+          </button>
         ) : setup ? (
           <form onSubmit={enable} className="login-form">
             <label htmlFor="mfa-secret">
