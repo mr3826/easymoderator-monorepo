@@ -17,23 +17,24 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `ccae4b97af3eeb4765c5e78911d74a817ff750a2`; current `origin/main` is `c0d45a3607d3910a53080d7ac150879a2399dd50`, a documentation-only receipt commit created after deployment. Public `/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-25 deployment [Actions run 36156435580](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36156435580) and public probes |
+| Production commit SHA | Runtime is `bbc1024af831549436afb074ca5037925137d402`; current `origin/main` is the same SHA after PR #167. PR #167 changes only the protected deploy workflow; the Growth application image was intentionally pinned to the already-built PR #166 image. | 2026-09-25 deployment [Actions run 36185036774](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36185036774) and public `/version` |
 | Latest migration on `main` | `20260925_001_growth_os_followup_cancel_event_type`; production reports 57 migrations and public `/version` reports this as the latest migration. | 2026-09-25 deployment and public `/version` |
-| Backend / worker version | Exact merged SHA image and in-container version verified by deployment run `36156435580`; backend and worker use the deployed backend image. | 2026-09-25 deployment receipt |
-| Frontend build version | Growth frontend was changed by PR #162, built/published, and deployed by the `target=all` workflow; public Growth origin returned HTTP 200. | 2026-09-25 deployment receipt and public probe |
-| Growth image version | Existing running Growth image was carried forward; `GROWTH_BOOTSTRAP_DIGEST` was empty, so the running Growth digest remains `NOT_VERIFIED`. Public Growth readiness returned HTTP 200. | 2026-09-23 deploy log and public smoke check |
-| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 36156435580](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36156435580) |
+| Backend / worker version | Backend and worker use the exact `bbc1024a` candidate image; public `/version` reports `bbc1024af831549436afb074ca5037925137d402`. | 2026-09-25 deployment receipt and public probe |
+| Growth frontend build version | Growth SPA build-info reports `50b659bb4949afaec78a462818b3573d0f99e3e0`, the runtime-affecting PR #166 merge SHA. The workflow-only PR #167 did not change Growth source, so the existing published Growth artifact was reused intentionally. | 2026-09-25 deployment, public `build-info.json`, and published digest |
+| Growth image version | `ghcr.io/mr3826/easymoderator-growth-os@sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`; deployment used explicit `growth_image_override`, recreated `easymod-growth-frontend-1`, and public `build-info.json` now reports `50b659bb`. | 2026-09-25 deployment run `36185036774` and public probe |
+| Deployment workflow | Exact-SHA manual production deploy succeeded with the explicit Growth digest override. Candidate DB authentication, migrations, schema audit, service replacement, health, version, and rollback checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 36185036774](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36185036774) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Verification limits
 
-The receipt above proves the GitHub deployment target, candidate image pulls,
+The latest receipt proves the GitHub deployment target, candidate image pulls,
 database authentication, migration ordering, schema audit, backend version
-identity, backend readiness, and public backend/frontend/Growth HTTP smoke
-responses. It does not yet prove frontend asset-digest identity, the running
-Growth image digest, worker canary behavior, media restore, Qdrant recovery,
-Redis recovery, or a live rollback. The deployment uses a fail-closed
-`/api/version.gitSha` check before reporting success.
+identity, backend readiness, the explicit Growth image digest, and public
+backend/frontend/Growth HTTP smoke responses. It does not prove a privileged
+authenticated operator walkthrough, Sentry human-visible receipt, worker
+canary behavior, media restore, Qdrant recovery, Redis recovery, or a live
+production rollback. The deployment uses a fail-closed `/api/version.gitSha`
+check before reporting success.
 
 ## 2026-09-25 owner discovery and work queues deployment receipt
 
@@ -52,6 +53,34 @@ Redis recovery, or a live rollback. The deployment uses a fail-closed
 - `UNVERIFIED`: authenticated Growth operator walkthrough, frontend/Growth
   image digest, Sentry receipt, and live rollback remain external or separate
   proof boundaries; no claim is made for them.
+
+## 2026-09-25 Growth OS MVP-1 final engineering deployment receipt
+
+- `IMPLEMENTATION_MERGE_SHA`: `50b659bb4949afaec78a462818b3573d0f99e3e0` from PR #166.
+- `DEPLOY_CONTRACT_MERGE_SHA`: `bbc1024af831549436afb074ca5037925137d402` from PR #167;
+  workflow-only change adding the explicit `growth_image_override` dispatch input.
+- `GROWTH_IMAGE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`.
+- `DEPLOYMENT_RUN`: `36185036774` — exact-SHA `target=all` deployment completed
+  successfully with `growth_image_override` set to the published digest.
+- `MIGRATION`: no schema changes; production remains at migration count 57 with
+  latest `20260925_001_growth_os_followup_cancel_event_type`.
+- `VERSION_PROBE`: HTTP 200; backend `gitSha` exactly matches `bbc1024a`.
+- `GROWTH_BUILD_PROBE`: HTTP 200; public `build-info.json` reports the intended
+  runtime-affecting Growth SHA `50b659bb`.
+- `BACKEND_READINESS`: HTTP 200; database and Redis overall readiness report
+  connected. Optional/lazy Redis subclient flags remain mixed and are not
+  treated as a required-readiness failure.
+- `GROWTH_READINESS`: HTTP 200 with `app=growth-os`; Growth root returned HTTP 200.
+- `AUTHORIZATION_BOUNDARY`: unauthenticated Growth session requests returned
+  HTTP 401.
+- `DEPLOYMENT_GATE`: `PRODUCTION_DEPLOY_ENABLED=false` restored at
+  2026-09-25T20:34:24Z.
+- `ROLLBACK_STATUS`: `MECHANISM_VERIFIED`; deployment workflow completed its
+  protected rollback checks, but no live production rollback was executed.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL`; no operator
+  identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL`; DSN provisioning and human-visible
+  event receipt remain unavailable.
 
 ## Commercial model rollout status
 
