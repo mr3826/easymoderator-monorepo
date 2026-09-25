@@ -67,6 +67,23 @@ function resolveBuildNumber(config: ConfigContext['config']): string {
   return versionCode ? String(versionCode) : 'local';
 }
 
+/**
+ * Android versionCode for locally/CI-built artifacts: the numeric build number (CI passes the
+ * workflow run number) so every artifact has a real, increasing version identity and an upgrade
+ * install can be tested. EAS builds keep `appVersionSource: remote` (eas.json), which overrides it.
+ */
+function resolveVersionCode(config: ConfigContext['config']): number {
+  const raw = process.env.APP_BUILD_NUMBER;
+  if (raw !== undefined && raw !== '') {
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 2_100_000_000) {
+      throw new Error(`[app.config.ts] APP_BUILD_NUMBER must be a positive integer versionCode, got "${raw}".`);
+    }
+    return parsed;
+  }
+  return config.android?.versionCode ?? 1;
+}
+
 function resolveGitSha(): string {
   return (
     process.env.GIT_SHA ??
@@ -122,6 +139,11 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
     android: {
       ...config.android,
       package: APP_IDS[variant],
+      versionCode: resolveVersionCode(config),
+      // ADR M-011 promises the persisted Home cache is purged on logout/revocation. Android Auto
+      // Backup would copy it (AsyncStorage) off the device first, beyond that purge, so app data is
+      // never backed up. The SecureStore session is excluded from backup regardless.
+      allowBackup: false,
       adaptiveIcon: {
         foregroundImage: './assets/images/android-icon-foreground.png',
         backgroundImage: './assets/images/android-icon-background.png',
