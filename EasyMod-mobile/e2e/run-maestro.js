@@ -498,13 +498,15 @@ function redactDeviceLogs(value) {
 
 async function captureDeviceLog(adb) {
   fs.mkdirSync(artifactRoot, { recursive: true });
+  // Keep the newest 4 MB: the dump starts at emulator boot, so keeping the oldest lost every flow.
   const maxBytes = 4 * 1024 * 1024;
   await new Promise((resolve) => {
     let output = '';
     const append = (chunk) => {
-      if (output.length < maxBytes) output += chunk.toString('utf8').slice(0, maxBytes - output.length);
+      output += chunk.toString('utf8');
+      if (output.length > 2 * maxBytes) output = output.slice(-maxBytes);
     };
-    const child = spawn(adb, ['logcat', '-d', '-v', 'threadtime'], {
+    const child = spawn(adb, ['logcat', '-d', '-v', 'threadtime', '-b', 'main,crash'], {
       cwd: mobileRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -517,7 +519,7 @@ async function captureDeviceLog(adb) {
     });
     child.once('close', (code) => {
       if (code !== 0 && !output) output = `adb logcat exited with code ${code}.\n`;
-      fs.writeFileSync(logcatPath, redactDeviceLogs(output), 'utf8');
+      fs.writeFileSync(logcatPath, redactDeviceLogs(output.slice(-maxBytes)), 'utf8');
       resolve();
     });
   });
