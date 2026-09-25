@@ -941,3 +941,7 @@ frontend changes remain untouched.
 - `DEFERRED_NEXT`: improve analytics drill-through coverage and define the
   prospect audit-snapshot PII retention/redaction policy before expanding into
   reminders, workload scheduling, or automation.
+- `POST_DEPLOY_MAIN`: `c0d45a3607d3910a53080d7ac150879a2399dd50` is the
+  documentation-only receipt commit merged after deployment; it was not
+  redeployed because no runtime code changed. Production remains pinned to
+  `ccae4b97af3eeb4765c5e78911d74a817ff750a2`.
