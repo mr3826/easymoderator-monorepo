@@ -24,7 +24,26 @@
       "errors": {
         "emailRequired": "Please enter your email",
         "passwordRequired": "Please enter your password",
-        "invalidCredentials": "Invalid email or password"
+        "invalidCredentials": "Invalid email or password",
+        "twoFactorRequired": "Two-step verification is required. Enter the code from your authenticator app."
+      }
+    },
+    "twoFactor": {
+      "title": "Verify your sign-in",
+      "prompt": "Enter the 6-digit code from your authenticator app.",
+      "codeLabel": "Verification code",
+      "codePlaceholder": "000000",
+      "verifyButton": "Verify and sign in",
+      "cancel": "Back to sign in",
+      "errors": {
+        "codeRequired": "Enter the 6-digit verification code.",
+        "invalidCode": "That code is invalid. Start sign-in again to request a new challenge.",
+        "expired": "This verification session has expired. Start sign-in again.",
+        "replay": "That code was already used. Start sign-in again for a new challenge.",
+        "rateLimited": "Too many verification attempts. Wait a moment and try again.",
+        "network": "Could not reach the server. Your code was not sent; try again.",
+        "timeout": "The verification request took too long. Try again.",
+        "generic": "Verification could not be completed. Start sign-in again."
       }
     }
   },
@@ -52,6 +71,7 @@
     },
     "more": {
       "loggedInAs": "Logged in as {{email}}",
+      "buildInfo": "Version {{version}} (build {{build}}) | {{environment}} | {{gitSha}}",
       "logout": "Logout",
       "loggingOut": "Logging out..."
     },
@@ -89,6 +109,69 @@
       "conversation": {
         "foundTitle": "Conversation",
         "foundBody": "Conversation #{{id}} — full details are coming in a later update."
+      }
+    },
+    "home": {
+      "today": {
+        "title": "Today",
+        "orders": "Orders",
+        "revenue": "Expected order value",
+        "delivered": "Delivered",
+        "unavailable": "Couldn't load today's summary",
+        "timezoneFallback": "Shop timezone is unavailable; using {{timezone}} day boundaries."
+      },
+      "attention": {
+        "title": "Needs Attention",
+        "priority": "Priority {{tier}}",
+        "unavailable": "Couldn't load the list",
+        "overflow": "+{{count}} more need attention",
+        "scanTruncated": "Some conversations could not be checked. Refresh to try again."
+      },
+      "reasons": {
+        "COURIER_DISPATCH_FAILED": "Courier dispatch failed. Review the order and retry.",
+        "COURIER_DISPATCH_INDETERMINATE": "Courier dispatch status is unresolved. Verify with the provider.",
+        "COURIER_SETUP_REQUIRED": "Courier setup is incomplete for a ready-to-ship order.",
+        "PROVIDER_SEND_FAILED": "A reply failed to send. Retry it manually.",
+        "AI_FAILED": "The AI reply failed. Review and respond manually.",
+        "DRAFT_REVIEW_REQUIRED": "An AI-drafted reply is waiting for your review.",
+        "HITL_REQUIRED": "This conversation was handed off to you by the AI.",
+        "CUSTOMER_UNANSWERED": "The customer's last message needs a reply.",
+        "DRAFT_ORDER_AWAITING_CONFIRMATION": "A draft order is waiting for confirmation.",
+        "RTO_VERIFICATION_REQUIRED": "Verify this customer before shipping.",
+        "LOW_STOCK": "This product is low on stock."
+      },
+      "entity": {
+        "order": "Order",
+        "conversation": "Conversation",
+        "product": "Product"
+      },
+      "empty": {
+        "idle": {
+          "title": "All quiet today",
+          "message": "No orders today, and nothing needs your attention."
+        },
+        "caughtUp": {
+          "title": "You're all caught up!",
+          "message": "Nothing needs your attention right now."
+        },
+        "attentionOnly": {
+          "title": "No attention items found",
+          "message": "Today's activity is unavailable, so we cannot summarize the shop yet."
+        }
+      },
+      "offline": {
+        "message": "Your data will show here once you're back online.",
+        "cachedMessage": "You're offline. Showing the last saved Home data until you reconnect."
+      },
+      "stale": {
+        "message": "Showing saved data. This section could not be refreshed."
+      },
+      "error": {
+        "title": "Couldn't load Home"
+      },
+      "noShop": {
+        "title": "No shop selected",
+        "message": "Your account has no shop linked yet. Please contact support."
       }
     }
   }
