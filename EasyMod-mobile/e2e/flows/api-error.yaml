@@ -1,0 +1,43 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod Home API error, bounded retry and recovery
+tags:
+  - mobile-e2e
+  - wave25
+  - error
+---
+# Three injected failures per endpoint = the first request plus Home's two
+# bounded retries (retryNormalizedError). The error state must then wait for the
+# merchant, and that retry must recover without any cross-shop fallback.
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: set-api-error
+      endpoint: both
+      failures: '3'
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-error
+    timeout: 90000
+- assertNotVisible:
+    id: attention-card-.*
+- takeScreenshot: api-error
+- tapOn:
+    id: home-retry
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- assertVisible:
+    id: today-summary
+- assertVisible:
+    id: attention-card-.*
+- takeScreenshot: api-error-recovered

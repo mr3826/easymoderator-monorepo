@@ -1,13 +1,12 @@
 appId: tech.easymod.merchant.dev
-name: EasyMod Wave 2.5 empty and error state preflight
+name: EasyMod Wave 2.5 fixture capability preflight
 tags:
   - mobile-e2e
   - wave25
-  - blocked-capability
-env:
-  E2E_API_BASE_URL: http://127.0.0.1:4000
+  - preflight
 ---
 - runScript:
     file: ../scripts/assert-wave25-state-capabilities.js
     env:
       apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}

@@ -1,0 +1,42 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod logout
+tags:
+  - mobile-e2e
+  - wave25
+  - logout
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- tapOn:
+    id: tab-more
+- tapOn:
+    id: logout-button
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 60000
+# Back must not reopen a protected screen.
+- back
+- assertNotVisible:
+    id: home-attention-list
+- assertNotVisible:
+    id: logout-button
+# Tokens are gone: a cold relaunch lands on login, not Home.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 60000
+- assertNotVisible:
+    id: home-attention-list
+- takeScreenshot: logged-out-relaunch

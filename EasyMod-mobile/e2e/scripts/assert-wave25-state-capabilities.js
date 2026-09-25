@@ -1,27 +1,25 @@
 'use strict';
 
-/* global apiBaseUrl, http, json */
+/* global apiBaseUrl, controlToken, http, json */
 
+// Hard preflight: every supplementary flow depends on these disposable
+// controls. A missing capability fails the run instead of skipping flows.
 const baseUrl = String(apiBaseUrl || '').replace(/\/$/, '');
-const response = http.get(`${baseUrl}/health`);
-if (!response.ok) {
+const response = http.post(`${baseUrl}/api/mobile/e2e/control`, {
+  headers: { 'Content-Type': 'application/json', 'X-Mobile-E2E-Control': controlToken || '' },
+  body: JSON.stringify({ action: 'capabilities' }),
+});
+if (response.status !== 200) {
   throw new Error(
-    `BLOCKED: disposable backend health returned HTTP ${response.status}; cannot preflight Wave 2.5 state fixtures.`,
+    `BLOCKED: the disposable backend's E2E controls are unavailable (HTTP ${response.status}). ` +
+      'Start the backend through e2e/run-maestro.js --start-backend.',
   );
 }
 
-const body = json(response.body);
-const fixtures = body && body.mobileE2eFixtures;
-if (
-  !fixtures ||
-  fixtures.emptyHome !== true ||
-  fixtures.homeApiError !== true
-) {
-  throw new Error(
-    'BLOCKED: current backend exposes no disposable emptyHome/homeApiError fixture toggles. ' +
-      'seed-mobile-dev.js provides only the rich six-tier fixture and --remove; safely exercising ' +
-      'Home empty and API-error states requires a test-only seed mode or backend toggle, not direct DB mutation or a production endpoint.',
-  );
+const capabilities = json(response.body).data || {};
+const required = ['emptyHome', 'homeApiError', 'sessionExpiry', 'twoFactor', 'twoFactorExpiry', 'secondShop'];
+const missing = required.filter((name) => capabilities[name] !== true);
+if (missing.length > 0) {
+  throw new Error(`BLOCKED: missing disposable E2E capabilities: ${missing.join(', ')}.`);
 }
-
-console.log('Wave 2.5 empty/error fixture capability: PASS.');
+console.log(`Wave 2.5 fixture capabilities: PASS (${required.join(', ')}).`);

@@ -1,0 +1,33 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod empty Home state
+tags:
+  - mobile-e2e
+  - wave25
+  - empty
+---
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: empty-home
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-empty
+    timeout: 90000
+- assertVisible:
+    id: today-summary
+- assertNotVisible:
+    id: home-loading
+- assertNotVisible:
+    id: attention-card-.*
+- assertNotVisible:
+    text: .*undefined.*
+- takeScreenshot: empty-home
