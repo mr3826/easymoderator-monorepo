@@ -87,10 +87,22 @@ jobs:
             fi
             cd /opt/easymod
             echo "==> Bootstrapping Growth OS role=${TARGET_ROLE} for ${TARGET_EMAIL} via GitHub actor ${GITHUB_ACTOR}"
-            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T \
+            backend_container=$(docker ps \
+              --filter 'label=com.docker.compose.service=backend' \
+              --filter 'status=running' \
+              --format '{{.ID}}' | head -n 1)
+            if [ -z "${backend_container}" ]; then
+              echo 'No running Compose backend container was found.' >&2
+              exit 1
+            fi
+            # Use the already-running candidate directly. `docker compose exec`
+            # interpolates every required image variable before it can exec, but
+            # .env.prod intentionally contains runtime secrets/config only; the
+            # running container is the authoritative production code target.
+            docker exec \
               -e GROWTH_BOOTSTRAP_ACTOR_EMAIL="${BOOTSTRAP_ACTOR_EMAIL}" \
               -e GITHUB_ACTOR="${GITHUB_ACTOR}" \
-              backend node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
+              "${backend_container}" node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
             echo "==> Done."
         env:
           TARGET_EMAIL: ${{ inputs.email }}

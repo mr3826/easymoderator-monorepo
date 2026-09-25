@@ -129,6 +129,13 @@ describe('production workflow branch safety', () => {
         expect(grantGrowthRoleWorkflow).not.toContain('environment: growth-bootstrap');
     });
 
+    test('runs the bootstrap script in the running backend without Compose interpolation', () => {
+        expect(grantGrowthRoleWorkflow).toContain("--filter 'label=com.docker.compose.service=backend'");
+        expect(grantGrowthRoleWorkflow).toContain('docker exec \\');
+        expect(grantGrowthRoleWorkflow).toContain('node src/scripts/grant-growth-role.js');
+        expect(grantGrowthRoleWorkflow).not.toContain('docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T');
+    });
+
     test('keeps browser and server Sentry configuration boundaries separate', () => {
         expect(workflow).toContain('VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}');
         expect(workflow.match(/VITE_SENTRY_DSN=\$\{\{ vars\.VITE_SENTRY_DSN \}\}/g)).toHaveLength(2);
