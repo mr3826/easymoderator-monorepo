@@ -3,6 +3,7 @@ const { body, param } = require('express-validator');
 const { validationResult } = require('express-validator');
 const { PushSubscription } = require('../entities');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 const { createLogger } = require('../../utils/structured-logger');
 
 const router = express.Router();
@@ -11,10 +12,14 @@ const logger = createLogger('PushSubscription');
 /**
  * POST /api/notifications/subscriptions
  * Register a web-push subscription or FCM device token for the current shop.
+ * Requires an active user_shops membership in the shop from the JWT —
+ * defense in depth so a removed staff member's still-valid access token
+ * cannot re-register a subscription for a shop they no longer belong to.
  */
 router.post(
     '/subscriptions',
     authenticate,
+    verifyShopAccess,
     [
         body('type').isIn(['web', 'fcm']).withMessage('type must be web or fcm'),
         body('subscription_json')

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, Controller } from 'react-hook-form';
@@ -59,9 +59,11 @@ export default function Signup() {
     },
   });
 
-  const { register, handleSubmit, setError, watch, control, formState: { errors, isSubmitting } } = form;
+  const { register, handleSubmit, setError, clearErrors, watch, control, formState: { errors, isSubmitting } } = form;
+  const signupInFlight = useRef(false);
 
   const passwordValue = watch('password');
+  const acceptedTerms = watch('acceptedTerms');
 
   useEffect(() => {
     trackFunnelEvent("signup_started", { surface: "signup" }, { onceKey: "signup_started" });
@@ -74,21 +76,63 @@ export default function Signup() {
   const shuruBenefits = stringList(t('auth.signup.shuruBenefits', { returnObjects: true }), selectedPlan.highlights);
 
   const onSubmit = async (data: SignupFormData) => {
+    // Keep the mutation boundary defensive if the form schema or submit path changes.
+    if (!data.acceptedTerms) {
+      signupInFlight.current = false;
+      setError('acceptedTerms', {
+        type: 'validate',
+        message: t('auth.signup.errors.acceptTerms'),
+      });
+      return;
+    }
+
+    signupInFlight.current = true;
     try {
       await signup({
         email: data.email,
         password: data.password,
         full_name: data.fullName,
         phone: data.phone.trim(),
+        accepted_terms: true,
       });
-       trackFunnelEvent("signup_completed", { selected_plan: "SHURU" }, { onceKey: "signup_completed" });
 
       navigate("/dashboard");
     } catch (err: any) {
       setError('root', {
         message: getErrorMessage(err, t('auth.signup.errors.unableToCreate')),
       });
+    } finally {
+      signupInFlight.current = false;
     }
+  };
+
+  const onInvalid = () => {
+    signupInFlight.current = false;
+    if (!form.getValues('acceptedTerms')) {
+      setError('acceptedTerms', {
+        type: 'validate',
+        message: t('auth.signup.errors.acceptTerms'),
+      });
+    }
+  };
+
+  const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form.getValues('acceptedTerms')) {
+      setError('acceptedTerms', {
+        type: 'validate',
+        message: t('auth.signup.errors.acceptTerms'),
+      });
+      return;
+    }
+    if (signupInFlight.current) return;
+    signupInFlight.current = true;
+    void handleSubmit(onSubmit, onInvalid)(event).catch(() => {
+      signupInFlight.current = false;
+      setError('root', {
+        message: t('auth.signup.errors.unableToCreate'),
+      });
+    });
   };
 
   const signupFeatures = [
@@ -225,6 +269,7 @@ export default function Signup() {
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.25 }}
+                    role="alert"
                     className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2 overflow-hidden"
                   >
                     <span>⚠️</span><span>{errors.root.message}</span>
@@ -232,7 +277,7 @@ export default function Signup() {
                 )}
               </AnimatePresence>
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={onFormSubmit} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold text-gray-700" htmlFor="fullName">
                     {t('auth.signup.fullName')}
@@ -240,12 +285,14 @@ export default function Signup() {
                   <Input
                     {...register('fullName')}
                     id="fullName"
+                    aria-invalid={errors.fullName ? true : undefined}
+                    aria-describedby={errors.fullName ? "fullName-error" : undefined}
                     placeholder={t('auth.signup.fullNamePlaceholder')}
                     autoComplete="name"
                     disabled={isSubmitting}
                     className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.fullName ? 'border-red-500' : ''}`}
                   />
-                  {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>}
+                  {errors.fullName && <p id="fullName-error" role="alert" className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>}
                 </div>
 
                 <div className="space-y-1.5">
@@ -256,12 +303,14 @@ export default function Signup() {
                     {...register('email')}
                     id="email"
                     type="email"
+                    aria-invalid={errors.email ? true : undefined}
+                    aria-describedby={errors.email ? "email-error" : undefined}
                     placeholder={t('auth.signup.emailPlaceholder')}
                     autoComplete="email"
                     disabled={isSubmitting}
                     className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.email ? 'border-red-500' : ''}`}
                   />
-                  {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
+                  {errors.email && <p id="email-error" role="alert" className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
                 </div>
 
                 <div className="space-y-1.5">
@@ -293,12 +342,14 @@ export default function Signup() {
                     {...register('password')}
                     id="password"
                     type="password"
+                    aria-invalid={errors.password ? true : undefined}
+                    aria-describedby={errors.password ? "password-error" : undefined}
                     placeholder={t('auth.signup.passwordPlaceholder')}
                     autoComplete="new-password"
                     disabled={isSubmitting}
                     className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.password ? 'border-red-500' : ''}`}
                   />
-                  {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
+                  {errors.password && <p id="password-error" role="alert" className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
                   <PasswordStrengthMeter password={passwordValue || ''} />
                 </div>
 
@@ -319,8 +370,14 @@ export default function Signup() {
                       <Checkbox
                         id="terms"
                         checked={field.value}
-                        onCheckedChange={(v) => field.onChange(v === true)}
+                        onCheckedChange={(v) => {
+                          const accepted = v === true;
+                          field.onChange(accepted);
+                          if (accepted) clearErrors('acceptedTerms');
+                        }}
                         disabled={isSubmitting}
+                        aria-invalid={errors.acceptedTerms ? true : undefined}
+                        aria-describedby={errors.acceptedTerms ? "terms-guidance terms-error" : "terms-guidance"}
                         className="mt-0.5 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                       />
                     )}
@@ -332,11 +389,14 @@ export default function Signup() {
                     </a>{' '}
                     {t('auth.signup.agreeSuffix')}{' '}
                     <a href={buildMarketingUrl("/terms")} target="_blank" rel="noopener noreferrer" className="font-medium text-brand underline">
-                      Terms of Service
+                      {t('auth.signup.termsOfService')}
                     </a>
                   </label>
                 </div>
-                {errors.acceptedTerms && <p className="text-red-500 text-xs">{errors.acceptedTerms.message}</p>}
+                <p id="terms-guidance" className="text-xs text-gray-500">
+                  {t('auth.signup.termsRequired')}
+                </p>
+                {errors.acceptedTerms && <p id="terms-error" role="alert" className="text-red-500 text-xs">{errors.acceptedTerms.message}</p>}
 
                 {/* Order summary */}
                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 text-sm">
@@ -362,7 +422,8 @@ export default function Signup() {
                   <Button
                     type="submit"
                     className="h-12 w-full rounded-xl bg-brand text-base font-bold text-white shadow-md transition-all hover:bg-brand-hover hover:shadow-lg disabled:opacity-60"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !acceptedTerms}
+                    aria-busy={isSubmitting}
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">

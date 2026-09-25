@@ -287,10 +287,22 @@ async function currentTwoFactorCode() {
     return { code, invalidCode };
 }
 
+// totp.service stores a challenge as {"userId","tokenVersion"} JSON (older
+// challenges as the raw user id).
+const challengeUserId = (value) => {
+    try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === 'object') return parsed.userId;
+    } catch (_error) {
+        // Raw user id.
+    }
+    return value;
+};
+
 /**
  * Deletes the seed owner's pending 2FA challenges so the next verification
  * behaves exactly like a challenge whose five-minute TTL elapsed. Only keys
- * whose value is the seed owner's id are touched.
+ * whose challenge names the seed owner are touched.
  */
 async function expireTwoFactorChallenge() {
     const { ownerId } = await requireSeedFixture();
@@ -306,7 +318,7 @@ async function expireTwoFactorChallenge() {
         const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', `${TOTP_TEMP_PREFIX}*`, 'COUNT', 200);
         cursor = nextCursor;
         for (const key of keys) {
-            if (await redis.get(key) === ownerId) {
+            if (challengeUserId(await redis.get(key)) === ownerId) {
                 expiredChallengeCount += await redis.del(key);
             }
         }

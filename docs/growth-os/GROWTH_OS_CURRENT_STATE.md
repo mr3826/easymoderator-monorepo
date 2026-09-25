@@ -1,7 +1,8 @@
 # Growth OS Current State
 
-Date: 2026-08-22
-Evidence checkout: `D:\easymod\_prt-migration-fix`
+Date: 2026-08-22 (historical determination; reconciled in the appendix below)
+Evidence checkout: historical checkout unavailable; current evidence is the
+repository revision and receipts named in the reconciliation appendix below.
 Release verdict: `NOT READY`
 
 This document is a current-state determination, not a product vision. It uses
@@ -51,8 +52,8 @@ commits behind `origin/main`. It has no prospect-ledger implementation and its
 execution state is frozen at the earlier foundation phase. Auditing that
 directory produces the false conclusion that Phase 3 does not exist.
 
-The authoritative evidence for this document is the `_prt-migration-fix`
-checkout, where the release state records the merged Phase 3 implementation,
+The authoritative evidence for this historical determination was a now-removed
+Phase 3 checkout, where the release state recorded the merged implementation,
 the hardening receipts, and the still-open production gates
 (`docs/growth-os/EXECUTION_STATE.md:317-361`, `:408-438`). Do not use the
 stale checkout for release decisions, code review, or gap counting.
@@ -95,7 +96,7 @@ namespace (`EasyMod-growth/README.md:7-16`).
 | `MISSING` | There is no Growth follow-up, task, due date, SLA, reminder, or next-action subsystem. | The prospect migration has identity, status, ownership, linkage, merge, and metadata fields but no action or due field (`20260820_002_growth_os_prospects.js:53-93`). The foundation explicitly excludes follow-up tasks (`docs/growth-os/04-prospect-foundation.md:101-106`). |
 | `VERIFIED` | Notes are a mutable field, not an append-only activity stream. | `notes` is a single prospect column (`20260820_002_growth_os_prospects.js:56-63`), and notes are part of the ordinary update field set (`growth-os.prospect.service.js:248-285`). |
 | `MISSING` | Lifecycle stops at converted and has no demo, trial, retention, or referral states. | The allowed transition map ends at `converted` and `merged` (`growth-os.prospect.lifecycle.js:34-43`). |
-| `PARTIAL` | A real activation metric exists, but the Growth dashboard does not consume it. | The backend exposes founder-only activation/retention analytics (`analytics.routes.js:154-173`), while `DashboardPage` renders static status cards and performs no analytics fetch (`EasyMod-growth/src/pages/DashboardPage.tsx:4-37`). |
+| `PARTIAL` | A real activation metric exists, but the Growth overview does not consume the founder-only analytics endpoint directly. | The backend exposes founder-only activation/retention analytics (`analytics.routes.js:154-173`), while `HomePage` loads the operational overview through `workspaceApi.home` (`EasyMod-growth/src/pages/HomePage.tsx:32-57`). |
 | `PARTIAL` | Paid state exists in billing but not as a Growth funnel concept. | `subscriptions.status` includes paid and trial states (`EasyMod-backend/src/modules/subscription/subscription.entity.js:63-71`), but the Growth prospect lifecycle has no paid state (`growth-os.prospect.lifecycle.js:5-43`). |
 | `PARTIAL` | Six roles are defined, but several permissions have no current Growth work surface. | Customer Success and Analyst receive session/report or future-work permissions but no prospect read permission (`growth-os.permissions.js:52-61`); the current Growth router exposes only session, roles, and prospect routes (`growth-os.routes.js:63-138`). |
 | `MISSING` | Bulk import has no SPA entry point. | Import is an executable script (`import-growth-prospects.js:234-245`), while the router has no import route (`growth-os.routes.js:63-138`). |
@@ -135,9 +136,8 @@ Prospect -> Contact -> Qualification -> [manual handoff outside the system]
 
 The correct next investment is not to implement all missing funnel nouns. It is
 to make the existing qualified queue actionable with one due timestamp and one
-next-action description. The existing `eligibleForNextPhase` predicate already
-identifies qualified, owned, reachable records (`growth-os.prospect.service.js:306-344`);
-the missing piece is when and why the operator should act.
+next-action description. The missing piece is when and why the operator should
+act.
 
 ## 4. Architecture and Automation State
 
@@ -234,7 +234,7 @@ acceptance criteria, and the release gate or readiness condition it affects.
 Files and surfaces:
 
 - `D:\easymod\easy-moderator` default checkout.
-- `D:\easymod\_prt-migration-fix` authoritative Phase 3 checkout.
+- The historical Phase 3 checkout (no longer retained locally).
 - `docs/growth-os/README.md` and `docs/growth-os/EXECUTION_STATE.md`.
 
 Acceptance criteria:
@@ -284,7 +284,7 @@ Gate effect: closes `FIRST_GROWTH_ROLLOUT` and
 `PHASE_B_POST_DEPLOY_GATE`. The current deployment guard and bootstrap failure
 path are explicit in `.github/workflows/ci-cd.yml:668-669`, `:870-883`.
 
-#### P0-3 Bootstrap the first Founder through the audited workflow
+#### P0-3 Bootstrap the first Super Admin through the protected workflow
 
 **Status: `OPEN`.**
 
@@ -297,18 +297,21 @@ Files and surfaces:
 
 Acceptance criteria:
 
-1. Identify an existing production app user and an explicit operator actor.
-   The workflow must not create or mutate the user account
-   (`grant-growth-role.yml:11-13`).
-2. Dispatch `grant-growth-role.yml` with the target email, `FOUNDER`, and the
-   actor email or UUID. Do not execute the raw SQL in
-   `docs/growth-os/02-application-foundation.md:154-174`.
+1. Identify an existing production app user and configure the explicit
+   `GROWTH_BOOTSTRAP_ACTOR_EMAIL` secret in the protected `production`
+   environment. The workflow must not accept an actor as dispatch input or
+   create/mutate the user account.
+2. Dispatch `grant-growth-role.yml` with the target email and canonical
+   `SUPER_ADMIN` role. Do not execute raw SQL; the old SQL procedure has been
+   removed from the supported runbook.
 3. Capture the role-service result and the `growth_os:role_granted` audit row.
-   The transaction must include role creation, audit, and cache invalidation.
+   The transaction must include role creation, audit, and cache invalidation,
+   and the one-time bootstrap must refuse to run after an active Super Admin
+   exists.
 4. Complete the existing TOTP step-up so the authenticated session has
-   `mfaVerified=true`; a password-only Founder session must remain denied.
-5. Verify the Founder can load the Growth session and prospect list from the
-   live host, while a merchant without the role receives `403`.
+   `mfaVerified=true`; a password-only Super Admin session must remain denied.
+5. Verify the Super Admin can load the Growth session and prospect list from
+   the live host, while a merchant without the role receives `403`.
 
 Gate effect: closes `OPERATOR_BOOTSTRAP_GATE`. The supported workflow delegates
 to the tested backend role service (`grant-growth-role.yml:3-9`, `:64-68`).
@@ -422,10 +425,10 @@ gap and makes "who is next?" answerable for a two-person team.
 
 Files and surfaces:
 
-- `EasyMod-growth/src/pages/DashboardPage.tsx:4-37`.
+- `EasyMod-growth/src/pages/HomePage.tsx:32-229`.
 - `EasyMod-backend/src/modules/analytics/analytics.routes.js:154-173`.
 - `EasyMod-backend/src/modules/analytics/growth-metrics.service.js:140-222`.
-- Growth frontend API client and dashboard tests.
+- Growth frontend API client and home tests.
 
 Acceptance criteria:
 
@@ -609,11 +612,11 @@ gap; it does not replace the live-origin receipt.
 
 ### Defer and reject decisions
 
-The tracked repository says the original `GROWTH_OS_GOAL.md` and
-`CURRENT_STATE.md` are absent (`docs/growth-os/README.md:15-17`; execution state
-also records the absence at `docs/growth-os/EXECUTION_STATE.md:363-371`). The
-seven questions below are therefore explicit decision tests for this document,
-not a claim that a missing canonical list was recovered:
+The historical determination said the original `GROWTH_OS_GOAL.md` and legacy
+`CURRENT_STATE.md` were absent. The current repository contains
+`GROWTH_OS_GOAL.md` and `GROWTH_OS_CURRENT_STATE.md`; the seven questions below
+remain explicit decision tests rather than a claim that the historical legacy
+list was recovered:
 
 1. What user problem is being solved now?
 2. Is there enough real volume and evidence to justify the proposed system?
@@ -628,7 +631,7 @@ not a claim that a missing canonical list was recovered:
 | Defer demos | `VERIFIED DECISION` | No demo workflow until the qualified queue has a follow-up loop. | Q1/Q2/Q3: the current pain is dropped follow-up, and production evidence shows pre-launch scale (`EXECUTION_STATE.md:282-289`). |
 | Defer trials | `VERIFIED DECISION` | Billing trial states remain authoritative; do not create a second Growth trial system yet. | Q5/Q6: subscriptions already own billing state (`subscription.entity.js:63-71`), while Growth has no trial behavior. |
 | Defer retention and churn scoring | `VERIFIED DECISION` | Keep the existing observed order-based metric; wait for real cohorts and interventions. | Q2/Q7: current metrics contract calls targets and hypotheses unapproved (`03-metrics-definitions.md:21-32`). |
-| Defer command center | `VERIFIED DECISION` | Make the dashboard truthful and the queue actionable before adding a cross-funnel command center. | Q1/Q3/Q4: static dashboard plus no next-action field does not justify another surface (`DashboardPage.tsx:4-37`). |
+| Defer command center | `VERIFIED DECISION` | Make the operational overview truthful and the queue actionable before adding a cross-funnel command center. | Q1/Q3/Q4: the existing overview plus no next-action field does not justify another surface (`HomePage.tsx`). |
 | Defer referral/testimonial | `VERIFIED DECISION` | Revisit after merchants have completed and valued the core product. | Q2/Q7: referral is only a source value today and no outcome loop is evidenced (`growth-os.prospect.lifecycle.js:26-32`). |
 | Reject AI outreach copilot | `VERIFIED DECISION` | No model, prompt, external send, or AI cost in Growth OS now. | Q4/Q6: automation and AI are absent by design; human-audited next action is safer (`growth-os.routes.js:1-14`). |
 | Reject lead scoring | `VERIFIED DECISION` | Do not score sparse, unvalidated records before a due-action queue exists. | Q2/Q3/Q7: there are no approved target values and no real prospect history (`03-metrics-definitions.md:21-32`; `EXECUTION_STATE.md:282-289`). |
@@ -701,7 +704,7 @@ are later decisions that require real volume and evidence.
 This deliverable is a document, so verification is read-back and citation
 review rather than an application test run.
 
-1. Spot-check every cited path in the `_prt-migration-fix` checkout, including
+1. Spot-check every cited path in the current repository revision, including
    the migration checks/indexes, the `scope: null` sites, the workflow bootstrap
    path, and the rollback fixture.
 2. Compare every quoted `EXECUTION_STATE.md` gate and value against the source;
@@ -720,3 +723,42 @@ production host, database, prospect data, secrets, billing state, DNS, TLS,
 infrastructure, registry state, or external service. The Growth image
 publication and prior CI receipts are recorded evidence, not actions performed
 by this document.
+
+## Historical platform audit reconciliation (2026-09-21)
+
+The dated determination and the evidence below are historical to the audit date:
+
+- `origin/main` was `cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4`; the recorded
+  `cf634fab...` current-main value is stale.
+- The current repository still contains the Growth backend/frontend surface and
+  the separate path-filtered `growth-os.yml` pipeline. It is not part of the
+  merchant image build/deploy decision except for preserving the running
+  immutable Growth reference during a production cutover.
+- GitHub's latest production deployment record is for `cf57db1e...`, but the
+  live Growth digest, TLS certificate, authenticated Founder bootstrap, and
+  real-origin browser walkthrough were not independently verified in this audit.
+- `PRODUCTION_DEPLOY_ENABLED` was observed `true` after the latest manual
+  deployment and was restored to `false` on 2026-09-21. No production deploy was
+  initiated by this audit.
+- The release disposition remains `CONDITIONAL / NO-GO` until the three live
+  Growth acts named in the historical determination have receipts from the
+  current deployment.
+
+## Historical intermediate reconciliation (before the 2026-09-23 release)
+
+- `origin/main` is now `45f651927aae21db5aea9de62c675cbb6f8e5bbb` after PR #127
+  was validated and merged.
+- The production receipt remains the earlier `cf57db1e...` deployment; the merge
+  did not itself deploy or alter production.
+
+## Current production reconciliation (2026-09-23)
+
+- Current `origin/main` should be read from GitHub or `git rev-parse origin/main`;
+  production runs the code-equivalent `696a83c9f75737c2609873f0c09c6498bcfb6332`.
+  Intervening main commits changed only documentation and tests.
+- The bounded production workflow used the existing `production` environment;
+  GitHub has no `growth-bootstrap` environment. `PRODUCTION_DEPLOY_ENABLED` was
+  restored to `false` after the successful cutover.
+- Public Growth readiness returned HTTP 200, but the running Growth image digest,
+  authenticated Founder bootstrap, and live authenticated browser walkthrough
+  remain unverified. The Growth release verdict therefore remains conditional.

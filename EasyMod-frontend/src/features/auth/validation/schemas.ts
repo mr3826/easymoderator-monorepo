@@ -10,6 +10,7 @@ export const signinSchema = z.object({
 });
 
 export type SigninFormData = z.infer<typeof signinSchema>;
+export type SigninFormInput = z.input<typeof signinSchema>;
 
 export const signupSchema = z
   .object({

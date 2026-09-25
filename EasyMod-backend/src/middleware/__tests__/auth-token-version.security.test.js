@@ -8,6 +8,7 @@ const mockCacheSet = jest.fn();
 const mockCacheGetForShop = jest.fn();
 const mockCacheSetForShop = jest.fn();
 const mockSubscriptionFindOne = jest.fn();
+const mockUserShopFindOne = jest.fn();
 
 jest.mock('../../utils/jwt.util', () => ({
     verifyAccessToken: mockVerifyAccessToken,
@@ -17,6 +18,7 @@ jest.mock('../../modules/auth/auth.service', () => ({
 }));
 jest.mock('../../modules/entities', () => ({
     User: { findByPk: mockUserFindByPk },
+    UserShop: { findOne: mockUserShopFindOne },
     Subscription: { findOne: mockSubscriptionFindOne },
 }));
 jest.mock('../../utils/cache.service', () => ({
@@ -46,6 +48,7 @@ describe('access-token revocation state', () => {
         mockCacheSet.mockResolvedValue(undefined);
         mockCacheGetForShop.mockResolvedValue(null);
         mockCacheSetForShop.mockResolvedValue(undefined);
+        mockUserShopFindOne.mockResolvedValue({ id: 'membership-1' });
     });
 
     test('rejects a signed token that omits tokenVersion instead of bypassing revocation', async () => {

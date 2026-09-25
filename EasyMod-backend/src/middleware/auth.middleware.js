@@ -3,6 +3,7 @@ const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 const { User, UserShop } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
+const { isTemporaryPasswordExpired } = require('../modules/auth/temporary-password');
 // ADR M-004: native tokens carry a `sid` claim referencing a user_sessions
 // row, looked up below only when that claim is present.
 const Session = require('../modules/auth/session.entity');
@@ -43,7 +44,7 @@ const hasUnexpiredSession = (session) => {
  * Checks Bearer header first, then falls back to httpOnly cookie.
  * Also verifies the token has not been blacklisted (logout revocation).
  */
-const authenticate = async (req, res, next) => {
+const authenticateRequest = async (req, res, next, { allowPasswordChange = false } = {}) => {
     try {
         // 1. Extract token — prefer Authorization header, fall back to cookie
         let token = null;
@@ -98,10 +99,10 @@ const authenticate = async (req, res, next) => {
         }
 
         // 4b. ADR M-004: additive branch, only reached for tokens carrying a
-        // `sid` claim (native-issued tokens). Every existing web-issued
-        // token has no `sid` claim and skips this block entirely — proven
-        // unchanged by auth-token-version.security.test.js and the new
-        // native-sid-revocation.test.js regression case.
+        // `sid` claim (native-issued tokens). Every web-issued token has no
+        // `sid` claim and skips this block entirely — proven by
+        // auth-token-version.security.test.js and native-sid-revocation.test.js.
+        let shopMembershipVerified = false;
         if (decoded.sid) {
             const session = await Session.findByPk(decoded.sid, {
                 attributes: ['id', 'user_id', 'shop_id', 'is_active', 'expires_at'],
@@ -131,9 +132,9 @@ const authenticate = async (req, res, next) => {
             }
 
             // A removed staff member loses mobile access on their next request,
-            // not when the access token expires. 401 (not 403) sends the client
-            // through refresh, which fails on the same membership check and
-            // signs the device out.
+            // not when the access token expires. 401 (not the web 403 below)
+            // sends the client through refresh, which fails on the same
+            // membership check and signs the device out.
             if (decoded.shopId) {
                 const membership = await UserShop.findOne({
                     attributes: ['id'],
@@ -146,7 +147,50 @@ const authenticate = async (req, res, next) => {
                         'NATIVE_SHOP_ACCESS_REVOKED',
                     );
                 }
+                shopMembershipVerified = true;
             }
+        }
+
+        // A signed shop claim is not proof of a current merchant membership.
+        // Re-check the active relationship so a deactivated user cannot keep
+        // reading shop-scoped analytics until the JWT expires. A native token's
+        // membership was already checked above with the same query.
+        if (decoded.shopId && !shopMembershipVerified) {
+            const activeMembership = await UserShop.findOne({
+                attributes: ['id'],
+                where: {
+                    user_id: decoded.userId,
+                    shop_id: decoded.shopId,
+                    is_active: true,
+                },
+            });
+            if (!activeMembership) {
+                throw new AppError('Shop access is not authorized for this account.', 403, 'GROWTH_OS_FORBIDDEN');
+            }
+        }
+
+        const passwordChangeRequired = decoded.passwordChangeRequired === true;
+        if (passwordChangeRequired) {
+            if (isTemporaryPasswordExpired(decoded.temporaryPasswordExpiresAt)) {
+                throw new AppError(
+                    'Temporary password has expired. Request a new one.',
+                    401,
+                    'AUTH_TEMPORARY_PASSWORD_EXPIRED',
+                );
+            }
+            if (!allowPasswordChange) {
+                throw new AppError(
+                    'Password change required before continuing.',
+                    403,
+                    'AUTH_PASSWORD_CHANGE_REQUIRED',
+                );
+            }
+        } else if (allowPasswordChange) {
+            throw new AppError(
+                'Password change session is required.',
+                401,
+                'AUTH_PASSWORD_CHANGE_SESSION_REQUIRED',
+            );
         }
 
         // 5. Attach user data to request
@@ -159,8 +203,10 @@ const authenticate = async (req, res, next) => {
             // token without it is intentionally not sufficient for privileged
             // Growth roles.
             mfaVerified: decoded.mfaVerified === true,
+            passwordChangeRequired,
+            temporaryPasswordExpiresAt: decoded.temporaryPasswordExpiresAt || null,
             // ADR M-004: present only for native-issued tokens; undefined for
-            // every existing (web) token, exactly like decoded.sid itself.
+            // every web token, exactly like decoded.sid itself.
             sid: decoded.sid || undefined,
         };
 
@@ -173,6 +219,15 @@ const authenticate = async (req, res, next) => {
         }
     }
 };
+
+const authenticate = (req, res, next) => authenticateRequest(req, res, next);
+
+const authenticateForPasswordChange = (req, res, next) => authenticateRequest(
+    req,
+    res,
+    next,
+    { allowPasswordChange: true },
+);
 
 /**
  * Block API access for suspended shops.
@@ -215,4 +270,4 @@ const checkSubscriptionStatus = async (req, res, next) => {
     }
 };
 
-module.exports = { authenticate, checkSubscriptionStatus };
+module.exports = { authenticate, authenticateForPasswordChange, checkSubscriptionStatus };

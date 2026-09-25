@@ -123,17 +123,31 @@ async function sendFCM(deviceToken, payload) {
  * @returns {{ web: number, fcm: number, expired: number }}
  */
 async function sendPushToShop(shopId, payload) {
-  const { PushSubscription } = require('../entities');
+  const { PushSubscription, UserShop } = require('../entities');
 
-  const subs = await PushSubscription.findAll({ where: { shop_id: shopId } });
+  const [subs, activeMemberships] = await Promise.all([
+    PushSubscription.findAll({ where: { shop_id: shopId } }),
+    UserShop.findAll({ where: { shop_id: shopId, is_active: true }, attributes: ['user_id'] })
+  ]);
   if (subs.length === 0) return { web: 0, fcm: 0, expired: 0 };
+
+  // Defense in depth: only deliver to subscriptions whose user still holds an
+  // active membership in this shop. shop.service.removeUserFromShop deletes a
+  // removed user's subscription rows outright, but this guards against any
+  // other future code path that deactivates a membership without going
+  // through it — a removed staff member must not keep receiving order and
+  // customer push notifications. A null user_id (legacy/shop-level row) is
+  // still delivered.
+  const activeUserIds = new Set(activeMemberships.map((m) => m.user_id));
+  const deliverableSubs = subs.filter((sub) => sub.user_id == null || activeUserIds.has(sub.user_id));
+  if (deliverableSubs.length === 0) return { web: 0, fcm: 0, expired: 0 };
 
   const expiredIds = [];
   let webSent = 0;
   let fcmSent = 0;
 
   await Promise.allSettled(
-    subs.map(async (sub) => {
+    deliverableSubs.map(async (sub) => {
       let result;
       if (sub.type === 'web' && sub.subscription_json) {
         result = await sendWebPush(sub.subscription_json, payload);

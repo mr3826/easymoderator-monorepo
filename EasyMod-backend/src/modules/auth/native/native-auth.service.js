@@ -124,6 +124,23 @@ const issueNewSession = async (user, shopId, req, { mfaVerified = false } = {}) 
 };
 
 /**
+ * A temporary (invite/reset) password must be replaced before any session can
+ * do anything but change it. The web enforces that through the
+ * `passwordChangeRequired` claim; native tokens are read-only and cannot reach
+ * the password-change route, so a native session is refused instead of issued
+ * without the claim.
+ */
+const assertNoPendingPasswordChange = (temporaryPasswordAuthData) => {
+    if (temporaryPasswordAuthData?.requiresPasswordChange) {
+        throw new AppError(
+            'Password change required before continuing.',
+            403,
+            'AUTH_PASSWORD_CHANGE_REQUIRED',
+        );
+    }
+};
+
+/**
  * POST /api/auth/native/signin
  * Calls into auth.service's resolveAuthenticatedUser — the exact same
  * lockout/password/2FA-gate/shop-resolution logic authenticateUser uses —
@@ -133,7 +150,15 @@ const issueNewSession = async (user, shopId, req, { mfaVerified = false } = {}) 
 const signin = async ({ email, password }, req) => {
     const resolved = await authService.resolveAuthenticatedUser(email, password);
     if (resolved.requires2fa) {
+        assertNoPendingPasswordChange(resolved);
         return { requires2fa: true, tempToken: resolved.tempToken };
+    }
+    assertNoPendingPasswordChange(resolved.temporaryPasswordAuthData);
+    // Native sessions are merchant sessions. The shared resolver gives Growth OS
+    // staff a shop-less web session; the mobile app has nothing to serve without
+    // a shop, so it refuses instead of issuing one.
+    if (!resolved.loggedShopId) {
+        throw new AppError('User has no associated shops', 403);
     }
     return issueNewSession(resolved.user, resolved.loggedShopId, req, { mfaVerified: false });
 };
@@ -162,10 +187,13 @@ const resolveActiveShopId = async (user) => {
  * totpService calls), diverging only at the point of token issuance.
  */
 const verifyTwoFactor = async ({ tempToken, token }, req) => {
-    const userId = await totpService.consumeTempToken(tempToken);
-    if (!userId) {
+    // The challenge is bound to the token generation that passed the password
+    // step; a password reset or session invalidation in between voids it.
+    const challenge = await totpService.consumeTempTokenDetails(tempToken);
+    if (!challenge?.userId || !Number.isInteger(challenge.tokenVersion)) {
         throw new AppError('Invalid or expired session. Please login again.', 401);
     }
+    const { userId } = challenge;
     await assertTwoFactorAttemptsRemaining(userId);
     try {
         await totpService.verifyTotpToken(userId, String(token));
@@ -178,6 +206,19 @@ const verifyTwoFactor = async ({ tempToken, token }, req) => {
 
     const user = await User.findByPk(userId);
     if (!user) throw new AppError('User not found', 404);
+    if (Number(user.token_version) !== challenge.tokenVersion) {
+        throw new AppError('Invalid or expired session. Please login again.', 401);
+    }
+    assertNoPendingPasswordChange(authService.getTemporaryPasswordAuthData(user));
+
+    // Same merchant-only rule as signin: Growth OS staff get no native session.
+    const growthOsRole = await authService.getActiveGrowthOsRole(user.id);
+    if (growthOsRole === undefined) {
+        throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+    }
+    if (growthOsRole) {
+        throw new AppError('User has no associated shops', 403);
+    }
 
     const shopId = await resolveActiveShopId(user);
     if (!shopId) {

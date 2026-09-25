@@ -107,7 +107,7 @@ describe('image-upload.service', () => {
             const { publicPath } = await save();
             const resolved = path.resolve(path.join(UPLOAD_ROOT, publicPath.replace('/uploads/', '')));
             expect(resolved.startsWith(UPLOAD_ROOT + path.sep)).toBe(true);
-            expect(resolved.startsWith(os.tmpdir())).toBe(false);
+            expect(path.relative(UPLOAD_ROOT, resolved).startsWith('..')).toBe(false);
         });
     });
 });

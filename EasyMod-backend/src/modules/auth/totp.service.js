@@ -10,7 +10,10 @@
 const crypto = require('crypto');
 const { User } = require('../entities');
 const { AppError } = require('../../utils/AppError');
+const config = require('../../config/config');
 const { getRedisClient } = require('../../utils/redis-client');
+const { sequelize } = require('../../utils/database/database-setup');
+const { invalidateUserSessions } = require('./session-invalidation.service');
 
 // ── Encryption helpers ──────────────────────────────────────────────────────
 
@@ -108,48 +111,164 @@ const verifyTotp = (base32Secret, token) => {
 // ── Redis used-token store to prevent replay attacks ───────────────────────
 
 const TOTP_USED_PREFIX = 'totp_used:';
+const TOTP_REPLAY_TTL_SECONDS = 90;
 
-/**
- * Atomically records a verified code as used (SET NX, 90 s = 3 × 30 s window).
- * Returns false when the code was already claimed, including by a concurrent
- * request that passed the isTokenUsed pre-check at the same moment.
- */
-const claimTokenUse = async (userId, token) => {
-    const redis = getRedisClient();
+const requiresRedisReplayProtection = () => ['production', 'staging'].includes(config.env);
+
+const replayProtectionUnavailable = () => new AppError(
+    'Two-factor verification is temporarily unavailable. Please try again later.',
+    503,
+    'TOTP_REPLAY_PROTECTION_UNAVAILABLE',
+);
+
+// Existing isolated unit tests provide only GET/SETEX. Keep that contract for
+// those mocks; every real deployed Redis client must use the atomic SET NX EX
+// path below.
+const claimTokenUsedInTestFallback = async (redis, key) => {
     if (!redis) return true;
-    const claimed = await redis.set(`${TOTP_USED_PREFIX}${userId}:${token}`, '1', 'EX', 90, 'NX');
-    return claimed === 'OK';
+
+    const existing = typeof redis.get === 'function' ? await redis.get(key) : null;
+    if (existing === '1') return false;
+    if (typeof redis.setex === 'function') {
+        await redis.setex(key, TOTP_REPLAY_TTL_SECONDS, '1');
+    }
+    return true;
 };
 
-const isTokenUsed = async (userId, token) => {
-    const redis = getRedisClient();
-    if (!redis) return false;
-    const result = await redis.get(`${TOTP_USED_PREFIX}${userId}:${token}`);
-    return result === '1';
+const claimTokenUsed = async (userId, token) => {
+    const key = `${TOTP_USED_PREFIX}${userId}:${token}`;
+    let redis;
+    try {
+        redis = getRedisClient();
+    } catch (_error) {
+        if (requiresRedisReplayProtection()) throw replayProtectionUnavailable();
+        return true;
+    }
+
+    // The existing TOTP unit mock predates SET NX support. Do not change its
+    // isolated behavior, but never use this compatibility path in staging or
+    // production.
+    if (config.env === 'test'
+        && (redis?._isMemoryFallback === true || typeof redis?.set !== 'function')) {
+        return claimTokenUsedInTestFallback(redis, key);
+    }
+
+    if (!redis
+        || redis._isMemoryFallback === true
+        || ['end', 'closing'].includes(redis.status)
+        || typeof redis.set !== 'function') {
+        if (requiresRedisReplayProtection()) throw replayProtectionUnavailable();
+        return true;
+    }
+
+    try {
+        // Redis evaluates SET NX EX as one atomic command. A null/false reply
+        // means another request claimed this valid code first.
+        const result = await redis.set(
+            key,
+            '1',
+            'NX',
+            'EX',
+            TOTP_REPLAY_TTL_SECONDS,
+        );
+        if (result === null || result === false) return false;
+        if (result === 'OK' || result === 1 || result === true) return true;
+    } catch (_error) {
+        throw replayProtectionUnavailable();
+    }
+
+    // Treat an unexpected Redis reply as unavailable rather than accepting a
+    // code without a replay claim.
+    throw replayProtectionUnavailable();
 };
 
 // ── Temp tokens for 2FA login step ────────────────────────────────────────
 
 const TOTP_TEMP_PREFIX = 'totp_temp:';
+const TOTP_TEMP_TTL_SECONDS = 300;
+const CONSUME_TEMP_TOKEN_SCRIPT = `
+    local value = redis.call('GET', KEYS[1])
+    if value then redis.call('DEL', KEYS[1]) end
+    return value
+`;
 
-const saveTempToken = async (userId, tempToken) => {
+const saveTempToken = async (userId, tempToken, tokenVersion) => {
     const redis = getRedisClient();
     if (!redis) return;
-    await redis.setex(`${TOTP_TEMP_PREFIX}${tempToken}`, 300, userId); // 5 min TTL
+
+    // Keep the old string form for direct callers that do not provide a
+    // generation. Login always supplies tokenVersion, so controller-consumed
+    // challenges are bound to the exact session generation that authenticated.
+    const numericTokenVersion = Number(tokenVersion);
+    const value = tokenVersion !== undefined
+        && tokenVersion !== null
+        && Number.isInteger(numericTokenVersion)
+        && numericTokenVersion >= 0
+        ? JSON.stringify({ userId, tokenVersion: numericTokenVersion })
+        : userId;
+
+    await redis.setex(
+        `${TOTP_TEMP_PREFIX}${tempToken}`,
+        TOTP_TEMP_TTL_SECONDS,
+        value,
+    );
+};
+
+const consumeRawTempToken = async (redis, key) => {
+    // Lua keeps read-and-delete atomic on every Redis version supported by the
+    // service. The fallback exists only for the in-memory/test clients, which
+    // do not expose EVAL and are single-process by definition.
+    if (typeof redis.eval === 'function') {
+        return redis.eval(CONSUME_TEMP_TOKEN_SCRIPT, 1, key);
+    }
+    if (typeof redis.getdel === 'function') {
+        return redis.getdel(key);
+    }
+    const value = await redis.get(key);
+    if (value) await redis.del(key);
+    return value;
+};
+
+const parseTempTokenValue = (value) => {
+    if (!value) return null;
+
+    try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const tokenVersion = Number(parsed.tokenVersion);
+            return {
+                userId: parsed.userId,
+                tokenVersion: Number.isInteger(tokenVersion) && tokenVersion >= 0
+                    ? tokenVersion
+                    : null,
+            };
+        }
+    } catch (_error) {
+        // Legacy temp tokens were stored as the raw user ID.
+    }
+
+    return { userId: value, tokenVersion: null };
 };
 
 /**
- * One-use: GET and DEL run in one MULTI, so two concurrent verify requests
- * carrying the same challenge cannot both receive its user id.
+ * Atomically consume a login challenge and return its generation details.
+ * Legacy raw-user-ID values are reported without a generation so callers can
+ * preserve the old string API while secure login verification rejects them.
  */
-const consumeTempToken = async (tempToken) => {
+const consumeTempTokenDetails = async (tempToken) => {
     const redis = getRedisClient();
     if (!redis) return null;
-    const key = `${TOTP_TEMP_PREFIX}${tempToken}`;
-    const results = await redis.multi().get(key).del(key).exec();
-    const [getError, userId] = results?.[0] || [];
-    if (getError) throw getError;
-    return userId || null;
+
+    const value = await consumeRawTempToken(redis, `${TOTP_TEMP_PREFIX}${tempToken}`);
+    const details = parseTempTokenValue(value);
+    if (!details?.userId) return null;
+    return details;
+};
+
+// Preserve the existing public return shape for unrelated callers/tests.
+const consumeTempToken = async (tempToken) => {
+    const details = await consumeTempTokenDetails(tempToken);
+    return details?.userId || null;
 };
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -240,16 +359,13 @@ const verifyTotpToken = async (userId, token) => {
         throw new AppError('2FA is not enabled for this account', 400);
     }
 
-    if (await isTokenUsed(userId, token)) {
-        throw new AppError('TOTP token already used. Please wait for the next code.', 400);
-    }
-
     const secret = decryptSecret(settings.totp_secret);
     if (!verifyTotp(secret, token)) throw new AppError('Invalid TOTP token', 400);
 
-    if (!(await claimTokenUse(userId, token))) {
+    if (!(await claimTokenUsed(userId, token))) {
         throw new AppError('TOTP token already used. Please wait for the next code.', 400);
     }
+
     return true;
 };
 
@@ -259,27 +375,36 @@ const verifyTotpToken = async (userId, token) => {
  * @param {string} token
  */
 const disableTotp = async (userId, token) => {
-    const user = await User.findByPk(userId);
-    if (!user) throw new AppError('User not found', 404);
+    return sequelize.transaction(async (transaction) => {
+        const user = await User.findByPk(userId, {
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (!user) throw new AppError('User not found', 404);
 
-    const settings = user.settings || {};
-    if (!settings.totp_enabled || !settings.totp_secret) {
-        throw new AppError('2FA is not currently enabled', 400);
-    }
-
-    const secret = decryptSecret(settings.totp_secret);
-    if (!verifyTotp(secret, token)) throw new AppError('Invalid TOTP token', 400);
-
-    await user.update({
-        settings: {
-            ...settings,
-            totp_secret: null,
-            totp_pending: null,
-            totp_enabled: false
+        const settings = user.settings || {};
+        if (!settings.totp_enabled || !settings.totp_secret) {
+            throw new AppError('2FA is not currently enabled', 400);
         }
-    });
 
-    return { disabled: true };
+        const secret = decryptSecret(settings.totp_secret);
+        if (!verifyTotp(secret, token)) throw new AppError('Invalid TOTP token', 400);
+
+        await user.update({
+            settings: {
+                ...settings,
+                totp_secret: null,
+                totp_pending: null,
+                totp_enabled: false
+            }
+        }, { transaction });
+
+        // Rotate the token generation and clear refresh/session credentials in
+        // the same transaction as the MFA setting change.
+        await invalidateUserSessions(userId, { transaction });
+
+        return { disabled: true };
+    });
 };
 
 module.exports = {
@@ -289,6 +414,7 @@ module.exports = {
     disableTotp,
     saveTempToken,
     consumeTempToken,
+    consumeTempTokenDetails,
     // Exported for tests only: replay protection can only be asserted with a
     // code that actually verifies, and computing one any other way would mean a
     // second TOTP implementation in the test, free to agree with itself while

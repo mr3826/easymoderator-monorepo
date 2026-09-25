@@ -91,9 +91,12 @@ class ChannelProvider {
      *
      * @param {object} params
      * @param {string} params.userToken - Long-lived user access token
+     * @param {Record<string, {pageId: string, token: string, expiresAt: Date|null}>} [params.pageCredentials]
+     *   Server-only sink for credentials obtained during discovery. Implementations
+     *   must never include these credentials in the returned asset metadata.
      * @returns {Promise<Array<{ id: string, name: string, pictureUrl: string|null, [extra]: any }>>}
      */
-    async listManagedAssets({ userToken }) {
+    async listManagedAssets({ userToken, pageCredentials }) {
         throw new Error('not_implemented');
     }
 
@@ -111,18 +114,6 @@ class ChannelProvider {
      * }>}
      */
     async getOAuthIdentity({ userToken }) {
-        throw new Error('not_implemented');
-    }
-
-    /**
-     * Get the page-scoped access token for a specific asset.
-     *
-     * @param {object} params
-     * @param {string} params.assetId    - Page ID or IG Business Account ID
-     * @param {string} params.userToken  - Long-lived user access token
-     * @returns {Promise<{ token: string, expiresAt: Date|null }>}
-     */
-    async getAssetAccessToken({ assetId, userToken }) {
         throw new Error('not_implemented');
     }
 
@@ -243,19 +234,6 @@ class ChannelProvider {
         throw new Error('not_implemented');
     }
 
-    // ── Health ──────────────────────────────────────────────────────────────────
-
-    /**
-     * Check whether the channel is still accessible from the provider's side.
-     * Makes a lightweight Graph API call and measures round-trip latency.
-     *
-     * @param {object} params
-     * @param {object} params.channel - MetaChannel instance
-     * @returns {Promise<{ ok: boolean, latencyMs: number }>}
-     */
-    async ping({ channel }) {
-        throw new Error('not_implemented');
-    }
 }
 
 module.exports = ChannelProvider;

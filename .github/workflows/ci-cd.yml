@@ -68,6 +68,11 @@ on:
         required: false
         default: ''
         type: string
+      growth_image_override:
+        description: 'Optional sha256 digest published by growth-os.yml for this commit; when set, the deploy job swaps growth-frontend to that image rather than carrying the running container forward.'
+        required: false
+        default: ''
+        type: string
       expect_schema_drift:
         description: 'One-shot: require the 3 repair columns ABSENT before migrating. Type DRIFT to confirm.'
         required: false
@@ -92,12 +97,12 @@ on:
 concurrency:
   group: ci-cd-${{ github.ref }}
   # A cancelled main run can contain cumulative changes that a later one-commit
-  # path diff cannot see. Serialize production deploys so no image is skipped.
-  cancel-in-progress: false
+  # path diff cannot see. Serialize production-capable runs, but cancel stale PR
+  # validation because pull_request jobs can never publish or deploy.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
-  packages: write
   # Required by the dorny/paths-filter step in the `changes` job: on
   # pull_request events it reads the PR's changed files via the GitHub API.
   # Without this the `changes` job fails and the whole PR gate skips.
@@ -115,6 +120,10 @@ jobs:
   changes:
     name: Detect changed services
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: none
+      pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend == 'true' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' }}
@@ -123,6 +132,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect changed service paths locally
         id: filter
@@ -172,10 +182,10 @@ jobs:
                   frontend=true
                   ;;
               esac
-              # Mirrors growth-os.yml's own push paths, plus this workflow:
-              # editing the gate must exercise everything the gate gates.
+              # Any backend change can affect a server-backed Growth OS
+              # contract, so the reusable Growth verification must run too.
               case "$path" in
-                EasyMod-growth/*|EasyMod-backend/src/scripts/seed-growth-e2e.js|EasyMod-backend/src/database/*|scripts/run-growth-e2e.js|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
+                EasyMod-growth/*|EasyMod-extension/*|EasyMod-backend/*|scripts/run-growth-e2e.js|Caddyfile|docker-compose.prod.yml|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
                   growth=true
                   ;;
               esac
@@ -195,8 +205,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -237,7 +252,7 @@ jobs:
           VITE_APP_URL: ${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
           VITE_MARKETING_URL: ${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
           VITE_META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_ENV: production
 
       # Frontend unit tests (Vitest) are a blocking launch gate.
@@ -254,8 +269,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -275,7 +295,7 @@ jobs:
         working-directory: ./EasyMod-frontend
         env:
           PLAYWRIGHT_PORT: '4273'
-        run: npm run test:e2e -- tests/e2e/ai-reply-mode.spec.ts tests/e2e/shared-inbox.spec.ts --workers=1
+        run: npm run test:e2e -- tests/e2e/ai-reply-mode.spec.ts tests/e2e/shared-inbox.spec.ts tests/e2e/signup-terms.spec.ts tests/e2e/meta-oauth-contract.spec.ts --workers=1
 
       - name: Upload frontend Playwright artifacts
         if: failure()
@@ -302,6 +322,9 @@ jobs:
     # Same condition as `test` so the deploy graph stays simple; the heavy steps
     # below are skipped when only the frontend changed.
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -325,6 +348,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: needs.changes.outputs.backend == 'true'
@@ -365,9 +390,12 @@ jobs:
           needs.meta-e2e.result == 'success' &&
           (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
         )
-      )
+      ) &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -412,7 +440,7 @@ jobs:
       - name: Validate production secret and deployment contracts without SSH
         # Never expose repository secrets to forked pull requests; the
         # synthetic contract step above remains the PR-safe validation.
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           DB_USER: ${{ secrets.POSTGRES_USER }}
           DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -441,6 +469,12 @@ jobs:
           META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
           META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          # Facebook Login for Business configuration ID. Public, not a secret,
+          # so it lives in a repository variable like META_OAUTH_REDIRECT_URI.
+          # Deliberately NOT defaulted in-workflow: an unset variable must fail
+          # the production config validation rather than deploy a login dialog
+          # pointed at somebody else's configuration.
+          META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
           BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
@@ -464,7 +498,7 @@ jobs:
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
           QDRANT_VECTOR_SIZE: ${{ vars.QDRANT_VECTOR_SIZE || '384' }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
@@ -494,9 +528,13 @@ jobs:
            test -n "$DO_SSH_PRIVATE_KEY"
            test -n "$DO_SSH_KNOWN_HOSTS"
            if [ "$PROBE_INBOUND_TRACE" = "true" ]; then
-             printf '%s' "$TRACE_FROM" | grep -Eq '^[0-9T:Z+.-]+$'
-             printf '%s' "$TRACE_TO" | grep -Eq '^[0-9T:Z+.-]+$'
-             printf '%s' "$TRACE_MARKER" | grep -Eq '^[A-Za-z0-9_.:-]{5,200}$'
+             case "$TRACE_FROM$TRACE_TO$TRACE_MARKER" in *$'\n'*|*$'\r'*)
+               echo 'trace inputs must not contain newlines' >&2
+               exit 1
+             esac
+             [[ "$TRACE_FROM" =~ ^[0-9T:Z+.-]+$ ]]
+             [[ "$TRACE_TO" =~ ^[0-9T:Z+.-]+$ ]]
+             [[ "$TRACE_MARKER" =~ ^[A-Za-z0-9_.:-]{5,200}$ ]]
            fi
            node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod.real
           test -s _tmp/.env.prod.real
@@ -546,6 +584,9 @@ jobs:
               root@"$DEPLOY_HOST":"$probe_env_path"
             scp -i ~/.ssh/deploy_key EasyMod-backend/scripts/production-db-auth-probe.js \
               root@"$DEPLOY_HOST":"$probe_script_path"
+            trace_from_arg=$(printf '%q' "$TRACE_FROM")
+            trace_to_arg=$(printf '%q' "$TRACE_TO")
+            trace_marker_arg=$(printf '%q' "$TRACE_MARKER")
             ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
               'set -e
                echo PRODUCTION_POSTGRES_ENV
@@ -555,7 +596,7 @@ jobs:
                  docker exec easymod-postgres-1 sh -c "PGPASSWORD=\"\$POSTGRES_PASSWORD\" psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"\\l\""
                fi'
             ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
-              "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -e PROBE_SCHEMA_MODE=$schema_probe_mode -e PROBE_INBOUND_TRACE=\"$PROBE_INBOUND_TRACE\" -e TRACE_FROM=\"$TRACE_FROM\" -e TRACE_TO=\"$TRACE_TO\" -e TRACE_MARKER=\"$TRACE_MARKER\" -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_id\" node /app/scripts/production-db-auth-probe.js"
+              "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -e PROBE_SCHEMA_MODE=$schema_probe_mode -e PROBE_INBOUND_TRACE=\"$PROBE_INBOUND_TRACE\" -e TRACE_FROM=$trace_from_arg -e TRACE_TO=$trace_to_arg -e TRACE_MARKER=$trace_marker_arg -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_id\" node /app/scripts/production-db-auth-probe.js"
           fi
 
   # ── 2d. Non-publishing Docker build validation ────────────────────────────
@@ -573,8 +614,13 @@ jobs:
     if: |
       github.ref != 'refs/heads/main' &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -606,7 +652,7 @@ jobs:
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
             VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
             VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
-            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
             VITE_ENV=production
             VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
 
@@ -624,6 +670,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: none
     services:
       postgres:
         image: postgres:16-alpine
@@ -650,6 +699,8 @@ jobs:
       # arrived from the branch on floating @v6 tags and were the only
       # unpinned actions in .github/workflows.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: needs.changes.outputs.backend == 'true'
@@ -710,6 +761,9 @@ jobs:
   build:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     needs: [changes, test, integration, meta-e2e, deployment-config]
     if: |
       github.event_name != 'pull_request' &&
@@ -726,6 +780,8 @@ jobs:
       EXISTING_CANDIDATE_SHA: ${{ inputs.existing_candidate_sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -794,7 +850,7 @@ jobs:
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
             VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
             VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
-            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
             VITE_ENV=production
             VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
           cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
@@ -804,19 +860,31 @@ jobs:
   deploy:
     name: Deploy to DO Droplet
     runs-on: ubuntu-latest
-    needs: [changes, build]
+    needs: [changes, build, frontend-e2e]
     # A new monorepo must not switch the live droplet merely because its
     # default branch was populated. Enable this repository variable only after
     # deploy secrets, the production environment, and a rollback rehearsal are
     # explicitly verified.
+    # A browser regression failure must block a production cutover. The job is
+    # skipped for backend-only changes, so that result is explicitly allowed.
     if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.build.result == 'success' &&
+      (needs.frontend-e2e.result == 'success' || needs.frontend-e2e.result == 'skipped') &&
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
-      github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)
+      github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha) &&
+      (github.event.inputs.target != 'frontend' || github.event.inputs.existing_candidate_sha != '')
     environment: production
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Render and validate .env.prod without shell interpolation
         run: node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod
@@ -851,6 +919,12 @@ jobs:
           META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
           META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          # Facebook Login for Business configuration ID. Public, not a secret,
+          # so it lives in a repository variable like META_OAUTH_REDIRECT_URI.
+          # Deliberately NOT defaulted in-workflow: an unset variable must fail
+          # the production config validation rather than deploy a login dialog
+          # pointed at somebody else's configuration.
+          META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
           # bKash is a LIVE-money gateway. It stays OFF for the controlled pilot
@@ -881,11 +955,10 @@ jobs:
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
           QDRANT_VECTOR_SIZE: ${{ vars.QDRANT_VECTOR_SIZE || '384' }}
-          # Backend alerting (finding F-06). The backend reads SENTRY_DSN, a
-          # separate name from the frontend's VITE_SENTRY_DSN. Fall back to the
-          # frontend DSN so ops alerts have a sink even before a dedicated
-          # backend project exists — both currently share one Sentry project.
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
+              # Backend alerting (finding F-06). The backend reads its own
+              # SENTRY_DSN secret; never cross the server/browser configuration
+              # boundary by falling back to the frontend's VITE_SENTRY_DSN.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
@@ -968,14 +1041,38 @@ jobs:
           scp -i ~/.ssh/deploy_key Caddyfile root@"$DEPLOY_HOST":/opt/easymod/Caddyfile
           ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
 
+      - name: Derive pinned SSH host fingerprint
+        id: ssh_host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE
+          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,GROWTH_IMAGE_OVERRIDE,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE
           script: |
             set -e
 
@@ -1037,16 +1134,23 @@ jobs:
             export GHCR_IMAGE_FRONTEND="$candidate_frontend_image"
 
             # Growth OS is built and published by growth-os.yml, so this workflow
-            # has no build-job digest to consume for it. It carries the running
-            # container's digest forward untouched — this pipeline never changes
-            # the Growth OS image, it only has to keep Compose resolvable.
+            # has no build-job digest to consume for it. When growth code changes
+            # on main, the operator explicitly passes growth_image_override (the
+            # digest published by growth-os.yml for that SHA) so this deploy swaps
+            # the running Growth container to the new build. Without an override,
+            # the running container's digest is carried forward untouched, so a
+            # backend-only deploy never restarts Growth and cannot silently ship
+            # a stale frontend.
             #
             # Fails closed exactly like backend and frontend above: a tag would
             # make the deploy non-reproducible and the rollback meaningless.
-            # The repository variable provides the explicitly pinned first-rollout
-            # input; once running, the container digest takes precedence.
+            # GROWTH_BOOTSTRAP_DIGEST remains the fallback for the first rollout
+            # when growth-frontend is not running at all.
             candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1 2>/dev/null || true)
-            if [ -z "$candidate_growth_image" ] && [ -n "${GROWTH_BOOTSTRAP_DIGEST:-}" ]; then
+            if [ -n "${GROWTH_IMAGE_OVERRIDE:-}" ]; then
+              echo "growth_image_override set; swapping growth-frontend to the pinned digest"
+              candidate_growth_image="${GHCR_GROWTH}@${GROWTH_IMAGE_OVERRIDE}"
+            elif [ -z "$candidate_growth_image" ] && [ -n "${GROWTH_BOOTSTRAP_DIGEST:-}" ]; then
               echo "growth-frontend is not running; bootstrapping from pinned GROWTH_BOOTSTRAP_DIGEST"
               candidate_growth_image="${GHCR_GROWTH}@${GROWTH_BOOTSTRAP_DIGEST}"
             fi
@@ -1111,14 +1215,9 @@ jobs:
             # deploy. Recover by resetting the persistence volume so Redis starts
             # clean. On a WIPE run this is always correct (clean first-run state);
             # otherwise only reset when Redis is genuinely unhealthy.
-            reset_redis_volume() {
-              docker compose --env-file .env.prod -f docker-compose.prod.yml rm -sf redis 2>/dev/null || true
-              RVOL=$(docker volume ls -q | grep -E 'redis_data$' | head -1 || true)
-              if [ -n "$RVOL" ]; then docker volume rm "$RVOL" 2>/dev/null || true; fi
-            }
             if [ "$WIPE_DB" = "WIPE" ]; then
-              echo "==> WIPE run: resetting Redis persistence volume for a clean start"
-              reset_redis_volume
+              echo "ERROR: Redis volume recovery is disabled in production; use a reviewed manual recovery procedure"
+              exit 1
             else
               docker compose --env-file .env.prod -f docker-compose.prod.yml restart redis 2>/dev/null || true
               RSTATE=starting
@@ -1129,8 +1228,8 @@ jobs:
                 sleep 5
               done
               if [ "$RSTATE" != "healthy" ]; then
-                echo "==> Redis $RSTATE — resetting its persistence volume to recover"
-                reset_redis_volume
+                echo "ERROR: Redis is $RSTATE; refusing automatic volume deletion. Manual recovery is required"
+                exit 1
               fi
             fi
 
@@ -1150,7 +1249,7 @@ jobs:
               docker pull "$GHCR_IMAGE_FRONTEND"
             fi
 
-            if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ]; then
+            if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ] || [ -n "$GROWTH_IMAGE_OVERRIDE" ]; then
               echo "Pulling Growth digest: $GHCR_IMAGE_GROWTH"
               docker pull "$GHCR_IMAGE_GROWTH"
             fi
@@ -1386,6 +1485,43 @@ jobs:
               fi
             done
 
+            # Read the commit baked into the running image. A healthy container
+            # is not sufficient evidence that the requested immutable image is
+            # serving traffic; the version endpoint must identify this SHA.
+            docker exec -i -e EXPECTED_COMMIT="$DEPLOYED_COMMIT" easymod-backend-1 node - <<'NODE'
+            const http = require('http');
+
+            const request = http.get('http://127.0.0.1:3000/api/version', (response) => {
+              let body = '';
+              response.setEncoding('utf8');
+              response.on('data', (chunk) => { body += chunk; });
+              response.on('end', () => {
+                if (response.statusCode !== 200) {
+                  console.error(`Version endpoint returned HTTP ${response.statusCode}`);
+                  process.exit(1);
+                }
+
+                let payload;
+                try {
+                  payload = JSON.parse(body);
+                } catch (error) {
+                  console.error(`Version endpoint returned invalid JSON: ${error.message}`);
+                  process.exit(1);
+                }
+
+                if (payload.gitSha !== process.env.EXPECTED_COMMIT) {
+                  console.error(`Version mismatch: expected ${process.env.EXPECTED_COMMIT}, got ${payload.gitSha || '(missing)'}`);
+                  process.exit(1);
+                }
+                console.log(`Version check passed: ${payload.gitSha}`);
+              });
+            });
+            request.on('error', (error) => {
+              console.error(`Version endpoint request failed: ${error.message}`);
+              process.exit(1);
+            });
+            NODE
+
             # Clean up dangling images
             docker image prune -f
 
@@ -1409,11 +1545,12 @@ jobs:
           GHCR_FRONTEND: ${{ env.GHCR_FRONTEND }}
           GHCR_GROWTH: ${{ env.GHCR_GROWTH }}
           GROWTH_BOOTSTRAP_DIGEST: ${{ vars.GROWTH_BOOTSTRAP_DIGEST }}
+          GROWTH_IMAGE_OVERRIDE: ${{ inputs.growth_image_override }}
           BACKEND_TAG: ${{ needs.build.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
           BACKEND_DIGEST: ${{ needs.build.outputs.backend_digest }}
           FRONTEND_DIGEST: ${{ needs.build.outputs.frontend_digest }}
-          DEPLOYED_COMMIT: ${{ github.sha }}
+          DEPLOYED_COMMIT: ${{ github.event.inputs.existing_candidate_sha || github.sha }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           DEPLOYED_AT: ${{ needs.build.outputs.build_time }}
           GH_ACTOR: ${{ github.actor }}
@@ -1440,9 +1577,21 @@ jobs:
     needs: [changes]
     if: github.event_name == 'pull_request' && needs.changes.outputs.growth == 'true'
     uses: ./.github/workflows/growth-os.yml
-    secrets: inherit
+    # GitHub's plan-time validation requires this caller's permission ceiling
+    # to be a superset of `growth-os.yml`'s own top-level `permissions:` block.
+    # The reusable workflow keeps `packages: write` at its workflow level because
+    # its `build-and-push` job needs it. The two growth jobs that CAN see PR
+    # code (`verify`, `browser-e2e`) each declare their own job-scoped
+    # `permissions: contents: read` inside growth-os.yml to narrow their token
+    # below the ceiling; `build-and-push` never executes on a pull_request
+    # (its `if:` refuses), so PR-controlled code cannot acquire a package-write
+    # token through the reusable path — the ceiling here and the callee-side
+    # job-scope narrowing together form the invariant.
     permissions:
       contents: read
+      # The called workflow declares a main/manual-only publish job requiring
+      # package write permission. Its pull_request condition still skips that
+      # job; this ceiling is required for reusable-workflow validation.
       packages: write
 
   # ── 5. The one required PR context ─────────────────────────────────────────
@@ -1469,10 +1618,14 @@ jobs:
       - deployment-config
       - docker-build-validation
       - growth-os
+    permissions:
+      contents: read
+      packages: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate documentation and diff hygiene
         env:

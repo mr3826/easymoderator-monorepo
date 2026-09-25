@@ -17,13 +17,15 @@ jest.mock('../oauth-state.store', () => ({
 const mockBuildAuthUrl = jest.fn().mockResolvedValue('https://www.facebook.com/v22.0/dialog/oauth?scope=stub');
 const mockSubscribeWebhook = jest.fn().mockResolvedValue(undefined);
 const mockVerifyWebhookSubscription = jest.fn();
-const mockGetAssetAccessToken = jest.fn().mockResolvedValue({ token: 'page-tok', expiresAt: null });
 const mockExchangeCode = jest.fn().mockResolvedValue({ userToken: 'user-tok' });
 const mockListManagedAssets = jest.fn().mockResolvedValue([]);
 const mockGetOAuthIdentity = jest.fn().mockResolvedValue({
     appScopedUserId: 'app-user-1',
     pageScopedIdentities: [{ pageId: 'PAGE_42', pageScopedUserId: 'psid-1' }],
 });
+const PAGE_TOKEN_SENTINEL = 'PAGE_SECRET_SENTINEL_42';
+const PAGE_TOKEN_A = 'PAGE_SECRET_SENTINEL_A';
+const PAGE_TOKEN_B = 'PAGE_SECRET_SENTINEL_B';
 
 jest.mock('../provider.registry', () => ({
     getProvider: () => ({
@@ -31,7 +33,6 @@ jest.mock('../provider.registry', () => ({
         exchangeCode: mockExchangeCode,
         listManagedAssets: mockListManagedAssets,
         getOAuthIdentity: mockGetOAuthIdentity,
-        getAssetAccessToken: mockGetAssetAccessToken,
         subscribeWebhook: mockSubscribeWebhook,
         verifyWebhookSubscription: mockVerifyWebhookSubscription,
     }),
@@ -69,19 +70,47 @@ jest.mock('../meta-channel.service', () => ({
 const stateStore = require('../oauth-state.store');
 const oauthService = require('../meta-oauth.service');
 
-describe('initiateOAuth (facebook) scopes', () => {
+describe('initiateOAuth (facebook) permission surface', () => {
     beforeEach(() => jest.clearAllMocks());
 
-    test('never injects business_management or any Instagram scope', async () => {
+    // Under Facebook Login for Business the Meta Login Configuration owns the
+    // permission set, so the service must not negotiate permissions at all.
+    // It still passes an empty `scopes` to keep the ChannelProvider contract;
+    // what matters is that it never populates it. See
+    // docs/incidents/2026-09-22-meta-login-unavailable.md.
+    test('requests no runtime permissions and never injects business_management or Instagram', async () => {
         await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
         const { scopes } = mockBuildAuthUrl.mock.calls[0][0];
-        // The service delegates the concrete scope list to
-        // MetaMessengerProvider.DEFAULT_SCOPES (asserted in the provider test);
-        // it must never add Instagram or the high-sensitivity business_management.
+
+        expect(scopes).toEqual([]);
         expect(scopes).not.toContain('business_management');
         expect(scopes).not.toContain('instagram_basic');
         expect(scopes).not.toContain('instagram_manage_messages');
         expect(scopes).not.toContain('instagram_manage_comments');
+    });
+
+    // The provider owns config_id; the service must not invent one or reach
+    // around the provider to build its own authorization URL.
+    test('delegates the authorization URL to the provider and returns it unchanged', async () => {
+        mockBuildAuthUrl.mockResolvedValueOnce('https://www.facebook.com/v22.0/dialog/oauth?config_id=stub');
+        const result = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(mockBuildAuthUrl).toHaveBeenCalledTimes(1);
+        expect(result.redirectUrl).toBe('https://www.facebook.com/v22.0/dialog/oauth?config_id=stub');
+    });
+
+    // A provider that fails closed on a missing configuration must surface as a
+    // failed initiation, not as a half-built dialog or a swallowed error.
+    test('propagates a fail-closed provider error instead of returning a URL', async () => {
+        mockBuildAuthUrl.mockRejectedValueOnce(
+            Object.assign(new Error('Facebook login is not configured.'), {
+                status: 500,
+                code: 'META_LOGIN_CONFIG_ID_INVALID',
+            }),
+        );
+
+        await expect(oauthService.initiateOAuth('user-1', 'shop-1', 'facebook'))
+            .rejects.toMatchObject({ code: 'META_LOGIN_CONFIG_ID_INVALID' });
     });
 
     test('builds an OAuth redirect URL + facebook-prefixed state', async () => {
@@ -106,6 +135,100 @@ describe('initiateOAuth (facebook) scopes', () => {
     });
 });
 
+describe('initiateOAuth state binding', () => {
+    const config = require('../../../config/config');
+    const REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+    let savedRedirect;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        savedRedirect = config.metaOAuthRedirectUri;
+        config.metaOAuthRedirectUri = REDIRECT;
+    });
+
+    afterEach(() => {
+        config.metaOAuthRedirectUri = savedRedirect;
+    });
+
+    test('state is platform:shop:user plus a 128-bit hex nonce', async () => {
+        const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(state).toMatch(/^facebook:shop-1:user-1:[0-9a-f]{32}$/);
+    });
+
+    test('draws the nonce from the CSPRNG (crypto.randomBytes, 16 bytes)', async () => {
+        // The format and uniqueness tests below would also pass for Math.random().
+        const crypto = require('crypto');
+        const spy = jest.spyOn(crypto, 'randomBytes');
+        try {
+            await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+            expect(spy).toHaveBeenCalledWith(16);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('every initiation gets a fresh nonce', async () => {
+        const states = new Set();
+        for (let i = 0; i < 25; i += 1) {
+            const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+            states.add(state);
+        }
+        expect(states.size).toBe(25);
+    });
+
+    test('returns, stores and dials with the same state value', async () => {
+        const { state } = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(stateStore.put).toHaveBeenCalledWith(
+            state,
+            expect.objectContaining({ userId: 'user-1', shopId: 'shop-1', platform: 'facebook' }),
+        );
+        expect(mockBuildAuthUrl.mock.calls[0][0].state).toBe(state);
+    });
+
+    test('binds the exact redirect URI into both the stored state and the dialog request', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+
+        expect(stateStore.put.mock.calls[0][1].redirectUri).toBe(REDIRECT);
+        expect(mockBuildAuthUrl.mock.calls[0][0].redirectUri).toBe(REDIRECT);
+    });
+
+    test('passes no scopes, leaving the consent request to the provider allowlist', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(mockBuildAuthUrl.mock.calls[0][0].scopes).toEqual([]);
+    });
+});
+
+// The 403 paths for a different user, shop or platform are covered by the
+// test.each in 'OAuth callback null-state guards'. Only the redirect binding is
+// added here. The state store and provider are mocked in this file: single-use
+// consumption and TTL are covered by the oauth-state store tests, and note that
+// handleCallback consumes the state (take) before it checks who is calling.
+describe('OAuth callback redirect URI binding', () => {
+    const config = require('../../../config/config');
+    let savedRedirect;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        savedRedirect = config.metaOAuthRedirectUri;
+    });
+
+    afterEach(() => {
+        config.metaOAuthRedirectUri = savedRedirect;
+    });
+
+    test('exchanges the code with the redirect URI stored in state, not live config', async () => {
+        config.metaOAuthRedirectUri = 'https://changed.example.com/channels/oauth-callback';
+
+        await oauthService.handleCallback('auth-code', 'state-ok', 'user-xyz', 'shop-abc');
+
+        expect(mockExchangeCode).toHaveBeenCalledWith({
+            code: 'auth-code',
+            redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
+        });
+    });
+});
+
 describe('OAuth callback null-state guards', () => {
     beforeEach(() => jest.clearAllMocks());
 
@@ -124,6 +247,8 @@ describe('OAuth callback null-state guards', () => {
         const pages = [{
             id: 'PAGE_42',
             name: 'My Page',
+            category: null,
+            pictureUrl: null,
             tasks: ['MESSAGING', 'MANAGE'],
             connectable: true,
             reason: null,
@@ -151,6 +276,53 @@ describe('OAuth callback null-state guards', () => {
             code: 'auth-code',
             redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
         });
+    });
+
+    test('retains the discovered Page credential server-side without returning or logging it', async () => {
+        const pages = [{
+            id: 'PAGE_42',
+            name: 'My Page',
+            category: 'Shopping',
+            pictureUrl: null,
+            tasks: ['MESSAGING', 'MANAGE'],
+            connectable: true,
+            reason: null,
+            access_token: PAGE_TOKEN_SENTINEL,
+        }];
+        mockListManagedAssets.mockImplementationOnce(async ({ pageCredentials }) => {
+            pageCredentials.PAGE_42 = {
+                pageId: 'PAGE_42',
+                token: PAGE_TOKEN_SENTINEL,
+                expiresAt: null,
+            };
+            return pages;
+        });
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+        try {
+            const result = await oauthService.handleCallback('auth-code', 'state-ok', 'user-xyz', 'shop-abc');
+            const serializedResponse = JSON.stringify(result);
+            const serializedLogs = JSON.stringify(logSpy.mock.calls);
+
+            expect(result.pages).toEqual([expect.objectContaining({ id: 'PAGE_42' })]);
+            expect(result.pages[0]).not.toHaveProperty('access_token');
+            expect(serializedResponse).not.toContain(PAGE_TOKEN_SENTINEL);
+            expect(serializedLogs).not.toContain(PAGE_TOKEN_SENTINEL);
+            expect(stateStore.put).toHaveBeenCalledWith(
+                `callback:shop-abc:facebook:${result.tempToken}`,
+                expect.objectContaining({
+                    pageCredentials: {
+                        PAGE_42: {
+                            pageId: 'PAGE_42',
+                            token: PAGE_TOKEN_SENTINEL,
+                            expiresAt: null,
+                        },
+                    },
+                }),
+            );
+        } finally {
+            logSpy.mockRestore();
+        }
     });
 
     test('carries a reconnect target from OAuth state into the opaque callback payload', async () => {
@@ -202,7 +374,6 @@ describe('connectPage() webhook verify wiring', () => {
         mockUpsertFromOAuth.mockResolvedValue(CHANNEL);
         mockFindByShopAndAsset.mockResolvedValue(CHANNEL);
         mockConfirmWebhookActive.mockResolvedValue(CHANNEL);
-        mockGetAssetAccessToken.mockResolvedValue({ token: 'page-tok', expiresAt: null });
         mockSubscribeWebhook.mockResolvedValue(undefined);
         stateStore.get.mockResolvedValue({
             userToken: 'stored-user-token',
@@ -220,6 +391,13 @@ describe('connectPage() webhook verify wiring', () => {
             },
             userId: USER_ID,
             shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: {
+                    pageId: ASSET_ID,
+                    token: PAGE_TOKEN_SENTINEL,
+                    expiresAt: null,
+                },
+            },
         });
     });
 
@@ -241,6 +419,13 @@ describe('connectPage() webhook verify wiring', () => {
             },
             userId: USER_ID,
             shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: {
+                    pageId: ASSET_ID,
+                    token: PAGE_TOKEN_SENTINEL,
+                    expiresAt: null,
+                },
+            },
         });
 
         await expect(
@@ -250,7 +435,6 @@ describe('connectPage() webhook verify wiring', () => {
             code: 'META_PAGE_TASKS_REQUIRED',
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 
@@ -271,20 +455,40 @@ describe('connectPage() webhook verify wiring', () => {
             },
             userId: USER_ID,
             shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: {
+                    pageId: ASSET_ID,
+                    token: PAGE_TOKEN_SENTINEL,
+                    expiresAt: null,
+                },
+            },
         });
         mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages'] });
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockGetAssetAccessToken).toHaveBeenCalledWith({
-            assetId: ASSET_ID,
-            userToken: 'stored-user-token',
-        });
-        expect(mockUpsertFromOAuth).toHaveBeenCalled();
+        expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
+            pageAccessToken: PAGE_TOKEN_SENTINEL,
+        }));
     });
 
-    test('rejects a tokenless provider result before persisting a connected channel', async () => {
-        mockGetAssetAccessToken.mockResolvedValueOnce({ token: null, expiresAt: null });
+    test('fails closed when the authorized Page has no server-side credential', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: ['MESSAGING', 'MANAGE'],
+            }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            pageCredentials: {},
+        });
 
         await expect(
             oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
@@ -294,6 +498,7 @@ describe('connectPage() webhook verify wiring', () => {
         });
 
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+        expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
 
     test('calls updateStatus(ERROR, webhook_subscription_unverified) when verify returns ok:false', async () => {
@@ -301,12 +506,9 @@ describe('connectPage() webhook verify wiring', () => {
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockGetAssetAccessToken).toHaveBeenCalledWith({
-            assetId: ASSET_ID,
-            userToken: 'stored-user-token',
-        });
         expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
             displayName: 'Stored Page Name',
+            pageAccessToken: PAGE_TOKEN_SENTINEL,
         }));
         expect(mockSubscribeWebhook).toHaveBeenCalledTimes(1);
         expect(mockVerifyWebhookSubscription).toHaveBeenCalledTimes(1);
@@ -388,8 +590,93 @@ describe('connectPage() webhook verify wiring', () => {
             message: expect.stringContaining('was not selected'),
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['different user', { userId: 'user-other', shopId: SHOP_ID }],
+        ['different shop', { userId: USER_ID, shopId: 'shop-other' }],
+    ])('rejects a connect attempt from a %s before reading the Page credential', async (_label, binding) => {
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{ id: ASSET_ID, name: 'Stored Page Name', tasks: ['MESSAGING', 'MANAGE'] }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            ...binding,
+            pageCredentials: {
+                [ASSET_ID]: { pageId: ASSET_ID, token: PAGE_TOKEN_SENTINEL, expiresAt: null },
+            },
+        });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({ status: 403 });
+
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+    });
+
+    test('uses the credential bound to the selected Page in a multi-Page callback', async () => {
+        const secondPageId = 'PAGE_99';
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [
+                { id: ASSET_ID, name: 'Page A', tasks: ['MESSAGING', 'MANAGE'] },
+                { id: secondPageId, name: 'Page B', tasks: ['MESSAGING', 'MANAGE'] },
+            ],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: secondPageId, pageScopedUserId: 'psid-b' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: { pageId: ASSET_ID, token: PAGE_TOKEN_A, expiresAt: null },
+                [secondPageId]: { pageId: secondPageId, token: PAGE_TOKEN_B, expiresAt: null },
+            },
+        });
+        mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages'] });
+
+        await oauthService.connectPage(secondPageId, 'Browser supplied name', 'user-tok', USER_ID, SHOP_ID, 'facebook');
+
+        expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
+            metaAssetId: secondPageId,
+            displayName: 'Page B',
+            pageAccessToken: PAGE_TOKEN_B,
+        }));
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalledWith(expect.objectContaining({
+            pageAccessToken: PAGE_TOKEN_A,
+        }));
+    });
+
+    test('rejects a credential whose binding does not match the authorized Page ID', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{ id: ASSET_ID, name: 'Stored Page Name', tasks: ['MESSAGING', 'MANAGE'] }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: { pageId: 'PAGE_OTHER', token: PAGE_TOKEN_A, expiresAt: null },
+            },
+        });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({
+            status: 502,
+            code: 'META_PAGE_ACCESS_TOKEN_MISSING',
+        });
+
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+        expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
 
     test('rejects a reconnect callback that targets a different channel or Page', async () => {
@@ -419,7 +706,6 @@ describe('connectPage() webhook verify wiring', () => {
             code: 'META_RECONNECT_TARGET_MISMATCH',
         });
 
-        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
         expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 

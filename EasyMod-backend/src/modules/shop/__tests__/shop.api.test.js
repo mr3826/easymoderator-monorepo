@@ -7,6 +7,17 @@
 
 // ── In-memory Redis ───────────────────────────────────────────────────────────
 const redisStore = {};
+jest.mock('../../../config/redis', () => ({
+    cacheRedis: null,
+    sessionRedis: null,
+    rateLimitRedis: null,
+    legacyRedis: null,
+}));
+
+jest.mock('../../auth/session-invalidation.service', () => ({
+    invalidateUserSessions: jest.fn().mockResolvedValue(1),
+}));
+
 jest.mock('../../../utils/redis-client', () => ({
     get: jest.fn(async (k) => redisStore[k] ?? null),
     set: jest.fn(async (k, v) => { redisStore[k] = v; }),
@@ -39,7 +50,7 @@ const mockUserShop = {
 };
 
 jest.mock('../../entities', () => ({
-    User: { findByPk: jest.fn() },
+    User: { findByPk: jest.fn(), update: jest.fn() },
     Shop: {
         findByPk: jest.fn(),
         create: jest.fn(),
@@ -64,6 +75,7 @@ jest.mock('../../entities', () => ({
     },
     Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
+    GrowthOsUserRole: { findOne: jest.fn() },
 }));
 
 // `define` is not optional: entity modules reached through the router call it
@@ -153,7 +165,9 @@ beforeAll(() => {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    const { Shop, UserShop } = require('../../entities');
+    const { Shop, User, UserShop } = require('../../entities');
+    User.findByPk.mockResolvedValue({ id: 'user-1' });
+    User.update.mockResolvedValue([1]);
     Shop.findByPk.mockResolvedValue({ ...mockShopInstance, update: jest.fn().mockResolvedValue(true) });
     Shop.create.mockResolvedValue({ ...mockShopInstance, toJSON: mockShopInstance.toJSON });
     Shop.destroy.mockResolvedValue(1);
@@ -162,6 +176,8 @@ beforeEach(() => {
     UserShop.create.mockResolvedValue({ id: 'us-1' });
     const { DeliveryIntegration } = require('../../entities');
     DeliveryIntegration.findAll.mockResolvedValue([]);
+    const { GrowthOsUserRole } = require('../../entities');
+    GrowthOsUserRole.findOne.mockResolvedValue(null);
     const { MetaChannel, PolicyDecision } = require('../../entities');
     MetaChannel.findAll.mockResolvedValue([]);
     PolicyDecision.findAll.mockResolvedValue([]);

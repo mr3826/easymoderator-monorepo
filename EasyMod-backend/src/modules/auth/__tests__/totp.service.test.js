@@ -16,32 +16,36 @@ const mockRedis = {
     get: jest.fn((key) => Promise.resolve(redisStore[key] || null)),
     setex: jest.fn((key, ttl, val) => { redisStore[key] = val; return Promise.resolve('OK'); }),
     del: jest.fn((key) => { delete redisStore[key]; return Promise.resolve(1); }),
-    // Real Redis executes SET ... NX and MULTI/EXEC atomically; the mock does
-    // the same by resolving each synchronously at call time.
+    // Real Redis executes SET ... NX and GETDEL atomically; the mock does the
+    // same by resolving each synchronously at call time.
     set: jest.fn((key, val, ...args) => {
         if (args.includes('NX') && key in redisStore) return Promise.resolve(null);
         redisStore[key] = val;
         return Promise.resolve('OK');
     }),
-    multi: jest.fn(() => {
-        const ops = [];
-        const chain = {
-            get: (key) => { ops.push(['get', key]); return chain; },
-            del: (key) => { ops.push(['del', key]); return chain; },
-            exec: () => Promise.resolve(ops.map(([op, key]) => {
-                if (op === 'get') return [null, redisStore[key] || null];
-                const existed = key in redisStore;
-                delete redisStore[key];
-                return [null, existed ? 1 : 0];
-            })),
-        };
-        return chain;
+    getdel: jest.fn((key) => {
+        const value = key in redisStore ? redisStore[key] : null;
+        delete redisStore[key];
+        return Promise.resolve(value);
     }),
     status: 'ready'
 };
 
+const mockTransaction = { LOCK: { UPDATE: 'UPDATE' } };
+const mockInvalidateUserSessions = jest.fn().mockResolvedValue(2);
+
 jest.mock('src/utils/redis-client', () => ({
     getRedisClient: () => mockRedis
+}));
+
+jest.mock('src/utils/database/database-setup', () => ({
+    sequelize: {
+        transaction: jest.fn(async (callback) => callback(mockTransaction)),
+    },
+}));
+
+jest.mock('src/modules/auth/session-invalidation.service', () => ({
+    invalidateUserSessions: mockInvalidateUserSessions,
 }));
 
 // Mock User entity
@@ -210,6 +214,27 @@ describe('TOTP Service Security', () => {
             // The pending secret should be encrypted (contains IV:TAG:ENCRYPTED format)
             const encryptedSecret = updateCall[0].settings.totp_pending;
             expect(encryptedSecret).toMatch(/^[a-f0-9]{24}:[a-f0-9]{32}:[a-f0-9]+$/);
+        });
+
+        it('disables TOTP and revokes the existing access/session generation atomically', async () => {
+            const secret = await enableTestTotp();
+            const token = currentTotpToken(secret);
+
+            await expect(totpService.disableTotp('user-1', token)).resolves.toEqual({ disabled: true });
+
+            expect(mockUser.update).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    settings: expect.objectContaining({
+                        totp_secret: null,
+                        totp_pending: null,
+                        totp_enabled: false,
+                    }),
+                }),
+                { transaction: mockTransaction },
+            );
+            expect(mockInvalidateUserSessions).toHaveBeenCalledWith('user-1', {
+                transaction: mockTransaction,
+            });
         });
     });
 

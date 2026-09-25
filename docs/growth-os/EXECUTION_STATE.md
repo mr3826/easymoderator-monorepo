@@ -1,17 +1,17 @@
 # Growth OS Execution State
 
-Updated: 2026-08-21
+Updated: 2026-09-23
 
 ## Current execution
 
-- `CURRENT_MAIN`: `cf634fab5d47477f9cda4113237561471454a8ae`
-- `BASE_MAIN`: latest `origin/main` after PR #46 squash merge
-- `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
-- `BRANCH`: `docs/growth-os-restore-receipt`
-- `PHASE`: Phase C — safety mechanism published; rollout authorization pending
-- `STATUS`: pre-deploy receipts pass; post-merge restore mechanism receipt passes; human authorization and live release evidence remain blocked
-- `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
-- `PRODUCTION_CHANGED`: NO
+- `CURRENT_MAIN`: current `origin/main` (verify with `git rev-parse origin/main`)
+- `BASE_MAIN`: current `origin/main`; post-release documentation/test commits are not deployed
+- `WORKTREE`: `D:\easymod\production-conversation-reply-engine`
+- `BRANCH`: `main`
+- `PHASE`: production release receipt verified; Growth operator bootstrap remains open
+- `STATUS`: CI, migration, schema, backend version, and public smoke receipts pass; post-release main changes are docs/tests only, while live Growth digest and operator bootstrap remain unverified
+- `RELEASE_STATUS`: CONDITIONAL — merchant production is running the verified main SHA; Growth operator gates remain open
+- `PRODUCTION_CHANGED`: YES — bounded workflow dispatch `35812554066`
 
 ## Phase 1 base proof
 
@@ -362,7 +362,10 @@ does not rebuild the already-merged prospect foundation.
 
 ## Known limitations and pre-existing debt
 
-- The repository has no tracked `docs/growth-os/GROWTH_OS_GOAL.md` or `CURRENT_STATE.md`; the available untracked master-goal document was preserved in the user's root worktree and historical tracked Growth documents were used as context. This Phase 2 state file is the durable evidence record.
+- The historical Phase 2 receipt said `docs/growth-os/GROWTH_OS_GOAL.md` and
+  `CURRENT_STATE.md` were absent. The current repository contains the tracked
+  `GROWTH_OS_GOAL.md` and `GROWTH_OS_CURRENT_STATE.md`; this receipt is retained
+  as history and the reconciliation appendix is the current platform record.
 - Node `v25.6.1` is newer than the repository's Node 20 engine. The local unit/security gates pass, but runs without Redis emit pre-existing post-test BullMQ/ioredis `ECONNREFUSED` logs; the disposable PostgreSQL/Redis gate passes with Redis available.
 - The two existing quarantine suites remain unrelated debt: the chatbot suite currently assumes a legacy route, and the smart-payment suite requires an unsupported CommonJS/ESM Chai load. They remain within the tracked quarantine allowance and were not changed by Phase 3.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
@@ -397,8 +400,7 @@ only the non-production rollback-rehearsal CI wiring.
 
 The following remain explicitly deferred and were not expanded by the hardening
 implementation: unindexed `%LIKE%` linkage suggestions; no `pg_trgm` index for `q`
-search; punctuation-normalized business-name search gaps; unbounded importer
-source loads and intra-batch dry-run miscounts; IP-only rate limits covering
+search; punctuation-normalized business-name search gaps; IP-only rate limits covering
 only a subset of routes; entity/migration index drift; missing role DDL checks
 and partial indexes on the `db:sync` path; and the `merged_into_id ON DELETE SET
 NULL` conflict with the merge check. Outreach, Next Best Action, demos, trials,
@@ -450,3 +452,560 @@ precondition, not authorization to deploy.
   `OVERALL_GROWTH_OS_RELEASE_VERDICT: NO-GO`; it closes no gate and changes no gate value.
 - `CURRENT_STATE_OPEN_ACTS`: first Growth rollout, Founder bootstrap, and the live
   `growth.easymod.tech` browser walkthrough remain the three open release acts.
+
+## Historical platform audit reconciliation (2026-09-21)
+
+This appendix is the current platform-audit receipt. Earlier dated receipts and
+their cited historical SHAs remain unchanged and are not rewritten.
+
+```text
+AUDIT_DATE=2026-09-21
+CURRENT_MAIN=cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4
+GROWTH_PR_HEAD=1f4cd9de398f9814a2e8dc2cb69fe22b83bc1f05
+PRODUCTION_DEPLOYMENT_SHA=cf57db1e4706c9d7b3b32f180e1dbede3b64e7c4
+PRODUCTION_DEPLOY_ENABLED=false
+GROWTH_WORKFLOW_BOUNDARY=SEPARATE_PATH_FILTERED_PUSH_AND_WORKFLOW_CALL
+GROWTH_LIVE_ORIGIN=NOT_VERIFIED
+GROWTH_OPERATOR_BOOTSTRAP=NOT_VERIFIED
+GROWTH_NATIVE_PRODUCTION_DIGEST=NOT_VERIFIED
+GROWTH_RELEASE_VERDICT=NO-GO / NOT READY
+```
+
+The old `CURRENT_MAIN`, worktree, and live-gate values above this appendix are
+historical evidence. The current code still contains the Growth OS surface and
+its separate verification/publish workflow, but this audit found no new live
+Growth-origin browser, TLS, Founder bootstrap, or operator-delivery receipt.
+The production deploy gate was explicitly restored to `false` after the latest
+manual deployment run.
+
+## Post-reconciliation state (2026-09-23)
+
+The dated audit above remains historical. After PR #127 was validated and merged,
+the authoritative main ref became `45f651927aae21db5aea9de62c675cbb6f8e5bbb`.
+The production deployment receipt remains the earlier `cf57db1e...` record;
+no deployment is inferred from the merge.
+
+## Branch Validation Receipt / Status (2026-09-14)
+
+This is an additive receipt for the current development branch. Historical
+phase, release, and audit records above are preserved and are not reclassified
+by this section.
+
+- `BRANCH`: `feat/growth-os-internal-control-plane`
+- `HEAD`: `d76877d`
+- `BASE`: `origin/main` at `77790a8`
+- `WORKTREE`: `DIRTY` — pre-existing implementation, test, workflow, package, and historical-doc changes were not modified by this docs pass
+- `SOURCE_OF_TRUTH`: current executable code and current test/validation receipts; older plans remain historical
+- `DOCS_ONLY_PASS`: `YES` — this pass changed only the four permitted Growth OS documentation files; pre-existing code, test, workflow, and package changes were left untouched
+- `PRODUCTION_COMMANDS`: `NOT_RUN`
+- `DEPLOYMENT_STATUS`: `NOT_DEPLOYED_TO_PRODUCTION`
+- `PRODUCTION_MUTATED`: `NO`
+- `META_REVIEW_CONFIGURATION_CHANGED`: `NO`
+- `PRODUCTION_WORKFLOW_OR_CONFIG_MUTATED`: `NO`
+- `LOCAL_DOC_VALIDATION`: `READ-ONLY SOURCE REVIEW; no application test, build, migration, browser, or deployment command was run by this documentation pass`
+- `PRIOR_EXTENSION_RECEIPT`: `31 tests passed, 0 failed` — implementation transcript receipt; not rerun by this documentation pass
+- `PRIOR_BACKEND_GROWTH_RECEIPT`: `7 suites, 58 tests passed` — implementation transcript receipt; not rerun by this documentation pass
+- `PRIOR_CONTROL_PLANE_INTEGRATION_RECEIPT`: `18/18 passed` — implementation transcript receipt; not rerun by this documentation pass
+- `ACCESS_AND_PROSPECT_INTEGRATION_FINAL_RECEIPT`: `TO BE FILLED BY LEAD`
+- `BROWSER_E2E_FINAL_RECEIPT`: `TO BE FILLED BY LEAD`; no claim that all E2E passed is made here
+- `FINAL_BRANCH_VALIDATION_RECEIPT`: `TO BE FILLED BY LEAD` after the final affected suites are rerun; prior receipts above are not a current all-pass claim
+
+## Targeted Growth-user creation diagnosis receipt (2026-09-14)
+
+- `TARGETED_BROWSER_E2E`: `PASS` — `npx playwright test tests/e2e/admin-journey.spec.ts --project=chromium --no-deps --grep "super creates a growth user" --trace on`; 1 Chromium scenario passed against an isolated disposable PostgreSQL/Redis stack.
+- `FAILURE_WIRE_EVIDENCE`: the failing POST returned `400` with `GROWTH_OS_WORK_INVALID_INPUT` and `"email" must be a valid email`; the initial user-list GET returned `500` with `column reference "is_active" is ambiguous`.
+- `FAILURE_TRACE`: `EasyMod-growth/test-results/admin-journey-super-create-f2d68-finds-it-in-the-grant-table-chromium/trace.zip` and its `error-context.md` capture the failed UI state and both server errors.
+- `FIX_SCOPE`: qualified the Growth role ordering expression, aligned Growth user email validation with the existing syntactic email policy, and corrected the E2E assertion to the established `GROWTH USER` rendered label.
+- `PRODUCTION_CHANGED`: `NO` — only disposable local services and database resources were used; no production configuration or service was touched.
+
+## Targeted Cleanup Receipt (2026-09-14)
+
+- `REFERENCE_AUDIT`: `DashboardPage` had no route import; its only code consumer
+  was a stale `App.test.tsx` mock, and its CSS selectors were otherwise
+  unreferenced. `eligibleForNextPhase` had no frontend type, client, or UI
+  consumer; it was only emitted by the mapper and asserted by stale tests.
+- `CLEANUP`: removed the orphaned dashboard component and its CSS, removed the
+  unconsumed eligibility field and related assertions, and updated the affected
+  Growth OS references.
+- `EXTENSION_GATE`: `npm run test:extension` passed **33/33 tests**, including
+  `relay.test.js`; extension runtime files were not changed.
+- `GROWTH_FOCUSED_GATE`: affected `App.test.tsx` and
+  `ProspectListPage.test.tsx` passed **11/11 tests** with one Vitest worker.
+- `BACKEND_FOCUSED_GATE`: prospect lifecycle suite passed **1 suite, 8 tests**.
+- `GROWTH_TYPECHECK`: blocked by pre-existing errors in
+  `EasyMod-growth/src/api/client.test.ts:92`; no cleanup file was implicated.
+- `PRODUCTION_COMMANDS`: `NOT RUN`; no commit was created.
+
+## Temporary credential hardening receipt (2026-09-14)
+
+- `SCOPE`: generated Growth OS invite/reset passwords only; normal users and
+  canonical `SUPER_ADMIN`/`GROWTH_USER` role resolution remain unchanged
+- `CONTROL`: `users.must_change_password` plus nullable
+  `users.temporary_password_expires_at`; generated credentials expire after 24
+  hours, forced sessions cannot access normal routes or refresh, and completion
+  clears the state and revokes all sessions
+- `MFA_PATH`: TOTP completion preserves the forced-change claim before issuing
+  the restricted session
+- `UI_PATH`: Growth login redirects restricted sessions to `/change-password`;
+  the Growth user-admin reveal displays the expiry and never persists plaintext
+- `BACKEND_AUTH_TEST`: `auth.test.js` passed **17/17 tests**, including expiry,
+  route blocking, forced completion, and token-version revocation
+- `TOTP_TEST`: `totp.service.test.js` passed **7/7 tests**
+- `GROWTH_TYPECHECK`: `npm run typecheck` passed
+- `GROWTH_VITEST`: the full suite passed **23 files / 122 tests** before the
+  later worker/resource-constrained rerun; no assertion failure was reported
+- `INTEGRATION_SERVICES`: disposable PostgreSQL `127.0.0.1:55432` and Redis
+  `127.0.0.1:56379` were unavailable, so the modified real-database control-plane
+  integration was not run
+- `MIGRATION`: existing PostgreSQL deployments must run
+  `20260914_001_add_temporary_password_controls`; fresh Sequelize sync creates
+  the columns from the updated User entity
+- `PRODUCTION_CHANGED`: `NO`; no production configuration, deployment, or
+  commit was performed
+
+## Backend security-blocker validation receipt (2026-09-15)
+
+- `SCOPE`: backend-only Growth role/membership boundary, shop membership
+  transaction safety, credential/session invalidation, TOTP revocation, and
+  controlled schema bootstrap; unrelated dirty work was preserved
+- `UNIT_REGRESSIONS`: `9 suites / 115 tests` passed, covering shop service/API,
+  Growth role/authz/prospect security, auth/session invalidation, TOTP, and
+  strict cache behavior
+- `GROWTH_INTEGRATION`: affected access/prospect suites `17/17` passed;
+  control-plane suite `18/18` passed on disposable PostgreSQL/Redis,
+  including temporary-password completion and stale-token rejection
+- `MIGRATION_BOOTSTRAP`: `npm run migrate` and `npm run db:sync` completed
+  against the tmpfs-backed disposable PostgreSQL database; Growth role,
+  prospect/workflow, follow-up, note, and temporary-password schemas were
+  present afterward
+- `TOTP_DISPOSABLE_CHECK`: real service check passed with `enabled:false`,
+  `tokenVersion:1`, and `refreshToken:null` after disable
+- `PRODUCTION_CHANGED`: `NO`; disposable containers only, no commit, push,
+  merge, deploy, or production connection
+
+## Browser-extension hardening receipt (2026-09-15)
+
+This is an additive receipt for the authorized browser-extension slice. Existing
+dirty implementation and workflow changes outside this slice were not modified.
+
+- `EXTENSION_SCOPE`: manual public-web capture only; no cookies/history/tabs
+  broad permission, background scraping, API token, outreach, or admin action
+  was added.
+- `EXTENSION_TEST`: `npm run test:extension` passed **38/38 tests**, including
+  social-host rejection, URL credential stripping, popup target-tab cleanup,
+  development-manifest target selection, and nonce/origin/path relay checks.
+- `EXTENSION_VALIDATION`: `npm run validate:extension` passed; release and
+  development manifests remain bounded and all extension JavaScript passed
+  syntax validation. No distributable package was produced.
+- `GROWTH_CAPTURE_TEST`: focused `CapturePage.test.tsx` passed **10/10 tests**,
+  including asynchronous `MessageEvent` delivery, spoofed-message rejection,
+  duplicate-integrity UI, storage fallback, and URL credential stripping.
+- `GROWTH_TYPECHECK`: `npm run typecheck --workspace=easymod-growth` passed.
+- `GROWTH_BUILD`: `npm run build --workspace=easymod-growth` passed.
+- `GROWTH_DEV_PORT`: Vite, Playwright, the development extension manifest, and
+  the extension's local origin contract use `127.0.0.1:5175`.
+- `GROWTH_ORIGIN_CONFIG_TEST`: focused backend origin/CSRF suites passed
+  **11/11 tests** after aligning the shared development Growth origin.
+- `GROWTH_WORKFLOW_GATE`: `growth-os.yml` now runs extension source validation
+  and extension tests in its existing verification job; CI was not triggered.
+- `PRODUCTION_CHANGED`: `NO`; no commit, push, merge, deploy, workflow
+  dispatch, production connection, or production data mutation occurred.
+- `UNRESOLVED`: browser-installed Chromium handoff against the live Growth
+  origin remains unverified; the release host/TLS and operator bootstrap gates
+  above remain unchanged and open.
+
+## Frontend contract UX hardening receipt (2026-09-15)
+
+This is an additive receipt for the authorized Growth frontend contract slice.
+Pre-existing backend, importer, analytics, extension, workflow, and unrelated
+frontend changes remain untouched.
+
+- `SCOPE`: permission-set-driven legacy navigation and route guards, Merchant
+  360 note-author rendering, duplicate-blocking Quick Add/Capture UX, Growth
+  user admin reason/search validation alignment, audit permission alignment,
+  and the homepage assigned-prospect destination.
+- `GROWTH_FOCUSED_GATE`: **9 files, 54 tests passed**.
+- `GROWTH_FULL_GATE`: **23 files, 132 tests passed**.
+- `GROWTH_TYPECHECK`: `npm test` completed with `tsc --noEmit` passing.
+- `E2E`: not run in this pass; live Growth-origin browser delivery remains
+  unverified and the existing release gates remain open.
+- `PRODUCTION_CHANGED`: `NO`; no commit, push, merge, deploy, reset, or
+  production connection was performed.
+
+## Importer safety receipt (2026-09-15)
+
+- `SCOPE`: Growth prospect importer only; analytics and producer paths were not changed.
+- `CONTRACT`: dry-run remains the default; `--apply`, bounded `--batch-size`,
+  deterministic source ordering, `--run-id`, and `--receipt` are explicit CLI
+  controls.
+- `BOUNDED_READS`: CRM and Partner sources use ascending `(created_at, id)`
+  keyset pages with required-column projections. User, shop, and owner lookups
+  are batch-scoped and exclude passwords, tokens, settings, and unrelated fields.
+- `DRY_RUN_DUPLICATES`: in-run source-reference and normalized-identity
+  reservations make duplicate input rows deterministic without writes.
+- `APPLY_SAFETY`: per-row service transactions retain database unique constraints
+  and unique-constraint conflict handling for concurrent apply runs.
+- `RESTART_SEMANTICS`: receipts are durable JSON execution records; restart is
+  intentionally idempotent reprocessing, not checkpoint resumability.
+- `FAILURE_CONTRACT`: row failures are retained in the receipt and the CLI exits
+  nonzero when any row fails.
+- `HISTORICAL_MAPPING`: source timestamps and valid historical statuses are
+  preserved; inactive shops do not force conversion. Import run IDs are present
+  in prospect event and audit metadata.
+- `VALIDATION`: importer-focused integration tests and changed-file syntax checks
+  were run for this worktree; exact command results are recorded in the handoff
+  response for this task.
+
+## Phase 2 analytics integrity receipt (2026-09-15)
+
+- `SCOPE`: Growth analytics backend/workspace, funnel contracts, Growth analytics
+  labels/types/tests, and metrics definitions only; importer files were not changed.
+- `ACTIVATION_DEFINITION`: canonical Growth activation is a non-merged prospect
+  in `converted` status linked to an active merchant/shop. First successful AI
+  reply is recorded separately as `shop.settings.first_ai_reply` and is not activation.
+- `FUNNEL_INTEGRITY`: merged tombstones are excluded from status/source/lost
+  denominators; imported cohorts use `source_recorded_at`, while `created_at`
+  remains import arrival time and prospect-event `created_at` remains event time.
+- `TIMING_INTEGRITY`: unordered `limit: 500` timing reads were replaced with
+  ordered, uncapped reads and deterministic in-process first-event aggregation.
+- `METRICS`: qualification timing, first-follow-up timing, lost-reason counts,
+  source-to-activation rates, and lead-to-activation are returned from available
+  ledger/event fields; unavailable metrics remain explicit in `notAvailable`.
+- `EVENT_SECURITY`: public funnel ingestion is limited to `landing_view` and
+  `signup_started`; privileged lifecycle events require the trusted server
+  producer API and accepted rows include actor/correlation metadata where present.
+- `BACKEND_TEST`: focused analytics/security suites passed **5 suites, 40 tests**
+  (`growth-metrics`, `funnel-events`, funnel route security, workspace analytics,
+  and Growth authorization scope coverage).
+- `GROWTH_TEST`: focused `AnalyticsPage` and `SourcesPage` tests passed **2 files,
+  9 tests**; Growth TypeScript check passed.
+- `SYNTAX`: changed analytics/prospect/merchant backend JavaScript syntax checks passed.
+- `DIFF_SCOPE`: no commit, push, importer modification, deployment, or production
+  connection was performed.
+
+## Phase 2 funnel producer boundary receipt (2026-09-15)
+
+- `CALL_SITE_AUDIT`: every production internal funnel producer now calls
+  `recordInternalFunnelEvent`; the public analytics controller is the only
+  production caller of `recordFunnelEvent`.
+- `PRODUCERS`: audited signup completion, inbound consent, AI reply, order,
+  RTO, partner, top-up, plan/usage, and renewal success/failure paths.
+- `BEST_EFFORT`: existing catch-and-log/swallow behavior was preserved at each
+  producer; no producer failure is promoted into the business operation.
+- `TEST`: analytics and producer regression command passed **14 suites, 222
+  tests** with `--forceExit`; existing local Redis/BullMQ connection-refused
+  diagnostics were emitted by worker initialization.
+- `SYNTAX`: all changed analytics and producer JavaScript files passed
+  `node --check`; `git diff --check` passed.
+- `TRUSTED_API_ASSERTION`: funnel service tests verify privileged events reject
+  the untrusted API and trusted internal writes retain actor/correlation metadata.
+- `PRODUCTION_CHANGED`: `NO`; no importer file, commit, deployment, or
+  production connection was changed.
+
+## Final local verification receipt (2026-09-15)
+
+- `IMPORTER_UNIT`: `PASS` — importer contract, 1 suite / 3 tests.
+- `ANALYTICS_FOCUSED`: `PASS` — 3 suites / 23 tests; producer regression run,
+  14 suites / 222 tests.
+- `BACKEND_BUILD`: `PASS` — backend build syntax check.
+- `GROWTH_UNIT_TYPECHECK`: `PASS` — 23 files / 133 tests and TypeScript check.
+- `GROWTH_BUILD`: `PASS` — production Vite build.
+- `EXTENSION`: `PASS` — 38/38 tests and manifest/source validation.
+- `DISPOSABLE_INTEGRATION`: `PASS` — 14 suites / 86 tests with PostgreSQL and
+  Redis containers cleaned up by the harness.
+- `PLAYWRIGHT_E2E`: `FAIL` — 22 passed, 3 failed, 4 dependent scenarios not
+  run. Failures are in the admin temporary-session flow, lifecycle status-option
+  flow, and masked-merchant copy assertion; artifacts remain under
+  `EasyMod-growth/test-results`.
+- `BACKEND_DEFAULT_UNIT`: `FAIL/BLOCKED` — the default run reported 224 suites
+  passed but failed test discovery for five untracked tests and a Redis-dependent
+  grounding timeout. An exclusion run reported 226 suites passed and 17
+  disposable/environment-dependent suites failed without configured services;
+  the dedicated disposable integration gate passed.
+- `TEST_DISCOVERY`: `BLOCKED` — five intended backend test files remain
+  untracked. No files were staged merely to hide this state.
+- `DIFF_CHECK`: `PASS` — `git diff --check`.
+- `PRODUCTION_CHANGED`: `NO`; no commit, push, deployment, production
+  connection, or production data mutation occurred.
+
+## Stabilization checkpoint receipt (2026-09-15)
+
+- `START`: branch `feat/growth-os-internal-control-plane`, head
+  `d76877dc7329a74fc18f369d968d39234ac0cb2b2`, base
+  `77790a833da372a03899686a365d7a40b2a95a67`, 117 tracked changes, 34
+  untracked paths, 2 deletions, and 0 staged paths.
+- `CLASSIFICATION`: every starting path was classified; no unknown or
+  unrelated path was found. The attachment upload tree was generated test
+  output, removed, and ignored. The deleted Dashboard page remains deleted;
+  the deleted prospect E2E was superseded while its missing filter coverage
+  was restored in the replacement lifecycle spec.
+- `BACKEND`: full controlled unit suite `229/229` suites and `2819/2819`
+  tests; security `49/49` suites and `452/452` tests; backend build and test
+  discovery passed. Unit verification explicitly unset the ambient local
+  Redis URL because the unit contract is no-Redis.
+- `INTEGRATION`: disposable PostgreSQL/Redis `14/14` suites and `87/87`
+  tests; the healthy migration plus schema-drift audit passed on a fresh
+  loopback-only database. Meta-shaped disposable E2E passed `43/43` tests.
+- `GROWTH`: frontend `23/23` files and `133/133` tests, TypeScript, and
+  production build passed. Main frontend passed `68/68` files and `575/575`
+  tests plus its production build.
+- `PLAYWRIGHT`: full Growth browser run passed `32/32` tests with the opt-in
+  headed Chromium extension check enabled. It includes access, lifecycle,
+  duplicate prevention, follow-up, activation, administration, Merchant 360,
+  stale-session, and real extension relay coverage.
+- `EXTENSION`: `38/38` automated tests, manifest/source validation, and a
+  headed Chromium load-unpacked relay probe passed. Release permissions remain
+  `activeTab`, `scripting`, and `storage` with first-party Growth hosts only;
+  no distributable package is produced by this repository.
+- `SECURITY_FIXES`: privileged Growth mutations remain audit fail-closed;
+  audit reads are server-authorized; credit grants use transactional
+  idempotency keys for same, concurrent, retry, conflict, and distinct-key
+  cases; audit reason/value redaction is centralized; sensitive auth/Growth
+  responses are `no-store`; self-lockout and shop-creation races are guarded.
+- `CI`: `PASS` on draft PR #127 at the pushed checkpoint: Security Scan,
+  Test & Build Gate, backend integration, Meta-shaped E2E, Growth build and
+  browser gates, frontend Playwright, deployment dry run, Docker no-push
+  validation, and PR Merge Gate all passed. Image publication and production
+  deployment were skipped.
+- `PRODUCTION_CHANGED`: `NO`; no production connection, mutation, deployment,
+  Meta review configuration, OAuth configuration, webhook configuration, or
+  secret was changed.
+
+## Independent re-verification receipt (2026-09-15)
+
+- `ACTUAL_START`: the supplied dirty snapshot was already superseded in this
+  worktree. The actual start was clean at `1332005e4b7031e39dfa135a49bb6e81b82c20d2`,
+  with zero staged, modified, deleted, or standard untracked paths. The full
+  feature diff against `origin/main` contains 186 classified paths: 97 feature,
+  74 test, 7 migration, and 8 documentation paths; zero artifact, accidental,
+  unrelated, or unknown paths.
+- `BASELINE`: the first Growth run had one suite-load timeout in
+  `ChangePasswordPage` (`132/133`); the isolated test, one-worker suite, and two
+  subsequent canonical runs passed. An unisolated aggregate also hit the known
+  grounding timeout while inheriting local Redis. These were classified as
+  environment/resource failures, not feature assertions.
+- `STABILIZATION_FIX`: removed search-term email, phone, and page-URL exposure
+  from SPA query parameters. Global search and user-result navigation now use
+  router state; Growth user search terms use a CSRF-protected POST body, and the
+  legacy query form is rejected. The affected unit, API, RBAC, and browser
+  assertions verify that sensitive terms stay out of URL and access-log paths.
+- `FULL_REGRESSION`: after the privacy fix and with the unit environment
+  explicitly isolated, the root
+  aggregate passed backend `229/229` suites and `2819/2819` tests, merchant
+  frontend `68/68` files and `575/575` tests, Growth `23/23` files and `133/133`
+  tests, and extension `38/38` tests. Backend security passed `49/49` suites and
+  `452/452` tests; backend syntax, test discovery, Growth TypeScript, and both
+  production build checks passed.
+- `DISPOSABLE_INTEGRATION`: final fresh PostgreSQL/Redis verification passed
+  `14/14`
+  suites and `87/87` tests. A separate fresh schema audit found no drift across
+  62 models and 71 tables. The Meta-shaped disposable E2E passed `43/43` tests.
+- `MIGRATION_BOOTSTRAP`: final fresh loopback-only PostgreSQL verification ran the full
+  migration chain, ran it a second time with every migration skipped, seeded
+  five users and nine Growth prospects, started the backend, returned health
+  `200`, and denied an unauthenticated Growth session with `401`.
+- `PLAYWRIGHT_EXTENSION`: the full Growth browser gate passed `32/32` tests with
+  the opt-in headed Chromium extension flow enabled. Automated extension source
+  validation and manifest tests passed; release permissions remain
+  `activeTab`, `scripting`, and `storage`, with no extension package produced.
+- `CLEAN_CHECKOUT`: a `git archive` checkout installed successfully from the
+  root lockfile and passed the Growth suite, TypeScript, Growth build, backend
+  build, extension tests, and extension validation. Node `25.6.1` emitted the
+  expected repository engine warning because the project requires Node `20.x`.
+- `CI`: draft PR #127 already points at this head; Security Scan, Test & Build
+  Gate, integration, Meta-shaped E2E, Growth build/browser gates, frontend
+  Playwright, deployment dry run, Docker no-push validation, and PR Merge Gate
+  are green. Image publication and production deployment are skipped.
+- `PRODUCTION_CHANGED`: `NO`; no production database, Redis, Qdrant, service,
+  deployment, Meta review configuration, OAuth configuration, webhook
+  configuration, or secret was changed.
+
+## Final P1 hardening receipt (2026-09-15)
+
+- `P1_SECURITY`: bootstrap now uses a protected operator secret, canonical
+  `SUPER_ADMIN`, one-time database advisory locking, and trusted GitHub actor
+  provenance. Shared audit readers return tenant-safe summaries; privileged
+  audit reads are Super Admin-only; legacy admin mutations share transactions
+  with required audit writes. URL, bearer, funnel, audit, and error-log
+  redaction is server-side. First-AI-reply activation, onboarding conversion,
+  and activation audits are atomic/retriable. Stale shop claims are checked
+  against active memberships; Growth users cannot receive merchant sessions;
+  sensitive merchant settings require owner membership; browser funnel code
+  emits public events only; credit idempotency keys survive tab reloads.
+- `FINAL_BACKEND`: isolated aggregate `231/231` suites and `2833/2833` tests;
+  security `49/49` suites and `452/452` tests; discovery, syntax, and builds
+  passed.
+- `FINAL_FRONTEND`: merchant frontend `68/68` files and `575/575` tests;
+  Growth `23/23` files and `135/135` tests; TypeScript and production builds
+  passed. Extension `38/38` tests and validation passed.
+- `FINAL_DISPOSABLE`: PostgreSQL/Redis integration `14/14` suites and `87/87`
+  tests; Meta-shaped E2E `43/43` tests; fresh schema/migration/bootstrap
+  verification passed twice with no drift; Growth Playwright and headed
+  extension E2E `32/32` tests passed.
+- `FINAL_AUDIT`: production dependency audit has no high/critical findings
+  under the CI `--omit=dev --audit-level=high` gate. Five low/moderate legacy
+  advisories remain deferred; they are not changed by this checkpoint.
+- `DEFERRED_P2`: audit snapshot PII retention, prospect/analytics query
+  pagination/rate limits and search-query transport, credit idempotency expiry,
+  SQLite/PostgreSQL runtime parity, Unicode search normalization, and optional
+  extension CI installation remain explicitly deferred. No P0/P1 blocker
+  remains.
+- `PRODUCTION_CHANGED`: `NO`; all databases, Redis, Qdrant, services, CI
+  deployment jobs, Meta review settings, OAuth/webhook configuration, and
+  secrets remained untouched.
+
+## Follow-up terminal-integrity batch receipt (2026-09-25)
+
+- `BATCH`: follow-up lifecycle integrity — the smallest coherent next phase
+  selected from the 2026-09-25 reverse-engineering audit; no campaign, referral,
+  retention, demo, scoring, or outreach scope was touched.
+- `DEFECT`: `transitionFollowup` rejected reopening only `completed` rows, so a
+  direct API caller could move `cancelled -> completed` and misdate work as done;
+  cancellation wrote an audit row but no prospect timeline event, so the
+  operator-visible timeline claimed a follow-up was created but never resolved.
+- `FIX`: both terminal states now reject every transition with
+  `409 GROWTH_OS_FOLLOWUP_DONE` under the same row lock; the target status is
+  restricted to `completed|cancelled` at the service boundary; completion and
+  cancellation each write one prospect event inside the same transaction as the
+  row update and audit write, so an audit-service failure still rolls the whole
+  mutation.
+- `MIGRATION`: `20260925_001_growth_os_followup_cancel_event_type` replaces the
+  prospect-event `event_type` CHECK with a superset adding
+  `followup_cancelled`, following the named-replacement pattern of
+  `20260913_002`; historical rows are untouched and `down()` refuses to revert
+  while the new value is in use.
+- `VALIDATION`: disposable PostgreSQL/Redis integration `14/14` suites and
+  `88/88` tests passed with the extended terminal-state and event assertions;
+  the new migration unit suite passed `4/4`; affected mock Growth lifecycle,
+  identity, and scope suites passed `24/24`; `git diff --check` passed. The
+  `growth-os.authz` suite cannot load in this local worktree because the
+  install skipped sqlite3 native build scripts (pre-existing environment
+  limitation, reproduced identically on clean main); CI runs the full unit and
+  security gates on the PR.
+- `PRODUCTION_CHANGED`: `YES` — PR #159 merged as
+  `61f92dbc60b6dbde80357b143d47961ef65120e0`; exact-SHA production deploy run
+  `36145507046` completed successfully and the deployment variable was restored
+  to `PRODUCTION_DEPLOY_ENABLED=false`.
+- `PRODUCTION_VERSION`: public `/version` returned
+  `61f92dbc60b6dbde80357b143d47961ef65120e0` and migration count `57` with
+  latest `20260925_001_growth_os_followup_cancel_event_type`.
+- `PRODUCTION_HEALTH`: `/health/ready` returned HTTP 200 with database and
+  Redis readiness; Growth origin `/health/ready` returned HTTP 200; Growth
+  root returned HTTP 200; unauthenticated Growth session and prospect API
+  boundaries returned HTTP 401.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL` — no operator
+  identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available; no
+  privileged bypass was attempted.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL` — DSN provisioning and human receipt
+  remain unavailable.
+- `POST_DEPLOY_MAIN`: `0eb614a1d3769d03f770b22829e2b8e996f2c0d0` is a
+  documentation-only receipt commit merged after deployment; it was not
+  redeployed because no runtime code changed. Production remains intentionally
+  pinned to the exact verified runtime SHA above.
+- `DEFERRED_NEXT`: owner-discovery/assignment UX (name-based owner selector and
+  filtered home destinations) as the next product batch; prospect PII-retention
+  policy in audit snapshots requires an explicit retention/redaction policy
+  decision first; `growth_os_followup` audit rows remain outside the bounded
+  privileged-audit allowlist by design until that policy lands.
+
+## Owner discovery and actionable work queues receipt (2026-09-25)
+
+- `BATCH`: PR #162 implemented the next evidence-backed phase without schema
+  changes: eligible owner discovery, server-validated assignment, human-readable
+  owner projections, `owner=me`, `owner=unassigned`, and UUID owner filters,
+  plus Home and analytics queue destinations.
+- `ELIGIBILITY`: an active, non-revoked Growth role with either
+  `growth_os.prospects.manage_all` or both
+  `growth_os.prospects.read_assigned` and
+  `growth_os.prospects.update_assigned`; the same predicate is used by discovery
+  and assignment mutation validation.
+- `VALIDATION`: disposable PostgreSQL/Redis integration `14/14` suites and
+  `89/89` tests; Growth frontend `23/23` files and `135/135` tests; Growth
+  browser E2E `31` tests locally; CI backend integration, Growth build/browser
+  E2E, security, Docker, dependency, and merge gates passed; quarantine remains
+  `2/2`.
+- `MERGED_SHA`: `ccae4b97af3eeb4765c5e78911d74a817ff750a2` from PR #162.
+- `DEPLOYMENT_RUN`: `36156435580` completed successfully with `target=all`.
+- `PRODUCTION_VERSION`: public `/version` returned the exact merged SHA and
+  migration count 57.
+- `PRODUCTION_HEALTH`: backend and Growth readiness/root returned HTTP 200;
+  unauthenticated Growth session and prospect APIs returned HTTP 401.
+- `DEPLOYMENT_GATE`: restored to `PRODUCTION_DEPLOY_ENABLED=false`.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL`; no operator
+  identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL`; DSN provisioning and human receipt
+  remain unavailable.
+- `ROLLBACK_STATUS`: `MECHANISM_VERIFIED`; previous runtime SHA is
+  `61f92dbc60b6dbde80357b143d47961ef65120e0`, no migration rollback is needed,
+  and live rollback was not rehearsed in this phase.
+- `DEFERRED_NEXT`: improve analytics drill-through coverage and define the
+  prospect audit-snapshot PII retention/redaction policy before expanding into
+  reminders, workload scheduling, or automation.
+- `POST_DEPLOY_MAIN`: `c0d45a3607d3910a53080d7ac150879a2399dd50` is the
+  documentation-only receipt commit merged after deployment; it was not
+  redeployed because no runtime code changed. Production remains pinned to
+  `ccae4b97af3eeb4765c5e78911d74a817ff750a2`.
+
+## Growth OS MVP-1 final engineering closure receipt (2026-09-25)
+
+- `MVP1_ENGINEERING_REMAINING`: `0` for the repository-backed MVP-1 scope.
+- `MVP1_FUNCTIONAL_REMAINING`: `0` for the production-verifiable, unauthenticated
+  and test-covered scope; privileged operator proof remains an external
+  credential boundary and is not misrepresented as complete.
+- `IMPLEMENTATION_PR`: `#166`, merged as
+  `50b659bb4949afaec78a462818b3573d0f99e3e0`.
+- `DEPLOY_CONTRACT_PR`: `#167`, merged as
+  `bbc1024af831549436afb074ca5037925137d402`; workflow-only `growth_image_override`
+  support was required because the prior deploy path carried the running Growth
+  digest forward and could not rotate an already-running Growth container.
+- `BOOTSTRAP_WORKFLOW_FIX_PR`: `#169`, merged as
+  `e5d6f973ae55ab497801d2c4e4f09c5690db5769`; the audited role grant now
+  executes inside the running backend container without requiring Compose image
+  variables from `.env.prod`.
+- `ENGINEERING_SCOPE`: canonical `Asia/Dhaka` business-day semantics; exact Home,
+  My Work, follow-up, stalled, converted-window, Analytics, and Sources
+  metric/destination parity; bounded prospect date/stage filters; URL state
+  hydration; bounded Notes pagination; activation-only conversion; structured
+  contact PII redaction in audit snapshots; follow-up/note privileged audit
+  visibility; analytics permission parity; and search text removed from browser
+  URLs.
+- `VALIDATION`: Growth frontend `23/23` files and `136/136` tests; TypeScript
+  check and production build passed; Growth OS backend targeted suite `10/10`
+  files and `71/71` tests; security suite `45/45`; migration suite `49/49`;
+  deploy-guard suite `28/28`; CI PostgreSQL/Redis integration, Growth build and
+  browser E2E, Meta-shaped E2E, security, Docker, dependency, deployment-dry-run,
+  and merge gates passed; quarantine remains `2/2`.
+- `DATABASE`: no new migration, table, column, or index; production remains at
+  migration count 57 with latest
+  `20260925_001_growth_os_followup_cancel_event_type`.
+- `PRODUCTION_RUNTIME`: backend/worker exact runtime SHA is
+  `bbc1024af831549436afb074ca5037925137d402`; the Growth SPA intentionally uses
+  the existing published runtime-affecting artifact `50b659bb` because PR #167
+  changed only deployment workflow code. PR #169 also changes only the audited
+  bootstrap execution path.
+- `GROWTH_IMAGE`: exact digest
+  `sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`;
+  public `build-info.json` reports `50b659bb` after the explicit override deploy.
+- `DEPLOYMENT_RUN`: `36185036774` completed successfully with `target=all` and
+  the explicit Growth image override. Backend `/version`, backend readiness,
+  Growth readiness/root, public Growth build info, and the unauthenticated
+  Growth session boundary were verified after deployment.
+- `DEPLOYMENT_GATE`: `PRODUCTION_DEPLOY_ENABLED=false` restored at
+  `2026-09-25T20:34:24Z`.
+- `ROLLBACK_STATUS`: `MECHANISM_VERIFIED`; protected rollback checks completed,
+  but no live production rollback was executed.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL` — no eligible
+  shop-less operator identity is available. The corrected audited workflow
+  reached the role service: `info@easymod.tech` was rejected for active merchant
+  membership; `founder@easymod.tech` and `growth@easymod.tech` were not found.
+  No role grant or manual data mutation was performed.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL` — DSN provisioning and human-visible
+  event receipt remain unavailable.
+- `BOOTSTRAP_WORKFLOW_RUNS`: `36190311748` and `36190777841` failed closed before
+  production mutation; `36192440171` proved the Compose interpolation fix; and
+  `36193382364`/`36193473306` proved target-account validation.
+- `POST_DEPLOY_MAIN`: `e5d6f973ae55ab497801d2c4e4f09c5690db5769` is the current
+  `origin/main`; the backend runtime remains the previously deployed
+  `bbc1024af831549436afb074ca5037925137d402`. The Growth image's
+  `50b659bb` identity is intentional and documented above, not a stale/unverified
+  artifact.

@@ -7,12 +7,16 @@ const PROSPECT_STATUSES = Object.freeze([
   'contacted',
   'qualifying',
   'qualified',
+  'onboarding',
   'disqualified',
   'unreachable',
   'converted',
   'merged',
 ]);
 
+// Controlled source taxonomy (no free-text sources). Manual captures,
+// browser-extension captures, and the legacy producer values coexist here;
+// the DB CHECK constraint and the validator share this single list.
 const PROSPECT_SOURCES = Object.freeze([
   'self_signup',
   'partner_form',
@@ -20,6 +24,13 @@ const PROSPECT_SOURCES = Object.freeze([
   'referral_mention',
   'inbound_message',
   'event',
+  'browser_extension',
+  'facebook',
+  'facebook_group',
+  'website',
+  'linkedin',
+  'partner',
+  'paid',
   'other',
 ]);
 
@@ -35,7 +46,14 @@ const ALLOWED_TRANSITIONS = Object.freeze({
   new: Object.freeze(['contacted', 'disqualified', 'unreachable']),
   contacted: Object.freeze(['qualifying', 'disqualified', 'unreachable']),
   qualifying: Object.freeze(['qualified', 'disqualified', 'unreachable']),
-  qualified: Object.freeze(['converted', 'disqualified', 'unreachable']),
+  // Direct conversion is reserved for internal imports/backfills that set the
+  // initial status. Operator/API transitions must record onboarding first so
+  // activation is tied to the first successful AI reply.
+  qualified: Object.freeze(['onboarding', 'disqualified', 'unreachable']),
+  // Conversion is an internal activation transition, not an operator action.
+  // The activation service is the only path allowed to move onboarding to
+  // converted after the canonical first successful AI reply.
+  onboarding: Object.freeze(['qualified', 'disqualified', 'unreachable']),
   disqualified: Object.freeze(['qualifying']),
   unreachable: Object.freeze(['contacted']),
   converted: Object.freeze([]),
@@ -53,6 +71,11 @@ const PROSPECT_EVENT_TYPES = Object.freeze([
   'merged',
   'merge_target',
   'imported',
+  'followup_created',
+  'followup_completed',
+  'followup_cancelled',
+  'note_added',
+  'activated',
 ]);
 
 function isProspectStatus(status) {

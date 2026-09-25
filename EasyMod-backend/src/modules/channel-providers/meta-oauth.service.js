@@ -39,6 +39,31 @@ function findAuthorizedPage(pages, assetId) {
         .find((page) => String(page.id) === String(assetId));
 }
 
+function findAuthorizedPageCredential(pageCredentials, assetId) {
+    const pageId = String(assetId);
+    const credential = pageCredentials && typeof pageCredentials === 'object'
+        ? pageCredentials[pageId]
+        : null;
+
+    if (String(credential?.pageId || '') !== pageId) return null;
+    if (typeof credential.token !== 'string' || credential.token.trim() === '') return null;
+    return credential;
+}
+
+function sanitizeManagedAssets(pages) {
+    return (Array.isArray(pages) ? pages : [])
+        .filter((page) => page && page.id !== null && page.id !== undefined)
+        .map((page) => ({
+            id: String(page.id),
+            name: typeof page.name === 'string' ? page.name : '',
+            category: typeof page.category === 'string' ? page.category : null,
+            pictureUrl: typeof page.pictureUrl === 'string' ? page.pictureUrl : null,
+            tasks: Array.isArray(page.tasks) ? page.tasks.filter((task) => typeof task === 'string') : [],
+            connectable: page.connectable === true,
+            reason: typeof page.reason === 'string' ? page.reason : null,
+        }));
+}
+
 /**
  * Generate a CSRF-safe OAuth state token containing shopId + platform.
  * Signed with a random 128-bit nonce; stored in the temp store keyed by state.
@@ -101,11 +126,15 @@ async function handleCallback(code, state, userId, shopId) {
     // Exchange code for long-lived user token
     const { userToken } = await provider.exchangeCode({ code, redirectUri: stored.redirectUri });
 
-    // List pages/IG accounts this user manages
-    const [pages, metaIdentity] = await Promise.all([
-        provider.listManagedAssets({ userToken }),
+    // List pages/IG accounts this user manages. The provider writes raw Page
+    // credentials into this server-only sink while returning sanitized metadata.
+    // The sink is stored with the existing callback TTL and is never returned.
+    const pageCredentials = Object.create(null);
+    const [discoveredPages, metaIdentity] = await Promise.all([
+        provider.listManagedAssets({ userToken, pageCredentials }),
         provider.getOAuthIdentity({ userToken }),
     ]);
+    const pages = sanitizeManagedAssets(discoveredPages);
 
     // Store the user token server-side for the subsequent connectPage calls.
     // The returned tempToken is intentionally opaque: the frontend should never
@@ -116,6 +145,7 @@ async function handleCallback(code, state, userId, shopId) {
         userToken,
         platform,
         pages,
+        pageCredentials,
         metaIdentity,
         userId,
         shopId,
@@ -191,20 +221,19 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         );
     }
 
-    const provider = getProvider('facebook');
-
-    // Get page-specific access token from the Messenger provider.
-    const { token: pageToken, expiresAt } = await provider.getAssetAccessToken({
-        assetId,
-        userToken: callbackPayload.userToken,
-    });
-    if (typeof pageToken !== 'string' || pageToken.trim() === '') {
+    const pageCredential = findAuthorizedPageCredential(
+        callbackPayload.pageCredentials,
+        authorizedPage.id,
+    );
+    if (!pageCredential) {
         throw new AppError(
-            'Meta did not return a Page access token. Please reconnect Facebook.',
+            'Meta did not return a server-side Page access token. Please reconnect Facebook.',
             502,
             'META_PAGE_ACCESS_TOKEN_MISSING',
         );
     }
+
+    const provider = getProvider('facebook');
 
     // Upsert into meta_channels. NOTE: the key is `userId` — upsertFromOAuth
     // destructures `userId` (not `connectedByUserId`); the old name left
@@ -214,8 +243,8 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         platform,
         metaAssetId: assetId,
         displayName: authorizedPage.name || displayName,
-        pageAccessToken: pageToken,
-        tokenExpiresAt: expiresAt,
+        pageAccessToken: pageCredential.token,
+        tokenExpiresAt: pageCredential.expiresAt || null,
         userId,
     });
 
@@ -304,4 +333,9 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     return serializeChannel(channel, { webhookWarning });
 }
 
-module.exports = { initiateOAuth, handleCallback, connectPage, _private: { callbackKey, findAuthorizedPage } };
+module.exports = {
+    initiateOAuth,
+    handleCallback,
+    connectPage,
+    _private: { callbackKey, findAuthorizedPage, findAuthorizedPageCredential },
+};

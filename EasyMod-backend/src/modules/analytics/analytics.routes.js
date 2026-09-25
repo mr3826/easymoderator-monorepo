@@ -152,9 +152,9 @@ router.get('/intent-breakdown', authenticate, AnalyticsController.getIntentBreak
 router.get('/confidence-distribution', authenticate, AnalyticsController.getConfidenceDistribution);
 
 /**
- * GET /api/analytics/growth — cross-shop activation + retention (Growth OS founder only).
- * Powers the launch / 10-shop smoke-test dashboard: who activated (first AI
- * reply), how fast, and who is still transacting this week vs last.
+ * GET /api/analytics/growth — deprecated operational AI-reply + retention
+ * report. Canonical Growth activation analytics live at the Growth workspace
+ * prospect-ledger endpoint.
  */
 router.get('/growth', authenticate, requireGrowthOsAccess('growth_os.reports.read_all'), async (req, res) => {
     try {

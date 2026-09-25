@@ -3,6 +3,7 @@
 const { Op } = require('sequelize');
 const { sanitizeErrorMessage } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
+const { getEligibleGrowthAssigneeRoles, resolveCanonicalRole } = require('./growth-os.permissions');
 
 const logger = createLogger('GrowthOsProspectRepository');
 
@@ -104,25 +105,55 @@ function searchWhere(value, GrowthOsProspect) {
   const search = String(value || '').trim();
   if (!search) return null;
   const operator = GrowthOsProspect.sequelize?.getDialect() === 'postgres' ? Op.iLike : Op.like;
-  const pattern = `%${search.toLowerCase().replace(/[\\%_]/g, '\\$&')}%`;
-  return {
-    [Op.or]: [
-      { normalized_business_name: { [operator]: pattern } },
-      { contact_name: { [operator]: pattern } },
-      { contact_phone: { [operator]: pattern } },
-      { contact_email: { [operator]: pattern } },
-      { page_url: { [operator]: pattern } },
-    ],
-  };
+  const rawPattern = `%${search.toLowerCase().replace(/[\\%_]/g, '\\$&')}%`;
+  // normalized_business_name is punctuation-free; normalize the search term
+  // before comparing it so names such as "north-star" remain discoverable.
+  const normalizedSearch = search.toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[\\%_]/g, '\\$&');
+  const normalizedPattern = `%${normalizedSearch}%`;
+  const predicates = [];
+  if (normalizedSearch) {
+    predicates.push({ normalized_business_name: { [operator]: normalizedPattern } });
+  }
+  predicates.push(
+    { contact_name: { [operator]: rawPattern } },
+    { contact_phone: { [operator]: rawPattern } },
+    { contact_email: { [operator]: rawPattern } },
+    { page_url: { [operator]: rawPattern } },
+  );
+  return { [Op.or]: predicates };
 }
 
 function prospectFilters(filters = {}, GrowthOsProspect) {
   const clauses = [];
   const where = {};
   if (filters.status) where.status = filters.status;
+  if (filters.stage === 'qualified') where.status = { [Op.in]: ['qualified', 'onboarding', 'converted'] };
   if (filters.source) where.source = filters.source;
   const ownerUserId = filters.ownerUserId || filters.owner_user_id;
   if (ownerUserId) where.owner_user_id = ownerUserId;
+  if (filters.ownerUnassigned) where.owner_user_id = { [Op.is]: null };
+
+  const createdAt = {};
+  if (filters.createdAfter) createdAt[Op.gte] = new Date(filters.createdAfter);
+  if (filters.createdBefore) createdAt[Op.lte] = new Date(filters.createdBefore);
+  if (Reflect.ownKeys(createdAt).length > 0) where.created_at = createdAt;
+
+  const statusChangedAt = {};
+  if (filters.statusChangedAfter) statusChangedAt[Op.gte] = new Date(filters.statusChangedAfter);
+  if (filters.statusChangedBefore) statusChangedAt[Op.lte] = new Date(filters.statusChangedBefore);
+  if (filters.stalled === true || filters.stalled === 'true') {
+    statusChangedAt[Op.lt] = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+  }
+  if (Reflect.ownKeys(statusChangedAt).length > 0) where.status_changed_at = statusChangedAt;
+
+  const sourceRecordedAt = {};
+  if (filters.sourceRecordedAfter) sourceRecordedAt[Op.gte] = new Date(filters.sourceRecordedAfter);
+  if (filters.sourceRecordedBefore) sourceRecordedAt[Op.lte] = new Date(filters.sourceRecordedBefore);
+  if (Reflect.ownKeys(sourceRecordedAt).length > 0) where.source_recorded_at = sourceRecordedAt;
 
   if (filters.linked !== undefined && filters.linked !== null) {
     const linked = filters.linked === true || filters.linked === 'true';
@@ -328,6 +359,46 @@ async function findActiveGrowthRoleForUser(userId, { transaction, lock = false }
   ));
 }
 
+async function listEligibleGrowthAssignees({ search = '', limit = 100 } = {}) {
+  const { GrowthOsUserRole, User } = getModels();
+  const normalizedSearch = String(search || '').trim();
+  const userWhere = normalizedSearch
+    ? {
+      [Op.or]: [
+        { full_name: { [Op.iLike]: `%${normalizedSearch}%` } },
+        { email: { [Op.iLike]: `%${normalizedSearch}%` } },
+      ],
+    }
+    : undefined;
+  const rows = await GrowthOsUserRole.findAll({
+    where: {
+      role: { [Op.in]: getEligibleGrowthAssigneeRoles() },
+      is_active: true,
+      revoked_at: { [Op.is]: null },
+    },
+    include: [{
+      model: User,
+      as: 'user',
+      required: true,
+      attributes: ['id', 'full_name', 'email'],
+      ...(userWhere ? { where: userWhere } : {}),
+    }],
+    order: [['role', 'ASC'], ['granted_at', 'ASC'], ['user_id', 'ASC']],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 100),
+  }).catch((error) => logRepositoryError('list eligible Growth assignees', error));
+
+  const byUser = new Map();
+  for (const row of rows) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, row);
+  }
+  return [...byUser.values()].map((row) => ({
+    userId: row.user_id,
+    displayName: row.user?.full_name || row.user?.email || 'Unnamed Growth operator',
+    email: row.user?.email || null,
+    role: resolveCanonicalRole(row.role),
+  }));
+}
+
 async function findShopById(shopId, { transaction } = {}) {
   if (!shopId) return null;
   const { Shop } = getModels();
@@ -409,6 +480,7 @@ module.exports = {
   listProspectEvents,
   findUserById,
   findActiveGrowthRoleForUser,
+  listEligibleGrowthAssignees,
   findShopById,
   lockProspectsByIds,
   findLinkageSuggestions,

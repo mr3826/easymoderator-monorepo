@@ -3,7 +3,7 @@
 **Date** 2026-07-28 · **verdict `CURRENT_RETRIEVAL_ACCEPTED`** (after the configuration
 fixes in §6) · **Gemini semantic embeddings are NOT required**
 
-Reproduce: `node scripts/retrieval-eval/run-eval.js --gemini-min-score=0.70`
+Reproduce from repository root: `node EasyMod-backend/scripts/retrieval-eval/run-eval.js --gemini-min-score=0.70`
 Raw results: [`evidence/retrieval-eval.json`](evidence/retrieval-eval.json) — every
 per-query verdict. Pre-fix baseline preserved in
 [`evidence/retrieval-eval-before-fix.json`](evidence/retrieval-eval-before-fix.json).

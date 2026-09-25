@@ -34,12 +34,12 @@ jest.mock('src/modules/auth/session.entity', () => ({
 
 const jwt = require('jsonwebtoken');
 const config = require('src/config/config');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { authenticate, authenticateForPasswordChange } = require('src/middleware/auth.middleware');
 
 const sign = (payload) =>
     jwt.sign(payload, config.jwtAccessSecret, { algorithm: 'HS256', expiresIn: '15m' });
 
-const runMiddleware = (token, overrides = {}) =>
+const runMiddleware = (token, overrides = {}, middleware = authenticate) =>
     new Promise((resolve) => {
         const req = {
             headers: { authorization: `Bearer ${token}` },
@@ -50,7 +50,7 @@ const runMiddleware = (token, overrides = {}) =>
         };
         const res = {};
         const next = (err) => resolve({ req, err });
-        authenticate(req, res, next);
+        middleware(req, res, next);
     });
 
 describe('auth.middleware sid revocation branch (ADR M-004)', () => {
@@ -78,6 +78,8 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
             shopId: 'shop-1',
             exp: expect.any(Number),
             mfaVerified: false,
+            passwordChangeRequired: false,
+            temporaryPasswordExpiresAt: null,
             sid: undefined,
         });
     });
@@ -189,12 +191,14 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
             expect(err).toBeUndefined();
         });
 
-        test('does not apply the allowlist or membership lookup to sid-less web tokens', async () => {
+        test('does not apply the allowlist or the session lookup to sid-less web tokens', async () => {
             const token = sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1 });
             const { err } = await runMiddleware(token, { originalUrl: '/api/analytics/funnel' });
 
             expect(err).toBeUndefined();
-            expect(mockUserShopFindOne).not.toHaveBeenCalled();
+            expect(mockSessionFindByPk).not.toHaveBeenCalled();
+            // main's web membership re-check, not the native one.
+            expect(mockUserShopFindOne).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -234,6 +238,74 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
             }));
             expect(err.status).toBe(401);
             expect(err.code).toBe('NATIVE_SHOP_ACCESS_REVOKED');
+            expect(req.user).toBeUndefined();
+        });
+    });
+
+    // feature/mobile-app -> main: both sides changed this middleware. main
+    // re-checks web shop membership (403) and gates temporary-password
+    // sessions; the mobile branch adds the native session, read-only allowlist
+    // and membership checks (401). Every check survives the merge.
+    describe('main + mobile merge resolution', () => {
+        const nativeToken = (extra = {}) =>
+            sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, sid: 'sid-1', ...extra });
+        const webToken = (extra = {}) =>
+            sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, ...extra });
+
+        test('a native token checks shop membership exactly once', async () => {
+            const { err } = await runMiddleware(nativeToken(), { originalUrl: '/api/mobile/today' });
+
+            expect(err).toBeUndefined();
+            expect(mockUserShopFindOne).toHaveBeenCalledTimes(1);
+        });
+
+        test('a native token that lost its membership gets the native 401, not the web 403', async () => {
+            mockUserShopFindOne.mockResolvedValue(null);
+            const { err } = await runMiddleware(nativeToken(), { originalUrl: '/api/mobile/today' });
+
+            expect(err.status).toBe(401);
+            expect(err.code).toBe('NATIVE_SHOP_ACCESS_REVOKED');
+            expect(mockUserShopFindOne).toHaveBeenCalledTimes(1);
+        });
+
+        test('a web token that lost its membership keeps the web 403 and never touches the sessions table', async () => {
+            mockUserShopFindOne.mockResolvedValue(null);
+            const { req, err } = await runMiddleware(webToken(), { originalUrl: '/api/analytics/funnel' });
+
+            expect(err.status).toBe(403);
+            expect(err.code).toBe('GROWTH_OS_FORBIDDEN');
+            expect(req.user).toBeUndefined();
+            expect(mockSessionFindByPk).not.toHaveBeenCalled();
+        });
+
+        test('a web temporary-password session is still confined to the password-change route', async () => {
+            const token = webToken({
+                passwordChangeRequired: true,
+                temporaryPasswordExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+            });
+
+            const blocked = await runMiddleware(token, { originalUrl: '/api/analytics/funnel' });
+            expect(blocked.err.status).toBe(403);
+            expect(blocked.err.code).toBe('AUTH_PASSWORD_CHANGE_REQUIRED');
+
+            const allowed = await runMiddleware(
+                token,
+                { method: 'POST', originalUrl: '/api/auth/change-password' },
+                authenticateForPasswordChange,
+            );
+            expect(allowed.err).toBeUndefined();
+            expect(allowed.req.user.passwordChangeRequired).toBe(true);
+        });
+
+        test('a native token cannot use the web password-change route', async () => {
+            const { req, err } = await runMiddleware(
+                nativeToken(),
+                { method: 'POST', originalUrl: '/api/auth/change-password' },
+                authenticateForPasswordChange,
+            );
+
+            expect(err.status).toBe(403);
+            expect(err.code).toBe('NATIVE_READ_ONLY');
             expect(req.user).toBeUndefined();
         });
     });

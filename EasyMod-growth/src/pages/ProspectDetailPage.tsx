@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, CheckCircle2, GitMerge, Link2, RefreshCw, UserRound, Workflow } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
+import { FollowUpsPanel } from '@/components/FollowUpsPanel';
+import { NotesPanel } from '@/components/NotesPanel';
 import {
   ApiError,
   growthApi,
@@ -9,6 +11,7 @@ import {
   type Prospect,
   type ProspectLinkageSuggestion,
   type ProspectStatus,
+  type GrowthAssignee,
 } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
 
@@ -114,6 +117,8 @@ export function ProspectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ownerUserId, setOwnerUserId] = useState('');
+  const [assignees, setAssignees] = useState<GrowthAssignee[]>([]);
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
   const [assignmentReason, setAssignmentReason] = useState('');
   const [nextStatus, setNextStatus] = useState<ProspectStatus>('new');
   const [statusReason, setStatusReason] = useState('');
@@ -173,6 +178,18 @@ export function ProspectDetailPage() {
     };
   }, [canManage, prospectId, reloadToken, reportApiError]);
 
+  useEffect(() => {
+    if (!canManage) return undefined;
+    let active = true;
+    growthApi.getEligibleAssignees()
+      .then((next) => { if (active) setAssignees(next); })
+      .catch((requestError: unknown) => {
+        if (!active) return;
+        setAssigneesError(messageFor(requestError, 'Eligible owner options are unavailable.'));
+      });
+    return () => { active = false; };
+  }, [canManage, reportApiError]);
+
   async function loadTimelinePage(page: number) {
     if (!prospectId || !prospect?.timelinePagination) return;
     setTimelineLoading(true);
@@ -195,10 +212,6 @@ export function ProspectDetailPage() {
     if (!prospectId) return;
     if (!assignmentReason.trim()) {
       setActionError('A reason is required when changing the owner.');
-      return;
-    }
-    if (ownerUserId.trim() && !isUuid(ownerUserId)) {
-      setActionError('Owner user ID must be a valid UUID.');
       return;
     }
     setBusyAction('assign');
@@ -340,7 +353,11 @@ export function ProspectDetailPage() {
   const isMerged = prospect.status === 'merged';
   const statusClass = `status-${prospect.status.replace(/_/g, '-')}`;
   const timeline = prospect.timeline ?? [];
-  const allowedNextStatuses = PROSPECT_ALLOWED_TRANSITIONS[prospect.status];
+  const SHOP_GATED_STATUSES: readonly ProspectStatus[] = ['onboarding', 'converted'];
+  const rawNextStatuses = PROSPECT_ALLOWED_TRANSITIONS[prospect.status] ?? [];
+  const allowedNextStatuses = prospect.linkedShopId
+    ? rawNextStatuses
+    : rawNextStatuses.filter((status) => !SHOP_GATED_STATUSES.includes(status));
 
   return (
     <main className="page-content detail-page" aria-labelledby="prospect-detail-title">
@@ -354,9 +371,6 @@ export function ProspectDetailPage() {
           <h2 id="prospect-detail-title">{prospect.businessName}</h2>
           <div className="heading-meta">
             <span className={`status-badge ${statusClass}`}>{codeLabel(prospect.status)}</span>
-            <span className={prospect.eligibleForNextPhase ? 'eligible-yes' : 'eligible-no'}>
-              {prospect.eligibleForNextPhase ? 'Eligible for next phase' : 'Not eligible for next phase'}
-            </span>
             <span>Updated {formatDate(prospect.updatedAt)}</span>
           </div>
         </div>
@@ -431,6 +445,9 @@ export function ProspectDetailPage() {
               </div>
             ) : null}
           </section>
+
+          <FollowUpsPanel prospectId={prospect.id} />
+          <NotesPanel targetType="prospect" targetId={prospect.id} />
         </div>
 
         <aside className="detail-side-column">
@@ -446,19 +463,21 @@ export function ProspectDetailPage() {
               <div><dt>Current status</dt><dd><span className={`status-badge ${statusClass}`}>{codeLabel(prospect.status)}</span></dd></div>
               <div><dt>Status changed</dt><dd>{formatDate(prospect.statusChangedAt, true)}</dd></div>
               <div><dt>Disqualified reason</dt><dd>{formatValue(prospect.disqualifiedReason)}</dd></div>
-              <div><dt>Eligible for next phase</dt><dd className={prospect.eligibleForNextPhase ? 'eligible-yes' : 'eligible-no'}>{prospect.eligibleForNextPhase ? 'Yes' : 'No'}</dd></div>
               <div><dt>Created</dt><dd>{formatDate(prospect.createdAt, true)}</dd></div>
               <div><dt>Last updated</dt><dd>{formatDate(prospect.updatedAt, true)}</dd></div>
             </dl>
             {canUpdate && !isMerged ? (
               <form className="action-form" onSubmit={handleStatusTransition}>
-                <label htmlFor="next-status">
-                   Move to status
-                   <select id="next-status" value={nextStatus} onChange={(event) => setNextStatus(event.target.value as ProspectStatus)}>
-                     <option value={prospect.status}>{codeLabel(prospect.status)} (current)</option>
-                     {allowedNextStatuses.map((status) => <option key={status} value={status}>{codeLabel(status)}</option>)}
-                   </select>
-                 </label>
+                 <label htmlFor="next-status">
+                    Move to status
+                    <select id="next-status" value={nextStatus} onChange={(event) => setNextStatus(event.target.value as ProspectStatus)}>
+                      <option value={prospect.status}>{codeLabel(prospect.status)} (current)</option>
+                      {allowedNextStatuses.map((status) => <option key={status} value={status}>{codeLabel(status)}</option>)}
+                    </select>
+                  </label>
+                  {!prospect.linkedShopId ? (
+                    <p className="field-hint">Link a Shop before onboarding/activation.</p>
+                  ) : null}
                  <label htmlFor="status-reason">
                    Reason <span className="field-hint-inline">required for disqualification and reopening</span>
                    <textarea id="status-reason" value={statusReason} onChange={(event) => setStatusReason(event.target.value)} rows={3} maxLength={200} />
@@ -479,17 +498,21 @@ export function ProspectDetailPage() {
               <UserRound aria-hidden="true" />
             </div>
             <dl className="side-details">
-              <div><dt>Owner user ID</dt><dd>{formatValue(prospect.ownerUserId)}</dd></div>
+               <div><dt>Owner</dt><dd>{formatValue(prospect.ownerDisplayName || prospect.ownerUserId)}</dd></div>
               <div><dt>Assigned at</dt><dd>{formatDate(prospect.assignedAt, true)}</dd></div>
               <div><dt>Assigned by</dt><dd>{formatValue(prospect.assignedBy)}</dd></div>
               <div><dt>Created by</dt><dd>{formatValue(prospect.createdBy)}</dd></div>
             </dl>
             {canManage && !isMerged ? (
               <form className="action-form" onSubmit={handleAssignment}>
-                <label htmlFor="owner-user-id">
-                  Owner user ID
-                   <input id="owner-user-id" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} placeholder="Leave blank to unassign" maxLength={36} />
-                </label>
+                 <label htmlFor="owner-user-id">
+                   Assign to
+                    <select id="owner-user-id" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)}>
+                      <option value="">Unassigned</option>
+                      {assignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.displayName}</option>)}
+                    </select>
+                 </label>
+                 {assigneesError ? <p className="form-error" role="alert">{assigneesError}</p> : null}
                 <label htmlFor="assignment-reason">
                   Reason
                    <textarea id="assignment-reason" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} rows={3} maxLength={200} required />

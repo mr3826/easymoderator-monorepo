@@ -7,6 +7,7 @@ const uuid = Joi.string().uuid();
 const text = (max) => Joi.string().trim().max(max).allow('', null);
 const requiredText = (max) => Joi.string().trim().min(1).max(max).required();
 const email = Joi.string().trim().email({ tlds: { allow: false } }).max(255).allow('', null);
+const pageUrl = Joi.string().trim().uri({ scheme: ['http', 'https'] }).max(2048).allow('', null);
 const channelKeys = ['contactPhone', 'contactEmail', 'pageUrl', 'contact_phone', 'contact_email', 'page_url'];
 
 const prospectFields = {
@@ -18,8 +19,8 @@ const prospectFields = {
   contact_phone: text(32),
   contactEmail: email,
   contact_email: email,
-  pageUrl: text(2048),
-  page_url: text(2048),
+  pageUrl,
+  page_url: pageUrl,
   niche: text(120),
   notes: text(10000),
   source: Joi.string().valid(...PROSPECT_SOURCES),
@@ -55,18 +56,33 @@ const updateProspect = {
 const listProspects = {
   query: Joi.object({
     status: Joi.string().valid(...PROSPECT_STATUSES),
+    stage: Joi.string().valid('qualified'),
     source: Joi.string().valid(...PROSPECT_SOURCES),
     ownerUserId: uuid,
     owner_user_id: uuid,
+    owner: Joi.alternatives().try(Joi.valid('me', 'unassigned'), uuid),
     q: Joi.string().trim().max(200),
     linked: Joi.boolean().truthy('true').falsy('false'),
+    stalled: Joi.boolean().truthy('true').falsy('false'),
+    createdAfter: Joi.date().iso(),
+    createdBefore: Joi.date().iso(),
+    statusChangedAfter: Joi.date().iso(),
+    statusChangedBefore: Joi.date().iso(),
+    sourceRecordedAfter: Joi.date().iso(),
+    sourceRecordedBefore: Joi.date().iso(),
     page: Joi.number().integer().min(1).default(1),
     pageSize: Joi.number().integer().min(1).max(100).default(20),
   }),
 };
 
-const duplicateCheck = {
+const eligibleAssignees = {
   query: Joi.object({
+    search: Joi.string().trim().max(120).allow('').default(''),
+  }),
+};
+
+const duplicateCheck = {
+  body: Joi.object({
     ...prospectFields,
     excludeId: uuid,
     exclude_id: uuid,
@@ -117,6 +133,7 @@ module.exports = {
   createProspect,
   updateProspect,
   listProspects,
+  eligibleAssignees,
   duplicateCheck,
   assignProspect,
   transitionProspect,

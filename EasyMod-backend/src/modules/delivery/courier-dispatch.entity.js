@@ -68,9 +68,11 @@ const CourierDispatch = sequelize.define('CourierDispatch', {
     updatedAt: 'updated_at',
     indexes: [
         {
+            // One active dispatch claim per order, independent of provider —
+            // see src/modules/delivery/courier-dispatch-claim.service.js.
             unique: true,
-            fields: ['shop_id', 'order_id', 'provider'],
-            name: 'idx_courier_dispatch_shop_order_provider',
+            fields: ['shop_id', 'order_id'],
+            name: 'idx_courier_dispatch_shop_order',
         },
         { fields: ['shop_id', 'status'] },
         { fields: ['idempotency_key'] },

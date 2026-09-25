@@ -86,6 +86,11 @@ describe('meta-oauth.controller', () => {
                 success: true,
                 data: { pages: [{ id: 'P1' }], tempToken: 'tt' },
             });
+
+            const responseData = res.json.mock.calls[0][0].data;
+            expect(JSON.stringify(responseData)).not.toMatch(/access_token|accessToken|pageAccessToken|page_access_token/);
+            expect(responseData).not.toHaveProperty('token');
+            expect(responseData).toHaveProperty('tempToken', 'tt');
         });
     });
 

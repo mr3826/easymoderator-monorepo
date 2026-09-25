@@ -43,6 +43,7 @@ secret.*.json
 # Test
 coverage/
 EasyMod-backend/ai-tests/reports/
+EasyMod-backend/.attachment-integration-uploads/
 
 # Docker
 *.pid

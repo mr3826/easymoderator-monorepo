@@ -1,6 +1,14 @@
 const ragService = require('./rag.service');
 const { AppError } = require('../../utils/AppError');
 
+const getAuthenticatedShopId = (req) => {
+    const shopId = req.user?.shopId;
+    if (!shopId) {
+        throw new AppError('No shop selected. Please login again.', 400);
+    }
+    return shopId;
+};
+
 /**
  * Ingest data into RAG system
  */
@@ -12,10 +20,7 @@ const ingestData = async (req, res, next) => {
             collection_id: collectionId,
             metadata = {}
         } = req.body;
-        const shopId = req.user?.shopId;
-        if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
-        }
+        const shopId = getAuthenticatedShopId(req);
 
         const result = await ragService.ingestData({
             text: data,
@@ -41,7 +46,7 @@ const ingestData = async (req, res, next) => {
  */
 const queryData = async (req, res, next) => {
     try {
-        const shopId = req.user?.shopId;
+        const shopId = getAuthenticatedShopId(req);
         const result = await ragService.queryData({
             ...req.body,
             shopId

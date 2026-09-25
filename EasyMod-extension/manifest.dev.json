@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "EasyModerator Lead Capture (Development)",
+  "version": "0.1.0",
+  "description": "Development-only manual lead capture for the local Growth OS preview.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://growth.easymod.tech/*",
+    "http://127.0.0.1:5175/*"
+  ],
+  "action": {
+    "default_title": "Capture this page for Growth OS",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://growth.easymod.tech/*",
+        "http://127.0.0.1:5175/*"
+      ],
+      "js": ["lib/capture.js", "content-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

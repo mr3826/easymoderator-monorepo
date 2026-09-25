@@ -78,6 +78,32 @@ describe('MetaPortfolioMessengerProvider', () => {
         });
     });
 
+    test('retains minimal-hydration credentials in the server-only sink', async () => {
+        const pageCredentials = Object.create(null);
+        baseListSpy.mockResolvedValue([]);
+        axios.get
+            .mockResolvedValueOnce(debugToken(['P_PORTFOLIO'], ['P_PORTFOLIO']))
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'P_PORTFOLIO',
+                    name: 'Portfolio Page',
+                    access_token: 'PAGE_SECRET_SENTINEL_PORTFOLIO',
+                },
+            });
+
+        const result = await provider.listManagedAssets({ userToken: 'user-token', pageCredentials });
+
+        expect(result[0]).not.toHaveProperty('access_token');
+        expect(JSON.stringify(result)).not.toContain('PAGE_SECRET_SENTINEL_PORTFOLIO');
+        expect(pageCredentials).toEqual({
+            P_PORTFOLIO: {
+                pageId: 'P_PORTFOLIO',
+                token: 'PAGE_SECRET_SENTINEL_PORTFOLIO',
+                expiresAt: null,
+            },
+        });
+    });
+
     test('does not recover a Page unless both Messenger and metadata grants target it', async () => {
         baseListSpy.mockResolvedValue([]);
         axios.get.mockResolvedValueOnce(debugToken(['P_PORTFOLIO'], []));

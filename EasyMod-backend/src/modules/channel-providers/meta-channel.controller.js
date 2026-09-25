@@ -121,13 +121,6 @@ exports.reconnect = async (req, res, next) => {
 };
 
 /**
- * POST /api/channels/meta/:channelId/test-webhook
- * Pings the Meta API as a connectivity check, then returns a synthetic
- * normalized event so the frontend can verify the inbound path is wired up.
- * Does NOT actually exercise the live webhook — Meta initiates those — but it
- * validates that the access token and provider are still functional.
- */
-/**
  * GET /api/channels/meta/:channelId/consent-summary
  * Aggregate opt-in / opt-out counts and the 10 most recent consent events for
  * this channel. Used by the Channels UI to surface compliance state at a glance.
@@ -310,6 +303,11 @@ exports.updatePurposeLabel = async (req, res, next) => {
     }
 };
 
+/**
+ * POST /api/channels/meta/:channelId/test-webhook
+ * Verifies the Page's subscribed_apps state using the approved Page permission
+ * contract. It deliberately does not read the Page node as a health probe.
+ */
 exports.testWebhook = async (req, res, next) => {
     try {
         const { channelId } = req.params;
@@ -318,27 +316,29 @@ exports.testWebhook = async (req, res, next) => {
         const repairSubscription = req.body?.repairSubscription === true;
 
         const provider = getProvider(channel.platform);
-        const pingResult = await provider.ping({ channel }).catch((err) => ({
-            ok: false,
-            error: err.message,
-        }));
         const requiredFields = typeof provider.webhookFields === 'function'
             ? provider.webhookFields()
             : ['messages'];
-        let subscriptionResult = await provider.verifyWebhookSubscription({ channel }).catch((err) => ({
-            ok: false,
-            fields: [],
-            error: err.message,
-        }));
+        const verificationStartedAt = Date.now();
+        const channelConnectionOk = channel.status === 'CONNECTED'
+            && Boolean(channel.page_access_token_ct)
+            && Boolean(channel.meta_asset_id);
+        let subscriptionResult = channelConnectionOk
+            ? await provider.verifyWebhookSubscription({ channel }).catch((err) => ({
+                ok: false,
+                fields: [],
+                error: 'verification_failed',
+            }))
+            : { ok: false, fields: [], error: 'channel_not_connected' };
         let repaired = false;
 
-        if (!subscriptionResult.ok && repairSubscription) {
+        if (channelConnectionOk && !subscriptionResult.ok && repairSubscription) {
             await provider.subscribeWebhook({ channel });
             repaired = true;
             subscriptionResult = await provider.verifyWebhookSubscription({ channel }).catch((err) => ({
                 ok: false,
                 fields: [],
-                error: err.message,
+                error: 'verification_failed',
             }));
         }
 
@@ -346,17 +346,33 @@ exports.testWebhook = async (req, res, next) => {
             await metaChannelService.confirmWebhookActive(channelId, subscriptionResult.fields);
         }
 
+        const healthResult = {
+            ok: subscriptionResult.ok,
+            latencyMs: Date.now() - verificationStartedAt,
+            ...(subscriptionResult.error ? { error: subscriptionResult.error } : {}),
+        };
+
         res.json({
             success: true,
             data: {
                 channelId,
                 platform: channel.platform,
-                ping: pingResult,
+                // Backward-compatible alias for the existing UI client. This
+                // is now subscribed_apps verification, not a Page-node read.
+                ping: healthResult,
+                connection: {
+                    ok: channelConnectionOk,
+                    status: channel.status,
+                },
                 subscription: {
                     ok: subscriptionResult.ok,
                     fields: subscriptionResult.fields || [],
                     requiredFields,
                     repaired,
+                },
+                transport: {
+                    status: 'NOT_PROBED',
+                    reason: 'requires an inbound Messenger event',
                 },
                 checkedAt: new Date().toISOString(),
             },

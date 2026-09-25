@@ -52,13 +52,13 @@ router.put('/business-info', verifyShopAccess, requireOwner, shopBusinessInfoVal
 router.get('/onboarding/status', shopController.getOnboardingStatus);
 
 // POST /shop/onboarding/complete - Complete only after required checklist passes
-router.post('/onboarding/complete', shopController.completeOnboarding);
+router.post('/onboarding/complete', verifyShopAccess, requireOwner, shopController.completeOnboarding);
 
 // GET /shop/llm-config - Get LLM model configuration for this shop
 router.get('/llm-config', shopController.getLLMConfig);
 
 // PUT /shop/llm-config - Update LLM model configuration
-router.put('/llm-config', shopController.updateLLMConfig);
+router.put('/llm-config', verifyShopAccess, requireOwner, shopController.updateLLMConfig);
 
 // GET /shop/ai-settings - Get AI behaviour settings
 router.get('/ai-settings', shopController.getAISettings);
@@ -70,13 +70,13 @@ router.put('/ai-settings', verifyShopAccess, requireOwner, shopController.update
 router.get('/ai-settings/intent-thresholds', shopController.getIntentThresholds);
 
 // PUT /shop/ai-settings/intent-thresholds - Update per-intent confidence thresholds
-router.put('/ai-settings/intent-thresholds', shopController.updateIntentThresholds);
+router.put('/ai-settings/intent-thresholds', verifyShopAccess, requireOwner, shopController.updateIntentThresholds);
 
 // GET /shop/settings/ai-defaults - Return canonical AI defaults for the current launch scope.
 router.get('/settings/ai-defaults', shopController.getAiDefaults);
 
 // POST /shop/branding-preset - Apply a named branding preset (FRIENDLY | PROFESSIONAL | FUN)
-router.post('/branding-preset', shopController.applyBrandingPreset);
+router.post('/branding-preset', verifyShopAccess, requireOwner, shopController.applyBrandingPreset);
 
 // GET /shop/bd-settings - Get BD-specific settings (MFS, Google Sheets)
 router.get('/bd-settings', shopController.getBdSettings);

@@ -15,7 +15,8 @@ vi.mock('@/auth/GrowthAuthProvider', () => ({
     session: {
       internalUserId: 'growth-user',
       displayName: 'Growth User',
-      role: 'MARKETER',
+      role: 'GROWTH_USER',
+      legacyRole: null,
       permissions: authState.permissions,
     },
     error: null,
@@ -43,9 +44,11 @@ vi.mock('@/pages/ProspectDetailPage', () => ({
 vi.mock('@/pages/ProspectFormPage', () => ({
   ProspectFormPage: () => <div>Prospect form route</div>,
 }));
-
-vi.mock('@/pages/DashboardPage', () => ({
-  DashboardPage: () => <div>Dashboard route</div>,
+vi.mock('@/pages/AnalyticsPage', () => ({
+  AnalyticsPage: () => <div>Analytics route</div>,
+}));
+vi.mock('@/pages/SourcesPage', () => ({
+  SourcesPage: () => <div>Sources route</div>,
 }));
 
 vi.mock('@/pages/AccessDeniedPage', () => ({
@@ -86,6 +89,38 @@ describe('Growth prospect route permissions', () => {
     authState.permissions = ['growth_os.prospects.read_all'];
 
     renderAt('/prospects/new');
+
+    expect(screen.getByText('Access denied route')).toBeInTheDocument();
+  });
+
+  it('guards the homepage with the backend home permission', () => {
+    authState.permissions = ['growth_os.prospects.read_source_scope'];
+
+    renderAt('/');
+
+    expect(screen.getByText('Access denied route')).toBeInTheDocument();
+  });
+
+  it('allows source-scoped reporting only with the report permission', () => {
+    authState.permissions = ['growth_os.reports.read_source_scope'];
+
+    renderAt('/sources');
+
+    expect(screen.getByText('Sources route')).toBeInTheDocument();
+  });
+
+  it('guards follow-up routes with the follow-up permission', () => {
+    authState.permissions = ['growth_os.prospects.read_all'];
+
+    renderAt('/my-work');
+
+    expect(screen.getByText('Access denied route')).toBeInTheDocument();
+  });
+
+  it('uses the dedicated audit permission for the audit route', () => {
+    authState.permissions = ['growth_os.admin.operations.read'];
+
+    renderAt('/audit');
 
     expect(screen.getByText('Access denied route')).toBeInTheDocument();
   });

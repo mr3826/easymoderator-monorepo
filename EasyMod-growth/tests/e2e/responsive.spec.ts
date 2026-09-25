@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { fixtures, signIn } from './support';
+import { authStatePath, fixtures } from './support';
+
+test.use({ storageState: authStatePath('growth') });
 
 const viewports = [
   { width: 390, height: 844 },
@@ -12,11 +14,10 @@ for (const viewport of viewports) {
     test.use({ viewport });
 
     test('keeps prospect navigation, content, sidebar, and primary hit targets usable', async ({ page }) => {
-      await signIn(page, fixtures.users.executive);
-      await page.getByRole('link', { name: 'Prospects' }).click();
+      await page.goto('/prospects');
       await expect(page.getByRole('heading', { name: 'Prospects', exact: true })).toBeVisible();
 
-      const prospectLink = page.getByRole('link', { name: fixtures.prospects.executiveAssigned.businessName });
+      const prospectLink = page.getByRole('link', { name: fixtures.prospects.followUpStudio.businessName });
       await prospectLink.scrollIntoViewIfNeeded();
       await expect(prospectLink).toBeVisible();
 

@@ -15,6 +15,7 @@ const {
   User,
 } = require('../../entities');
 const prospectRepository = require('../growth-os.prospect.repository');
+const prospectService = require('../growth-os.prospect.service');
 const app = require('../../../app');
 
 const API_ROOT = '/api/internal/growth-os/prospects';
@@ -23,11 +24,13 @@ let founder;
 let executive;
 let merchant;
 let marketer;
+let growthUser;
 let tenant;
 let shop;
 let founderToken;
 let executiveToken;
 let marketerToken;
+let growthUserToken;
 const prospectIds = new Set();
 
 function fixtureSuffix() {
@@ -64,12 +67,20 @@ function asExecutive() {
   return {
     get: (path) => request(app).get(path).set('Authorization', `Bearer ${executiveToken}`),
     patch: (path) => request(app).patch(path).set('Authorization', `Bearer ${executiveToken}`),
+    post: (path) => request(app).post(path).set('Authorization', `Bearer ${executiveToken}`),
   };
 }
 
 function asMarketer() {
   return {
     get: (path) => request(app).get(path).set('Authorization', `Bearer ${marketerToken}`),
+  };
+}
+
+function asGrowthUser() {
+  return {
+    get: (path) => request(app).get(path).set('Authorization', `Bearer ${growthUserToken}`),
+    patch: (path) => request(app).patch(path).set('Authorization', `Bearer ${growthUserToken}`),
   };
 }
 
@@ -152,6 +163,14 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
       token_version: 0,
       settings: {},
     });
+    growthUser = await User.create({
+      email: `growth-user-${suffix}@example.test`,
+      password: 'integration-only',
+      full_name: 'Canonical Growth User',
+      phone: phoneFor(`growth-user-${suffix}`),
+      token_version: 0,
+      settings: {},
+    });
     await GrowthOsUserRole.bulkCreate([
       {
         user_id: founder.id,
@@ -174,26 +193,40 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
         granted_by: founder.id,
         metadata: { source: 'prospect_integration_fixture' },
       },
+      {
+        user_id: growthUser.id,
+        role: 'GROWTH_USER',
+        is_active: true,
+        granted_by: founder.id,
+        metadata: { source: 'prospect_integration_fixture' },
+      },
     ]);
 
     founderToken = generateAccessToken({
       userId: founder.id,
       email: founder.email,
-      shopId: shop.id,
+      shopId: null,
       tokenVersion: 0,
       mfaVerified: true,
     });
     executiveToken = generateAccessToken({
       userId: executive.id,
       email: executive.email,
-      shopId: shop.id,
+      shopId: null,
       tokenVersion: 0,
       mfaVerified: false,
     });
     marketerToken = generateAccessToken({
       userId: marketer.id,
       email: marketer.email,
-      shopId: shop.id,
+      shopId: null,
+      tokenVersion: 0,
+      mfaVerified: false,
+    });
+    growthUserToken = generateAccessToken({
+      userId: growthUser.id,
+      email: growthUser.email,
+      shopId: null,
       tokenVersion: 0,
       mfaVerified: false,
     });
@@ -205,8 +238,8 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
 
   afterAll(async () => {
     await removeProspects();
-    await GrowthOsUserRole.destroy({ where: { user_id: { [Op.in]: [founder.id, executive.id, marketer.id] } } });
-    await User.destroy({ where: { id: { [Op.in]: [founder.id, executive.id, merchant.id, marketer.id] } } });
+    await GrowthOsUserRole.destroy({ where: { user_id: { [Op.in]: [founder.id, executive.id, marketer.id, growthUser.id] } } });
+    await User.destroy({ where: { id: { [Op.in]: [founder.id, executive.id, merchant.id, marketer.id, growthUser.id] } } });
     await Shop.destroy({ where: { id: shop.id } });
     await Tenant.destroy({ where: { id: tenant.id } });
     // The integration runner owns the shared PostgreSQL and Redis clients.
@@ -256,7 +289,7 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
     expect(searchedByEmail.body.data.items).toHaveLength(1);
     expect(searchedByEmail.body.data.items[0].id).toBe(prospectId);
 
-    const duplicateCheck = await asFounder().get(`${API_ROOT}/duplicate-check`).query({
+    const duplicateCheck = await asFounder().post(`${API_ROOT}/duplicate-check`).send({
       contactPhone: payload.contactPhone,
       contactEmail: payload.contactEmail,
       pageUrl: payload.pageUrl,
@@ -268,7 +301,7 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
         matchedFields: expect.arrayContaining(['contactPhone', 'contactEmail', 'pageUrl']),
       }),
     ]);
-    const excludedDuplicateCheck = await asFounder().get(`${API_ROOT}/duplicate-check`).query({
+    const excludedDuplicateCheck = await asFounder().post(`${API_ROOT}/duplicate-check`).send({
       contactEmail: payload.contactEmail,
       excludeId: prospectId,
     });
@@ -312,8 +345,8 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
     const unlinkedConversion = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)
       .send({ status: 'converted', reason: 'Conversion must have a shop' });
-    expect(unlinkedConversion.status).toBe(400);
-    expect(unlinkedConversion.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_INPUT');
+    expect(unlinkedConversion.status).toBe(409);
+    expect(unlinkedConversion.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_TRANSITION');
 
     const invalidTransition = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)
@@ -355,14 +388,34 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
       .send({ shopId: shop.id, reason: 'Restored verified shop link' });
     expect(relinked.status).toBe(200);
 
-    const converted = await asFounder()
+    const onboarding = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)
-      .send({ status: 'converted', reason: 'Shop linkage verified' });
+      .send({ status: 'onboarding', reason: 'Shop linkage verified' });
+    expect(onboarding.status).toBe(200);
+
+    // Manual conversion is no longer an operator action; only the canonical
+    // first-successful-AI-reply activation path may move a prospect from
+    // onboarding to converted. This guards the analytics activation count.
+    const rejectedManualConversion = await asFounder()
+      .post(`${API_ROOT}/${prospectId}/status`)
+      .send({ status: 'converted', reason: 'Attempted operator conversion' });
+    expect(rejectedManualConversion.status).toBe(409);
+    expect(rejectedManualConversion.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_TRANSITION');
+
+    await shop.update({
+      settings: {
+        ...(shop.settings || {}),
+        first_ai_reply: { occurred_at: new Date().toISOString(), first_conversation_id: null },
+      },
+    });
+    const activation = await prospectService.markLinkedShopsActivated({ shopId: shop.id });
+    expect(activation.activated).toBe(1);
+
+    const converted = await asFounder().get(`${API_ROOT}/${prospectId}`);
     expect(converted.status).toBe(200);
     expect(converted.body.data).toMatchObject({
       status: 'converted',
       linkedShopId: shop.id,
-      eligibleForNextPhase: false,
     });
 
     const convertedUnlink = await asFounder()
@@ -435,7 +488,33 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
     expect(conflictingEdit.status).toBe(409);
     expect(conflictingEdit.body.code).toBe('GROWTH_OS_PROSPECT_DUPLICATE');
     expect(conflictingEdit.body.conflictingProspectId).toBe(foreignId);
+  });
 
+  it('gives canonical GROWTH_USER full-scope unredacted access on real PostgreSQL', async () => {
+    const suffix = fixtureSuffix();
+    const created = await createProspect(founderToken, prospectPayload(`canonical-${suffix}`));
+    const prospectId = rememberProspect(created);
+
+    const listed = await asGrowthUser().get(API_ROOT).query({ q: created.body.data.businessName });
+    expect(listed.status).toBe(200);
+    expect(listed.body.data.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: prospectId,
+        contactEmail: created.body.data.contactEmail,
+        notes: 'Integration fixture',
+      }),
+    ]));
+    expect(listed.body.data.items.find((item) => item.id === prospectId)).not.toHaveProperty('redacted');
+
+    const detail = await asGrowthUser().get(`${API_ROOT}/${prospectId}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.contactPhone).toBe(created.body.data.contactPhone);
+
+    const edited = await asGrowthUser()
+      .patch(`${API_ROOT}/${prospectId}`)
+      .send({ notes: 'Canonical Growth User updated the shared ledger' });
+    expect(edited.status).toBe(200);
+    expect(edited.body.data.notes).toBe('Canonical Growth User updated the shared ledger');
   });
 
   it('allows exactly one concurrent create and returns one duplicate conflict', async () => {
@@ -536,6 +615,15 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
     }));
     const manualId = rememberProspect(manual);
 
+    const sessionResponse = await request(app)
+      .get('/api/internal/growth-os/session')
+      .set('Authorization', `Bearer ${marketerToken}`);
+    expect(sessionResponse.status).toBe(200);
+    expect(sessionResponse.body.data).toMatchObject({
+      role: 'GROWTH_USER',
+      legacyRole: 'MARKETER',
+    });
+
     const listed = await asMarketer().get(API_ROOT);
     expect(listed.status).toBe(200);
     expect(listed.body.data.items.map((item) => item.id)).toContain(marketingId);
@@ -566,11 +654,12 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
 
     const response = await asFounder()
       .post(`${API_ROOT}/${prospectId}/assign`)
-      .send({ ownerUserId: merchant.id, reason: 'Reject non-operator owner' });
+      .send({ ownerUserId: marketer.id, reason: 'Reject read-only source role' });
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_OWNER');
     expect((await GrowthOsProspect.findByPk(prospectId)).owner_user_id).toBeNull();
+
   });
 
   it('allows a new source record to reuse a merged source reference', async () => {

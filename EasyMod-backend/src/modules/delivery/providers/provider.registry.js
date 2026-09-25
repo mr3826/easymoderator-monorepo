@@ -186,7 +186,11 @@ const COURIER_REGISTRY = {
             recipient_name: orderData.customer_name,
             recipient_phone: orderData.customer_phone,
             recipient_address: orderData.delivery_address,
-            cod_amount: orderData.total || 0,
+            // Prefer the explicit collection amount (0 for a prepaid order)
+            // over `total`, mirroring the Pathao/RedX fallback chains below —
+            // `total` remains only as a fallback for callers that never set
+            // cod_amount/amount_to_collect.
+            cod_amount: firstPresent(orderData.cod_amount, orderData.amount_to_collect, orderData.total, 0),
             note: orderData.note || '',
             item_description: orderData.item_description || '',
             total_lot: orderData.item_quantity || 1,

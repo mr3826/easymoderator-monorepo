@@ -97,7 +97,8 @@ const globalErrorHandler = (err, req, res, next) => {
       || new AppError(err.message || 'Internal Server Error', err.status || err.statusCode || 500, 'INTERNAL_ERROR', { originalError: err.name });
   }
   const statusCode = appError.status || 500;
-  const logContext = { ...appError.getFullContext(), requestId, method: req.method, url: req.originalUrl, clientIp: req.ip };
+  const requestPath = typeof req.originalUrl === 'string' ? req.originalUrl.split(/[?#]/, 1)[0] : undefined;
+  const logContext = { ...appError.getFullContext(), requestId, method: req.method, url: requestPath, clientIp: req.ip };
   if (statusCode >= 500) logger.error('Server error', logContext);
   else logger.warn('Client error', logContext);
   const response = appError.toJSON(requestId);

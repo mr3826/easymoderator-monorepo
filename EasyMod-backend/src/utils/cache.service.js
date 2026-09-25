@@ -2,6 +2,18 @@ const { cacheRedis } = require('../config/redis.js');
 
 // In-memory fallback: evict oldest entries when this limit is reached
 const MAX_MEMORY_ENTRIES = 10000;
+const STRICT_REDIS_READY_TIMEOUT_MS = 5000;
+
+const awaitWithTimeout = (promise, message) => {
+    let timeout;
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(message)), STRICT_REDIS_READY_TIMEOUT_MS);
+            timeout.unref?.();
+        }),
+    ]).finally(() => clearTimeout(timeout));
+};
 
 /**
  * Cache Service — Redis-backed with in-memory fallback.
@@ -32,6 +44,25 @@ class CacheService {
      */
     _tenantKey(shopId, key) {
         return `t:${shopId}:${key}`;
+    }
+
+    async _getStrictRedis() {
+        if (!cacheRedis || cacheRedis._isMemoryFallback === true) {
+            throw new Error('Redis cache is unavailable');
+        }
+        if (cacheRedis.status !== 'ready') {
+            const readiness = cacheRedis.status === 'wait'
+                && typeof cacheRedis.connect === 'function'
+                ? cacheRedis.connect()
+                : typeof cacheRedis.ping === 'function'
+                    ? cacheRedis.ping()
+                    : Promise.reject(new Error('Redis cache is unavailable'));
+            await awaitWithTimeout(readiness, 'Redis cache readiness timed out');
+        }
+        if (cacheRedis.status !== 'ready') {
+            throw new Error('Redis cache is unavailable');
+        }
+        return cacheRedis;
     }
 
     /**
@@ -155,10 +186,8 @@ class CacheService {
     async getForShopStrict(shopId, key) {
         const rawKey = this._tenantKey(shopId, key);
         if (cacheRedis?._isMemoryFallback === true) return this._get(rawKey);
-        if (!cacheRedis || cacheRedis.status !== 'ready') {
-            throw new Error('Redis cache is unavailable');
-        }
-        const value = await cacheRedis.get(rawKey);
+        const redis = await this._getStrictRedis();
+        const value = await redis.get(rawKey);
         return value ? JSON.parse(value) : undefined;
     }
 
@@ -190,10 +219,8 @@ class CacheService {
             await cacheRedis.del(rawKey);
             return true;
         }
-        if (!cacheRedis || cacheRedis.status !== 'ready') {
-            throw new Error('Redis cache is unavailable');
-        }
-        await cacheRedis.del(rawKey);
+        const redis = await this._getStrictRedis();
+        await redis.del(rawKey);
         return true;
     }
 
@@ -258,10 +285,8 @@ class CacheService {
         if (cacheRedis?._isMemoryFallback === true) {
             return cacheRedis.incrby(rawKey, amount);
         }
-        if (!cacheRedis || cacheRedis.status !== 'ready') {
-            throw new Error('Redis cache is unavailable');
-        }
-        return cacheRedis.incrby(rawKey, amount);
+        const redis = await this._getStrictRedis();
+        return redis.incrby(rawKey, amount);
     }
 
     /**
@@ -308,22 +333,18 @@ class CacheService {
      * back to process-local memory or converting the failure into a cache miss.
      */
     async getStrict(key) {
-        if (!cacheRedis || cacheRedis._isMemoryFallback === true || cacheRedis.status !== 'ready') {
-            throw new Error('Redis cache is unavailable');
-        }
-        const value = await cacheRedis.get(key);
+        const redis = await this._getStrictRedis();
+        const value = await redis.get(key);
         return value ? JSON.parse(value) : null;
     }
 
     async setStrict(key, value, ttl = null) {
-        if (!cacheRedis || cacheRedis._isMemoryFallback === true || cacheRedis.status !== 'ready') {
-            throw new Error('Redis cache is unavailable');
-        }
+        const redis = await this._getStrictRedis();
         const serialized = JSON.stringify(value);
         if (ttl) {
-            await cacheRedis.setex(key, ttl, serialized);
+            await redis.setex(key, ttl, serialized);
         } else {
-            await cacheRedis.set(key, serialized);
+            await redis.set(key, serialized);
         }
         return true;
     }

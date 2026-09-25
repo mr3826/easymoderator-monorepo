@@ -32,7 +32,6 @@ import {
   type MetaConsentEventType,
 } from "@/api/domains/meta-channels";
 import { getMetaErrorMessage, extractMetaApiError } from "@/lib/meta/error-messages";
-import { trackFunnelEvent } from "@/app/lib/funnel";
 import { getErrorMessage } from "@shared/lib/http/errors";
 
 // Facebook-only launch — Instagram was removed from product scope (2026-06-24).
@@ -164,7 +163,6 @@ export default function ChatSettings() {
     oauthInProgressRef.current = true;
     try {
       sessionStorage.removeItem("easymod_oauth_channel_id");
-      trackFunnelEvent("facebook_connect_started", { surface: "chat_settings" });
       const { redirectUrl } = await initiateMetaOAuth("facebook");
 
       try {
@@ -296,9 +294,6 @@ export default function ChatSettings() {
         ));
       }
       sessionStorage.removeItem("easymod_oauth_channel_id");
-      trackFunnelEvent("facebook_connect_succeeded", {
-        pages_connected: pagesToConnect.length,
-      }, { onceKey: "facebook_connect_succeeded" });
       setActiveOAuth(null);
       setAvailablePages([]);
       setSelectedPageIds(new Set());

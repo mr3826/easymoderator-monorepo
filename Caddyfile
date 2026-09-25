@@ -231,6 +231,13 @@ growth.easymod.tech {
 
     log {
         output stdout
-        format json
+        format filter {
+            request>uri query {
+                delete q
+                delete search
+                delete email
+                delete phone
+            }
+        }
     }
 }

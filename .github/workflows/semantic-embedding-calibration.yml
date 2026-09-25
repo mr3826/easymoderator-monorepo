@@ -17,7 +17,7 @@ jobs:
     name: Gemini semantic calibration (no Qdrant)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: vars.PRODUCTION_DEPLOY_ENABLED != 'true'
+    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED != 'true'
     env:
       GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
       GEMINI_EMBEDDING_MODEL: gemini-embedding-2

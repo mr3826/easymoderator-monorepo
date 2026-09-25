@@ -6,12 +6,17 @@ const { RedisStore } = require('rate-limit-redis');
 const { authenticate } = require('../../middleware/auth.middleware');
 const validate = require('../../middleware/validate.middleware');
 const { AppError } = require('../../utils/AppError');
+const config = require('../../config/config');
 const { requireGrowthOsAccess } = require('./growth-os.middleware');
 const { hasProspectReadAccess } = require('./growth-os.prospect.scope');
 const ctrl = require('./growth-os.controller');
 const roleCtrl = require('./growth-os.roles.controller');
 const prospectCtrl = require('./growth-os.prospect.controller');
 const prospectValidator = require('./growth-os.prospect.validator');
+const workspaceCtrl = require('./growth-os.workspace.controller');
+const usersCtrl = require('./growth-os.users.controller');
+const adminCtrl = require('./growth-os.admin.controller');
+const workValidator = require('./growth-os.work.validator');
 
 const router = express.Router();
 
@@ -25,6 +30,17 @@ function validateProspect(schema) {
   return (req, res, next) => middleware(req, res, (error) => {
     if (error instanceof AppError && error.code === 'INTERNAL_ERROR') {
       error.code = 'GROWTH_OS_PROSPECT_INVALID_INPUT';
+      error.status = 400;
+    }
+    next(error);
+  });
+}
+
+function validateWork(schema) {
+  const middleware = validate(schema);
+  return (req, res, next) => middleware(req, res, (error) => {
+    if (error instanceof AppError && error.code === 'INTERNAL_ERROR') {
+      error.code = 'GROWTH_OS_WORK_INVALID_INPUT';
       error.status = 400;
     }
     next(error);
@@ -47,7 +63,23 @@ function buildRateLimitStore(prefix) {
   return undefined;
 }
 
-const prospectLookupLimiter = rateLimit({
+function requireDistributedRateLimit(req, res, next) {
+  if (config.env === 'development' || config.env === 'test') return next();
+  try {
+    const { rateLimitRedis } = require('../../config/redis');
+    if (rateLimitRedis && rateLimitRedis._isMemoryFallback !== true
+      && rateLimitRedis.status === 'ready') return next();
+  } catch (_error) {
+    // Fall through to the fail-closed response below.
+  }
+  return next(new AppError(
+    'Growth OS rate limiting is temporarily unavailable.',
+    503,
+    'GROWTH_OS_RATE_LIMIT_UNAVAILABLE',
+  ));
+}
+
+const prospectLookupRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
@@ -60,10 +92,49 @@ const prospectLookupLimiter = rateLimit({
   },
 });
 
+const prospectLookupLimiter = (req, res, next) => requireDistributedRateLimit(
+  req,
+  res,
+  (error) => (error ? next(error) : prospectLookupRateLimit(req, res, next)),
+);
+
+// All Growth OS/admin mutations are per-user+IP limited (closes audit
+// finding SEC-03: mutation endpoints previously had no quota bound).
+const growthMutationRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: buildRateLimitStore('rl:growth-os:mutations:'),
+  keyGenerator: (req) => `${req.user?.userId || 'anon'}:${req.ip}`,
+  message: {
+    success: false,
+    code: 'RATE_LIMITED',
+    message: 'Too many Growth OS mutations. Please slow down.',
+  },
+});
+
+const growthMutationLimiter = (req, res, next) => requireDistributedRateLimit(
+  req,
+  res,
+  (error) => (error ? next(error) : growthMutationRateLimit(req, res, next)),
+);
+
 router.use(authenticate, requireGrowthOsAccess());
+router.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 router.get('/session', ctrl.getSession);
-router.post('/roles', requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.grantRole);
-router.delete('/roles/:userId', requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.revokeRole);
+router.post('/roles', growthMutationLimiter, requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.grantRole);
+router.delete('/roles/:userId', growthMutationLimiter, requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.revokeRole);
+
+router.get(
+  '/prospect-owners',
+  requireGrowthOsAccess('growth_os.prospects.manage_all'),
+  validateProspect(prospectValidator.eligibleAssignees),
+  prospectCtrl.listEligibleAssignees,
+);
 
 router.get(
   '/prospects',
@@ -74,12 +145,13 @@ router.get(
 
 router.post(
   '/prospects',
+  growthMutationLimiter,
   requireGrowthOsAccess('growth_os.prospects.manage_all'),
   validateProspect(prospectValidator.createProspect),
   prospectCtrl.createProspect,
 );
 
-router.get(
+router.post(
   '/prospects/duplicate-check',
   prospectLookupLimiter,
   requireGrowthOsAccess(hasProspectReadAccess),
@@ -96,6 +168,7 @@ router.get(
 
 router.patch(
   '/prospects/:id',
+  growthMutationLimiter,
   requireGrowthOsAccess(prospectMutationPermissions),
   validateProspect(prospectValidator.updateProspect),
   prospectCtrl.updateProspect,
@@ -103,6 +176,7 @@ router.patch(
 
 router.post(
   '/prospects/:id/status',
+  growthMutationLimiter,
   requireGrowthOsAccess(prospectMutationPermissions),
   validateProspect(prospectValidator.transitionProspect),
   prospectCtrl.transitionProspect,
@@ -110,6 +184,7 @@ router.post(
 
 router.post(
   '/prospects/:id/assign',
+  growthMutationLimiter,
   requireGrowthOsAccess('growth_os.prospects.manage_all'),
   validateProspect(prospectValidator.assignProspect),
   prospectCtrl.assignProspect,
@@ -117,6 +192,7 @@ router.post(
 
 router.post(
   '/prospects/:id/link',
+  growthMutationLimiter,
   requireGrowthOsAccess('growth_os.prospects.manage_all'),
   validateProspect(prospectValidator.linkProspect),
   prospectCtrl.linkProspect,
@@ -132,9 +208,207 @@ router.get(
 
 router.post(
   '/prospects/:id/merge',
+  growthMutationLimiter,
   requireGrowthOsAccess('growth_os.prospects.manage_all'),
   validateProspect(prospectValidator.mergeProspect),
   prospectCtrl.mergeProspect,
+);
+
+// ── Growth workspace read models ────────────────────────────────────────────
+
+router.get(
+  '/home',
+  requireGrowthOsAccess(hasProspectReadAccess),
+  workspaceCtrl.home,
+);
+
+router.get(
+  '/analytics/growth',
+  requireGrowthOsAccess(['growth_os.reports.read_all', 'growth_os.reports.read_source_scope']),
+  validateWork(workValidator.workspace.analytics),
+  workspaceCtrl.analytics,
+);
+
+router.post(
+  '/search',
+  prospectLookupLimiter,
+  requireGrowthOsAccess('growth_os.search.read'),
+  validateWork({ body: workValidator.workspace.search.query }),
+  workspaceCtrl.search,
+);
+
+// ── Follow-ups and internal notes ───────────────────────────────────────────
+
+router.get(
+  '/followups',
+  requireGrowthOsAccess('growth_os.followups.manage'),
+  validateWork(workValidator.followups.list),
+  workspaceCtrl.listFollowups,
+);
+
+router.post(
+  '/followups',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.followups.manage'),
+  validateWork(workValidator.followups.create),
+  workspaceCtrl.createFollowup,
+);
+
+router.patch(
+  '/followups/:id',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.followups.manage'),
+  validateWork(workValidator.followups.update),
+  workspaceCtrl.updateFollowup,
+);
+
+router.post(
+  '/followups/:id/status',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.followups.manage'),
+  validateWork(workValidator.followups.transition),
+  workspaceCtrl.transitionFollowup,
+);
+
+router.get(
+  '/notes',
+  requireGrowthOsAccess('growth_os.notes.manage'),
+  validateWork(workValidator.notes.list),
+  workspaceCtrl.listNotes,
+);
+
+router.post(
+  '/notes',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.notes.manage'),
+  validateWork(workValidator.notes.create),
+  workspaceCtrl.createNote,
+);
+
+router.post(
+  '/notes/:id/delete',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.notes.manage'),
+  validateWork(workValidator.notes.delete),
+  workspaceCtrl.deleteNote,
+);
+
+// ── Merchant surface: shared read path (view shape chosen server-side) ──────
+
+router.get(
+  '/merchants',
+  requireGrowthOsAccess(['growth_os.admin.merchants.read', 'growth_os.merchants.read_insight']),
+  validateWork(workValidator.merchantsAdmin.list),
+  adminCtrl.listMerchants,
+);
+
+router.get(
+  '/merchants/:shopId',
+  requireGrowthOsAccess(['growth_os.admin.merchants.read', 'growth_os.merchants.read_insight']),
+  validateWork(workValidator.merchantsAdmin.shopId),
+  adminCtrl.merchantDetail,
+);
+
+// ── Admin Control Plane (SUPER_ADMIN permissions, default-deny) ─────────────
+
+router.get(
+  '/admin/users',
+  requireGrowthOsAccess('growth_os.admin.users.read'),
+  validateWork(workValidator.usersAdmin.list),
+  usersCtrl.listGrowthUsers,
+);
+
+router.post(
+  '/admin/users/search',
+  requireGrowthOsAccess('growth_os.admin.users.read'),
+  validateWork(workValidator.usersAdmin.search),
+  usersCtrl.listGrowthUsers,
+);
+
+router.post(
+  '/admin/users',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.users.manage'),
+  validateWork(workValidator.usersAdmin.create),
+  usersCtrl.createGrowthUser,
+);
+
+router.post(
+  '/admin/users/:userId/status',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.users.manage'),
+  validateWork(workValidator.usersAdmin.status),
+  usersCtrl.setUserStatus,
+);
+
+router.post(
+  '/admin/users/:userId/role',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.users.manage'),
+  validateWork(workValidator.usersAdmin.role),
+  usersCtrl.changeUserRole,
+);
+
+router.post(
+  '/admin/users/:userId/revoke-access',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.users.manage'),
+  validateWork(workValidator.usersAdmin.reasonOnly),
+  usersCtrl.revokeUserAccess,
+);
+
+router.post(
+  '/admin/users/:userId/reset-password',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.users.manage'),
+  validateWork(workValidator.usersAdmin.reasonOnly),
+  usersCtrl.resetUserPassword,
+);
+
+router.post(
+  '/admin/users/:userId/revoke-sessions',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.users.manage'),
+  validateWork(workValidator.usersAdmin.reasonOnly),
+  usersCtrl.revokeUserSessions,
+);
+
+router.post(
+  '/admin/merchants/:shopId/status',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.merchants.mutate'),
+  validateWork(workValidator.merchantsAdmin.status),
+  adminCtrl.setMerchantStatus,
+);
+
+router.post(
+  '/admin/merchants/:shopId/grant-credits',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.merchants.mutate'),
+  validateWork(workValidator.merchantsAdmin.credits),
+  adminCtrl.grantMerchantCredits,
+);
+
+router.post(
+  '/admin/merchants/:shopId/channels/:channelId/reconnect-request',
+  growthMutationLimiter,
+  requireGrowthOsAccess('growth_os.admin.merchants.mutate'),
+  validateWork(workValidator.merchantsAdmin.channelReconnect),
+  adminCtrl.requestChannelReconnect,
+);
+
+router.get(
+  '/admin/operations',
+  requireGrowthOsAccess('growth_os.admin.operations.read'),
+  validateWork(workValidator.merchantsAdmin.operations),
+  adminCtrl.operations,
+);
+
+router.get(
+  '/admin/audit',
+  requireGrowthOsAccess('growth_os.admin.audit.read'),
+  validateWork(workValidator.merchantsAdmin.auditList),
+  adminCtrl.auditLogs,
 );
 
 module.exports = router;

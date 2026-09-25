@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Filter, Plus, RefreshCw, Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ApiError,
   growthApi,
@@ -11,13 +11,44 @@ import {
   type ProspectListResponse,
   type ProspectSource,
   type ProspectStatus,
+  type GrowthAssignee,
 } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 const PAGE_SIZE = 20;
-const initialFilters: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters {
+  const filters: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
+  const status = searchParams.get('status');
+  const source = searchParams.get('source');
+  const owner = searchParams.get('owner');
+  const stage = searchParams.get('stage');
+  const stalled = searchParams.get('stalled');
+  const createdAfter = searchParams.get('createdAfter');
+  const createdBefore = searchParams.get('createdBefore');
+  const statusChangedAfter = searchParams.get('statusChangedAfter');
+  const statusChangedBefore = searchParams.get('statusChangedBefore');
+  const sourceRecordedAfter = searchParams.get('sourceRecordedAfter');
+  const sourceRecordedBefore = searchParams.get('sourceRecordedBefore');
+  if (status && (PROSPECT_STATUSES as readonly string[]).includes(status)) {
+    filters.status = status as ProspectStatus;
+  }
+  if (source && (PROSPECT_SOURCES as readonly string[]).includes(source)) {
+    filters.source = source as ProspectSource;
+  }
+  if (owner === 'me' || owner === 'unassigned' || (owner && UUID_PATTERN.test(owner))) filters.owner = owner;
+  if (stage === 'qualified') filters.stage = stage;
+  if (stalled === 'true') filters.stalled = true;
+  if (createdAfter) filters.createdAfter = createdAfter;
+  if (createdBefore) filters.createdBefore = createdBefore;
+  if (statusChangedAfter) filters.statusChangedAfter = statusChangedAfter;
+  if (statusChangedBefore) filters.statusChangedBefore = statusChangedBefore;
+  if (sourceRecordedAfter) filters.sourceRecordedAfter = sourceRecordedAfter;
+  if (sourceRecordedBefore) filters.sourceRecordedBefore = sourceRecordedBefore;
+  return filters;
+}
 
 function codeLabel(value: string) {
   return value.replace(/_/g, ' ');
@@ -30,8 +61,7 @@ function formatDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
 }
 
-function formatContact(value: string | null, redacted: boolean | undefined) {
-  if (redacted) return 'Hidden for your role';
+function formatValue(value: string | null) {
   return value || 'Not provided';
 }
 
@@ -53,15 +83,15 @@ function ProspectRow({ prospect }: { prospect: ProspectListItem }) {
           {prospect.businessName}
         </Link>
         <span className="table-subtext">
-          {formatContact(prospect.contactName, prospect.redacted)}
+          {formatValue(prospect.contactName)}
         </span>
       </th>
-      <td>{formatContact(prospect.contactPhone, prospect.redacted)}</td>
+      <td>{formatValue(prospect.contactPhone)}</td>
       <td>
         <span className="source-code">{codeLabel(prospect.source)}</span>
         {prospect.sourceDetail ? <span className="table-subtext">{prospect.sourceDetail}</span> : null}
       </td>
-      <td>{prospect.ownerUserId || 'Unassigned'}</td>
+       <td>{prospect.ownerDisplayName || (prospect.ownerUserId ? 'Historical owner' : 'Unassigned')}</td>
       <td>
         <span className={`status-badge ${statusClass(prospect.status)}`}>
           {codeLabel(prospect.status)}
@@ -69,9 +99,6 @@ function ProspectRow({ prospect }: { prospect: ProspectListItem }) {
       </td>
       <td>{prospect.linkedShopId || prospect.linkedUserId ? 'Linked' : 'Not linked'}</td>
       <td>
-        <span className={prospect.eligibleForNextPhase ? 'eligible-yes' : 'eligible-no'}>
-          {prospect.eligibleForNextPhase ? 'Eligible' : 'Not eligible'}
-        </span>
         <span className="table-subtext">Created {formatDate(prospect.createdAt)}</span>
       </td>
     </tr>
@@ -87,14 +114,30 @@ function LoadingRows() {
 }
 
 export function ProspectListPage() {
-  const [filters, setFilters] = useState<ProspectListFilters>(initialFilters);
-  const [draftFilters, setDraftFilters] = useState<ProspectListFilters>(initialFilters);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [initialState] = useState(() => makeInitialFilters(searchParams));
+  const [filters, setFilters] = useState<ProspectListFilters>(initialState);
+  const [draftFilters, setDraftFilters] = useState<ProspectListFilters>(initialState);
   const [result, setResult] = useState<ProspectListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
+  const [assignees, setAssignees] = useState<GrowthAssignee[]>([]);
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
   const canCreate = usePermission('growth_os.prospects.manage_all');
   const { reportApiError } = useGrowthAuth();
+
+  useEffect(() => {
+    if (!canCreate) return undefined;
+    let active = true;
+    growthApi.getEligibleAssignees()
+      .then((next) => { if (active) setAssignees(next); })
+      .catch((requestError: unknown) => {
+        if (!active || reportApiError(requestError)) return;
+        setAssigneesError(errorMessage(requestError));
+      });
+    return () => { active = false; };
+  }, [canCreate, reportApiError]);
 
   useEffect(() => {
     let active = true;
@@ -126,11 +169,25 @@ export function ProspectListPage() {
     }
     setFilterValidationError(null);
     setFilters({ ...draftFilters, page: 1, pageSize: draftFilters.pageSize || PAGE_SIZE });
+    const nextParams = new URLSearchParams();
+    if (draftFilters.status) nextParams.set('status', draftFilters.status);
+    if (draftFilters.source) nextParams.set('source', draftFilters.source);
+    if (draftFilters.owner) nextParams.set('owner', draftFilters.owner);
+    // Keep contact/search text out of browser history, referrers, and copied URLs.
+    if (draftFilters.stage) nextParams.set('stage', draftFilters.stage);
+    if (draftFilters.stalled) nextParams.set('stalled', 'true');
+    if (draftFilters.createdAfter) nextParams.set('createdAfter', draftFilters.createdAfter);
+    if (draftFilters.createdBefore) nextParams.set('createdBefore', draftFilters.createdBefore);
+    if (draftFilters.statusChangedAfter) nextParams.set('statusChangedAfter', draftFilters.statusChangedAfter);
+    if (draftFilters.statusChangedBefore) nextParams.set('statusChangedBefore', draftFilters.statusChangedBefore);
+    if (draftFilters.sourceRecordedAfter) nextParams.set('sourceRecordedAfter', draftFilters.sourceRecordedAfter);
+    if (draftFilters.sourceRecordedBefore) nextParams.set('sourceRecordedBefore', draftFilters.sourceRecordedBefore);
+    setSearchParams(nextParams);
   }
 
   function resetFilters() {
-    setDraftFilters(initialFilters);
-    setFilters(initialFilters);
+    setDraftFilters(initialState);
+    setFilters(initialState);
     setFilterValidationError(null);
   }
 
@@ -205,16 +262,19 @@ export function ProspectListPage() {
               {PROSPECT_SOURCES.map((source) => <option key={source} value={source}>{codeLabel(source)}</option>)}
             </select>
           </label>
-          <label htmlFor="prospect-owner">
-            Owner user ID
-            <input
-              id="prospect-owner"
-              value={draftFilters.ownerUserId ?? ''}
-              onChange={(event) => setDraftFilters((current) => ({ ...current, ownerUserId: event.target.value }))}
-              placeholder="Any owner"
-              maxLength={36}
-            />
-          </label>
+           <label htmlFor="prospect-owner">
+             Owner
+             <select
+               id="prospect-owner"
+               value={draftFilters.owner ?? ''}
+               onChange={(event) => setDraftFilters((current) => ({ ...current, owner: event.target.value, ownerUserId: undefined }))}
+             >
+               <option value="">Any owner</option>
+               <option value="me">Mine</option>
+               <option value="unassigned">Unassigned</option>
+               {assignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.displayName}</option>)}
+             </select>
+           </label>
           <label htmlFor="prospect-linked">
             Linkage
             <select
@@ -248,6 +308,7 @@ export function ProspectListPage() {
           </div>
         </form>
         {filterValidationError ? <p className="form-error" role="alert">{filterValidationError}</p> : null}
+        {assigneesError ? <p className="form-error" role="alert">Owner options unavailable: {assigneesError}</p> : null}
       </section>
 
       <section className="content-card" aria-labelledby="prospect-results-title">
@@ -291,7 +352,7 @@ export function ProspectListPage() {
                     <th scope="col">Owner</th>
                     <th scope="col">Status</th>
                     <th scope="col">Linkage</th>
-                    <th scope="col">Next phase</th>
+                    <th scope="col">Created</th>
                   </tr>
                 </thead>
                 <tbody>{result.items.map((prospect) => <ProspectRow key={prospect.id} prospect={prospect} />)}</tbody>

@@ -251,8 +251,10 @@ STATE  = PRESENT_AND_DECRYPTABLE
           no token, prefix or ciphertext was printed, logged or written)
 ```
 
-- **Token source** — EasyModerator's normal Facebook connection flow:
-  `exchangeCode` → long-lived user token → `getAssetAccessToken` per Page.
+- **Token source** — EasyModerator's approved Facebook Login for Business flow:
+  User access token → debug-token Page authorization → `/me/accounts` Page
+  `access_token`. The direct Page-node `getAssetAccessToken` lookup is not the
+  production OAuth connection path.
 - **Storage location (conceptually)** — the `page_access_token_ct` column on the
   channel record. The entity's getter/setter encrypt and decrypt transparently
   (AES-256-GCM, versioned `v2:` prefix, key `CHANNEL_ENCRYPTION_KEY`). Nothing
