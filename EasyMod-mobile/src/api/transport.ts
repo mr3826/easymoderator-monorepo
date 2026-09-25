@@ -43,6 +43,11 @@ export const fetchTransport: Transport = {
       'X-EM-Client': clientHeaderValue(),
       ...headers,
     };
+    // Native requests use bearer tokens and must never participate in a browser cookie session.
+    // Strip an explicitly supplied Cookie header as well as opting out of fetch's credential jar.
+    Object.keys(finalHeaders).forEach((headerName) => {
+      if (headerName.toLowerCase() === 'cookie') delete finalHeaders[headerName];
+    });
     if (!skipAuth) {
       const token = getAccessToken();
       if (token) finalHeaders.Authorization = `Bearer ${token}`;
@@ -54,10 +59,25 @@ export const fetchTransport: Transport = {
         headers: finalHeaders,
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        credentials: 'omit',
       });
-      return { status: res.status, ok: res.ok, json: () => res.json() };
-    } finally {
+
+      // Keep the controller alive until the body has been consumed. Native fetch can resolve the
+      // headers while `json()` is still waiting on a stalled response body.
+      return {
+        status: res.status,
+        ok: res.ok,
+        json: async () => {
+          try {
+            return await res.json();
+          } finally {
+            clearTimeout(timeoutHandle);
+          }
+        },
+      };
+    } catch (error) {
       clearTimeout(timeoutHandle);
+      throw error;
     }
   },
 };

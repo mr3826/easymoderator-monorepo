@@ -1,5 +1,12 @@
-import { signIn, refreshAccessToken, __resetRefreshGuardForTests } from './auth-client';
-import { getAccessToken, __resetTokenStoreForTests } from './token-store';
+import {
+  cancelTwoFactor,
+  logout,
+  signIn,
+  verifyTwoFactor,
+  refreshAccessToken,
+  __resetRefreshGuardForTests,
+} from './auth-client';
+import { getAccessToken, __resetTokenStoreForTests, setAccessToken } from './token-store';
 import { clearRefreshToken, getRefreshToken, setRefreshToken } from './secure-store';
 import type { HttpResponse, RequestOptions, Transport } from '@/api/transport';
 
@@ -22,6 +29,14 @@ const FIXTURE_USER = {
 
 function createFakeTransport(handler: (path: string, options?: RequestOptions) => Promise<HttpResponse>): Transport {
   return { request: jest.fn(handler) };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 beforeEach(async () => {
@@ -50,10 +65,10 @@ describe('signIn (envelope unwrap + shopId sourcing, Phase 2 contract fix)', () 
     const result = await signIn('merchant@example.test', 'hunter2', { transport });
 
     expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.shopId).toBe('shop-1');
-      expect(result.data.id).toBe('user-1');
-    }
+    if (!result.ok) return;
+    if ('requires2fa' in result.data) throw new Error('Expected a token response');
+    expect(result.data.shopId).toBe('shop-1');
+    expect(result.data.id).toBe('user-1');
     expect(getAccessToken()).toBe('access-1');
     await expect(getRefreshToken()).resolves.toBe('refresh-1');
   });
@@ -75,6 +90,164 @@ describe('signIn (envelope unwrap + shopId sourcing, Phase 2 contract fix)', () 
     if (!result.ok) {
       expect(result.error.message).toBe('Unexpected sign-in response shape from server.');
     }
+  });
+
+  it('returns the backend MFA handoff explicitly without installing a session', async () => {
+    await setRefreshToken('previous-session-refresh-token');
+    setAccessToken('previous-session-access-token');
+    const transport = createFakeTransport(async () =>
+      jsonResponse(200, envelope({ requires2fa: true, tempToken: 'temporary-2fa-token' })),
+    );
+
+    const result = await signIn('merchant@example.test', 'hunter2', { transport });
+
+    expect(result).toEqual({ ok: true, data: { requires2fa: true, tempToken: 'temporary-2fa-token' } });
+    expect(getAccessToken()).toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
+  });
+
+  it('sends the native logout refresh proof using the backend snake_case contract', async () => {
+    await setRefreshToken('logout-refresh-token');
+    setAccessToken('logout-access-token');
+    const transport = createFakeTransport(async () => jsonResponse(200, {}));
+
+    await logout({ transport });
+
+    expect(transport.request).toHaveBeenCalledWith(
+      '/api/auth/native/logout',
+      expect.objectContaining({ method: 'POST', body: { refresh_token: 'logout-refresh-token' } }),
+    );
+  });
+
+  it('does not block refresh after a failed sign-in transition', async () => {
+    await setRefreshToken('existing-refresh-token');
+    const transport = createFakeTransport(async (path) => {
+      if (path === '/api/auth/native/signin') return jsonResponse(401, { message: 'Invalid credentials' });
+      if (path === '/api/auth/native/refresh') {
+        return jsonResponse(
+          200,
+          envelope({ accessToken: 'refreshed-access', refreshToken: 'rotated-refresh', shopId: 'shop-1', user: FIXTURE_USER }),
+        );
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await expect(signIn('merchant@example.test', 'wrong-password', { transport })).resolves.toMatchObject({ ok: false });
+    await expect(refreshAccessToken({ transport })).resolves.toMatchObject({ accessToken: 'refreshed-access' });
+    expect(transport.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a stale MFA handoff clear a newer signed-in session', async () => {
+    const firstResponse = deferred<HttpResponse>();
+    const firstRequestStarted = deferred<void>();
+    let signinCalls = 0;
+    const transport = createFakeTransport(async () => {
+      signinCalls += 1;
+      if (signinCalls === 1) {
+        firstRequestStarted.resolve();
+        return firstResponse.promise;
+      }
+      return jsonResponse(
+        200,
+        envelope({
+          accessToken: 'account-b-access',
+          refreshToken: 'account-b-refresh-token',
+          sid: 'account-b-sid',
+          shopId: 'shop-b',
+          user: { ...FIXTURE_USER, id: 'user-b', email: 'b@example.test' },
+        }),
+      );
+    });
+
+    const pendingMfaSignIn = signIn('a@example.test', 'password', { transport });
+    await firstRequestStarted.promise;
+    await expect(signIn('b@example.test', 'password', { transport })).resolves.toMatchObject({ ok: true });
+
+    firstResponse.resolve(jsonResponse(200, envelope({ requires2fa: true, tempToken: 'stale-temp-token' })));
+
+    await expect(pendingMfaSignIn).resolves.toMatchObject({ ok: false });
+    expect(getAccessToken()).toBe('account-b-access');
+    await expect(getRefreshToken()).resolves.toBe('account-b-refresh-token');
+  });
+});
+
+describe('verifyTwoFactor (native MFA handoff)', () => {
+  it('posts the exact native challenge/code body and installs a session only after success', async () => {
+    const transport = createFakeTransport(async () =>
+      jsonResponse(
+        200,
+        envelope({
+          accessToken: 'verified-access-token',
+          refreshToken: 'verified-refresh-token',
+          sid: 'sid-verified',
+          shopId: 'shop-1',
+          user: FIXTURE_USER,
+        }),
+      ),
+    );
+
+    const result = await verifyTwoFactor('fake-temp-token', '123456', { transport });
+
+    expect(result).toEqual({ ok: true, data: { ...FIXTURE_USER, shopId: 'shop-1' } });
+    expect(transport.request).toHaveBeenCalledWith('/api/auth/native/2fa/verify', {
+      method: 'POST',
+      body: { tempToken: 'fake-temp-token', token: '123456' },
+      skipAuth: true,
+    });
+    expect(getAccessToken()).toBe('verified-access-token');
+    await expect(getRefreshToken()).resolves.toBe('verified-refresh-token');
+  });
+
+  it('returns an expired-challenge error without installing any session credential', async () => {
+    const transport = createFakeTransport(async () =>
+      jsonResponse(401, {
+        success: false,
+        message: 'Invalid or expired session. Please login again.',
+        code: 'INTERNAL_ERROR',
+      }),
+    );
+
+    const result = await verifyTwoFactor('expired-temp-token', '123456', { transport });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: 'unauthorized',
+        message: 'Invalid or expired session. Please login again.',
+        retryable: false,
+      },
+    });
+    expect(getAccessToken()).toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
+  });
+
+  it('cancelling a pending verification invalidates its late success response', async () => {
+    const response = deferred<HttpResponse>();
+    const requestStarted = deferred<void>();
+    const transport = createFakeTransport(async () => {
+      requestStarted.resolve();
+      return response.promise;
+    });
+
+    const pendingVerification = verifyTwoFactor('cancelled-temp-token', '123456', { transport });
+    await requestStarted.promise;
+    await cancelTwoFactor();
+    response.resolve(
+      jsonResponse(
+        200,
+        envelope({
+          accessToken: 'late-access-token',
+          refreshToken: 'late-refresh-token',
+          sid: 'late-sid',
+          shopId: 'shop-1',
+          user: FIXTURE_USER,
+        }),
+      ),
+    );
+
+    await expect(pendingVerification).resolves.toMatchObject({ ok: false });
+    expect(getAccessToken()).toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
   });
 });
 
@@ -156,5 +329,83 @@ describe('refreshAccessToken (single-flight guard)', () => {
 
     expect(result).toBeNull();
     expect(transport.request).not.toHaveBeenCalled();
+  });
+
+  it('does not install a refresh response that completes after logout starts', async () => {
+    await setRefreshToken('account-a-refresh-token');
+    const refreshResponse = deferred<HttpResponse>();
+    const refreshStarted = deferred<void>();
+    const transport = createFakeTransport(async (path) => {
+      if (path === '/api/auth/native/refresh') {
+        refreshStarted.resolve();
+        return refreshResponse.promise;
+      }
+      if (path === '/api/auth/native/logout') return jsonResponse(200, {});
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const pendingRefresh = refreshAccessToken({ transport });
+    await refreshStarted.promise;
+    await logout({ transport });
+
+    refreshResponse.resolve(
+      jsonResponse(
+        200,
+        envelope({
+          accessToken: 'account-a-access-after-logout',
+          refreshToken: 'account-a-rotated-after-logout',
+          shopId: 'shop-a',
+          user: FIXTURE_USER,
+        }),
+      ),
+    );
+
+    await expect(pendingRefresh).resolves.toBeNull();
+    expect(getAccessToken()).toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
+  });
+
+  it('does not let a previous account refresh overwrite a newer sign-in', async () => {
+    await setRefreshToken('account-a-refresh-token');
+    const refreshResponse = deferred<HttpResponse>();
+    const refreshStarted = deferred<void>();
+    const transport = createFakeTransport(async (path) => {
+      if (path === '/api/auth/native/refresh') {
+        refreshStarted.resolve();
+        return refreshResponse.promise;
+      }
+      if (path === '/api/auth/native/signin') {
+        return jsonResponse(
+          200,
+          envelope({
+            accessToken: 'account-b-access',
+            refreshToken: 'account-b-refresh-token',
+            shopId: 'shop-b',
+            user: { ...FIXTURE_USER, id: 'user-b', email: 'b@example.test' },
+          }),
+        );
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const pendingRefresh = refreshAccessToken({ transport });
+    await refreshStarted.promise;
+    await expect(signIn('b@example.test', 'password', { transport })).resolves.toMatchObject({ ok: true });
+
+    refreshResponse.resolve(
+      jsonResponse(
+        200,
+        envelope({
+          accessToken: 'account-a-access-after-sign-in',
+          refreshToken: 'account-a-rotated-after-sign-in',
+          shopId: 'shop-a',
+          user: FIXTURE_USER,
+        }),
+      ),
+    );
+
+    await expect(pendingRefresh).resolves.toBeNull();
+    expect(getAccessToken()).toBe('account-b-access');
+    await expect(getRefreshToken()).resolves.toBe('account-b-refresh-token');
   });
 });
