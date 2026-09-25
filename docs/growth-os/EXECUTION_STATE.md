@@ -1009,3 +1009,53 @@ frontend changes remain untouched.
   `bbc1024af831549436afb074ca5037925137d402`. The Growth image's
   `50b659bb` identity is intentional and documented above, not a stale/unverified
   artifact.
+
+## Growth OS MVP-1 autonomous credential audit (2026-09-25)
+
+- `AUDIT_START_MAIN`: `aea32dddb65dd86bddf36dd080e0dd89c8ed18c8`.
+- `CURRENT_PRODUCTION_RUNTIME`: backend/worker `bbc1024af831549436afb074ca5037925137d402`;
+  Growth SPA `50b659bb4949afaec78a462818b3573d0f99e3e0`; exact Growth digest
+  remains `sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`.
+- `ENGINEERING_AUDIT`: no new MVP-1 TODO, disabled control, placeholder, or
+  unwired Growth mutation was found. Existing deferred markers are post-MVP-1
+  roadmap items. No runtime code change was required in this audit run.
+- `CREDENTIAL_MATRIX`: repository secret `SENTRY_DSN` is present and consumed by
+  backend/worker deployment; `VITE_SENTRY_DSN` is absent from repository and
+  production environment variables; `GROWTH_BOOTSTRAP_ACTOR_EMAIL` is absent
+  after temporary candidate checks were cleaned up; `GROWTH_BOOTSTRAP_DIGEST` is
+  present and the Growth image digest is already verified; the deployment gate
+  is false.
+- `BOOTSTRAP_SEMANTICS`: `GROWTH_BOOTSTRAP_ACTOR_EMAIL` is a production
+  environment secret naming an existing actor account, while the workflow input
+  names an existing target account. The role service requires no active merchant
+  membership, no active Growth role, and an empty active-Super-Admin set for
+  first bootstrap. The actor/target identity must have real MFA before login;
+  the script itself does not fabricate or weaken MFA.
+- `IDENTITY_PROVISIONING`: Growth user creation is a `SUPER_ADMIN`-only route;
+  there is no self-registration or approved pre-bootstrap autonomous account
+  creation path. The platform-admin workflow only changes `platform_role` and
+  does not grant Growth access. No direct SQL or arbitrary customer account was
+  used.
+- `BOOTSTRAP_ATTEMPTS`: the corrected protected workflow reached the live role
+  service. `info@easymod.tech` was rejected for active merchant membership;
+  `founder@easymod.tech` and `growth@easymod.tech` were not found; the known
+  `admin@easymod.tech` candidate was also rejected for active merchant
+  membership. Runs failed closed before any role mutation.
+- `AUTHENTICATED_PROOF`: no eligible shop-less target identity or authorized
+  authenticated session was available, so Home, My Work, assignment, notes,
+  follow-ups, audit, logout, and session-invalidation walkthroughs were not
+  falsely claimed.
+- `SENTRY_BROWSER`: `EasyMod-frontend/src/sentry.ts` consumes
+  `vars.VITE_SENTRY_DSN`; the variable is absent and the browser initializes
+  Sentry only when it is non-empty. Backend `SENTRY_DSN` is intentionally not
+  copied across the server/browser configuration boundary.
+- `SENTRY_BACKEND`: repository secret `SENTRY_DSN` is present; deployment
+  preflight and production deployment succeeded with the backend sink mapping.
+  The privileged `/api/admin/ops/test-alert` path requires an authenticated
+  `SUPER_ADMIN`, so no production test event or human receipt was claimed.
+- `MOBILE_ISOLATION`: mobile worktrees/branches were inventoried and left
+  untouched; no mobile source, CI, dirty file, branch, or worktree was changed.
+- `PROOF_REMAINING`: `MVP1_ENGINEERING_REMAINING=0`; remaining proof is
+  configuration-dependent: create/select an existing shop-less production
+  account with MFA, configure the protected actor secret and target email, and
+  provide a canonical browser Sentry DSN plus human-visible event receipt.
