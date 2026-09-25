@@ -432,3 +432,9 @@ fails without it. `main` was not changed by this work.
 Found and fixed during the 2026-09-25 review:
 - The release manifest requested storage and `SYSTEM_ALERT_WINDOW` permissions the app never uses (`6ed48a92`).
 - A same-frame double tap sent two sign-in requests (`019d4bed`).
+
+Found by the CI emulator flows and fixed:
+- An entity link opened while the app was already running and signed in was undone by Expo
+  Router's own navigation to `/` (`edc21fba`).
+- `signIn`'s token clear on a 2FA-required answer briefly reported `signedIn`, which re-mounted
+  the login screen and lost the 2FA step (`13e8cce1`).

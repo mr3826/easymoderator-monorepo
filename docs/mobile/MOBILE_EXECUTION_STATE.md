@@ -3,10 +3,28 @@
 This is the living ledger and phase-receipt log for the mobile program. Every phase appends a
 receipt in the format below (master brief §25) and updates the flag/file ledger.
 
-## Current checkpoint - Wave 2.5 Runtime Qualification (2026-09-17)
+## Current checkpoint - Wave 2.5 completion (2026-09-25, PR #165)
+
+- All Wave 2 work is committed. PR #165 (`feat/mobile-release-completion` → `feature/mobile-app`)
+  integrates:
+  - the formerly uncommitted `D:/easymod/mob` work, archived byte-for-byte at
+    `archive/mob-wave2-snapshot-2026-09-25`;
+  - PR #152's tests;
+  - every 2026-09-20 audit fix (`MOBILE_AUDIT.md`, "Resolution").
+- CI run 36179069735 (Mobile CI #40, head `a8d24a2b`): every job passed. Details:
+  - The all-ABI release APK + AAB verified; debug-signed, so `NOT_DISTRIBUTABLE`.
+  - Install, cold launch and relaunch passed on an API 24 x86 emulator.
+  - All 15 Maestro flows passed on an API 34 x86_64 emulator against a disposable backend.
+  - The receipt below has the full record.
+- External items that remain: production signing / EAS credentials, and a physical-device pass.
+  Wave 3 stays locked.
+- `main` is untouched by the mobile program.
+
+## Previous checkpoint - Wave 2.5 Runtime Qualification (2026-09-17)
 
 - Integration branch: `feature/mobile-app` at `04bb4d5f8ec90baf241253b1dacfef48c5a6b3f6`; the
-  worktree is `D:/easymod/mob` and contains uncommitted Wave 2 changes. Do not reset or clean it.
+  worktree was `D:/easymod/mob` and held uncommitted Wave 2 changes (since archived and integrated
+  through PR #165).
 - `origin/main` remains `77790a833da372a03899686a365d7a40b2a95a67`; no mobile work landed on `main`.
 - Wave 1 lanes are verified from current refs/source: development environment, native-auth contract,
   Attention/Today APIs, and deep-link abstraction/tests (PRs #121/#122/#123/#124/#125).
@@ -489,4 +507,45 @@ KNOWN_RISKS=all-ABI Windows Gradle daemon instability; optional empty/error/offl
 DEFERRED_ITEMS=dedicated fixture toggles and supplementary device flows; Wave 3 write-policy modeling
 WAVE_2_FINAL_STATUS=PASS_CORE_RUNTIME
 WAVE_3_STATUS=PLANNING_READY_SHARED_INBOX_NEEDS_ME
+```
+
+### Wave 2.5 - Completion (2026-09-25, PR #165)
+
+Receipts from Mobile CI run 36179069735 (#40) on PR head `a8d24a2bd9013590e1202fac58a71c9519b35fda`.
+Artifacts: `mobile-android-release-40` and `mobile-maestro-e2e`.
+
+```text
+PHASE=WAVE_2_5_COMPLETION
+STATUS=PASS_EMULATOR; PARTIAL_EXTERNAL (release signing, physical device)
+BRANCH=feat/mobile-release-completion -> feature/mobile-app (PR #165)
+HEAD_SHA=a8d24a2bd9013590e1202fac58a71c9519b35fda
+BASE_SHA=8dcc56d7b5414bb636223569e41d3aebd1602b46 (feature/mobile-app after #152)
+MAIN_UNTOUCHED=YES
+MOB_ARCHIVE=archive/mob-wave2-snapshot-2026-09-25 (76 files verified equal to the worktree)
+
+ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64 (APK and AAB)
+ANDROID_PACKAGE=tech.easymod.merchant.preview 1.0.0 (40) MIN_SDK=24 TARGET_SDK=36
+ANDROID_APK_SHA256=103ed4ba1540ab94651628bddef8c2bdbd2c18726b21de313c7f0c50b50a9a46 (112,680,743 bytes)
+ANDROID_AAB_SHA256=d24505b7fdbdd652fdf8112d476e2184ae500d1cb560b97a41721a00c51ecde6 (76,382,020 bytes)
+ANDROID_MANIFEST=debuggable unset, usesCleartextTraffic=false, allowBackup=false, no storage/overlay permissions
+ANDROID_SIGNING=Android debug certificate SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c -> NOT_DISTRIBUTABLE
+INSTALL_LAUNCH=PASS on API 24 x86 emulator (cold 1620 ms, relaunch 1407 ms, login visible, 0 crashes)
+
+DEVICE_E2E=PASS 15/15 on API 34 x86_64 emulator, Maestro 2.6.0, disposable Postgres/Redis
+E2E_APK=tech.easymod.merchant.dev 1.0.0 (40) SHA-256 41c54978fdabb226685e081022c1058c59fa3529e4f7a3d18cda1080aa1767f7
+E2E_FLOWS=state-preflight smoke navigation refresh empty-home api-error offline-reconnect session-expiry session-revocation logout two-factor deep-link-stale deep-link-cold-launch reinstall-keeps-session shop-isolation
+E2E_DEVICE_LOG=no FATAL EXCEPTION, no ReactNativeJS errors, no token-shaped strings
+
+MOBILE_CHECKS=PASS (typecheck, lint, Jest 24 suites / 251 tests, npm audit)
+BACKEND_REGRESSION=PASS (Node 20: unit 227/2869, security 51/498, disposable integration 22/115, test discovery 252/252 homed, native-auth contract shape unchanged)
+GITLEAKS=PASS (full history)
+ISOLATION_GUARD=PASS
+PROTECTED_PATHS=PASS
+
+DB_CHANGES=NONE in this wave (the existing native-session migration is from PR #125)
+PRODUCTION_IMPACT=NONE (nothing deployed; feature/mobile-app only)
+META_IMPACT=NONE
+BILLING_IMPACT=NONE
+EXTERNAL_BLOCKERS=release keystore / EAS credentials; physical-device pass
+WAVE_3_STATUS=LOCKED
 ```
