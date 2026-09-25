@@ -48,7 +48,7 @@ export const PROSPECT_ALLOWED_TRANSITIONS: Record<ProspectStatus, readonly Prosp
   contacted: ['qualifying', 'disqualified', 'unreachable'],
   qualifying: ['qualified', 'disqualified', 'unreachable'],
   qualified: ['onboarding', 'disqualified', 'unreachable'],
-  onboarding: ['converted', 'qualified', 'disqualified', 'unreachable'],
+  onboarding: ['qualified', 'disqualified', 'unreachable'],
   disqualified: ['qualifying'],
   unreachable: ['contacted'],
   converted: [],

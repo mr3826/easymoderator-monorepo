@@ -100,23 +100,23 @@ test('walks a new prospect through contacted, qualifying, qualified, the unlinke
   expect(statusOptions).not.toContain('converted');
 
   await moveLifecycle(page, cafeId, 'onboarding');
-  // Shop activation is unset in the seed, so onboarding must WAIT here —
-  // moveLifecycle already proved the record is still open in 'onboarding'
-  // rather than having auto-converted.
+  // Activation is now event-driven (first successful AI reply), so operators
+  // cannot manually convert a prospect. The dropdown must not offer it, and
+  // the API must reject the request with 409 INVALID_TRANSITION.
   await expect(page.getByText('onboarding', { exact: true }).first()).toBeVisible();
-
-  await page.getByRole('link', { name: 'Pipeline' }).click();
-  await expect(page.getByRole('heading', { name: 'Pipeline', exact: true })).toBeVisible();
-  await expect(columnLocator(page, 'onboarding').getByRole('link', { name: businessName })).toBeVisible();
-  await expect(columnLocator(page, 'converted').getByRole('link', { name: businessName })).toHaveCount(0);
-
-  await columnLocator(page, 'onboarding').getByRole('link', { name: businessName }).click();
-  await expect(page.getByLabel('Move to status')).toHaveValue('onboarding');
-  await moveLifecycle(page, cafeId, 'converted');
+  const postOnboardingOptions = await page.getByLabel('Move to status').locator('option').allTextContents();
+  expect(postOnboardingOptions).toContain('onboarding (current)');
+  expect(postOnboardingOptions).not.toContain('converted');
+  const manualConversion = await pageRequest(page, `/api/internal/growth-os/prospects/${cafeId}/status`, {
+    method: 'POST',
+    body: { status: 'converted', reason: 'Attempted operator conversion' },
+  });
+  expect(manualConversion.status).toBe(409);
+  expect(manualConversion.body?.code).toBe('GROWTH_OS_PROSPECT_INVALID_TRANSITION');
 
   await page.goto('/pipeline');
-  await expect(columnLocator(page, 'converted').getByRole('link', { name: businessName })).toBeVisible();
-  await expect(columnLocator(page, 'onboarding').getByRole('link', { name: businessName })).toHaveCount(0);
+  await expect(columnLocator(page, 'onboarding').getByRole('link', { name: businessName })).toBeVisible();
+  await expect(columnLocator(page, 'converted').getByRole('link', { name: businessName })).toHaveCount(0);
 });
 
 test('creates a prospect through the full form', async ({ page }) => {
