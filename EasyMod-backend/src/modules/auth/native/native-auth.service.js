@@ -16,6 +16,7 @@ const Session = require('../session.entity');
 const totpService = require('../totp.service');
 const { User, UserShop } = require('../../entities');
 const { AppError } = require('../../../utils/AppError');
+const { getRedisClient } = require('../../../utils/redis-client');
 const AuditService = require('../../audit/audit.service');
 const {
     signNativeAccessToken,
@@ -23,6 +24,40 @@ const {
     verifyNativeRefreshToken,
     hashToken,
 } = require('./native-token.util');
+
+// Per-account brute-force boundary for native 2FA. The per-IP limiter in
+// native.routes.js cannot stop guesses spread across many client IPs. Each
+// guess already costs a password sign-in (the challenge is single-use), so only
+// a holder of the password reaches this counter: after TWO_FACTOR_MAX_FAILURES
+// failed codes in the sliding window, the account's native 2FA verification is
+// refused, even with a correct code. Redis errors propagate (fail closed).
+const TWO_FACTOR_FAILURE_PREFIX = 'native_2fa_fail:';
+const TWO_FACTOR_MAX_FAILURES = 5;
+const TWO_FACTOR_FAILURE_WINDOW_SECONDS = 5 * 60;
+
+const twoFactorFailureStore = () => {
+    const redis = getRedisClient();
+    if (!redis) throw new AppError('Two-factor verification is temporarily unavailable.', 503);
+    return redis;
+};
+
+const assertTwoFactorAttemptsRemaining = async (userId) => {
+    const failures = Number(await twoFactorFailureStore().get(`${TWO_FACTOR_FAILURE_PREFIX}${userId}`)) || 0;
+    if (failures >= TWO_FACTOR_MAX_FAILURES) {
+        throw new AppError('Too many 2FA attempts. Please try again later.', 429, 'RATE_LIMIT_EXCEEDED');
+    }
+};
+
+const recordTwoFactorFailure = async (userId) => {
+    const key = `${TWO_FACTOR_FAILURE_PREFIX}${userId}`;
+    const results = await twoFactorFailureStore().multi().incr(key).expire(key, TWO_FACTOR_FAILURE_WINDOW_SECONDS).exec();
+    const failed = (results || []).find(([error]) => error);
+    if (failed) throw failed[0];
+};
+
+const clearTwoFactorFailures = async (userId) => {
+    await twoFactorFailureStore().del(`${TWO_FACTOR_FAILURE_PREFIX}${userId}`);
+};
 
 const hasUnexpiredSession = (session) => {
     const expiresAt = new Date(session?.expires_at).getTime();
@@ -131,7 +166,15 @@ const verifyTwoFactor = async ({ tempToken, token }, req) => {
     if (!userId) {
         throw new AppError('Invalid or expired session. Please login again.', 401);
     }
-    await totpService.verifyTotpToken(userId, String(token));
+    await assertTwoFactorAttemptsRemaining(userId);
+    try {
+        await totpService.verifyTotpToken(userId, String(token));
+    } catch (error) {
+        // Wrong or replayed codes count; infrastructure failures do not.
+        if (error instanceof AppError && error.status === 400) await recordTwoFactorFailure(userId);
+        throw error;
+    }
+    await clearTwoFactorFailures(userId);
 
     const user = await User.findByPk(userId);
     if (!user) throw new AppError('User not found', 404);
@@ -418,4 +461,6 @@ module.exports = {
     refresh,
     logout,
     switchShop,
+    // Disposable E2E fixture reset only (mobile-e2e-fixtures.js).
+    clearTwoFactorFailures,
 };

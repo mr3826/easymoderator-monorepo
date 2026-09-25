@@ -191,6 +191,8 @@ async function resetFixture() {
     clearApiFailures();
     activeTotpSecret = null;
     resetTwoFactorAttempts();
+    // The seed owner's per-account 2FA failure count (native-auth.service.js).
+    await require('../auth/native/native-auth.service').clearTwoFactorFailures(ownerId);
 
     // The seed owns this deterministic user and shop. Delete only sessions for
     // that user so every flow starts from a clean actual session model.
