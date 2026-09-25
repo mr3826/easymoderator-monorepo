@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 import { todayResponseSchema, type TodayResponse } from '@/api/mobile/schemas';
 import { mobileQueryKeys } from '@/api/mobile/queryKeys';
@@ -7,9 +7,7 @@ import type { NormalizedError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthProvider';
 import { useNetworkStatus } from './useNetworkStatus';
 
-const todaySnapshots = new Map<string, TodayResponse>();
 const fetchToday = toQueryFn('/api/mobile/today', todayResponseSchema);
-const useRuntimeSnapshots = process.env.NODE_ENV !== 'test';
 
 /** Reads the server-computed Dhaka-day summary for the authenticated current shop. */
 export function useToday(): UseQueryResult<TodayResponse, NormalizedError> {
@@ -19,15 +17,11 @@ export function useToday(): UseQueryResult<TodayResponse, NormalizedError> {
 
   return useQuery<TodayResponse, NormalizedError>({
     queryKey: mobileQueryKeys.today(shopId),
-    queryFn: async () => {
-      const data = await fetchToday();
-      if (useRuntimeSnapshots && shopId) todaySnapshots.set(shopId, data);
-      return data;
-    },
+    queryFn: fetchToday,
     enabled: Boolean(shopId) && isOnline,
     retry: retryNormalizedError,
-    placeholderData: useRuntimeSnapshots && shopId
-      ? todaySnapshots.get(shopId) ?? keepPreviousData
-      : keepPreviousData,
+    // No placeholderData: a shop switch must render nothing (loading) rather than the previous
+    // shop's data. Offline or after a failed refresh, only the cached entry for *this* shop key is
+    // shown (retention policy: `src/lib/queryClient.ts`).
   });
 }

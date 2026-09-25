@@ -6,3 +6,10 @@ export const mobileQueryKeys = {
   attention: (shopId: string | null | undefined) => ['mobile', 'attention', shopId] as const,
   today: (shopId: string | null | undefined) => ['mobile', 'today', shopId] as const,
 };
+
+/**
+ * ADR M-011: how long a Home read may be shown as clearly-labelled stale data (offline, or after a
+ * failed refresh). Home queries keep their cache entry this long so that stale view survives, and
+ * it is the persisted cache's max age.
+ */
+export const HOME_OFFLINE_MAX_AGE_MS = 24 * 60 * 60 * 1000;

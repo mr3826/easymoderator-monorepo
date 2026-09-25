@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 import { attentionResponseSchema, type AttentionResponse } from '@/api/mobile/schemas';
 import { mobileQueryKeys } from '@/api/mobile/queryKeys';
@@ -7,9 +7,7 @@ import type { NormalizedError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthProvider';
 import { useNetworkStatus } from './useNetworkStatus';
 
-const attentionSnapshots = new Map<string, AttentionResponse>();
 const fetchAttention = toQueryFn('/api/mobile/attention', attentionResponseSchema);
-const useRuntimeSnapshots = process.env.NODE_ENV !== 'test';
 
 /** Reads the server-ranked Needs Attention list for the authenticated current shop. */
 export function useAttention(): UseQueryResult<AttentionResponse, NormalizedError> {
@@ -19,15 +17,11 @@ export function useAttention(): UseQueryResult<AttentionResponse, NormalizedErro
 
   return useQuery<AttentionResponse, NormalizedError>({
     queryKey: mobileQueryKeys.attention(shopId),
-    queryFn: async () => {
-      const data = await fetchAttention();
-      if (useRuntimeSnapshots && shopId) attentionSnapshots.set(shopId, data);
-      return data;
-    },
+    queryFn: fetchAttention,
     enabled: Boolean(shopId) && isOnline,
     retry: retryNormalizedError,
-    placeholderData: useRuntimeSnapshots && shopId
-      ? attentionSnapshots.get(shopId) ?? keepPreviousData
-      : keepPreviousData,
+    // No placeholderData: a shop switch must render nothing (loading) rather than the previous
+    // shop's data. Offline or after a failed refresh, only the cached entry for *this* shop key is
+    // shown (retention policy: `src/lib/queryClient.ts`).
   });
 }
