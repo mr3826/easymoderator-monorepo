@@ -66,6 +66,20 @@ const SHOP_NAME = 'EasyMod Mobile Dev Shop';
 const OWNER_EMAIL = 'mobile-dev@easymod.test';
 const OWNER_PASSWORD = process.env.MOBILE_DEV_SEED_PASSWORD || 'MobileDev123!';
 
+// A second, deliberately minimal merchant (own tenant, shop, owner and one low-stock product) so
+// device E2E can prove shop isolation: nothing of shop A may appear after signing in as shop B,
+// and shop A's entity ids must resolve as "unavailable" for shop B.
+const SECOND_SHOP = {
+    tenantScope: 'tenant:b',
+    shopScope: 'shop:b',
+    ownerScope: 'user:owner-b',
+    membershipScope: 'user-shop:owner-b',
+    productScope: 'product:shop-b-low-stock',
+    code: 'MOBILEDEV02',
+    name: 'EasyMod Mobile Dev Shop B',
+    ownerEmail: 'mobile-dev-b@easymod.test',
+};
+
 const stableId = (scope) => uuidv5(`${SEED_KEY}:${scope}`, NAMESPACE);
 const hoursAgo = (now, hours) => new Date(now.getTime() - hours * 60 * 60 * 1000);
 
@@ -533,6 +547,78 @@ async function ensureRtoBlacklistEntry(shop, fixture, transaction) {
     return entry;
 }
 
+async function ensureSecondShop(transaction) {
+    const marker = { mobile_dev_seed: SEED_KEY };
+    const tenantId = stableId(SECOND_SHOP.tenantScope);
+    await Tenant.findOrCreate({
+        where: { id: tenantId },
+        defaults: { id: tenantId, name: 'EasyMod Mobile Dev Tenant B', is_active: true, settings: marker },
+        transaction,
+    });
+
+    const shopId = stableId(SECOND_SHOP.shopScope);
+    const [shop] = await Shop.findOrCreate({
+        where: { id: shopId },
+        defaults: {
+            id: shopId,
+            unique_code: SECOND_SHOP.code,
+            tenant_id: tenantId,
+            shop_name: SECOND_SHOP.name,
+            name: SECOND_SHOP.name,
+            is_active: true,
+            timezone: 'Asia/Dhaka',
+            settings: marker,
+        },
+        transaction,
+    });
+
+    const ownerId = stableId(SECOND_SHOP.ownerScope);
+    const hashedPassword = await hashPassword(OWNER_PASSWORD);
+    const [owner, created] = await User.findOrCreate({
+        where: { id: ownerId },
+        defaults: {
+            id: ownerId,
+            email: SECOND_SHOP.ownerEmail,
+            password: hashedPassword,
+            full_name: 'Mobile Dev Owner B (Seed)',
+            token_version: 1,
+            last_logged_shop_id: shopId,
+        },
+        transaction,
+    });
+    if (!created) {
+        await owner.update({ password: hashedPassword, last_logged_shop_id: shopId, settings: {} }, { transaction });
+    }
+
+    const membershipId = stableId(SECOND_SHOP.membershipScope);
+    const [membership] = await UserShop.findOrCreate({
+        where: { id: membershipId },
+        defaults: { id: membershipId, user_id: ownerId, shop_id: shopId, role: 'owner', is_active: true },
+        transaction,
+    });
+    if (!membership.is_active) await membership.update({ is_active: true }, { transaction });
+
+    await ensureProduct(shop, {
+        key: SECOND_SHOP.productScope,
+        name: 'Shop B Only Item (Seed)',
+        price: 990,
+        quantity: 1,
+        low_stock_threshold: 5,
+        track_quantity: true,
+        is_active: true,
+    }, transaction);
+
+    return { shop, owner };
+}
+
+async function removeSecondShop(transaction) {
+    await Product.destroy({ where: { id: stableId(SECOND_SHOP.productScope) }, force: true, transaction });
+    await UserShop.destroy({ where: { id: stableId(SECOND_SHOP.membershipScope) }, transaction });
+    await User.destroy({ where: { id: stableId(SECOND_SHOP.ownerScope) }, transaction });
+    await Shop.destroy({ where: { id: stableId(SECOND_SHOP.shopScope) }, transaction });
+    await Tenant.destroy({ where: { id: stableId(SECOND_SHOP.tenantScope) }, transaction });
+}
+
 // ── Orchestration ────────────────────────────────────────────────────────────
 
 async function seed() {
@@ -575,7 +661,9 @@ async function seed() {
         // that absence is exactly what trips courier-readiness.service.js's
         // SETUP_INCOMPLETE path (verified below, outside the transaction).
 
-        return { shop, owner };
+        const secondShop = await ensureSecondShop(transaction);
+
+        return { shop, owner, secondShop };
     });
 
     return result;
@@ -632,6 +720,7 @@ async function remove() {
         for (const fixture of Object.values(fixtures.customers)) {
             await Customer.destroy({ where: { id: stableId(fixture.key) }, transaction });
         }
+        await removeSecondShop(transaction);
         await UserShop.destroy({ where: { id: stableId('user-shop:owner') }, transaction });
         await Shop.destroy({ where: { id: shopId }, transaction });
         await Tenant.destroy({ where: { id: stableId('tenant') }, transaction });
@@ -659,6 +748,7 @@ async function main() {
     console.log(`SHOP_ID=${shop.id}`);
     console.log(`SHOP_CODE=${shop.unique_code}`);
     console.log(`OWNER_EMAIL=${owner.email}`);
+    console.log(`SECOND_SHOP_CODE=${SECOND_SHOP.code} SECOND_OWNER_EMAIL=${SECOND_SHOP.ownerEmail}`);
     console.log('OWNER_PASSWORD=(MOBILE_DEV_SEED_PASSWORD env or default — dev/test only)');
     console.log('--- tier verification (read-only, not authoritative for Lane 2\'s endpoint) ---');
     verifyLines.forEach((line) => console.log(line));
@@ -684,6 +774,7 @@ module.exports = {
     SEED_KEY,
     SHOP_CODE,
     OWNER_EMAIL,
+    SECOND_SHOP,
     stableId,
     buildFixtures,
     seed,

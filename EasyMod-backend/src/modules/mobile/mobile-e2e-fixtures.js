@@ -4,12 +4,16 @@
  * Disposable controls used only by the native mobile E2E suite.
  *
  * This module deliberately has no production fallback. A control is accepted
- * only for NODE_ENV=test/e2e, an explicitly enabled fixture flag, a local
+ * only for NODE_ENV=test, an explicitly enabled fixture flag, a local
  * PostgreSQL database whose name is a disposable test/e2e name, and the
- * runner's private control header. The seeded shop is resolved by its own
- * deterministic marker; callers cannot provide an arbitrary shop or entity id.
+ * runner's per-run control token (>= 32 chars, compared in constant time).
+ * The route itself is only registered when these hold at startup
+ * (mobile.routes.js) and every request re-checks them. The seeded shops are
+ * resolved by their own deterministic ids and marker; callers cannot provide
+ * an arbitrary shop, user or entity id.
  */
 
+const crypto = require('crypto');
 const { AppError } = require('../../utils/AppError');
 
 const CONTROL_HEADER = 'X-Mobile-E2E-Control';
@@ -22,7 +26,10 @@ const CONTROL_ACTIONS = Object.freeze([
     'expire-sessions',
     'prepare-2fa',
     'current-2fa-code',
+    'expire-2fa-challenge',
 ]);
+const MIN_CONTROL_TOKEN_LENGTH = 32;
+const TOTP_TEMP_PREFIX = 'totp_temp:';
 const DISPOSABLE_DATABASE_NAME = /(?:^|[^a-z])(?:test|e2e)(?:[^a-z]|$)/i;
 
 const apiFailureCounts = new Map();
@@ -56,8 +63,10 @@ function isDisposableDatabase(rawUrl) {
 }
 
 function isMobileE2eFixturesEnabled(environment = process.env) {
-    return ['test', 'e2e'].includes(environment.NODE_ENV)
+    return environment.NODE_ENV === 'test'
         && environment.MOBILE_E2E_FIXTURES_ENABLED === 'true'
+        && typeof environment.MOBILE_E2E_FIXTURES_TOKEN === 'string'
+        && environment.MOBILE_E2E_FIXTURES_TOKEN.length >= MIN_CONTROL_TOKEN_LENGTH
         && isDisposableDatabase(environment.DATABASE_URL);
 }
 
@@ -65,14 +74,17 @@ function notFound(req) {
     return new AppError(`Can't find ${req.originalUrl} on this server!`, 404);
 }
 
+const digest = (value) => crypto.createHash('sha256').update(String(value)).digest();
+
 function hasControlToken(req, environment = process.env) {
     const expected = environment.MOBILE_E2E_FIXTURES_TOKEN;
     const supplied = req?.get
         ? req.get(CONTROL_HEADER)
         : req?.headers?.['x-mobile-e2e-control'];
-    return typeof expected === 'string'
-        && expected.length > 0
-        && supplied === expected;
+    if (typeof expected !== 'string' || expected.length < MIN_CONTROL_TOKEN_LENGTH) return false;
+    if (typeof supplied !== 'string' || supplied.length === 0) return false;
+    // Fixed-length digests keep the comparison constant-time regardless of input length.
+    return crypto.timingSafeEqual(digest(supplied), digest(expected));
 }
 
 function assertFixtureControlRequest(req) {
@@ -162,6 +174,15 @@ function setApiError(endpoint, rawFailures) {
     return { endpoint, failures };
 }
 
+function resetTwoFactorAttempts() {
+    // Every disposable run starts with a full native 2FA attempt budget, so a
+    // retried flow does not inherit 429s from an earlier attempt.
+    const nativeRoutes = require('../auth/native/native.routes');
+    if (typeof nativeRoutes.__resetTwoFactorAttemptsForE2E === 'function') {
+        nativeRoutes.__resetTwoFactorAttemptsForE2E();
+    }
+}
+
 async function resetFixture() {
     const seed = getSeedModule();
     const { Session, User } = getEntities();
@@ -169,6 +190,7 @@ async function resetFixture() {
 
     clearApiFailures();
     activeTotpSecret = null;
+    resetTwoFactorAttempts();
 
     // The seed owns this deterministic user and shop. Delete only sessions for
     // that user so every flow starts from a clean actual session model.
@@ -250,9 +272,45 @@ async function currentTwoFactorCode() {
         Math.floor(Date.now() / 1000 / 30),
     );
 
-    // The caller keeps this value in Maestro output memory only. It is never
-    // printed, persisted, or included in an error message.
-    return { code };
+    // A six-digit code guaranteed to be outside the accepted ±1 step window.
+    const accepted = new Set([-1, 0, 1].map((offset) => totpService.hotp(
+        activeTotpSecret,
+        Math.floor(Date.now() / 1000 / 30) + offset,
+    )));
+    const invalidCode = ['000000', '999999', '123456', '654321', '111111']
+        .find((candidate) => !accepted.has(candidate));
+
+    // The caller keeps these values in Maestro output memory only. They are
+    // never printed, persisted, or included in an error message.
+    return { code, invalidCode };
+}
+
+/**
+ * Deletes the seed owner's pending 2FA challenges so the next verification
+ * behaves exactly like a challenge whose five-minute TTL elapsed. Only keys
+ * whose value is the seed owner's id are touched.
+ */
+async function expireTwoFactorChallenge() {
+    const { ownerId } = await requireSeedFixture();
+    const { getRedisClient } = require('../../utils/redis-client');
+    const redis = getRedisClient();
+    if (!redis) {
+        throw new AppError('Redis is required for the 2FA expiry fixture.', 409, 'MOBILE_E2E_FIXTURE_UNAVAILABLE');
+    }
+
+    let expiredChallengeCount = 0;
+    let cursor = '0';
+    do {
+        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', `${TOTP_TEMP_PREFIX}*`, 'COUNT', 200);
+        cursor = nextCursor;
+        for (const key of keys) {
+            if (await redis.get(key) === ownerId) {
+                expiredChallengeCount += await redis.del(key);
+            }
+        }
+    } while (cursor !== '0');
+
+    return { expiredChallengeCount };
 }
 
 async function applyControl({ action, endpoint, failures }) {
@@ -271,6 +329,8 @@ async function applyControl({ action, endpoint, failures }) {
             homeApiError: true,
             sessionExpiry: true,
             twoFactor: true,
+            twoFactorExpiry: true,
+            secondShop: true,
         };
     case 'reset':
         return resetFixture();
@@ -287,6 +347,8 @@ async function applyControl({ action, endpoint, failures }) {
         return prepareTwoFactor();
     case 'current-2fa-code':
         return currentTwoFactorCode();
+    case 'expire-2fa-challenge':
+        return expireTwoFactorChallenge();
     default:
         // CONTROL_ACTIONS above makes this unreachable, but keep the switch
         // exhaustive if a future action is added without an implementation.

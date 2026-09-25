@@ -21,6 +21,7 @@ const { AppError } = require('../../utils/AppError');
 const { authenticate } = require('../../middleware/auth.middleware');
 const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 const mobileController = require('./mobile.controller');
+const { isMobileE2eFixturesEnabled } = require('./mobile-e2e-fixtures');
 
 const router = express.Router();
 
@@ -30,6 +31,16 @@ router.use((req, res, next) => {
     }
     next();
 });
+
+// Disposable device-E2E controls (mobile-e2e-fixtures.js). The route only
+// exists when the process starts with NODE_ENV=test, the explicit fixture flag,
+// a per-run token and a local disposable test database; in any other process it
+// is never registered and falls through to the same 404 as an unknown path.
+// Authenticated by the control token, not a user session, so it is mounted
+// before `authenticate`.
+if (isMobileE2eFixturesEnabled()) {
+    router.post('/e2e/control', require('./mobile-e2e.controller').control);
+}
 
 router.use(authenticate);
 router.use(verifyShopAccess);

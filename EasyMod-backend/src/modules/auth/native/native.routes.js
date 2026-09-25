@@ -50,6 +50,7 @@ function buildNativeTwoFactorRateLimitStore() {
 // boundary: five attempts per five-minute window per source IP; the sixth gets 429.
 // Keep the contract identical to web 2FA and enforce it in production with the
 // shared Redis store when available.
+const nativeTwoFactorRateLimitStore = buildNativeTwoFactorRateLimitStore();
 const nativeTwoFactorRateLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 5,
@@ -60,7 +61,7 @@ const nativeTwoFactorRateLimiter = rateLimit({
         success: false,
         error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many 2FA attempts. Please try again later.' },
     },
-    store: buildNativeTwoFactorRateLimitStore(),
+    store: nativeTwoFactorRateLimitStore,
 });
 
 router.use((req, res, next) => {
@@ -96,5 +97,17 @@ router.post('/switch-shop', authenticate, validate(switchShopValidator), nativeA
 // Own device sessions — see native-session.controller.js.
 router.get('/sessions', authenticate, nativeSessionController.list);
 router.delete('/sessions/:id', authenticate, nativeSessionController.revoke);
+
+/**
+ * Used only by the disposable mobile E2E fixture reset (mobile-e2e-fixtures.js),
+ * which is itself unreachable outside NODE_ENV=test. The test-env store is the
+ * process-local MemoryStore; this is a no-op for any store without resetAll.
+ */
+router.__resetTwoFactorAttemptsForE2E = () => {
+    if (config.env !== 'test') return;
+    if (typeof nativeTwoFactorRateLimitStore.resetAll === 'function') {
+        void nativeTwoFactorRateLimitStore.resetAll();
+    }
+};
 
 module.exports = router;
