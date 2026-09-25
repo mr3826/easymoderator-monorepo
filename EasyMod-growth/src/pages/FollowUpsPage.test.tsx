@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, workspaceApi, type Followup, type FollowupListResponse } from '@/api/client';
+import { fromBusinessDateTimeLocal } from '@/growthTime';
 import { FollowUpsPage } from './FollowUpsPage';
 
 const reportApiError = vi.fn(() => false);
@@ -87,7 +88,7 @@ describe('FollowUpsPage', () => {
     const update = vi.spyOn(workspaceApi, 'updateFollowup').mockResolvedValue(makeFollowup());
     await user.click(screen.getByRole('button', { name: 'Save due date' }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith('followup-1', { dueAt: new Date('2026-09-20T14:30').toISOString() }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('followup-1', { dueAt: fromBusinessDateTimeLocal('2026-09-20T14:30').toISOString() }));
   });
 
   it('switches the state filter tab and requests the selected state', async () => {
