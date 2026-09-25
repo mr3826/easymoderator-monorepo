@@ -31,8 +31,8 @@ const NEVER_TOUCH = [
   /^Dockerfile/i,
   /docker-compose.*\.ya?ml$/i,
   /^Caddyfile/i,
-  // Any workflow file except mobile-ci.yml itself.
-  /^\.github\/workflows\/(?!mobile-ci\.yml$).+/,
+  // Any workflow file except this program's own two (ADR M-009 / M-013).
+  /^\.github\/workflows\/(?!mobile-(?:ci|release)\.yml$).+/,
   /^EasyMod-frontend\//,
   /^EasyMod-growth\//,
 ];
@@ -54,7 +54,7 @@ if (hardFailures.length > 0) {
 // rather than skim, so it's called out loudly here instead of silently
 // passing alongside everything else.
 const guardFilesTouched = changedPaths.filter(
-  (p) => p === '.github/workflows/mobile-ci.yml' || p.startsWith('.github/scripts/'),
+  (p) => /^\.github\/workflows\/mobile-(?:ci|release)\.yml$/.test(p) || p.startsWith('.github/scripts/'),
 );
 if (guardFilesTouched.length > 0) {
   console.warn('\n⚠ This diff changes the isolation guard(s) themselves — review these line-by-line, not just the aggregate pass/fail:');

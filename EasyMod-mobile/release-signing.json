@@ -1,0 +1,19 @@
+{
+  "description": "Public metadata of the Android upload key that signs EasyModerator release builds (ADR M-013). No secret material lives in the repository.",
+  "keyAlias": "easymod-upload",
+  "certificateDn": "CN=EasyModerator Android Upload Key, O=EasyModerator",
+  "certificateSha256": "9d8e323ca0fd9a2bc174b957e631e492c1919443c251872df587b11f046a382b",
+  "certificateSha1": "1cc32033354c559120fb42aa29012498e948b973",
+  "serialNumber": "6037481babf43b19",
+  "keyAlgorithm": "RSA 4096",
+  "signatureAlgorithm": "SHA256withRSA",
+  "storeType": "PKCS12",
+  "validFrom": "2026-09-25T22:50:14Z",
+  "validUntil": "2054-02-10T22:50:14Z",
+  "storage": {
+    "githubEnvironment": "mobile-release",
+    "deploymentBranches": ["main"],
+    "secrets": ["ANDROID_UPLOAD_KEYSTORE_BASE64", "ANDROID_UPLOAD_KEYSTORE_PASSWORD"]
+  },
+  "createdAt": "2026-09-25"
+}

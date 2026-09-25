@@ -197,6 +197,12 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
         {
           android: {
             usesCleartextTraffic: variant === 'development',
+            // R8 for every release build, including the release-mode E2E build, so the Maestro
+            // flows exercise the same minified code the signed release ships. React Native, Expo
+            // modules and the other native dependencies ship their own consumer keep rules; the
+            // release verifier requires the resulting R8 mapping file.
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
           },
         },
       ],
