@@ -171,6 +171,9 @@ function buildRenderedEnv(source = process.env) {
         // 15 req/min free-tier cap); AI_VISION_ENABLED stays off.
         AI_PHOTO_MATCH_ENABLED: source.AI_PHOTO_MATCH_ENABLED || 'true',
         AI_VISION_ENABLED: source.AI_VISION_ENABLED || 'false',
+        // Growth remains authorization-gated; this enables the protected
+        // runtime surface without granting any role or bypassing MFA.
+        GROWTH_OS_ENABLED: source.GROWTH_OS_ENABLED || 'true',
         EMBEDDING_PROVIDER: source.EMBEDDING_PROVIDER || '',
         EMBEDDING_MODEL: source.EMBEDDING_MODEL || '',
         OPENAI_EMBEDDING_MODEL: source.OPENAI_EMBEDDING_MODEL || '',
