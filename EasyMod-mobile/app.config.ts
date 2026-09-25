@@ -144,6 +144,15 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
       // Backup would copy it (AsyncStorage) off the device first, beyond that purge, so app data is
       // never backed up. The SecureStore session is excluded from backup regardless.
       allowBackup: false,
+      // The Expo prebuild template requests shared-storage access and "draw over other apps"
+      // (SYSTEM_ALERT_WINDOW, a Play-reviewed special permission). The app uses neither, so they
+      // are removed from the merged manifest; scripts/verify-android-artifact.js fails a release
+      // build that requests them again.
+      blockedPermissions: [
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.SYSTEM_ALERT_WINDOW',
+      ],
       adaptiveIcon: {
         foregroundImage: './assets/images/android-icon-foreground.png',
         backgroundImage: './assets/images/android-icon-background.png',

@@ -9,8 +9,8 @@
  *
  * Fails (exit 1) unless every requested ABI ships the React Native/Hermes native
  * libraries in the APK (and AAB), the package id matches, the manifest is not
- * debuggable, does not allow cleartext traffic and disables backup, and the APK
- * verifies with apksigner. A debug-certificate signature is recorded as
+ * debuggable, does not allow cleartext traffic and disables backup, no blocked
+ * permission is requested, and the APK verifies with apksigner. A debug-certificate signature is recorded as
  * NOT_DISTRIBUTABLE rather than hidden. Dependency-free: unzip + Android build-tools.
  */
 
@@ -44,6 +44,13 @@ function buildTool(name) {
   }
   throw new Error(`${name} not found under ${root}`);
 }
+
+// Permissions the app never uses; app.config.ts `android.blockedPermissions` removes them.
+const FORBIDDEN_PERMISSIONS = [
+  'android.permission.READ_EXTERNAL_STORAGE',
+  'android.permission.WRITE_EXTERNAL_STORAGE',
+  'android.permission.SYSTEM_ALERT_WINDOW',
+];
 
 const run = (command, args) => execFileSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -88,6 +95,10 @@ function main() {
   const nativeCode = field(/native-code: (.+)/);
   check(packageName === options.package, `package is ${packageName}, expected ${options.package}`);
   check(!/application-debuggable/.test(badging), 'APK is debuggable');
+  const permissions = [...badging.matchAll(/uses-permission: name='([^']+)'/g)].map((match) => match[1]).sort();
+  for (const permission of FORBIDDEN_PERMISSIONS) {
+    check(!permissions.includes(permission), `APK requests ${permission} (blocked in app.config.ts)`);
+  }
 
   const manifestTree = run(aapt2, ['dump', 'xmltree', '--file', 'AndroidManifest.xml', options.apk]);
   const attribute = (name) => {
@@ -122,6 +133,7 @@ function main() {
     minSdk,
     targetSdk,
     nativeCode,
+    permissions,
     requestedAbis: abis,
     apk: { file: path.basename(options.apk), size: fs.statSync(options.apk).size, sha256: sha256(options.apk), abis: apkAbis },
     aab: options.aab
@@ -149,6 +161,7 @@ function main() {
     `SOURCE_SHA=${manifest.sourceSha}`,
     `BUILD_PROFILE=${manifest.buildProfile} PACKAGE=${packageName} VERSION=${versionName} (${versionCode}) MIN_SDK=${minSdk} TARGET_SDK=${targetSdk}`,
     `ABIS=${apkAbis.join(',')} NATIVE_CODE=${nativeCode}`,
+    `PERMISSIONS=${permissions.join(',')}`,
     `APK=${manifest.apk.file} SIZE=${manifest.apk.size} SHA256=${manifest.apk.sha256}`,
     manifest.aab ? `AAB=${manifest.aab.file} SIZE=${manifest.aab.size} SHA256=${manifest.aab.sha256} ABIS=${aabAbis.join(',')}` : 'AAB=none',
     `DEBUGGABLE=${debuggable} CLEARTEXT=${cleartext} ALLOW_BACKUP=${allowBackup}`,
