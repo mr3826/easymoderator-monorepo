@@ -89,6 +89,7 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
 
   const reportApiError = useCallback((requestError: unknown) => {
     if (!(requestError instanceof ApiError)) return false;
+    if (requestError.code === 'CSRF_INVALID') return false;
     if (requestError.status === 401) {
       void refreshSession();
       return true;

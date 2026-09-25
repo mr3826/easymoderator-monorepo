@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { CalendarPlus, ListChecks } from 'lucide-react';
 import { workspaceApi, type Followup, type FollowupListResponse } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
+import { usePermission } from '@/auth/usePermission';
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return 'Not provided';
@@ -28,6 +29,7 @@ function errorMessage(error: unknown) {
 
 export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
   const { reportApiError } = useGrowthAuth();
+  const canManage = usePermission('growth_os.followups.manage');
   const [result, setResult] = useState<FollowupListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +42,7 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
+    if (!canManage) return undefined;
     let active = true;
     setLoading(true);
     setError(null);
@@ -57,7 +60,7 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
     return () => {
       active = false;
     };
-  }, [prospectId, reportApiError, reloadToken]);
+  }, [canManage, prospectId, reportApiError, reloadToken]);
 
   async function complete(followup: Followup) {
     setCompletingId(followup.id);
@@ -104,6 +107,8 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
   }
 
   const items = result?.items ?? [];
+
+  if (!canManage) return null;
 
   return (
     <section className="content-card" aria-labelledby="followups-panel-title">

@@ -9,6 +9,7 @@ const WORKSPACE_PERMISSIONS = [
   'growth_os.prospects.read_all',
   'growth_os.prospects.manage_all',
   'growth_os.followups.manage',
+  'growth_os.reports.read_all',
   'growth_os.notes.manage',
   'growth_os.search.read',
   'growth_os.merchants.read_insight',
@@ -96,7 +97,7 @@ describe('GrowthShell navigation', () => {
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
   });
 
-  it('only exposes the prospect surface for a legacy assigned-reader permission set', () => {
+  it('exposes read-only prospect and pipeline surfaces for an assigned reader', () => {
     renderShell([
       'growth_os.session.read',
       'growth_os.prospects.read_assigned',
@@ -106,7 +107,7 @@ describe('GrowthShell navigation', () => {
     expect(screen.getByRole('link', { name: 'Prospects' })).toHaveAttribute('href', '/prospects');
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'My Work' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Pipeline' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/pipeline');
     expect(screen.queryByRole('link', { name: 'Follow-ups' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Sources' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Analytics' })).not.toBeInTheDocument();

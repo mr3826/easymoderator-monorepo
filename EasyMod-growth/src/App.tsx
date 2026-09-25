@@ -3,7 +3,7 @@ import { GrowthAuthProvider, useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RequirePermission } from '@/components/RequirePermission';
-import { PROSPECT_READ_PERMISSIONS } from '@/auth/usePermission';
+import { PROSPECT_READ_PERMISSIONS, REPORT_READ_PERMISSIONS } from '@/auth/usePermission';
 import { GrowthShell } from '@/layout/GrowthShell';
 import { AccessDeniedPage } from '@/pages/AccessDeniedPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
@@ -58,13 +58,15 @@ export function App() {
                 <Route element={<RequirePermission permission="growth_os.followups.manage" />}>
                   <Route path="my-work" element={<FollowUpsPage scope="mine" />} />
                   <Route path="follow-ups" element={<FollowUpsPage scope="all" />} />
+                </Route>
+                <Route element={<RequirePermission permission={PROSPECT_READ_PERMISSIONS} />}>
                   <Route path="pipeline" element={<PipelinePage />} />
                 </Route>
                 <Route element={<RequirePermission permission={PROSPECT_READ_PERMISSIONS} />}>
                   <Route path="prospects" element={<ProspectListPage />} />
                   <Route path="prospects/:prospectId" element={<ProspectDetailPage />} />
                 </Route>
-                <Route element={<RequirePermission permission="growth_os.prospects.read_all" />}>
+                <Route element={<RequirePermission permission={REPORT_READ_PERMISSIONS} />}>
                   <Route path="sources" element={<SourcesPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="growth_os.prospects.manage_all" />}>
