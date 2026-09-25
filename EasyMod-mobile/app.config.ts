@@ -12,7 +12,14 @@ const VALID_VARIANTS: readonly AppVariant[] = ['development', 'preview', 'produc
 
 function resolveVariant(): AppVariant {
   const raw = process.env.APP_VARIANT ?? process.env.EAS_BUILD_PROFILE ?? 'development';
-  return (VALID_VARIANTS as readonly string[]).includes(raw) ? (raw as AppVariant) : 'development';
+  if (!(VALID_VARIANTS as readonly string[]).includes(raw)) {
+    // A typo'd variant must not silently become `development` — that variant allows cleartext
+    // HTTP and a localhost API default, which a release build must never inherit.
+    throw new Error(
+      `[app.config.ts] Unknown APP_VARIANT/EAS_BUILD_PROFILE "${raw}"; expected one of ${VALID_VARIANTS.join(', ')}.`,
+    );
+  }
+  return raw as AppVariant;
 }
 
 const DEV_DEFAULT_API_BASE_URL = 'http://localhost:4000';
