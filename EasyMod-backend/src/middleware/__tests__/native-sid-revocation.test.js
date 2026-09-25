@@ -37,9 +37,15 @@ const { authenticate } = require('src/middleware/auth.middleware');
 const sign = (payload) =>
     jwt.sign(payload, config.jwtAccessSecret, { algorithm: 'HS256', expiresIn: '15m' });
 
-const runMiddleware = (token) =>
+const runMiddleware = (token, overrides = {}) =>
     new Promise((resolve) => {
-        const req = { headers: { authorization: `Bearer ${token}` }, cookies: {} };
+        const req = {
+            headers: { authorization: `Bearer ${token}` },
+            cookies: {},
+            method: 'GET',
+            path: '/api/auth/me',
+            ...overrides,
+        };
         const res = {};
         const next = (err) => resolve({ req, err });
         authenticate(req, res, next);
@@ -48,7 +54,11 @@ const runMiddleware = (token) =>
 describe('auth.middleware sid revocation branch (ADR M-004)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        mockSessionFindByPk.mockResolvedValue({ id: 'sid-1', is_active: true });
+        mockSessionFindByPk.mockResolvedValue({
+            id: 'sid-1',
+            is_active: true,
+            expires_at: new Date(Date.now() + 60_000),
+        });
     });
 
     test('REGRESSION: a token with no sid claim (every existing web token) never queries the sessions table and authenticates exactly as before', async () => {
@@ -83,6 +93,44 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
 
         expect(err).toBeDefined();
         expect(err.status).toBe(401);
+    });
+
+    test('a token with a sid claim for an expired session is rejected with 401', async () => {
+        mockSessionFindByPk.mockResolvedValue({
+            id: 'sid-1',
+            is_active: true,
+            expires_at: new Date(Date.now() - 1),
+        });
+        const token = sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, sid: 'sid-1' });
+        const { err } = await runMiddleware(token);
+
+        expect(err).toBeDefined();
+        expect(err.status).toBe(401);
+    });
+
+    test('a native sid token cannot invoke an existing web mutation route', async () => {
+        const token = sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1, sid: 'sid-1' });
+        const { req, err } = await runMiddleware(token, {
+            method: 'POST',
+            path: '/api/conversation/conversation-1/messages',
+        });
+
+        expect(err).toBeDefined();
+        expect(err.status).toBe(403);
+        expect(err.code).toBe('NATIVE_READ_ONLY');
+        expect(req.user).toBeUndefined();
+    });
+
+    test('a sid-less web token still authenticates for an existing mutation route', async () => {
+        const token = sign({ userId: 'user-1', email: 'a@b.com', shopId: 'shop-1', tokenVersion: 1 });
+        const { req, err } = await runMiddleware(token, {
+            method: 'POST',
+            path: '/api/conversation/conversation-1/messages',
+        });
+
+        expect(err).toBeUndefined();
+        expect(req.user.sid).toBeUndefined();
+        expect(mockSessionFindByPk).not.toHaveBeenCalled();
     });
 
     test('a token with a sid claim for a session that no longer exists is rejected with 401', async () => {

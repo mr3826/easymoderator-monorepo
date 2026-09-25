@@ -24,6 +24,11 @@ const {
     hashToken,
 } = require('./native-token.util');
 
+const hasUnexpiredSession = (session) => {
+    const expiresAt = new Date(session?.expires_at).getTime();
+    return Boolean(session?.is_active) && Number.isFinite(expiresAt) && expiresAt > Date.now();
+};
+
 /**
  * ADR M-005: any audit call this module makes carries metadata.source:
  * 'MOBILE' when the request carried X-EM-Client; absent (identical to
@@ -148,7 +153,7 @@ const refresh = async (refreshTokenBody, req) => {
         throw new AppError('Invalid or expired refresh token', 401);
     }
 
-    if (!session.is_active) {
+    if (!hasUnexpiredSession(session)) {
         throw new AppError('Session has been revoked. Please login again.', 401);
     }
 
@@ -291,18 +296,60 @@ const refresh = async (refreshTokenBody, req) => {
  * additively exported) and revokes the session row — never touches
  * user.refresh_token, the single web slot.
  */
-const logout = async (req) => {
-    const sid = req.user?.sid;
-    if (!sid) {
-        throw new AppError('This endpoint requires a native session token.', 400);
+const logoutWithRefreshToken = async (refreshToken, req) => {
+    let decoded;
+    try {
+        decoded = verifyNativeRefreshToken(refreshToken);
+    } catch (_error) {
+        throw new AppError('Invalid or expired refresh token', 401);
     }
 
-    const authHeader = req.headers.authorization;
+    const { userId, sid, generation } = decoded;
+    if (!userId || !sid || !Number.isInteger(generation)) {
+        throw new AppError('Invalid or expired refresh token', 401);
+    }
+
+    const session = await Session.findByPk(sid);
+    const isCurrentToken = session
+        && session.is_active
+        && session.user_id === userId
+        && hashToken(refreshToken) === session.refresh_token_hash
+        && generation === session.refresh_token_generation;
+
+    if (!isCurrentToken) {
+        throw new AppError('Invalid or expired refresh token', 401);
+    }
+
+    if (req.user?.sid && (req.user.sid !== sid || req.user.userId !== userId)) {
+        throw new AppError('Invalid native session', 401);
+    }
+
+    // Revocation is intentionally allowed for an expired access token (and
+    // even an expired session row) once the current signed refresh token proves
+    // ownership of this exact session. It is a monotonic, non-privileged action.
+    await sessionService.revokeSession(userId, sid);
+};
+
+const logout = async (req, refreshToken = req.body?.refresh_token) => {
+    const sid = req.user?.sid;
+
+    const authHeader = req.headers?.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    if (refreshToken) {
+        await logoutWithRefreshToken(refreshToken, req);
+        if (token && req.user?.sid) {
+            await authService.blacklistToken(token, req.user);
+        }
+        return;
+    }
+
+    if (!sid) {
+        throw new AppError('This endpoint requires a native session token or refresh_token.', 400);
+    }
+
     if (token) {
         await authService.blacklistToken(token, req.user);
     }
-
     await sessionService.revokeSession(req.user.userId, sid);
 };
 
@@ -326,7 +373,7 @@ const switchShop = async (req, shopId) => {
     }
 
     const session = await Session.findByPk(sid);
-    if (!session || !session.is_active || session.user_id !== req.user.userId) {
+    if (!session || !hasUnexpiredSession(session) || session.user_id !== req.user.userId) {
         throw new AppError('Session not found or has been revoked.', 404);
     }
 

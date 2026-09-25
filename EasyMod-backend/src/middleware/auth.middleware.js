@@ -7,6 +7,19 @@ const cacheService = require('../utils/cache.service');
 // row, looked up below only when that claim is present.
 const Session = require('../modules/auth/session.entity');
 
+const NATIVE_AUTH_PATH = '/api/auth/native';
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+const isNativeAuthRoute = (req) => {
+    const path = (req.originalUrl || `${req.baseUrl || ''}${req.path || ''}`).split('?')[0];
+    return path === NATIVE_AUTH_PATH || path.startsWith(`${NATIVE_AUTH_PATH}/`);
+};
+
+const hasUnexpiredSession = (session) => {
+    const expiresAt = new Date(session?.expires_at).getTime();
+    return Boolean(session?.is_active) && Number.isFinite(expiresAt) && expiresAt > Date.now();
+};
+
 /**
  * Authentication middleware
  * Checks Bearer header first, then falls back to httpOnly cookie.
@@ -73,10 +86,17 @@ const authenticate = async (req, res, next) => {
         // native-sid-revocation.test.js regression case.
         if (decoded.sid) {
             const session = await Session.findByPk(decoded.sid, {
-                attributes: ['id', 'is_active'],
+                attributes: ['id', 'is_active', 'expires_at'],
             });
-            if (!session || !session.is_active) {
+            if (!hasUnexpiredSession(session)) {
                 throw new AppError('Session has been revoked. Please login again.', 401);
+            }
+
+            // Native tokens are read-only everywhere except their dedicated
+            // auth/session routes. Web tokens have no sid and retain all
+            // existing mutation privileges.
+            if (!SAFE_METHODS.has(req.method || 'GET') && !isNativeAuthRoute(req)) {
+                throw new AppError('Native API access is read-only during the mobile pilot.', 403, 'NATIVE_READ_ONLY');
             }
         }
 

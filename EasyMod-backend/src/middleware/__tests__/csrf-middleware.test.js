@@ -1,6 +1,11 @@
 'use strict';
 
-const { isTrustedAuthOrigin, isNativeCsrfExempt } = require('../csrf-middleware');
+const config = require('../../config/config');
+const {
+    isTrustedAuthOrigin,
+    isNativeCsrfExempt,
+    csrfProtectionMiddleware,
+} = require('../csrf-middleware');
 
 describe('authentication origin binding', () => {
     const appOrigin = 'https://app.easymod.tech';
@@ -82,6 +87,11 @@ describe('ADR M-004: native mobile CSRF exemption (isNativeCsrfExempt)', () => {
         }
     });
 
+    test('exempts the native logout path with no Bearer header when refresh_token is the credential', () => {
+        const req = { path: '/api/auth/native/logout', cookies: {}, get: () => undefined };
+        expect(isNativeCsrfExempt(req, true)).toBe(true);
+    });
+
     test('does NOT exempt a native anonymous path when a cookie is present', () => {
         const req = { path: '/api/auth/native/signin', cookies: { 'commerce_ai.sid': 'x' }, get: () => undefined };
         expect(isNativeCsrfExempt(req, true)).toBe(false);
@@ -99,5 +109,27 @@ describe('ADR M-004: native mobile CSRF exemption (isNativeCsrfExempt)', () => {
             get: (name) => (name === 'Authorization' ? 'Bearer x' : undefined),
         };
         expect(isNativeCsrfExempt(req, true)).toBe(true);
+    });
+
+    test('lets a production-like flag-off native POST reach the native route 404 gate instead of CSRF', () => {
+        const previousEnabled = config.mobileApiEnabled;
+        const previousEnvironment = config.env;
+        const next = jest.fn();
+
+        config.mobileApiEnabled = false;
+        config.env = 'production';
+        try {
+            csrfProtectionMiddleware({
+                method: 'POST',
+                path: '/api/auth/native/signin',
+                cookies: {},
+                get: () => undefined,
+            }, {}, next);
+        } finally {
+            config.mobileApiEnabled = previousEnabled;
+            config.env = previousEnvironment;
+        }
+
+        expect(next).toHaveBeenCalledWith();
     });
 });
