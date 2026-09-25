@@ -945,3 +945,55 @@ frontend changes remain untouched.
   documentation-only receipt commit merged after deployment; it was not
   redeployed because no runtime code changed. Production remains pinned to
   `ccae4b97af3eeb4765c5e78911d74a817ff750a2`.
+
+## Growth OS MVP-1 final engineering closure receipt (2026-09-25)
+
+- `MVP1_ENGINEERING_REMAINING`: `0` for the repository-backed MVP-1 scope.
+- `MVP1_FUNCTIONAL_REMAINING`: `0` for the production-verifiable, unauthenticated
+  and test-covered scope; privileged operator proof remains an external
+  credential boundary and is not misrepresented as complete.
+- `IMPLEMENTATION_PR`: `#166`, merged as
+  `50b659bb4949afaec78a462818b3573d0f99e3e0`.
+- `DEPLOY_CONTRACT_PR`: `#167`, merged as
+  `bbc1024af831549436afb074ca5037925137d402`; workflow-only `growth_image_override`
+  support was required because the prior deploy path carried the running Growth
+  digest forward and could not rotate an already-running Growth container.
+- `ENGINEERING_SCOPE`: canonical `Asia/Dhaka` business-day semantics; exact Home,
+  My Work, follow-up, stalled, converted-window, Analytics, and Sources
+  metric/destination parity; bounded prospect date/stage filters; URL state
+  hydration; bounded Notes pagination; activation-only conversion; structured
+  contact PII redaction in audit snapshots; follow-up/note privileged audit
+  visibility; analytics permission parity; and search text removed from browser
+  URLs.
+- `VALIDATION`: Growth frontend `23/23` files and `136/136` tests; TypeScript
+  check and production build passed; Growth OS backend targeted suite `10/10`
+  files and `71/71` tests; security suite `45/45`; migration suite `49/49`;
+  deploy-guard suite `27/27`; CI PostgreSQL/Redis integration, Growth build and
+  browser E2E, Meta-shaped E2E, security, Docker, dependency, deployment-dry-run,
+  and merge gates passed; quarantine remains `2/2`.
+- `DATABASE`: no new migration, table, column, or index; production remains at
+  migration count 57 with latest
+  `20260925_001_growth_os_followup_cancel_event_type`.
+- `PRODUCTION_RUNTIME`: backend/worker exact runtime SHA is
+  `bbc1024af831549436afb074ca5037925137d402`; the Growth SPA intentionally uses
+  the existing published runtime-affecting artifact `50b659bb` because PR #167
+  changed only deployment workflow code.
+- `GROWTH_IMAGE`: exact digest
+  `sha256:c54a14e4d426ed8908592093bf5147462ed8cd562fa5dc7f4d7dd2aefeb7f942`;
+  public `build-info.json` reports `50b659bb` after the explicit override deploy.
+- `DEPLOYMENT_RUN`: `36185036774` completed successfully with `target=all` and
+  the explicit Growth image override. Backend `/version`, backend readiness,
+  Growth readiness/root, public Growth build info, and the unauthenticated
+  Growth session boundary were verified after deployment.
+- `DEPLOYMENT_GATE`: `PRODUCTION_DEPLOY_ENABLED=false` restored at
+  `2026-09-25T20:34:24Z`.
+- `ROLLBACK_STATUS`: `MECHANISM_VERIFIED`; protected rollback checks completed,
+  but no live production rollback was executed.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL` — no eligible
+  operator identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL` — DSN provisioning and human-visible
+  event receipt remain unavailable.
+- `POST_DEPLOY_MAIN`: `bbc1024af831549436afb074ca5037925137d402` is the current
+  `origin/main`; the backend runtime matches it. The Growth image's
+  `50b659bb` identity is intentional and documented above, not a stale/unverified
+  artifact.
