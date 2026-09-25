@@ -438,3 +438,34 @@ Found by the CI emulator flows and fixed:
   Router's own navigation to `/` (`edc21fba`).
 - `signIn`'s token clear on a 2FA-required answer briefly reported `signedIn`, which re-mounted
   the login screen and lost the 2FA step (`13e8cce1`).
+
+## Release closure (2026-09-26, PR #172 into `main`)
+
+| Finding | Status | Evidence |
+|---|---|---|
+| P1-3 production signing (debug certificate, NOT_DISTRIBUTABLE) | Resolved. An RSA-4096 upload key lives only in the main-only `mobile-release` GitHub environment. `mobile-release.yml` signs on `main` and fails unless the APK and AAB carry exactly the pinned certificate (`release-signing.json`). Mobile CI proves a debug-signed build is refused. | ADR M-013, `80ef0f1f` |
+| R8 off in release builds | Resolved. Minify and resource shrinking are on for every release build, including the release-mode E2E build that runs all 15 Maestro flows. The verifier requires the R8 mapping. | `80ef0f1f` |
+| P0-1 push fan-out | Now present on the integrated tree (`main`'s #119 fix merged in). | `729929a4` |
+| P0-2 membership removal | Both checks live together in `auth.middleware.js`: web 403, native 401 answered once. Pinned by `native-sid-revocation.test.js`. | `729929a4` |
+| Non-atomic tempToken / TOTP replay | Superseded by `main`'s stricter implementation: Lua consume, token-generation-bound challenge, `SET NX EX` that fails closed in production. The native path uses it. | `729929a4` |
+
+Found while merging `main` and fixed in the merge commit (`729929a4`):
+
+- **Auto-merge defect in `auth.service.js`.** Git placed `main`'s temporary-password token claims in
+  `authenticateUser`, but the variable they read now lives in the extracted resolver. Every web
+  sign-in without 2FA would have thrown a `ReferenceError`. The resolver now returns the
+  temporary-password state.
+- **Forced password change bypass (native).** Native sign-in shares the resolver but issues tokens
+  without `main`'s `passwordChangeRequired` claim, and native tokens cannot reach the password-change
+  route. A temporary-password account is now refused natively (403 `AUTH_PASSWORD_CHANGE_REQUIRED`),
+  both at sign-in and at 2FA verification.
+- **Growth OS staff.** `main` gives them a shop-less web session. Native sessions are merchant
+  sessions, so both native steps refuse them.
+- **2FA challenge format.** `main` binds challenges to the token generation (JSON value). Native
+  verification now checks that generation, and the E2E `expire-2fa-challenge` fixture reads the new
+  format.
+
+Each is pinned by `native-auth-account-state.integration.test.js` or `native-sid-revocation.test.js`.
+Every one of those tests fails if the corresponding fix is reverted.
+
+Residual, unchanged: offline logout is local-only (see above).

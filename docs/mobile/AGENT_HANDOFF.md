@@ -1,18 +1,21 @@
 # EasyModerator Mobile Agent Handoff
 
-Last updated: 2026-09-25 (PR #165).
+Last updated: 2026-09-26 (PR #172, mobile integrated into `main`).
 
 ## Repository State
 
-- Integration branch: `feature/mobile-app`. Mobile PRs target it, not `main`.
-  Check `gh pr view <n> --json baseRefName` before any rebase or force-push.
-- `feature/mobile-app` is behind `main` on non-mobile work, and `main` has no mobile code. Nothing in the
-  mobile program has been merged to `main` or deployed.
-- All Wave 2 work is committed. The old `D:/easymod/mob` worktree held it uncommitted. It is preserved
-  byte-for-byte on the pushed branch `archive/mob-wave2-snapshot-2026-09-25` and was integrated through
-  PR #165. Do not rebuild from that archive; it is evidence only.
+- **Mobile lives on `main`.** PR #172 merged the Wave 2.5 program (`feature/mobile-app@e4bd2702`)
+  into `main` with the release hardening.
+- `feature/mobile-app` is retired. Branch mobile work from `main`, and open PRs into `main`.
+- The mobile backend is additive and flag-gated. All `MOBILE_*` flags default to false, so production
+  behaviour is unchanged until the owner turns `MOBILE_API_ENABLED` on. That is a deploy-time decision,
+  not a code change.
+- The old `D:/easymod/mob` worktree is preserved byte-for-byte on the branch
+  `archive/mob-wave2-snapshot-2026-09-25`. It is evidence only; do not rebuild from it.
 - Mobile CI (`.github/workflows/mobile-ci.yml`) is the authority for mobile JS, Android builds and
-  device E2E. Local Windows builds are a convenience only.
+  device E2E on PRs.
+- Signed releases come only from `.github/workflows/mobile-release.yml` on `main` (ADR M-013).
+- Local Windows builds are a convenience only.
 
 ## Completed Work
 
@@ -28,6 +31,14 @@ Last updated: 2026-09-25 (PR #165).
   - The 2026-09-20 audit fixes (see `MOBILE_AUDIT.md`, "Resolution").
   - A disposable E2E fixture mechanism and 15 Maestro flows.
   - An all-ABI Android release build with artifact verification and emulator install/launch proof.
+- PR #172, integration and release closure:
+  - `main` merged in. `auth.middleware.js`, `auth.service.js` and `totp.service.js` were resolved line
+    by line, keeping both sides' checks.
+  - Native sign-in follows `main`'s account rules.
+  - Upload-key signing on `main` (`mobile-release.yml`) with fail-closed verification against the
+    pinned fingerprint in `EasyMod-mobile/release-signing.json`.
+  - R8 and resource shrinking in every release build.
+  - An arm64 device test APK for the physical-phone pass.
 
 ## Current Architecture
 
@@ -44,8 +55,14 @@ Last updated: 2026-09-25 (PR #165).
   - The shop membership must still be active.
   - Outside `/api/auth/native/*`, the token is read-only and limited to `/api/mobile/*` and the
     order/conversation detail GETs.
-  - 2FA challenges are single-use (`MULTI GET+DEL`) and codes replay-protected (`SET NX`).
+  - 2FA challenges are single-use (atomic Lua `GET`+`DEL`, shared with the web). Each challenge is bound
+    to the token generation that passed the password step.
+  - Codes are replay-protected (`SET NX EX`, fails closed in production and staging).
   - Verify is limited per IP and per account.
+  - Native sign-in refuses:
+    - a pending temporary password (403 `AUTH_PASSWORD_CHANGE_REQUIRED`), because native tokens cannot
+      reach the web password-change route;
+    - Growth OS staff, since native sessions are merchant sessions.
 - **Home data.**
   - Query keys carry the shop id, and no placeholder data survives a shop change.
   - Only the Home `attention` and `today` queries are persisted (AsyncStorage, 24 h). The buster is
@@ -68,10 +85,16 @@ Last updated: 2026-09-25 (PR #165).
   set, a ≥32-character control token is set, and the database is local and disposable. Never enable it
   anywhere else.
 - Keep mobile additive and flag-gated. Web, Meta, billing and production behaviour must stay unchanged.
-- **Future `feature/mobile-app` → `main` merge.** Both sides change `auth.middleware.js`:
-  - `main` re-checks web shop membership;
-  - this branch adds the native session, allowlist and membership checks.
-  Keep both.
+- **`auth.middleware.js` serves both clients.** Web tokens get `main`'s membership re-check (403) and
+  the temporary-password gate. Native (`sid`) tokens additionally get:
+  - the session and binding checks;
+  - the read-only allowlist;
+  - a single membership check that answers 401, so the app refreshes and signs out.
+
+  `native-sid-revocation.test.js` pins every one of these. Keep them all.
+- Signing: never commit key material, never give a secret to `mobile-ci.yml`, and never add a
+  distribution step to `mobile-release.yml` without an owner decision. The guard script enforces the
+  last two.
 
 ## Current Phase
 
@@ -112,18 +135,26 @@ emulator job.
 
 ## CI and Protected Areas
 
-- Mobile CI runs on pushes to `feature/mobile-app` and `mobile/**`, and on every PR into
-  `feature/mobile-app` (no path filter for PRs). It carries no secrets, no environment and no
-  `workflow_dispatch`.
-- Jobs:
-  - isolation guard
+- Mobile CI runs on PRs into `main` that touch mobile paths, and on pushes to `mobile/**`. It never runs
+  for a push to `main`. It carries no secrets, no environment and no `workflow_dispatch`.
+- Mobile CI jobs:
+  - isolation guard (also pins `mobile-release.yml`'s signing boundary)
   - protected paths
   - gitleaks (full history)
   - mobile (typecheck, lint, Jest, audit)
   - backend regression (when the backend is touched)
-  - `android-release`: all ABIs, verify, install/launch on API 24
-  - `mobile-e2e`: label-gated, API 34, all Maestro flows
+  - `android-release`: all ABIs, R8 mapping, the debug-signature negative control, a throwaway-key
+    signing proof, install/launch on API 24
+  - `mobile-e2e`: label-gated, API 34, all Maestro flows on the R8 build
+  - `android-device-apk`: label-gated arm64 build for a USB phone
   - the `Mobile CI` gate over all of them
+- `mobile-release.yml` runs on pushes to `main` that change `EasyMod-mobile/`:
+  - it builds without secrets;
+  - it signs in one step with the upload key from the main-only `mobile-release` environment;
+  - it verifies against the pinned fingerprint and installs/launches on API 24;
+  - it uploads `mobile-release-<sha>`.
+
+  It distributes nothing. See ADR M-013 for rotation and recovery.
 - Do not modify production deploy, release, Meta, billing, database migration or non-mobile workflow
   behaviour.
 - Do not edit third-party native sources, generated secrets, `google-services.json`, keystores or

@@ -659,3 +659,52 @@ node e2e/run-maestro.js --start-backend \
 
 In CI the job runs only on PRs labelled `mobile-e2e` that touch mobile or backend paths (ADR M-009 cost
 policy). When it runs, the `Mobile CI` gate requires it to pass.
+
+## 12. Signed release and the physical-device pass (2026-09-26)
+
+### Signed release (`mobile-release.yml`, ADR M-013)
+
+Every push to `main` that changes `EasyMod-mobile/` builds the `preview` APK and AAB (all four ABIs,
+R8), signs them with the upload key, verifies them, and launches the APK on API 24. The signed build
+is uploaded as the run's `mobile-release-<sha>` artifact. Nothing is published anywhere.
+
+```bash
+gh run list --workflow "Mobile Release" --branch main --limit 5
+gh run download <run> -n mobile-release-<sha> -D release
+cd release && sha256sum -c SHA256SUMS
+# re-verify anywhere with the Android SDK and JDK 17:
+node EasyMod-mobile/scripts/verify-android-artifact.js --apk release/app-release.apk --aab release/app-release.aab \
+  --package tech.easymod.merchant.preview --abis armeabi-v7a,arm64-v8a,x86,x86_64 \
+  --expect-signer "$(node -p "require('./EasyMod-mobile/release-signing.json').certificateSha256")" --out verify
+```
+
+- Sideload with `adb install -r release/app-release.apk`. A device that has a CI (debug-signed) build of
+  `tech.easymod.merchant.preview` must uninstall it first, because the signatures differ.
+- The `preview` build talks to `https://api.easymod.tech`. Until the owner turns the mobile API on
+  there, sign-in answers "not found", so the build proves install and launch only.
+
+### Physical-device pass (USB, arm64)
+
+A labelled PR's `android-device-apk` job builds `mobile-device-apk-arm64-<run>`. This is the
+release-mode development variant for `arm64-v8a` (R8). It reaches the backend at
+`http://localhost:4000`, which `run-maestro.js` maps to this machine with `adb reverse`.
+
+```bash
+gh run download <run> -n mobile-device-apk-arm64-<run> -D device-apk
+docker run -d --name easymod-mobile-e2e-pg -e POSTGRES_USER=e2e -e POSTGRES_PASSWORD=e2e \
+  -e POSTGRES_DB=easymod_mobile_e2e -p 127.0.0.1:5432:5432 --tmpfs /var/lib/postgresql/data postgres:16-alpine
+docker run -d --name easymod-mobile-e2e-redis -p 127.0.0.1:6379:6379 redis:7-alpine
+cd EasyMod-mobile
+export E2E_DATABASE_URL=postgres://e2e:e2e@127.0.0.1:5432/easymod_mobile_e2e \
+       E2E_REDIS_URL=redis://127.0.0.1:6379 E2E_API_BASE_URL=http://127.0.0.1:4000
+node e2e/run-maestro.js --start-backend --apk ../device-apk/app-device-arm64.apk   # only the phone attached
+# afterwards: remove the test app and Maestro's driver apps, then the containers
+adb uninstall tech.easymod.merchant.dev
+adb uninstall dev.mobile.maestro; adb uninstall dev.mobile.maestro.test
+docker rm -f easymod-mobile-e2e-pg easymod-mobile-e2e-redis
+```
+
+- The phone must be unlocked, with USB debugging on and "install via USB" allowed. Maestro installs its
+  own driver apps for the run.
+- The flows touch only the test app (`tech.easymod.merchant.dev`) and the disposable seed accounts.
+- `offline-reconnect` toggles the phone's airplane mode and restores it afterwards.

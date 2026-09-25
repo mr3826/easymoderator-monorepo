@@ -393,3 +393,30 @@ This appendix supersedes §17 where they differ.
   may not hold secrets (ADR M-009). The release artifact is signed with the debug certificate and
   labelled `NOT_DISTRIBUTABLE`.
 - **Physical-device proof is still missing.** Everything above ran on emulators.
+
+## 19. Integration into `main` and release closure (2026-09-26, PR #172)
+
+This appendix supersedes §18 where they differ.
+
+- **Mobile is on `main`.** PR #172 merged `feature/mobile-app@e4bd2702` together with `main@aea32ddd`.
+  `feature/mobile-app` is retired; mobile PRs now target `main`.
+- **Flags stay off.** The five `MOBILE_*` flags still default to false. Production keeps answering 404
+  on `/api/mobile/*` and `/api/auth/native/*` until the owner enables `MOBILE_API_ENABLED` at deploy
+  time.
+- **Production deploy is gated separately.** `PRODUCTION_DEPLOY_ENABLED=false` on 2026-09-26, so
+  merging does not deploy.
+- **§15 boundary.**
+  - No pre-existing workflow, root manifest, Dockerfile, proxy config, migration or web/billing path
+    was edited by this program.
+  - The merge resolutions in `auth.middleware.js` and `auth.service.js` keep `main`'s behaviour for
+    every web caller. The native branch stays inert for web tokens (no `sid`).
+- **§16 removal procedure additions.** Removing the program also means:
+  - deleting `.github/workflows/mobile-release.yml`;
+  - deleting `EasyMod-mobile/release-signing.json`;
+  - deleting the `mobile-release` GitHub environment and its two secrets.
+- **Signing exists** (ADR M-013).
+  - An RSA-4096 upload key lives only in the main-only `mobile-release` environment. The pinned
+    certificate SHA-256 is `9d8e323c…046a382b`.
+  - Signed APK/AAB come only from `mobile-release.yml` on `main`, verified against that fingerprint.
+  - Mobile CI still holds no secrets.
+- **R8 is on** for every release build, and the Maestro flows run against it.

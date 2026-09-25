@@ -1,8 +1,14 @@
 # ADR-M-009: Mobile CI Runs Only in a New, Narrowly-Scoped Workflow
 
-Status: Accepted<br>
+Status: Accepted; amended by [ADR M-013](M-013-release-signing.md) (2026-09-26)<br>
 Date: 2026-09-13<br>
 Owners: Mobile Program Orchestrator
+
+> **Amendment (ADR M-013).** Mobile joined `main`. `mobile-ci.yml` now validates pull requests into
+> `main` that touch mobile paths, and pushes to `mobile/**`. It still never runs for a push to `main`,
+> and it still has no secrets, environment or dispatch. The one mobile workflow with a secret is
+> `mobile-release.yml`: push to `main` only, upload key in its signing step only, main-only
+> `mobile-release` environment. The guard script checks both files. `feature/mobile-app` is retired.
 
 ## Context
 
