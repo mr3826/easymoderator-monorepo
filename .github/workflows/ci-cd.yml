@@ -68,6 +68,11 @@ on:
         required: false
         default: ''
         type: string
+      growth_image_override:
+        description: 'Optional sha256 digest published by growth-os.yml for this commit; when set, the deploy job swaps growth-frontend to that image rather than carrying the running container forward.'
+        required: false
+        default: ''
+        type: string
       expect_schema_drift:
         description: 'One-shot: require the 3 repair columns ABSENT before migrating. Type DRIFT to confirm.'
         required: false
@@ -1067,7 +1072,7 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE
+          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,GROWTH_IMAGE_OVERRIDE,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE
           script: |
             set -e
 
@@ -1129,16 +1134,23 @@ jobs:
             export GHCR_IMAGE_FRONTEND="$candidate_frontend_image"
 
             # Growth OS is built and published by growth-os.yml, so this workflow
-            # has no build-job digest to consume for it. It carries the running
-            # container's digest forward untouched — this pipeline never changes
-            # the Growth OS image, it only has to keep Compose resolvable.
+            # has no build-job digest to consume for it. When growth code changes
+            # on main, the operator explicitly passes growth_image_override (the
+            # digest published by growth-os.yml for that SHA) so this deploy swaps
+            # the running Growth container to the new build. Without an override,
+            # the running container's digest is carried forward untouched, so a
+            # backend-only deploy never restarts Growth and cannot silently ship
+            # a stale frontend.
             #
             # Fails closed exactly like backend and frontend above: a tag would
             # make the deploy non-reproducible and the rollback meaningless.
-            # The repository variable provides the explicitly pinned first-rollout
-            # input; once running, the container digest takes precedence.
+            # GROWTH_BOOTSTRAP_DIGEST remains the fallback for the first rollout
+            # when growth-frontend is not running at all.
             candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1 2>/dev/null || true)
-            if [ -z "$candidate_growth_image" ] && [ -n "${GROWTH_BOOTSTRAP_DIGEST:-}" ]; then
+            if [ -n "${GROWTH_IMAGE_OVERRIDE:-}" ]; then
+              echo "growth_image_override set; swapping growth-frontend to the pinned digest"
+              candidate_growth_image="${GHCR_GROWTH}@${GROWTH_IMAGE_OVERRIDE}"
+            elif [ -z "$candidate_growth_image" ] && [ -n "${GROWTH_BOOTSTRAP_DIGEST:-}" ]; then
               echo "growth-frontend is not running; bootstrapping from pinned GROWTH_BOOTSTRAP_DIGEST"
               candidate_growth_image="${GHCR_GROWTH}@${GROWTH_BOOTSTRAP_DIGEST}"
             fi
@@ -1237,7 +1249,7 @@ jobs:
               docker pull "$GHCR_IMAGE_FRONTEND"
             fi
 
-            if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ]; then
+            if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ] || [ -n "$GROWTH_IMAGE_OVERRIDE" ]; then
               echo "Pulling Growth digest: $GHCR_IMAGE_GROWTH"
               docker pull "$GHCR_IMAGE_GROWTH"
             fi
@@ -1533,6 +1545,7 @@ jobs:
           GHCR_FRONTEND: ${{ env.GHCR_FRONTEND }}
           GHCR_GROWTH: ${{ env.GHCR_GROWTH }}
           GROWTH_BOOTSTRAP_DIGEST: ${{ vars.GROWTH_BOOTSTRAP_DIGEST }}
+          GROWTH_IMAGE_OVERRIDE: ${{ inputs.growth_image_override }}
           BACKEND_TAG: ${{ needs.build.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
           BACKEND_DIGEST: ${{ needs.build.outputs.backend_digest }}
