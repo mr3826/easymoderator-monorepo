@@ -17,7 +17,7 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `61f92dbc60b6dbde80357b143d47961ef65120e0`; current `origin/main` is the same SHA. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-25 deployment [Actions run 36145507046](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36145507046) and public probes |
+| Production commit SHA | Runtime is `61f92dbc60b6dbde80357b143d47961ef65120e0`; current `origin/main` is `0eb614a1d3769d03f770b22829e2b8e996f2c0d0`, a documentation-only receipt commit created after deployment. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-25 deployment [Actions run 36145507046](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36145507046) and public probes |
 | Latest migration on `main` | `20260925_001_growth_os_followup_cancel_event_type`; production reports 57 migrations and public `/version` reports this as the latest migration. | 2026-09-25 deployment and public `/version` |
 | Backend / worker version | Exact merged SHA image and in-container version verified by deployment run `36145507046`; backend and worker use the deployed backend image. | 2026-09-25 deployment receipt |
 | Frontend build version | Frontend was not changed by PR #159 and was not rebuilt by the backend-only deploy; public Growth origin returned HTTP 200. | 2026-09-25 public probe; prior immutable frontend receipt remains historical |

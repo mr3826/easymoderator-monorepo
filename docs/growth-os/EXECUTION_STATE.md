@@ -898,6 +898,10 @@ frontend changes remain untouched.
   privileged bypass was attempted.
 - `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL` — DSN provisioning and human receipt
   remain unavailable.
+- `POST_DEPLOY_MAIN`: `0eb614a1d3769d03f770b22829e2b8e996f2c0d0` is a
+  documentation-only receipt commit merged after deployment; it was not
+  redeployed because no runtime code changed. Production remains intentionally
+  pinned to the exact verified runtime SHA above.
 - `DEFERRED_NEXT`: owner-discovery/assignment UX (name-based owner selector and
   filtered home destinations) as the next product batch; prospect PII-retention
   policy in audit snapshots requires an explicit retention/redaction policy
