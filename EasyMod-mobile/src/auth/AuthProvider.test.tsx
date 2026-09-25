@@ -257,6 +257,33 @@ describe('AuthProvider offline session (ADR M-011)', () => {
     await AsyncStorage.clear();
   });
 
+  it('stays signed out when a signed-out screen clears an absent token (a 2FA-required answer)', async () => {
+    const statuses: string[] = [];
+    function StatusLog() {
+      const { status } = useAuth();
+      statuses.push(status);
+      return null;
+    }
+    render(
+      <AuthProvider>
+        <Probe />
+        <StatusLog />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    statuses.length = 0;
+
+    // auth-client's signIn clears the access token when the server answers "2FA required". A
+    // transient signed-in status here would swap the login screen out and drop its 2FA step.
+    act(() => setAccessToken(null));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(statuses).not.toContain('signedIn');
+    expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none');
+  });
+
   it('opens the stored user read-only when the cold-start refresh cannot reach the server', async () => {
     await setRefreshToken('stored-refresh-token');
     await setSessionIdentity(IDENTITY);

@@ -71,6 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Bumped by every explicit transition so a slower stored-session check cannot resurrect a
   // session that logout/cancel has since ended.
   const sessionCheckEpoch = useRef(0);
+  // Whether the provider holds a session (token, offline session or a pending check). Only a
+  // holder degrades to the stored-session check on token loss. A signed-out screen that clears an
+  // absent token (signIn does, on a 2FA-required answer) must stay signed out, or the protected
+  // navigator would swap the login screen out and back and drop its 2FA step.
+  const holdsSession = useRef(Boolean(getAccessToken()));
+  useEffect(() => {
+    holdsSession.current = Boolean(token) || offlineSession || sessionCheckPending;
+  }, [token, offlineSession, sessionCheckPending]);
 
   useEffect(
     () =>
@@ -78,11 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const nextToken = getAccessToken();
         setToken(nextToken);
         if (nextToken) {
+          holdsSession.current = true;
           sessionCheckEpoch.current += 1;
           setSessionCheckPending(false);
           setOfflineSession(false);
           return;
         }
+        if (!holdsSession.current) return;
         const epoch = ++sessionCheckEpoch.current;
         setSessionCheckPending(true);
         void readStoredSession().then((stored) => {
