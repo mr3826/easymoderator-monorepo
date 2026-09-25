@@ -30,5 +30,9 @@ module.exports = {
     '^lucide-react-native$': '<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js',
     '^@react-native-community/netinfo$':
       '<rootDir>/node_modules/@react-native-community/netinfo/jest/netinfo-mock.js',
+    // AsyncStorage (ADR M-011 persisted cache) is a native module; use the package's own in-memory
+    // Jest mock, same technique as NetInfo above.
+    '^@react-native-async-storage/async-storage$':
+      '<rootDir>/node_modules/@react-native-async-storage/async-storage/jest/async-storage-mock.js',
   },
 };

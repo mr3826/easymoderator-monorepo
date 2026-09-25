@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { fetchTransport, type Transport } from '@/api/transport';
 import { normalizeApiError, type NormalizedError } from '@/api/errors';
 import { getAccessToken, setAccessToken } from './token-store';
-import { getRefreshToken, setRefreshToken, clearRefreshToken } from './secure-store';
+import { getRefreshToken, setRefreshToken, clearRefreshToken, setSessionIdentity } from './secure-store';
 
 /**
  * Native auth client (ADR M-004).
@@ -153,8 +153,8 @@ export async function signIn(
     }
     // The temporary credential is returned to the caller only as an explicit contract state. Clear
     // any previous session before the caller presents the dedicated verification screen.
-    setAccessToken(null);
     await clearRefreshTokenForEpoch(requestEpoch);
+    setAccessToken(null);
     finishAuthTransition(requestEpoch);
     return { ok: true, data: parsed.data };
   }
@@ -166,7 +166,7 @@ export async function signIn(
 
   try {
     setAccessToken(accessToken);
-    await writeRefreshTokenForEpoch(requestEpoch, refreshToken);
+    await writeRefreshTokenForEpoch(requestEpoch, refreshToken, { ...user, shopId });
   } catch (error) {
     finishAuthTransition(requestEpoch);
     throw error;
@@ -226,7 +226,7 @@ export async function verifyTwoFactor(
 
   try {
     setAccessToken(accessToken);
-    await writeRefreshTokenForEpoch(requestEpoch, refreshToken);
+    await writeRefreshTokenForEpoch(requestEpoch, refreshToken, { ...user, shopId });
   } catch (error) {
     finishAuthTransition(requestEpoch);
     throw error;
@@ -246,8 +246,8 @@ export async function verifyTwoFactor(
  */
 export async function cancelTwoFactor(): Promise<boolean> {
   const requestEpoch = beginAuthTransition();
-  setAccessToken(null);
   await clearRefreshTokenForEpoch(requestEpoch);
+  setAccessToken(null);
   finishAuthTransition(requestEpoch);
   return isCurrentAuthEpoch(requestEpoch);
 }
@@ -304,11 +304,20 @@ function enqueueSecureStoreWrite(operation: () => Promise<void>): Promise<void> 
   return next;
 }
 
-function writeRefreshTokenForEpoch(epoch: number, refreshToken: string): Promise<void> {
+function writeRefreshTokenForEpoch(epoch: number, refreshToken: string, identity: AuthUser): Promise<void> {
   return enqueueSecureStoreWrite(async () => {
-    if (isCurrentAuthEpoch(epoch)) await setRefreshToken(refreshToken);
+    if (!isCurrentAuthEpoch(epoch)) return;
+    await setRefreshToken(refreshToken);
+    await setSessionIdentity(identity);
   });
 }
+
+/**
+ * A refresh the server definitively refused (bad/expired/revoked/reused token, removed membership).
+ * Anything else — 5xx during a deploy, 429, a proxy error — says nothing about the session, so it is
+ * handled like a network failure: no access token for now, stored session kept.
+ */
+const REFRESH_REJECTED_STATUSES: ReadonlySet<number> = new Set([400, 401, 403]);
 
 function clearRefreshTokenForEpoch(epoch: number): Promise<void> {
   return enqueueSecureStoreWrite(async () => {
@@ -337,25 +346,34 @@ async function performRefresh(transport: Transport, epoch: number): Promise<Refr
 
     if (!(await isCurrentRefresh(epoch, refreshToken))) return null;
 
+    if (!res.ok && !REFRESH_REJECTED_STATUSES.has(res.status)) {
+      setAccessToken(null);
+      return null;
+    }
+
     if (!res.ok) {
       // Includes the reuse-detected-compromise case (ADR M-004): the server revokes the whole
       // session family, so the client's only correct move is to drop everything and sign out.
-      setAccessToken(null);
+      // Stored credentials go first so nothing observing the token change sees a stale session.
       await clearRefreshTokenForEpoch(epoch);
+      setAccessToken(null);
       return null;
     }
 
     const parsed = refreshDataSchema.safeParse(unwrapEnvelope(body));
     if (!parsed.success) {
-      setAccessToken(null);
       await clearRefreshTokenForEpoch(epoch);
+      setAccessToken(null);
       return null;
     }
 
     if (!(await isCurrentRefresh(epoch, refreshToken))) return null;
 
     setAccessToken(parsed.data.accessToken);
-    await writeRefreshTokenForEpoch(epoch, parsed.data.refreshToken);
+    await writeRefreshTokenForEpoch(epoch, parsed.data.refreshToken, {
+      ...parsed.data.user,
+      shopId: parsed.data.shopId,
+    });
     if (!isCurrentAuthEpoch(epoch)) return null;
     return {
       accessToken: parsed.data.accessToken,
@@ -427,7 +445,7 @@ export async function logout(deps: AuthClientDeps = {}): Promise<boolean> {
 
   if (!isCurrentAuthEpoch(requestEpoch)) return false;
 
-  setAccessToken(null);
   await clearRefreshTokenForEpoch(requestEpoch);
+  setAccessToken(null);
   return isCurrentAuthEpoch(requestEpoch);
 }

@@ -7,7 +7,13 @@ import {
   __resetRefreshGuardForTests,
 } from './auth-client';
 import { getAccessToken, __resetTokenStoreForTests, setAccessToken } from './token-store';
-import { clearRefreshToken, getRefreshToken, setRefreshToken } from './secure-store';
+import {
+  clearRefreshToken,
+  getRefreshToken,
+  getSessionIdentity,
+  setRefreshToken,
+  setSessionIdentity,
+} from './secure-store';
 import type { HttpResponse, RequestOptions, Transport } from '@/api/transport';
 
 function jsonResponse(status: number, body: unknown): HttpResponse {
@@ -71,6 +77,14 @@ describe('signIn (envelope unwrap + shopId sourcing, Phase 2 contract fix)', () 
     expect(result.data.id).toBe('user-1');
     expect(getAccessToken()).toBe('access-1');
     await expect(getRefreshToken()).resolves.toBe('refresh-1');
+    await expect(getSessionIdentity()).resolves.toEqual({
+      id: 'user-1',
+      email: 'merchant@example.test',
+      full_name: 'Merchant',
+      phone: null,
+      profile_picture: null,
+      shopId: 'shop-1',
+    });
   });
 
   it('reports an unexpected-shape error on a raw (unwrapped) body instead of silently misparsing it', async () => {
@@ -111,6 +125,8 @@ describe('signIn (envelope unwrap + shopId sourcing, Phase 2 contract fix)', () 
     setAccessToken('logout-access-token');
     const transport = createFakeTransport(async () => jsonResponse(200, {}));
 
+    await setSessionIdentity({ ...FIXTURE_USER, shopId: 'shop-1' });
+
     await expect(logout({ transport })).resolves.toBe(true);
 
     expect(transport.request).toHaveBeenCalledWith(
@@ -119,6 +135,7 @@ describe('signIn (envelope unwrap + shopId sourcing, Phase 2 contract fix)', () 
     );
     expect(getAccessToken()).toBeNull();
     await expect(getRefreshToken()).resolves.toBeNull();
+    await expect(getSessionIdentity()).resolves.toBeNull();
   });
 
   it('reports a logout superseded by a newer sign-in and leaves that session installed', async () => {
@@ -357,6 +374,48 @@ describe('refreshAccessToken (single-flight guard)', () => {
     results.forEach((result) => expect(result).toBeNull());
     expect(getAccessToken()).toBeNull();
     await expect(getRefreshToken()).resolves.toBeNull();
+  });
+
+  it.each([400, 401, 403])('ends the stored session (token and identity) when refresh is rejected with %i', async (status) => {
+    await setRefreshToken('rejected-token');
+    await setSessionIdentity({ ...FIXTURE_USER, shopId: 'shop-1' });
+    const transport = createFakeTransport(async () => jsonResponse(status, { success: false, message: 'rejected' }));
+
+    await expect(refreshAccessToken({ transport })).resolves.toBeNull();
+
+    await expect(getRefreshToken()).resolves.toBeNull();
+    await expect(getSessionIdentity()).resolves.toBeNull();
+  });
+
+  it.each([429, 500, 502, 503])(
+    'keeps the stored session when refresh fails with a transient %i (e.g. a deploy), without an access token',
+    async (status) => {
+      await setRefreshToken('still-valid-token');
+      await setSessionIdentity({ ...FIXTURE_USER, shopId: 'shop-1' });
+      setAccessToken('expired-access-token');
+      const transport = createFakeTransport(async () => jsonResponse(status, { success: false, message: 'busy' }));
+
+      await expect(refreshAccessToken({ transport })).resolves.toBeNull();
+
+      expect(getAccessToken()).toBeNull();
+      await expect(getRefreshToken()).resolves.toBe('still-valid-token');
+      await expect(getSessionIdentity()).resolves.toEqual({ ...FIXTURE_USER, shopId: 'shop-1' });
+    },
+  );
+
+  it('stores the refreshed identity (including a changed session shop) with the rotated token', async () => {
+    await setRefreshToken('old-refresh-token');
+    const transport = createFakeTransport(async () =>
+      jsonResponse(
+        200,
+        envelope({ accessToken: 'new-access', refreshToken: 'new-refresh', shopId: 'shop-9', user: FIXTURE_USER }),
+      ),
+    );
+
+    await refreshAccessToken({ transport });
+
+    await expect(getRefreshToken()).resolves.toBe('new-refresh');
+    await expect(getSessionIdentity()).resolves.toEqual({ ...FIXTURE_USER, shopId: 'shop-9' });
   });
 
   it('returns null without making a network call when there is no stored refresh token', async () => {

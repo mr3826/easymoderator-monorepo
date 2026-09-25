@@ -1,12 +1,14 @@
 import React from 'react';
 import { Pressable, Text } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AuthProvider, useAuth } from './AuthProvider';
 import { __resetTokenStoreForTests, setAccessToken } from './token-store';
-import { clearRefreshToken, setRefreshToken } from './secure-store';
+import { clearRefreshToken, getSessionIdentity, setRefreshToken, setSessionIdentity } from './secure-store';
 import { logout as logoutRequest, refreshAccessToken, signIn as signInRequest } from './auth-client';
 import { queryClient } from '@/lib/queryClient';
+import { PERSISTED_QUERY_CACHE_KEY } from '@/lib/queryPersistence';
 
 /**
  * Phase 2 contract fix (bug #4 in the mobile/p2-contract lane): before this fix, a cold-start
@@ -245,5 +247,104 @@ describe('AuthProvider auth-transition cache isolation', () => {
 
     await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
     expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
+  });
+});
+
+describe('AuthProvider offline session (ADR M-011)', () => {
+  const IDENTITY = { ...USER_ONE };
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('opens the stored user read-only when the cold-start refresh cannot reach the server', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    // Network failure: no token installed, stored session left in place (auth-client contract).
+    mockedRefreshAccessToken.mockResolvedValue(null);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+  });
+
+  it('signs out on cold start when the server rejected the stored session', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      await clearRefreshToken();
+      return null;
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+  });
+
+  it('degrades to the offline session, not sign-out, when the access token is lost but the session is stored', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('access-token');
+      return { accessToken: 'access-token', user: USER_ONE };
+    });
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: ['cached'] });
+
+    act(() => setAccessToken(null));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toEqual({ items: ['cached'] });
+  });
+
+  it('logout from an offline session signs out and purges the persisted Home cache', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    await AsyncStorage.setItem(PERSISTED_QUERY_CACHE_KEY, JSON.stringify({ buster: 'x', timestamp: Date.now() }));
+    mockedRefreshAccessToken.mockResolvedValue(null);
+    mockedLogoutRequest.mockImplementation(async () => {
+      await clearRefreshToken();
+      setAccessToken(null);
+      return true;
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+
+    fireEvent.press(screen.getByTestId('logout-button'));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    await waitFor(async () => expect(await AsyncStorage.getItem(PERSISTED_QUERY_CACHE_KEY)).toBeNull());
+    await expect(getSessionIdentity()).resolves.toBeNull();
+  });
+
+  it('purges a leftover persisted cache on a cold start with no stored session', async () => {
+    await AsyncStorage.setItem(PERSISTED_QUERY_CACHE_KEY, JSON.stringify({ buster: 'x', timestamp: Date.now() }));
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    await waitFor(async () => expect(await AsyncStorage.getItem(PERSISTED_QUERY_CACHE_KEY)).toBeNull());
   });
 });
