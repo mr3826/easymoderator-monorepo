@@ -109,11 +109,16 @@ const verifyTotp = (base32Secret, token) => {
 
 const TOTP_USED_PREFIX = 'totp_used:';
 
-const markTokenUsed = async (userId, token) => {
+/**
+ * Atomically records a verified code as used (SET NX, 90 s = 3 × 30 s window).
+ * Returns false when the code was already claimed, including by a concurrent
+ * request that passed the isTokenUsed pre-check at the same moment.
+ */
+const claimTokenUse = async (userId, token) => {
     const redis = getRedisClient();
-    if (!redis) return;
-    // Mark as used for 90 seconds (3 × 30 s window)
-    await redis.setex(`${TOTP_USED_PREFIX}${userId}:${token}`, 90, '1');
+    if (!redis) return true;
+    const claimed = await redis.set(`${TOTP_USED_PREFIX}${userId}:${token}`, '1', 'EX', 90, 'NX');
+    return claimed === 'OK';
 };
 
 const isTokenUsed = async (userId, token) => {
@@ -133,12 +138,18 @@ const saveTempToken = async (userId, tempToken) => {
     await redis.setex(`${TOTP_TEMP_PREFIX}${tempToken}`, 300, userId); // 5 min TTL
 };
 
+/**
+ * One-use: GET and DEL run in one MULTI, so two concurrent verify requests
+ * carrying the same challenge cannot both receive its user id.
+ */
 const consumeTempToken = async (tempToken) => {
     const redis = getRedisClient();
     if (!redis) return null;
-    const userId = await redis.get(`${TOTP_TEMP_PREFIX}${tempToken}`);
-    if (userId) await redis.del(`${TOTP_TEMP_PREFIX}${tempToken}`);
-    return userId;
+    const key = `${TOTP_TEMP_PREFIX}${tempToken}`;
+    const results = await redis.multi().get(key).del(key).exec();
+    const [getError, userId] = results?.[0] || [];
+    if (getError) throw getError;
+    return userId || null;
 };
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -236,7 +247,9 @@ const verifyTotpToken = async (userId, token) => {
     const secret = decryptSecret(settings.totp_secret);
     if (!verifyTotp(secret, token)) throw new AppError('Invalid TOTP token', 400);
 
-    await markTokenUsed(userId, token);
+    if (!(await claimTokenUse(userId, token))) {
+        throw new AppError('TOTP token already used. Please wait for the next code.', 400);
+    }
     return true;
 };
 
