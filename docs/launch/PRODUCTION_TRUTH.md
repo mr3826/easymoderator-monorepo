@@ -17,12 +17,12 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | Runtime is `3f2bbead4c790ae31eb7a937f539032b9d16b515`; current `origin/main` is intentionally read dynamically because later documentation-only commits are not deployed. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-25 deployment [Actions run 36126750919](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36126750919) |
-| Latest migration on `main` | `20260914_001_add_temporary_password_controls`; production reports 56 migrations, threshold values were preserved, and the schema audit reported `No drift found.` | 2026-09-23 deploy log and public `/api/version` |
-| Backend / worker version | Exact immutable image and in-container version verified by deployment run `35862031156`. | 2026-09-23 deployment receipt |
-| Frontend build version | Exact immutable image verified by deployment run `35862031156`; public frontend origin returned HTTP 200. | 2026-09-23 deployment receipt |
+| Production commit SHA | Runtime is `61f92dbc60b6dbde80357b143d47961ef65120e0`; current `origin/main` is the same SHA. Public `/api/version` and `/health/ready` report the deployed runtime SHA. | 2026-09-25 deployment [Actions run 36145507046](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36145507046) and public probes |
+| Latest migration on `main` | `20260925_001_growth_os_followup_cancel_event_type`; production reports 57 migrations and public `/version` reports this as the latest migration. | 2026-09-25 deployment and public `/version` |
+| Backend / worker version | Exact merged SHA image and in-container version verified by deployment run `36145507046`; backend and worker use the deployed backend image. | 2026-09-25 deployment receipt |
+| Frontend build version | Frontend was not changed by PR #159 and was not rebuilt by the backend-only deploy; public Growth origin returned HTTP 200. | 2026-09-25 public probe; prior immutable frontend receipt remains historical |
 | Growth image version | Existing running Growth image was carried forward; `GROWTH_BOOTSTRAP_DIGEST` was empty, so the running Growth digest remains `NOT_VERIFIED`. Public Growth readiness returned HTTP 200. | 2026-09-23 deploy log and public smoke check |
-| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 36126750919](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36126750919) |
+| Deployment workflow | Exact-SHA manual production deploy succeeded after the configured `production` environment approval. Candidate migrations, schema audit, service replacement, health, and version checks passed. `PRODUCTION_DEPLOY_ENABLED` was restored to `false`. | [Actions run 36145507046](https://github.com/mr3826/easymoderator-monorepo/actions/runs/36145507046) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Verification limits
@@ -65,3 +65,23 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-dep
 | Date | Exception | Resolution |
 |---|---|---|
 | 2026-07-23 | Prod had been running `f1c7ee5` from unmerged branch `codex/messenger-production-recovery` | PR #73 merged as `3f878e3`; the canonical `main` deployment workflow completed successfully and restored the source-of-truth invariant |
+
+## 2026-09-25 follow-up lifecycle deployment receipt
+
+- `MERGED_SHA`: `61f92dbc60b6dbde80357b143d47961ef65120e0` from PR #159.
+- `DEPLOYMENT_RUN`: `36145507046` — exact-SHA manual production deployment
+  completed successfully after `production` environment approval.
+- `MIGRATION`: `20260925_001_growth_os_followup_cancel_event_type` applied;
+  public `/version` reports it as migration 57, the latest migration.
+- `VERSION_PROBE`: HTTP 200; `gitSha` exactly matches `61f92dbc`.
+- `BACKEND_READINESS`: HTTP 200; database and Redis readiness reported by the
+  backend probe.
+- `GROWTH_READINESS`: `https://growth.easymod.tech/health/ready` returned HTTP
+  200 with `app=growth-os`; the Growth root returned HTTP 200.
+- `AUTHORIZATION_BOUNDARY`: unauthenticated Growth session and prospect API
+  requests returned HTTP 401.
+- `DEPLOYMENT_GATE`: `PRODUCTION_DEPLOY_ENABLED=false` restored at
+  2026-09-25T14:26:46Z.
+- `UNVERIFIED`: authenticated Growth operator walkthrough, Growth image digest,
+  Sentry receipt, and live rollback execution remain external/unavailable proof
+  boundaries; no claim is made for them.

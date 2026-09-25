@@ -882,8 +882,22 @@ frontend changes remain untouched.
   install skipped sqlite3 native build scripts (pre-existing environment
   limitation, reproduced identically on clean main); CI runs the full unit and
   security gates on the PR.
-- `PRODUCTION_CHANGED`: `NO` by this commit alone; deployment, if performed, is
-  recorded in `docs/launch/PRODUCTION_TRUTH.md` and the PR.
+- `PRODUCTION_CHANGED`: `YES` — PR #159 merged as
+  `61f92dbc60b6dbde80357b143d47961ef65120e0`; exact-SHA production deploy run
+  `36145507046` completed successfully and the deployment variable was restored
+  to `PRODUCTION_DEPLOY_ENABLED=false`.
+- `PRODUCTION_VERSION`: public `/version` returned
+  `61f92dbc60b6dbde80357b143d47961ef65120e0` and migration count `57` with
+  latest `20260925_001_growth_os_followup_cancel_event_type`.
+- `PRODUCTION_HEALTH`: `/health/ready` returned HTTP 200 with database and
+  Redis readiness; Growth origin `/health/ready` returned HTTP 200; Growth
+  root returned HTTP 200; unauthenticated Growth session and prospect API
+  boundaries returned HTTP 401.
+- `AUTHENTICATED_PRODUCTION`: `BLOCKED_EXTERNAL_CREDENTIAL` — no operator
+  identity, MFA proof, or `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was available; no
+  privileged bypass was attempted.
+- `SENTRY`: `BLOCKED_EXTERNAL_CREDENTIAL` — DSN provisioning and human receipt
+  remain unavailable.
 - `DEFERRED_NEXT`: owner-discovery/assignment UX (name-based owner selector and
   filtered home destinations) as the next product batch; prospect PII-retention
   policy in audit snapshots requires an explicit retention/redaction policy
