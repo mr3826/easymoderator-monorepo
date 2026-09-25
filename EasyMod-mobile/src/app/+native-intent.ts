@@ -1,18 +1,19 @@
 import type { NativeIntent } from 'expo-router';
 
+import { capturePendingDeepLink, parseEntityDeepLink } from '@/lib/pending-deeplink';
+
 /**
- * Expo Router's native-intent hook (Phase 2, Lane 4). The app's URL scheme(s) are public on the
- * device — any app can launch `easymodmerchant://<anything>` — so an inbound path is not
- * guaranteed to look like anything this app's routes actually expect. This runs before Expo
- * Router's file-based matching, giving one place to redirect an obviously-broken deep link (a
- * stale share, a malformed push payload) to Home instead of letting the router's own not-found
- * handling deal with an unvalidated external string.
+ * Expo Router's native-intent hook, called with the cold-launch URL (`initial: true`) and every
+ * later inbound URL. The app's URL scheme(s) are public on the device — any app can launch
+ * `easymodmerchant://<anything>` — so an inbound path is untrusted input.
  *
- * Deliberately narrow: this only catches an *empty* id on the two entity routes this lane owns
- * (`order/`, `conversation/` with nothing after the slash) — a link that can never resolve to a
- * real screen no matter what a later lane builds behind `[id]`. Everything else is returned as
- * `null`, meaning "no redirect, let Expo Router's normal matching handle it" — this must never
- * become an allowlist that swallows another lane's routes.
+ * - An empty id on the entity routes (`order/`, `conversation/`) can never resolve: go Home.
+ * - A real entity link is parked in `@/lib/pending-deeplink` and the app goes Home; the root
+ *   navigator opens it once auth has resolved to signed-in (immediately when already signed in,
+ *   after the cold-start refresh, or after login). Matching it directly raced the auth bootstrap
+ *   and fell back to Home on cold launch (audit P1-5).
+ * - Everything else returns `null` (no redirect) so Expo Router's normal matching handles it —
+ *   this must never become an allowlist that swallows other routes.
  */
 const EMPTY_ENTITY_ID = /^\/?(order|conversation)\/?$/;
 
@@ -20,6 +21,11 @@ export const redirectSystemPath: NativeIntent['redirectSystemPath'] = ({ path })
   try {
     const [pathname] = path.split(/[?#]/);
     if (pathname !== undefined && EMPTY_ENTITY_ID.test(pathname)) {
+      return '/';
+    }
+    const entity = parseEntityDeepLink(path);
+    if (entity) {
+      capturePendingDeepLink(entity);
       return '/';
     }
   } catch {

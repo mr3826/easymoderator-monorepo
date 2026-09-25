@@ -1,6 +1,6 @@
 import '@/i18n';
 
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { useFonts } from 'expo-font';
@@ -11,6 +11,12 @@ import { View, StyleSheet } from 'react-native';
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { openDeepLink } from '@/lib/deeplink';
+import {
+  getPendingDeepLinkVersion,
+  subscribePendingDeepLink,
+  takePendingDeepLink,
+} from '@/lib/pending-deeplink';
 import { queryClient } from '@/lib/queryClient';
 import { fontsToLoad } from '@/theme/fonts';
 import { brandColors } from '@/theme/tokens';
@@ -19,6 +25,15 @@ SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { status } = useAuth();
+  const pendingDeepLinkVersion = useSyncExternalStore(subscribePendingDeepLink, getPendingDeepLinkVersion);
+
+  // Replay a parked inbound entity link (see `+native-intent.ts`) once the protected screens exist.
+  // Child effects run first, so the Stack below is mounted by the time this navigates.
+  useEffect(() => {
+    if (status !== 'signedIn') return;
+    const link = takePendingDeepLink();
+    if (link) openDeepLink(link.kind, link.id);
+  }, [status, pendingDeepLinkVersion]);
 
   // While bootstrapping (attempting a silent refresh from a stored refresh token), render
   // nothing — the splash screen is still up at this point.
