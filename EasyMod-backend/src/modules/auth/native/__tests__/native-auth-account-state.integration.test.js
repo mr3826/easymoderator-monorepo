@@ -28,11 +28,19 @@ const nativeVerify = (tempToken, token) => request(app)
 
 const errorCode = (response) => response.body.error?.code || response.body.code;
 
+// issueChallenge enabled TOTP through another instance, so the fixture's own
+// instance is stale: update the row directly.
+async function withoutTwoFactor(user) {
+    await User.update({ settings: {} }, { where: { id: user.id } });
+    const reloaded = await User.findByPk(user.id);
+    expect(reloaded.settings?.totp_enabled).toBeFalsy();
+}
+
 async function withTemporaryPassword(user, expiresInMs) {
-    await user.update({
+    await User.update({
         must_change_password: true,
         temporary_password_expires_at: new Date(Date.now() + expiresInMs),
-    });
+    }, { where: { id: user.id } });
 }
 
 describe('native sign-in honours main account state', () => {
@@ -44,8 +52,8 @@ describe('native sign-in honours main account state', () => {
     });
 
     test('a pending temporary password refuses the native session instead of issuing one without the change-password claim', async () => {
-        const { fixture } = await issueChallenge('temp-password-plain');
-        await fixture.user.update({ settings: {} }); // no 2FA on this account
+        const { fixture } = await issueChallenge('tmp-plain');
+        await withoutTwoFactor(fixture.user);
         await withTemporaryPassword(fixture.user, 60 * 60 * 1000);
 
         const response = await nativeSignin(fixture.user.email);
@@ -57,7 +65,7 @@ describe('native sign-in honours main account state', () => {
     });
 
     test('a pending temporary password on a 2FA account is refused before a challenge is handed out', async () => {
-        const { fixture } = await issueChallenge('temp-password-2fa');
+        const { fixture } = await issueChallenge('tmp-2fa');
         await withTemporaryPassword(fixture.user, 60 * 60 * 1000);
 
         const response = await nativeSignin(fixture.user.email);
@@ -68,7 +76,7 @@ describe('native sign-in honours main account state', () => {
     });
 
     test('an expired temporary password is rejected exactly like the web path', async () => {
-        const { fixture } = await issueChallenge('temp-password-expired');
+        const { fixture } = await issueChallenge('tmp-expired');
         await withTemporaryPassword(fixture.user, -60 * 1000);
 
         const response = await nativeSignin(fixture.user.email);
@@ -78,7 +86,7 @@ describe('native sign-in honours main account state', () => {
     });
 
     test('a temporary password set while the 2FA challenge is open refuses the verification', async () => {
-        const { fixture, secret, tempToken } = await issueChallenge('temp-password-mid-2fa');
+        const { fixture, secret, tempToken } = await issueChallenge('tmp-mid-2fa');
         await withTemporaryPassword(fixture.user, 60 * 60 * 1000);
 
         const response = await nativeVerify(tempToken, currentCode(secret));
@@ -89,7 +97,7 @@ describe('native sign-in honours main account state', () => {
     });
 
     test('a session invalidation between the password step and 2FA voids the challenge', async () => {
-        const { fixture, secret, tempToken } = await issueChallenge('token-version-bound');
+        const { fixture, secret, tempToken } = await issueChallenge('tv-bound');
         await invalidateUserSessions(fixture.user.id);
 
         const response = await nativeVerify(tempToken, currentCode(secret));
@@ -99,9 +107,9 @@ describe('native sign-in honours main account state', () => {
     });
 
     test('Growth OS staff get no native session, on either sign-in step', async () => {
-        const plain = await issueChallenge('growth-staff-plain');
-        await plain.fixture.user.update({ settings: {} });
-        const twoFactor = await issueChallenge('growth-staff-2fa');
+        const plain = await issueChallenge('growth-plain');
+        await withoutTwoFactor(plain.fixture.user);
+        const twoFactor = await issueChallenge('growth-2fa');
         for (const { fixture } of [plain, twoFactor]) {
             const role = await GrowthOsUserRole.create({ user_id: fixture.user.id, role: 'MARKETER', is_active: true });
             growthRoles.push(role.id);
