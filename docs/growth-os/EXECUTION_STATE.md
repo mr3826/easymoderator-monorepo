@@ -853,3 +853,39 @@ frontend changes remain untouched.
 - `PRODUCTION_CHANGED`: `NO`; all databases, Redis, Qdrant, services, CI
   deployment jobs, Meta review settings, OAuth/webhook configuration, and
   secrets remained untouched.
+
+## Follow-up terminal-integrity batch receipt (2026-09-25)
+
+- `BATCH`: follow-up lifecycle integrity — the smallest coherent next phase
+  selected from the 2026-09-25 reverse-engineering audit; no campaign, referral,
+  retention, demo, scoring, or outreach scope was touched.
+- `DEFECT`: `transitionFollowup` rejected reopening only `completed` rows, so a
+  direct API caller could move `cancelled -> completed` and misdate work as done;
+  cancellation wrote an audit row but no prospect timeline event, so the
+  operator-visible timeline claimed a follow-up was created but never resolved.
+- `FIX`: both terminal states now reject every transition with
+  `409 GROWTH_OS_FOLLOWUP_DONE` under the same row lock; the target status is
+  restricted to `completed|cancelled` at the service boundary; completion and
+  cancellation each write one prospect event inside the same transaction as the
+  row update and audit write, so an audit-service failure still rolls the whole
+  mutation.
+- `MIGRATION`: `20260925_001_growth_os_followup_cancel_event_type` replaces the
+  prospect-event `event_type` CHECK with a superset adding
+  `followup_cancelled`, following the named-replacement pattern of
+  `20260913_002`; historical rows are untouched and `down()` refuses to revert
+  while the new value is in use.
+- `VALIDATION`: disposable PostgreSQL/Redis integration `14/14` suites and
+  `88/88` tests passed with the extended terminal-state and event assertions;
+  the new migration unit suite passed `4/4`; affected mock Growth lifecycle,
+  identity, and scope suites passed `24/24`; `git diff --check` passed. The
+  `growth-os.authz` suite cannot load in this local worktree because the
+  install skipped sqlite3 native build scripts (pre-existing environment
+  limitation, reproduced identically on clean main); CI runs the full unit and
+  security gates on the PR.
+- `PRODUCTION_CHANGED`: `NO` by this commit alone; deployment, if performed, is
+  recorded in `docs/launch/PRODUCTION_TRUTH.md` and the PR.
+- `DEFERRED_NEXT`: owner-discovery/assignment UX (name-based owner selector and
+  filtered home destinations) as the next product batch; prospect PII-retention
+  policy in audit snapshots requires an explicit retention/redaction policy
+  decision first; `growth_os_followup` audit rows remain outside the bounded
+  privileged-audit allowlist by design until that policy lands.
