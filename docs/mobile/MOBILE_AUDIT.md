@@ -380,3 +380,55 @@ BILLING_IMPACT=NONE_OBSERVED
 TOP_BLOCKERS=P0_TENANT_SECURITY; DIRTY_PROVENANCE; SUPPLEMENTARY_E2E; ALL_ABI; CI_GATE
 NEXT_RECOMMENDED_WAVE=FIX_SECURITY_FIRST
 ```
+
+## Resolution (2026-09-25, PR #165)
+
+Every finding above, resolved on `feat/mobile-release-completion` (PR #165 into
+`feature/mobile-app`) unless marked otherwise. Each fix landed with a test that
+fails without it. `main` was not changed by this work.
+
+### P0
+
+| # | Finding | Status | Where |
+|---|---|---|---|
+| P0-1 | Push fan-out not membership-scoped | Fixed on `main` by #119 (`9c3cc148`). Mobile push is not implemented (ADR M-007), and `feature/mobile-app` takes the fix when it is next brought up to `main`. | `main` |
+| P0-2 | Membership removal does not revoke access | Native: each request with a native token re-checks the active `UserShop` (401 `NATIVE_SHOP_ACCESS_REVOKED`), and refresh re-checks it too. Web: `main`'s `authenticate` re-checks membership for shop claims. Both edit `auth.middleware.js`; a future merge to `main` must keep both checks. | `60535649`, `main` |
+| P0-L1 | Legacy payment router trusts client fields | Still unmounted. Native tokens cannot reach it (P1-9 allowlist). Web-side debt. | Not mobile scope |
+
+### P1
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| 1, 2 | Dirty-tree provenance; tracked files importing untracked ones | Resolved. The `mob` worktree is archived byte-for-byte at `archive/mob-wave2-snapshot-2026-09-25` and integrated as reviewed commits. Clean-checkout CI runs every suite. | `5dae73f7`…`5086a3ba` |
+| 3 | No Linux all-ABI artifact | Resolved for build proof. `android-release` builds APK + AAB for `armeabi-v7a, arm64-v8a, x86, x86_64` on Linux, then verifies and hashes them. Production signing is an external blocker (debug certificate, NOT_DISTRIBUTABLE). | `18167adc`, `2f9ea3f7` |
+| 4 | Fixture controls unmounted; optional flows never run | Resolved. The fixture route is mounted only behind four gates, and `run-maestro.js` schedules all 15 flows. | `4b4e4192`, `b3cfab35` |
+| 5 | Cold-launch deep links race auth bootstrap | Resolved. Entity links are held, then opened once auth resolves. | `f47f3660` |
+| 6 | Previous-shop snapshot after shop change | Resolved. Module snapshots and `placeholderData` are removed. | `f977c378` |
+| 7 | Stale logout/cancel clears a newer session | Resolved (auth epoch). | `dca51a51` |
+| 8 | 2FA session for a stale `last_logged_shop_id` | Resolved. The shop comes from an active membership. | `3bf4c80f` |
+| 9 | Native token scope | Resolved. The token must match its session's user and shop, and is limited to an allowlist of read routes (`/api/mobile/*`, order/conversation detail GETs). Anything else gets 403. | `60535649` |
+| 10 | Web product/order flows trust client tenant fields | Not mobile scope. Native tokens cannot reach these routes (P1-9). | Web backlog |
+| 11 | Telegram binding authorization | Not mobile scope. Unreachable with native tokens. | Web backlog |
+| 12 | CI verdict ignores backend regression | Resolved. The gate requires `backend-regression` whenever the backend is touched, plus `android-release`, gitleaks and E2E when it runs. | `18167adc` |
+| 13 | Path filters bypass the gate | Resolved. Pull requests have no `paths:` filter. | `18167adc` |
+
+### P2 / P3
+
+| Finding | Status | Evidence |
+|---|---|---|
+| 2FA limit IP-only / fail-open | Resolved. Adds a per-account failure limit (5 per sliding 5 min, Redis, fails closed) on top of the per-IP limiter. The single-use challenge already costs a password sign-in per guess. | `83131cb8` |
+| Non-atomic tempToken / TOTP replay | Resolved: `MULTI GET+DEL` and `SET NX`. | `bc947a68` |
+| E2E env scrubbing | Resolved. Uses an allowlisted env and synthetic credentials. | `b3cfab35` |
+| CI artifacts lack validation | Resolved. `verify-android-artifact.js` checks ABIs, package, version, manifest flags, blocked permissions and the signer, then writes a SHA-256 manifest. | `18167adc`, `6ed48a92`, `2f9ea3f7` |
+| Body timeouts misclassified | Resolved. | `d4d7879d` |
+| Unknown app variant / missing API URL | Resolved. An unknown variant throws. Preview/production without an HTTPS URL throw. | `d4d7879d` |
+| Offline logout is local-only | Residual. The device forgets the session, but the server row lives until expiry or until revoked from another signed-in device (`DELETE /api/auth/native/sessions/:id`). | Documented |
+| PII in logs, shop creation tenant trust, non-rotating web refresh | Not mobile scope (web). | Web backlog |
+| Documentation drift | Resolved in this PR (`AGENT_HANDOFF.md`, `MOBILE_EXECUTION_STATE.md`, `CURRENT_STATE.md`, `DEV_SETUP.md`). | This PR |
+| P3 fixture token not constant-time | Resolved: SHA-256 digests compared with `timingSafeEqual`. | `4b4e4192` |
+| P3 offline cache not persisted | Resolved (ADR M-011): Home only, 24 h, shop-bound buster, purged on logout, revoke or shop switch; `allowBackup=false`. | `4e68428e`, `396ca775` |
+| P3 legacy plaintext session tokens, Sentry no-op | Deferred. | Backlog |
+
+Found and fixed during the 2026-09-25 review:
+- The release manifest requested storage and `SYSTEM_ALERT_WINDOW` permissions the app never uses (`6ed48a92`).
+- A same-frame double tap sent two sign-in requests (`019d4bed`).

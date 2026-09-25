@@ -560,3 +560,102 @@ convenience only; checked-in, CI, and release ABI strategy remains all-ABI.
   bundle and is the authoritative local runtime artifact.
 - Empty/error/offline/session-recovery/2FA fixture branches remain configured but are not promoted to
   PASS without deterministic backend toggles.
+
+## 11. Android release proof, fixtures and device E2E (2026-09-25)
+
+Sections 5–10 are the historical Windows receipts from 2026-09-17. The authoritative path is now the
+Linux CI in `.github/workflows/mobile-ci.yml`. The same commands work on any Linux machine or
+container with JDK 17, Node 22 and the Android SDK.
+
+### All-ABI release build and artifact verification (`android-release` job)
+
+```bash
+cd EasyMod-mobile
+npm ci
+export APP_VARIANT=preview EXPO_PUBLIC_API_BASE_URL=https://api.easymod.tech APP_BUILD_NUMBER=<n>
+npx expo prebuild --platform android --clean --no-install
+(cd android && ./gradlew --no-daemon assembleRelease bundleRelease)
+node scripts/verify-android-artifact.js \
+  --apk android/app/build/outputs/apk/release/app-release.apk \
+  --aab android/app/build/outputs/bundle/release/app-release.aab \
+  --package tech.easymod.merchant.preview \
+  --abis armeabi-v7a,arm64-v8a,x86,x86_64 --out artifacts
+# emulator or device attached:
+node scripts/android-install-launch-check.js \
+  android/app/build/outputs/apk/release/app-release.apk tech.easymod.merchant.preview artifacts
+```
+
+- The verifier fails unless all four ABIs ship `libreactnative.so` and Hermes in both the APK and the AAB.
+- It also fails if:
+  - the package id is wrong;
+  - the APK is debuggable or allows cleartext;
+  - `allowBackup` is not false;
+  - a blocked permission is requested (storage, `SYSTEM_ALERT_WINDOW`);
+  - `apksigner` cannot verify it.
+- It writes `android-artifact-manifest.{json,txt}`: SHA-256, sizes, versionCode, SDK levels, the
+  permission list and the signer.
+- With no release keystore, the build is signed with the Android debug certificate and recorded as
+  `NOT_DISTRIBUTABLE`.
+- The install check installs the APK, cold-launches it, waits for the login screen, force-stops,
+  relaunches, and writes `install-launch.txt` plus a screenshot.
+
+On Windows the all-ABI Gradle build is unreliable (PR #126); the verifier and install check both run
+there against a CI-built APK. `gh run download <run> -n mobile-android-release-<n>` fetches one.
+
+### Disposable E2E fixture controls
+
+`POST /api/mobile/e2e/control` is mounted only when **all four** of these hold at backend start (and
+each request re-checks them):
+
+1. `NODE_ENV=test`;
+2. `MOBILE_E2E_FIXTURES_ENABLED=true`;
+3. a `MOBILE_E2E_FIXTURES_TOKEN` of at least 32 characters (compared in constant time);
+4. a local, disposable database whose name contains `e2e`/`test` and never `production`.
+
+Actions touch only the deterministic seed (`scripts/seed-mobile-dev.js`, two shops). Callers can never
+pass shop or entity ids.
+
+Actions:
+
+- `capabilities`
+- `reset`
+- `empty-home`
+- `set-api-error`, `clear-api-error`
+- `expire-sessions`
+- `prepare-2fa`, `current-2fa-code`, `expire-2fa-challenge`
+
+`run-maestro.js` generates a random token per run. You never set one by hand.
+
+### Device E2E (Maestro 2.6.0, `mobile-e2e` job)
+
+```bash
+cd EasyMod-mobile
+export APP_VARIANT=development EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:4000
+npx expo prebuild --platform android --clean --no-install
+(cd android && ./gradlew --no-daemon assembleRelease -PreactNativeArchitectures=x86_64)
+export E2E_DATABASE_URL=postgres://e2e:e2e@127.0.0.1:5432/easymod_mobile_e2e \
+       E2E_REDIS_URL=redis://127.0.0.1:6379 E2E_API_BASE_URL=http://127.0.0.1:4000
+node e2e/run-maestro.js --start-backend \
+  --apk android/app/build/outputs/apk/release/app-release.apk [--flows smoke,logout]
+```
+
+- The APK is a release-mode build of the development variant: an embedded bundle, no Metro, and
+  cleartext allowed only for this variant.
+- It reaches the host backend at `10.0.2.2`, so airplane mode really cuts the network. (`adb reverse`
+  would bypass it.)
+- The runner refuses non-local or non-test databases.
+- It passes the spawned backend an allowlisted environment only: no Meta, payment or courier
+  credentials.
+- It migrates and seeds, then resets the fixture before every flow.
+- It runs all 15 flows in order:
+
+  `state-preflight, smoke, navigation, refresh, empty-home, api-error, offline-reconnect,
+  session-expiry, session-revocation, logout, two-factor, deep-link-stale, deep-link-cold-launch,
+  reinstall-keeps-session, shop-isolation`
+
+- It writes per-flow JUnit and `e2e-summary.{json,txt}` (APK SHA-256, versionCode, device SDK/ABI,
+  source SHA) under `e2e/artifacts/`.
+- Any failing flow fails the run.
+
+In CI the job runs only on PRs labelled `mobile-e2e` that touch mobile or backend paths (ADR M-009 cost
+policy). When it runs, the `Mobile CI` gate requires it to pass.
