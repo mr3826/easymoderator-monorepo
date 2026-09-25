@@ -344,8 +344,8 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
     const unlinkedConversion = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)
       .send({ status: 'converted', reason: 'Conversion must have a shop' });
-    expect(unlinkedConversion.status).toBe(400);
-    expect(unlinkedConversion.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_INPUT');
+    expect(unlinkedConversion.status).toBe(409);
+    expect(unlinkedConversion.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_TRANSITION');
 
     const invalidTransition = await asFounder()
       .post(`${API_ROOT}/${prospectId}/status`)

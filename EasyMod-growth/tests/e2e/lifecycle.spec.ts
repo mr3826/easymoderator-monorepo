@@ -97,7 +97,7 @@ test('walks a new prospect through contacted, qualifying, qualified, the unlinke
 
   statusOptions = await page.getByLabel('Move to status').locator('option').allTextContents();
   expect(statusOptions).toContain('onboarding');
-  expect(statusOptions).toContain('converted');
+  expect(statusOptions).not.toContain('converted');
 
   await moveLifecycle(page, cafeId, 'onboarding');
   // Shop activation is unset in the seed, so onboarding must WAIT here —
