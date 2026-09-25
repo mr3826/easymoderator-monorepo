@@ -171,7 +171,7 @@ test('edits through the full form, reassigns ownership, shows linkage suggestion
   await expect(page).toHaveURL(new RegExp(`/prospects/${prospectId}$`));
   await expect(page.getByText('updated retail', { exact: true })).toBeVisible();
 
-  await page.locator('#owner-user-id').fill(fixtures.users.growth.id);
+  await page.locator('#owner-user-id').selectOption(fixtures.users.growth.id);
   await page.locator('#assignment-reason').fill('Assigned during browser E2E.');
   const assignmentResponse = page.waitForResponse((response) => (
     response.request().method() === 'POST'
@@ -181,7 +181,7 @@ test('edits through the full form, reassigns ownership, shows linkage suggestion
   await page.getByRole('button', { name: 'Save owner' }).click();
   const assignment = await assignmentResponse;
   expect((await assignment.json()).data.ownerUserId).toBe(fixtures.users.growth.id);
-  await expect(page.getByText(fixtures.users.growth.id, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#owner-user-id')).toHaveValue(fixtures.users.growth.id, { timeout: 15_000 });
 
   await page.goto(`/prospects/${fixtures.prospects.northStar.id}`);
   await expect(page.getByRole('heading', { name: 'Linkage suggestions' })).toBeVisible();
