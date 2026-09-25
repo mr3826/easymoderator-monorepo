@@ -14,7 +14,7 @@ import {
 // re-renders (triggered by the hook's own state changes) reuse the same client instead of
 // resetting the cache and losing in-flight query identity on every render pass.
 function createWrapper() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };

@@ -1,6 +1,11 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'jest-expo',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  // The first test in a component file pays for transforming and loading React Native itself.
+  // With a cold cache on a loaded runner that measured 5-12 s, over Jest's 5 s default, and failed
+  // otherwise-passing tests at random (login-screen, AuthProvider cold-start, deeplink-routes).
+  testTimeout: 30_000,
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/app/**/_layout.tsx'],
   // `lucide-react-native`'s package "exports" map is resolved by Jest via its "react-native"/
   // "import" condition (an ESM `.mjs` build) rather than its "require" (CJS) condition, and
