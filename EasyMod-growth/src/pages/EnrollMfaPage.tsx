@@ -76,12 +76,14 @@ export function EnrollMfaPage() {
         </p>
 
         {done ? (
-          <p className="mfa-done" role="status">
-            MFA enabled. Sign in again to complete verification.
-          </p>
-          <button className="secondary-button" type="button" onClick={() => navigate('/login', { replace: true })}>
-            Back to sign in
-          </button>
+          <>
+            <p className="mfa-done" role="status">
+              MFA enabled. Sign in again to complete verification.
+            </p>
+            <button className="secondary-button" type="button" onClick={() => navigate('/login', { replace: true })}>
+              Back to sign in
+            </button>
+          </>
         ) : setup ? (
           <form onSubmit={enable} className="login-form">
             <label htmlFor="mfa-secret">
