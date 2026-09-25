@@ -106,13 +106,14 @@ export function HomePage() {
               <strong>{myWork.followupsOverdueMine.toLocaleString()}</strong>
               <span className="table-subtext"> overdue follow-ups assigned to you</span>
             </div>
-            {canManageFollowups ? <Link className="secondary-button" to="/my-work">Review in My Work</Link> : null}
+            {canManageFollowups ? <Link className="secondary-button" to="/my-work?state=overdue">Review in My Work</Link> : null}
           </div>
-          <div className="work-item">
+            <div className="work-item">
             <div>
               <strong>{myWork.followupsOpenMine.toLocaleString()}</strong>
               <span className="table-subtext"> open follow-ups assigned to you</span>
             </div>
+            {canManageFollowups ? <Link className="secondary-button" to="/my-work?state=open">Open My Work</Link> : null}
           </div>
           <div className="work-item">
             <div>
@@ -133,7 +134,11 @@ export function HomePage() {
           <Activity aria-hidden="true" />
         </div>
         <div className="attention-grid">
-          <AttentionCard label="New leads (last 7 days)" value={growthAttention.newLeadsLast7d} />
+          <AttentionCard
+            label="New leads (last 7 days)"
+            value={growthAttention.newLeadsLast7d}
+            to={`/prospects?status=new&createdAfter=${encodeURIComponent(home.windows.attentionSince)}&createdBefore=${encodeURIComponent(home.windows.attentionUntil)}`}
+          />
           <AttentionCard label="Qualified open" value={growthAttention.qualifiedOpen} to="/prospects?status=qualified" />
           {canManageAllProspects ? <AttentionCard label="Qualified unassigned" value={growthAttention.unassignedQualified} to="/prospects?status=qualified&owner=unassigned" /> : null}
           <AttentionCard label="Onboarding open" value={growthAttention.onboardingOpen} to="/prospects?status=onboarding" />
@@ -141,14 +146,29 @@ export function HomePage() {
             label="Onboarding stalled (15+ days)"
             value={growthAttention.onboardingStalledOver15d}
             warn={growthAttention.onboardingStalledOver15d > 0}
-            to="/prospects?status=onboarding"
+            to={`/prospects?status=onboarding&stalled=true`}
           />
-          <AttentionCard label="Converted (last 7 days)" value={growthAttention.convertedLast7d} to="/prospects?status=converted" />
+          <AttentionCard
+            label="Qualified stalled (15+ days)"
+            value={growthAttention.qualifiedStalledOver15d}
+            warn={growthAttention.qualifiedStalledOver15d > 0}
+            to="/prospects?status=qualified&stalled=true"
+          />
+          <AttentionCard
+            label="Converted (last 7 days)"
+            value={growthAttention.convertedLast7d}
+            to={`/prospects?status=converted&statusChangedAfter=${encodeURIComponent(home.windows.attentionSince)}&statusChangedBefore=${encodeURIComponent(home.windows.attentionUntil)}`}
+          />
           <AttentionCard
             label="Overdue follow-ups in scope"
             value={growthAttention.followupsOverdueInScope}
             warn={growthAttention.followupsOverdueInScope > 0}
-            to="/my-work?state=overdue"
+            to="/follow-ups?state=overdue"
+          />
+          <AttentionCard
+            label="Due today in scope"
+            value={growthAttention.followupsDueTodayInScope}
+            to="/follow-ups?state=due_today"
           />
         </div>
       </section>

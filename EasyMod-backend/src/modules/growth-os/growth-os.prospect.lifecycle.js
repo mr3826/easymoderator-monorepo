@@ -50,7 +50,10 @@ const ALLOWED_TRANSITIONS = Object.freeze({
   // initial status. Operator/API transitions must record onboarding first so
   // activation is tied to the first successful AI reply.
   qualified: Object.freeze(['onboarding', 'disqualified', 'unreachable']),
-  onboarding: Object.freeze(['converted', 'qualified', 'disqualified', 'unreachable']),
+  // Conversion is an internal activation transition, not an operator action.
+  // The activation service is the only path allowed to move onboarding to
+  // converted after the canonical first successful AI reply.
+  onboarding: Object.freeze(['qualified', 'disqualified', 'unreachable']),
   disqualified: Object.freeze(['qualifying']),
   unreachable: Object.freeze(['contacted']),
   converted: Object.freeze([]),

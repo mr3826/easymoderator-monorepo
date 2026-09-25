@@ -31,4 +31,26 @@ describe('Growth OS audit sanitizer', () => {
       page_url: 'https://user:pass@example.com/prospect?access_token=secret#contact',
     })).toEqual({ page_url: 'https://example.com/prospect' });
   });
+
+  test('redacts contact and normalized PII keys from audit snapshots', () => {
+    expect(redactSecretiveValues({
+      status: 'qualified',
+      source: 'facebook',
+      contact_email: 'merchant@example.test',
+      contact_phone: '+8801700000000',
+      normalized_email: 'merchant@example.test',
+      normalized_phone: '8801700000000',
+      business_name: 'North Star Retail',
+      owner_user_id: 'owner-uuid',
+    })).toEqual({
+      status: 'qualified',
+      source: 'facebook',
+      contact_email: '[redacted]',
+      contact_phone: '[redacted]',
+      normalized_email: '[redacted]',
+      normalized_phone: '[redacted]',
+      business_name: 'North Star Retail',
+      owner_user_id: 'owner-uuid',
+    });
+  });
 });

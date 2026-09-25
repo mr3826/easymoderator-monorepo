@@ -16,6 +16,8 @@ const AUDIT_RESOURCES = [
   'GROWTH_OS_ROLE',
   'GROWTH_OS_USER_ADMIN',
   'growth_os_prospect',
+  'growth_os_followup',
+  'growth_os_note',
   'GROWTH_OS_ADMIN_MERCHANT',
 ];
 

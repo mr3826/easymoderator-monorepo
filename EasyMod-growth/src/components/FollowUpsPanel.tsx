@@ -3,20 +3,10 @@ import { CalendarPlus, ListChecks } from 'lucide-react';
 import { workspaceApi, type Followup, type FollowupListResponse } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { usePermission } from '@/auth/usePermission';
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return 'Not provided';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
-function pad(value: number) {
-  return String(value).padStart(2, '0');
-}
+import { fromBusinessDateTimeLocal, formatGrowthDateTime, toBusinessDateTimeLocal } from '@/growthTime';
 
 function toDateTimeLocal(date: Date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return toBusinessDateTimeLocal(date.toISOString());
 }
 
 function defaultDueDate() {
@@ -92,7 +82,7 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
     try {
       await workspaceApi.createFollowup({
         prospectId,
-        dueAt: due.toISOString(),
+        dueAt: fromBusinessDateTimeLocal(dueAt).toISOString(),
         action: action.trim(),
         note: note.trim() || null,
       });
@@ -142,7 +132,7 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
               <div>
                 <strong>{followup.action}</strong>
                 <span className="table-subtext">
-                  Due {formatDateTime(followup.dueAt)}
+                  Due {formatGrowthDateTime(followup.dueAt)}
                   {followup.note ? ` · ${followup.note}` : ''}
                 </span>
               </div>

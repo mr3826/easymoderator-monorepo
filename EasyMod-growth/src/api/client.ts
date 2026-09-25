@@ -153,6 +153,14 @@ export interface ProspectListFilters {
   owner?: string;
   q?: string;
   linked?: boolean | '' | 'true' | 'false';
+  stage?: 'qualified';
+  stalled?: boolean | 'true';
+  createdAfter?: string;
+  createdBefore?: string;
+  statusChangedAfter?: string;
+  statusChangedBefore?: string;
+  sourceRecordedAfter?: string;
+  sourceRecordedBefore?: string;
   page?: number;
   pageSize?: number;
 }
@@ -403,6 +411,14 @@ export const growthApi = {
     addQueryValue(params, 'owner', filters.owner);
     addQueryValue(params, 'q', filters.q);
     if (filters.linked !== undefined && filters.linked !== '') params.set('linked', String(filters.linked));
+    addQueryValue(params, 'stage', filters.stage);
+    if (filters.stalled) params.set('stalled', String(filters.stalled));
+    addQueryValue(params, 'createdAfter', filters.createdAfter);
+    addQueryValue(params, 'createdBefore', filters.createdBefore);
+    addQueryValue(params, 'statusChangedAfter', filters.statusChangedAfter);
+    addQueryValue(params, 'statusChangedBefore', filters.statusChangedBefore);
+    addQueryValue(params, 'sourceRecordedAfter', filters.sourceRecordedAfter);
+    addQueryValue(params, 'sourceRecordedBefore', filters.sourceRecordedBefore);
     if (filters.page) params.set('page', String(Math.max(1, Math.floor(filters.page))));
     const pageSize = boundedPageSize(filters.pageSize);
     if (pageSize) params.set('pageSize', String(pageSize));
@@ -506,6 +522,12 @@ export const growthApi = {
 
 export interface HomeResponse {
   generatedAt: string;
+  windows: {
+    attentionSince: string;
+    attentionUntil: string;
+    stalledBefore: string;
+    businessTimeZone: string;
+  };
   myWork: {
     followupsOverdueMine: number;
     followupsOpenMine: number;
@@ -517,8 +539,10 @@ export interface HomeResponse {
   unassignedQualified: number;
     onboardingOpen: number;
     onboardingStalledOver15d: number;
+    qualifiedStalledOver15d: number;
     convertedLast7d: number;
     followupsOverdueInScope: number;
+    followupsDueTodayInScope: number;
   };
   merchantAttention?: { merchantsTotal: number };
   platformAttention?: {
@@ -560,7 +584,13 @@ export interface GrowthAnalyticsResponse {
     medianHoursCreatedToActivated: number | null;
   };
   leadToActivation: number | null;
-  cohort: { basis: 'source_recorded_at'; importedAt: 'created_at'; eventAt: 'prospect_events.created_at' };
+  cohort: {
+    basis: 'source_recorded_at';
+    importedAt: 'created_at';
+    eventAt: 'prospect_events.created_at';
+    sourceRecordedFrom?: string;
+    sourceRecordedTo?: string;
+  };
   notAvailable: string[];
 }
 
@@ -715,8 +745,15 @@ export const workspaceApi = {
     return payload.data;
   },
 
-  async listNotes(targetType: InternalNote['targetType'], targetId: string): Promise<InternalNoteListResponse> {
+  async listNotes(
+    targetType: InternalNote['targetType'],
+    targetId: string,
+    pagination: { page?: number; pageSize?: number } = {},
+  ): Promise<InternalNoteListResponse> {
     const params = new URLSearchParams({ targetType, targetId });
+    if (pagination.page) params.set('page', String(Math.max(1, Math.floor(pagination.page))));
+    const pageSize = boundedPageSize(pagination.pageSize);
+    if (pageSize) params.set('pageSize', String(pageSize));
     const payload = await request<{ success: true; data: InternalNoteListResponse }>(
       `/api/internal/growth-os/notes?${params.toString()}`,
     );

@@ -24,6 +24,14 @@ function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters 
   const status = searchParams.get('status');
   const source = searchParams.get('source');
   const owner = searchParams.get('owner');
+  const stage = searchParams.get('stage');
+  const stalled = searchParams.get('stalled');
+  const createdAfter = searchParams.get('createdAfter');
+  const createdBefore = searchParams.get('createdBefore');
+  const statusChangedAfter = searchParams.get('statusChangedAfter');
+  const statusChangedBefore = searchParams.get('statusChangedBefore');
+  const sourceRecordedAfter = searchParams.get('sourceRecordedAfter');
+  const sourceRecordedBefore = searchParams.get('sourceRecordedBefore');
   if (status && (PROSPECT_STATUSES as readonly string[]).includes(status)) {
     filters.status = status as ProspectStatus;
   }
@@ -31,6 +39,14 @@ function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters 
     filters.source = source as ProspectSource;
   }
   if (owner === 'me' || owner === 'unassigned' || (owner && UUID_PATTERN.test(owner))) filters.owner = owner;
+  if (stage === 'qualified') filters.stage = stage;
+  if (stalled === 'true') filters.stalled = true;
+  if (createdAfter) filters.createdAfter = createdAfter;
+  if (createdBefore) filters.createdBefore = createdBefore;
+  if (statusChangedAfter) filters.statusChangedAfter = statusChangedAfter;
+  if (statusChangedBefore) filters.statusChangedBefore = statusChangedBefore;
+  if (sourceRecordedAfter) filters.sourceRecordedAfter = sourceRecordedAfter;
+  if (sourceRecordedBefore) filters.sourceRecordedBefore = sourceRecordedBefore;
   return filters;
 }
 
@@ -157,7 +173,15 @@ export function ProspectListPage() {
     if (draftFilters.status) nextParams.set('status', draftFilters.status);
     if (draftFilters.source) nextParams.set('source', draftFilters.source);
     if (draftFilters.owner) nextParams.set('owner', draftFilters.owner);
-    if (draftFilters.q) nextParams.set('q', draftFilters.q);
+    // Keep contact/search text out of browser history, referrers, and copied URLs.
+    if (draftFilters.stage) nextParams.set('stage', draftFilters.stage);
+    if (draftFilters.stalled) nextParams.set('stalled', 'true');
+    if (draftFilters.createdAfter) nextParams.set('createdAfter', draftFilters.createdAfter);
+    if (draftFilters.createdBefore) nextParams.set('createdBefore', draftFilters.createdBefore);
+    if (draftFilters.statusChangedAfter) nextParams.set('statusChangedAfter', draftFilters.statusChangedAfter);
+    if (draftFilters.statusChangedBefore) nextParams.set('statusChangedBefore', draftFilters.statusChangedBefore);
+    if (draftFilters.sourceRecordedAfter) nextParams.set('sourceRecordedAfter', draftFilters.sourceRecordedAfter);
+    if (draftFilters.sourceRecordedBefore) nextParams.set('sourceRecordedBefore', draftFilters.sourceRecordedBefore);
     setSearchParams(nextParams);
   }
 

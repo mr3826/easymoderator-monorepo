@@ -53,7 +53,7 @@ describe('NotesPanel', () => {
 
     expect(await screen.findByText('Owner prefers WhatsApp over calls.')).toBeInTheDocument();
     expect(screen.getByText('Internal notes — never visible to merchants')).toBeInTheDocument();
-    expect(workspaceApi.listNotes).toHaveBeenCalledWith('prospect', 'target-1');
+    expect(workspaceApi.listNotes).toHaveBeenCalledWith('prospect', 'target-1', { page: 1, pageSize: 20 });
     expect(screen.getByRole('button', { name: /Delete note/ })).toBeInTheDocument();
   });
 

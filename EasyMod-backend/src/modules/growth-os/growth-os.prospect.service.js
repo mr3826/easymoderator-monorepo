@@ -1226,8 +1226,7 @@ class GrowthOsProspectService {
           lock: true,
           include: false,
         });
-        if (!prospect || prospect.status !== 'onboarding') return;
-        if (!canTransition(prospect.status, 'converted')) return;
+        if (!prospect || prospect.status !== 'onboarding') continue;
         const oldValues = auditSnapshot(prospect);
         await prospect.update({
           status: 'converted',

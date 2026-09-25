@@ -24,7 +24,13 @@ function makeAnalytics(overrides: Partial<GrowthAnalyticsResponse> = {}): Growth
     lostReasons: { price: 4 },
     timing: { medianHoursToFirstContact: 6.5, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
     leadToActivation: 5,
-    cohort: { basis: 'source_recorded_at', importedAt: 'created_at', eventAt: 'prospect_events.created_at' },
+    cohort: {
+      basis: 'source_recorded_at',
+      importedAt: 'created_at',
+      eventAt: 'prospect_events.created_at',
+      sourceRecordedFrom: '2026-06-15T08:00:00.000Z',
+      sourceRecordedTo: '2026-09-13T08:00:00.000Z',
+    },
     notAvailable: ['outreach_volume', 'reply_rate', 'cac', 'cohort_retention'],
     ...overrides,
   };
@@ -52,6 +58,7 @@ describe('AnalyticsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Growth funnel' })).toBeInTheDocument();
     expect(screen.getByText('Contacted or beyond')).toBeInTheDocument();
+    expect(screen.getByText('Qualified or beyond')).toBeInTheDocument();
     expect(screen.getByText('60')).toBeInTheDocument();
     expect(screen.getByText('5%')).toBeInTheDocument();
     expect(screen.getByText('6.5 h')).toBeInTheDocument();
@@ -61,6 +68,23 @@ describe('AnalyticsPage', () => {
     expect(screen.getAllByText('No source data is recorded for this measure yet.')).toHaveLength(4);
     expect(screen.getByRole('heading', { name: 'Prospects by status' })).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
+  });
+
+  it('drills through to the exact cohort window rather than an unfiltered ledger', async () => {
+    vi.spyOn(workspaceApi, 'growthAnalytics').mockResolvedValue(makeAnalytics());
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Growth funnel' });
+    const qualifiedLink = screen.getByRole('link', { name: '25' });
+    expect(qualifiedLink).toHaveAttribute(
+      'href',
+      '/prospects?stage=qualified&sourceRecordedAfter=2026-06-15T08%3A00%3A00.000Z&sourceRecordedBefore=2026-09-13T08%3A00%3A00.000Z',
+    );
+    const statusLink = screen.getByRole('link', { name: '40' });
+    expect(statusLink.getAttribute('href')).toContain('status=new');
+    expect(statusLink.getAttribute('href')).toContain('sourceRecordedAfter=');
+    expect(statusLink.getAttribute('href')).toContain('sourceRecordedBefore=');
   });
 
   it('scales funnel bars proportionally to the largest stage', async () => {

@@ -131,10 +131,29 @@ function prospectFilters(filters = {}, GrowthOsProspect) {
   const clauses = [];
   const where = {};
   if (filters.status) where.status = filters.status;
+  if (filters.stage === 'qualified') where.status = { [Op.in]: ['qualified', 'onboarding', 'converted'] };
   if (filters.source) where.source = filters.source;
   const ownerUserId = filters.ownerUserId || filters.owner_user_id;
   if (ownerUserId) where.owner_user_id = ownerUserId;
   if (filters.ownerUnassigned) where.owner_user_id = { [Op.is]: null };
+
+  const createdAt = {};
+  if (filters.createdAfter) createdAt[Op.gte] = new Date(filters.createdAfter);
+  if (filters.createdBefore) createdAt[Op.lte] = new Date(filters.createdBefore);
+  if (Reflect.ownKeys(createdAt).length > 0) where.created_at = createdAt;
+
+  const statusChangedAt = {};
+  if (filters.statusChangedAfter) statusChangedAt[Op.gte] = new Date(filters.statusChangedAfter);
+  if (filters.statusChangedBefore) statusChangedAt[Op.lte] = new Date(filters.statusChangedBefore);
+  if (filters.stalled === true || filters.stalled === 'true') {
+    statusChangedAt[Op.lt] = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+  }
+  if (Reflect.ownKeys(statusChangedAt).length > 0) where.status_changed_at = statusChangedAt;
+
+  const sourceRecordedAt = {};
+  if (filters.sourceRecordedAfter) sourceRecordedAt[Op.gte] = new Date(filters.sourceRecordedAfter);
+  if (filters.sourceRecordedBefore) sourceRecordedAt[Op.lte] = new Date(filters.sourceRecordedBefore);
+  if (Reflect.ownKeys(sourceRecordedAt).length > 0) where.source_recorded_at = sourceRecordedAt;
 
   if (filters.linked !== undefined && filters.linked !== null) {
     const linked = filters.linked === true || filters.linked === 'true';

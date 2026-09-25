@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ApiError,
   workspaceApi,
@@ -9,6 +9,7 @@ import {
   type FollowupState,
 } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
+import { fromBusinessDateTimeLocal, formatGrowthDateTime, toBusinessDateTimeLocal } from '@/growthTime';
 
 const PAGE_SIZE = 50;
 
@@ -27,21 +28,8 @@ function errorMessage(error: unknown) {
     : 'Follow-ups could not be loaded. Please try again.';
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return 'Not provided';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
-function pad(value: number) {
-  return String(value).padStart(2, '0');
-}
-
 function toDateTimeLocal(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return toBusinessDateTimeLocal(value);
 }
 
 function statusBadge(followup: Followup) {
@@ -55,7 +43,13 @@ type ActionKey = { id: string; kind: 'complete' | 'cancel' | 'reschedule' };
 
 export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
   const { reportApiError } = useGrowthAuth();
-  const [state, setState] = useState<FollowupState>('open');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialState = searchParams.get('state');
+  const [state, setState] = useState<FollowupState>(
+    initialState && STATE_TABS.some((tab) => tab.value === initialState)
+      ? initialState as FollowupState
+      : 'open',
+  );
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<FollowupListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,6 +96,9 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
     setPage(1);
     setRescheduleId(null);
     setActionError(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('state', nextState);
+    setSearchParams(nextParams);
   }
 
   async function runAction(followup: Followup, kind: ActionKey['kind']) {
@@ -109,7 +106,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
     setActionError(null);
     try {
       if (kind === 'reschedule') {
-        const dueDate = new Date(rescheduleDue);
+        const dueDate = fromBusinessDateTimeLocal(rescheduleDue);
         if (!rescheduleDue || Number.isNaN(dueDate.getTime())) {
           setActionError('Choose a valid new due date and time.');
           return;
@@ -235,7 +232,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
                         </Link>
                       </td>
                       <td>
-                        <time dateTime={followup.dueAt}>{formatDateTime(followup.dueAt)}</time>
+                        <time dateTime={followup.dueAt}>{formatGrowthDateTime(followup.dueAt)}</time>
                       </td>
                       <td>{statusBadge(followup)}</td>
                       <td>
@@ -291,7 +288,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
                           )
                         ) : (
                           <span className="table-subtext">
-                            {followup.status === 'completed' && followup.completedAt ? `Done ${formatDateTime(followup.completedAt)}` : 'No actions'}
+                            {followup.status === 'completed' && followup.completedAt ? `Done ${formatGrowthDateTime(followup.completedAt)}` : 'No actions'}
                           </span>
                         )}
                       </td>
