@@ -70,6 +70,7 @@ const PROSPECT_EVENT_TYPES = Object.freeze([
   'imported',
   'followup_created',
   'followup_completed',
+  'followup_cancelled',
   'note_added',
   'activated',
 ]);

@@ -252,7 +252,12 @@ async function transitionFollowup({
   actorUserId, access, actorIsSuperAdmin = false, followupId, toStatus, ipAddress, userAgent,
 }) {
   const { canManageAny } = assertFollowupAccess({ access, actorUserId, actorIsSuperAdmin });
-  if (!FOLLOWUP_STATUSES.includes(toStatus)) invalidInput('target status is invalid.');
+  // Only terminal targets are valid here. The HTTP validator already restricts
+  // this, but a direct service caller must not be able to reopen or no-op a
+  // row either; the source check below keeps every non-open row terminal.
+  if (toStatus !== 'completed' && toStatus !== 'cancelled') {
+    invalidInput('target status must be completed or cancelled.');
+  }
   const db = getSequelize();
   return db.transaction(async (transaction) => {
     const { GrowthOsFollowup, GrowthOsProspectEvent } = getModels();
@@ -269,8 +274,8 @@ async function transitionFollowup({
       actorUserId,
       canManageAny,
     });
-    if (row.status === 'completed') {
-      throw new AppError('Completed follow-ups cannot be reopened. Create a new one.', 409, 'GROWTH_OS_FOLLOWUP_DONE');
+    if (row.status !== 'open') {
+      throw new AppError('Completed or cancelled follow-ups cannot be reopened. Create a new one.', 409, 'GROWTH_OS_FOLLOWUP_DONE');
     }
     const oldStatus = row.status;
     await row.update({
@@ -288,14 +293,12 @@ async function transitionFollowup({
       ipAddress,
       userAgent,
     }, transaction);
-    if (toStatus === 'completed') {
-      await GrowthOsProspectEvent.create({
-        prospect_id: row.prospect_id,
-        actor_user_id: actorUserId,
-        event_type: 'followup_completed',
-        metadata: { followup_id: row.id },
-      }, { transaction });
-    }
+    await GrowthOsProspectEvent.create({
+      prospect_id: row.prospect_id,
+      actor_user_id: actorUserId,
+      event_type: toStatus === 'completed' ? 'followup_completed' : 'followup_cancelled',
+      metadata: { followup_id: row.id },
+    }, { transaction });
     return toApiFollowup(row);
   });
 }

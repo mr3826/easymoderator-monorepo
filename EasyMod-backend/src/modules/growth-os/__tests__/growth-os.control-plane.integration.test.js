@@ -441,7 +441,7 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       }
     });
 
-    test('follow-up lifecycle: create -> overdue -> complete terminal; events recorded', async () => {
+    test('follow-up lifecycle: completion and cancellation are terminal; events recorded', async () => {
       const overdue = await api(growthUser, 'post', '/followups', {
         prospectId,
         dueAt: new Date(Date.now() - 60_000).toISOString(),
@@ -461,10 +461,28 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       expect(again.status).toBe(409);
       expect(again.body.code).toBe('GROWTH_OS_FOLLOWUP_DONE');
 
-      const events = await GrowthOsProspectEvent.findAll({
-        where: { prospect_id: prospectId, event_type: { [Op.in]: ['followup_created', 'followup_completed'] } },
+      const cancelled = await api(growthUser, 'post', '/followups', {
+        prospectId,
+        dueAt: new Date(Date.now() + 60_000).toISOString(),
+        action: 'Confirm cancellation',
       });
-      expect(events).toHaveLength(2);
+      expect(cancelled.status).toBe(201);
+      const cancelledResult = await api(growthUser, 'post', `/followups/${cancelled.body.data.id}/status`, { status: 'cancelled' });
+      expect(cancelledResult.status).toBe(200);
+      expect(cancelledResult.body.data.status).toBe('cancelled');
+      const reopened = await api(growthUser, 'post', `/followups/${cancelled.body.data.id}/status`, { status: 'completed' });
+      expect(reopened.status).toBe(409);
+      expect(reopened.body.code).toBe('GROWTH_OS_FOLLOWUP_DONE');
+
+      const events = await GrowthOsProspectEvent.findAll({
+        where: { prospect_id: prospectId, event_type: { [Op.in]: ['followup_created', 'followup_completed', 'followup_cancelled'] } },
+      });
+      expect(events).toHaveLength(4);
+      expect(events.map((event) => event.event_type)).toEqual(expect.arrayContaining([
+        'followup_created',
+        'followup_completed',
+        'followup_cancelled',
+      ]));
     });
 
     test('notes: prospects allowed for GROWTH_USER, shop/user targets require Super Admin', async () => {
