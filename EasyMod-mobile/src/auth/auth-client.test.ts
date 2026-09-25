@@ -111,12 +111,49 @@ describe('signIn (envelope unwrap + shopId sourcing, Phase 2 contract fix)', () 
     setAccessToken('logout-access-token');
     const transport = createFakeTransport(async () => jsonResponse(200, {}));
 
-    await logout({ transport });
+    await expect(logout({ transport })).resolves.toBe(true);
 
     expect(transport.request).toHaveBeenCalledWith(
       '/api/auth/native/logout',
       expect.objectContaining({ method: 'POST', body: { refresh_token: 'logout-refresh-token' } }),
     );
+    expect(getAccessToken()).toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
+  });
+
+  it('reports a logout superseded by a newer sign-in and leaves that session installed', async () => {
+    await setRefreshToken('account-a-refresh-token');
+    setAccessToken('account-a-access-token');
+    const logoutResponse = deferred<HttpResponse>();
+    const logoutStarted = deferred<void>();
+    const transport = createFakeTransport(async (path) => {
+      if (path === '/api/auth/native/logout') {
+        logoutStarted.resolve();
+        return logoutResponse.promise;
+      }
+      if (path === '/api/auth/native/signin') {
+        return jsonResponse(
+          200,
+          envelope({
+            accessToken: 'account-b-access-token',
+            refreshToken: 'account-b-refresh-token',
+            sid: 'account-b-sid',
+            shopId: 'shop-b',
+            user: FIXTURE_USER,
+          }),
+        );
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const pendingLogout = logout({ transport });
+    await logoutStarted.promise;
+    await expect(signIn('account-b@example.test', 'password', { transport })).resolves.toMatchObject({ ok: true });
+    logoutResponse.resolve(jsonResponse(200, {}));
+
+    await expect(pendingLogout).resolves.toBe(false);
+    expect(getAccessToken()).toBe('account-b-access-token');
+    await expect(getRefreshToken()).resolves.toBe('account-b-refresh-token');
   });
 
   it('does not block refresh after a failed sign-in transition', async () => {
@@ -231,7 +268,7 @@ describe('verifyTwoFactor (native MFA handoff)', () => {
 
     const pendingVerification = verifyTwoFactor('cancelled-temp-token', '123456', { transport });
     await requestStarted.promise;
-    await cancelTwoFactor();
+    await expect(cancelTwoFactor()).resolves.toBe(true);
     response.resolve(
       jsonResponse(
         200,

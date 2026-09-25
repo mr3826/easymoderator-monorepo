@@ -70,7 +70,7 @@ beforeEach(async () => {
   await clearRefreshToken();
   mockedRefreshAccessToken.mockReset();
   mockedLogoutRequest.mockReset();
-  mockedLogoutRequest.mockResolvedValue(undefined);
+  mockedLogoutRequest.mockResolvedValue(true);
   mockedSignInRequest.mockReset();
   queryClient.clear();
 });
@@ -181,6 +181,69 @@ describe('AuthProvider auth-transition cache isolation', () => {
     fireEvent.press(screen.getByTestId('sign-in-button'));
 
     await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-2:shop-2'));
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
+  });
+
+  it('does not wipe a newer session when a superseded logout settles late', async () => {
+    await setRefreshToken('stored-refresh-token');
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('account-a-access');
+      return { accessToken: 'account-a-access', user: USER_ONE };
+    });
+    let settleLogout: (applied: boolean) => void = () => undefined;
+    mockedLogoutRequest.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settleLogout = resolve;
+        }),
+    );
+    mockedSignInRequest.mockImplementation(async () => {
+      setAccessToken('account-b-access');
+      return { ok: true, data: USER_TWO };
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+
+    fireEvent.press(screen.getByTestId('logout-button'));
+    await waitFor(() => expect(mockedLogoutRequest).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('sign-in-button'));
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-2:shop-2'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-2'], { items: ['account-b'] });
+
+    // The client reports the stale logout as superseded; the provider must leave account B intact.
+    await act(async () => settleLogout(false));
+
+    expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-2:shop-2');
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-2'])).toEqual({ items: ['account-b'] });
+  });
+
+  it('clears the user and cache when the logout it started is the one that completes', async () => {
+    await setRefreshToken('stored-refresh-token');
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('account-a-access');
+      return { accessToken: 'account-a-access', user: USER_ONE };
+    });
+    mockedLogoutRequest.mockImplementation(async () => {
+      setAccessToken(null);
+      return true;
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: ['account-a'] });
+
+    fireEvent.press(screen.getByTestId('logout-button'));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
     expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
   });
 });

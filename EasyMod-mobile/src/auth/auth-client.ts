@@ -240,11 +240,16 @@ export async function verifyTwoFactor(
 }
 
 /** Invalidates a pending native MFA request without creating a session or calling another auth path. */
-export async function cancelTwoFactor(): Promise<void> {
+/**
+ * Resolves `true` only when this cancellation is still the latest auth transition once its
+ * SecureStore write settles; `false` means a newer sign-in superseded it and owns the auth state.
+ */
+export async function cancelTwoFactor(): Promise<boolean> {
   const requestEpoch = beginAuthTransition();
   setAccessToken(null);
   await clearRefreshTokenForEpoch(requestEpoch);
   finishAuthTransition(requestEpoch);
+  return isCurrentAuthEpoch(requestEpoch);
 }
 
 // --- Single-flight refresh guard -------------------------------------------------------------
@@ -397,12 +402,16 @@ export function __resetRefreshGuardForTests(): void {
   inFlightRefresh = null;
 }
 
-export async function logout(deps: AuthClientDeps = {}): Promise<void> {
+/**
+ * Resolves `true` when this logout cleared the on-device credentials, `false` when a newer auth
+ * transition superseded it (callers must then leave the newer session's state alone).
+ */
+export async function logout(deps: AuthClientDeps = {}): Promise<boolean> {
   const requestEpoch = beginAuthTransition();
   const transport = deps.transport ?? fetchTransport;
   const currentAccessToken = getAccessToken();
   const refreshToken = await getRefreshToken();
-  if (!isCurrentAuthEpoch(requestEpoch)) return;
+  if (!isCurrentAuthEpoch(requestEpoch)) return false;
 
   try {
     await transport.request('/api/auth/native/logout', {
@@ -416,8 +425,9 @@ export async function logout(deps: AuthClientDeps = {}): Promise<void> {
     // "Logout" must always end up logged out on-device, even if offline.
   }
 
-  if (!isCurrentAuthEpoch(requestEpoch)) return;
+  if (!isCurrentAuthEpoch(requestEpoch)) return false;
 
   setAccessToken(null);
   await clearRefreshTokenForEpoch(requestEpoch);
+  return isCurrentAuthEpoch(requestEpoch);
 }

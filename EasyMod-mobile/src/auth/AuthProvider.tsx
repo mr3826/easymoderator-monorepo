@@ -114,14 +114,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  // Both transitions await network/SecureStore work. If a newer sign-in completes meanwhile, the
+  // client reports this transition as superseded and the newer account's user and cache must stay.
   const doCancelTwoFactor = useCallback(async () => {
-    await cancelTwoFactorRequest();
+    if (!(await cancelTwoFactorRequest())) return;
     setUser(null);
     queryClient.clear();
   }, []);
 
   const doLogout = useCallback(async () => {
-    await logoutRequest();
+    if (!(await logoutRequest())) return;
     setUser(null);
     // Clear per-shop server data before a later sign-in can render it. Query keys include shopId as
     // defense in depth, but logout must also discard data from the shop no longer in session.
