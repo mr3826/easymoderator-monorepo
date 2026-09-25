@@ -1,6 +1,11 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'jest-expo',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  // The first test in a component file pays for transforming and loading React Native itself.
+  // With a cold cache on a loaded runner that measured 5-12 s, over Jest's 5 s default, and failed
+  // otherwise-passing tests at random (login-screen, AuthProvider cold-start, deeplink-routes).
+  testTimeout: 30_000,
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/app/**/_layout.tsx'],
   // `lucide-react-native`'s package "exports" map is resolved by Jest via its "react-native"/
   // "import" condition (an ESM `.mjs` build) rather than its "require" (CJS) condition, and
@@ -25,5 +30,9 @@ module.exports = {
     '^lucide-react-native$': '<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js',
     '^@react-native-community/netinfo$':
       '<rootDir>/node_modules/@react-native-community/netinfo/jest/netinfo-mock.js',
+    // AsyncStorage (ADR M-011 persisted cache) is a native module; use the package's own in-memory
+    // Jest mock, same technique as NetInfo above.
+    '^@react-native-async-storage/async-storage$':
+      '<rootDir>/node_modules/@react-native-async-storage/async-storage/jest/async-storage-mock.js',
   },
 };

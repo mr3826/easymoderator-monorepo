@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import * as Linking from 'expo-linking';
 
 /**
@@ -56,7 +56,7 @@ export function openDeepLink(kind: DeepLinkEntityKind, id: string, now: number =
     return false;
   }
   lastOpened = { path, at: now };
-  router.push(path);
+  router.push(path as Href);
   return true;
 }
 

@@ -30,20 +30,43 @@ const { hoursSince, readTimestamp } = require('./mobile-day-window.util');
 // status) rather than run unbounded over the whole shop.
 const CONVERSATION_SCAN_LIMIT = 200;
 
-// D3 (extended for tier 1b): a draft order is not yet "ready to ship" — the
-// courier-setup-blocked signal only fires for orders past that stage.
-// Beyond 'draft', the production order_status vocabulary is genuinely messy
-// (order.service.js writes 'confirmed' and 'finalized'; 'placed'/'fulfilled'
-// are declared in ORDER_STATES but never written by real code — see
-// order.service.js:22-23 and the Phase 2 plan's discovery notes), so "ready
-// to ship" is defined negatively: not a draft, not cancelled/refunded.
-const READY_TO_SHIP_EXCLUDED_STATUSES = ['draft', 'cancelled', 'refunded'];
+// The order module has three overlapping vocabularies: the state-machine
+// declaration, the validator, and statuses written by live flows. Home must
+// use only the two non-terminal statuses that are both actionable and
+// supported by current code. In particular, do not treat legacy declared
+// states (placed/paid/fulfilled) or unknown values as committed orders.
+const COMMITTED_ORDER_STATUSES = Object.freeze(['confirmed', 'processing']);
+const RTO_PENDING_ORDER_STATUSES = Object.freeze(['draft', ...COMMITTED_ORDER_STATUSES]);
+const TERMINAL_ORDER_STATUSES = Object.freeze([
+    'delivered',
+    'completed',
+    'finalized',
+    'cancelled',
+    'refunded',
+    'fulfilled',
+]);
+const ACTIVE_FULFILLMENT_STATUSES = Object.freeze(['unfulfilled', 'partially_fulfilled']);
 
-// Tier 4: an order is still "pending" (RTO-verification-relevant) unless it
-// is cancelled/refunded or has already completed its delivery lifecycle.
-// Unlike tier 1b, a draft order still counts here — the merchant may want to
-// verify a risky customer before ever confirming the order.
-const RTO_PENDING_EXCLUDED_STATUSES = ['cancelled', 'refunded', 'finalized', 'fulfilled'];
+// Retain the old exported names for callers that imported the Phase 2
+// constants, but use positive status allowlists in every collector below.
+const READY_TO_SHIP_EXCLUDED_STATUSES = Object.freeze(['draft', ...TERMINAL_ORDER_STATUSES]);
+const RTO_PENDING_EXCLUDED_STATUSES = TERMINAL_ORDER_STATUSES;
+
+/**
+ * Build the common order predicate used by active Home collectors. The
+ * delivered_at and fulfillment checks cover rows whose order_status was not
+ * updated atomically with the delivery webhook; refunded payment rows are not
+ * merchant-actionable even if their order status is stale.
+ */
+const activeOrderWhere = (statuses) => ({
+    order_status: { [Op.in]: statuses },
+    fulfillment_status: { [Op.in]: ACTIVE_FULFILLMENT_STATUSES },
+    [Op.or]: [
+        { payment_status: { [Op.ne]: 'refunded' } },
+        { payment_status: null },
+    ],
+    delivered_at: null,
+});
 
 const roundScore = (value) => Math.round(value * 100) / 100;
 
@@ -63,21 +86,28 @@ async function collectCourierFailures(shopId, now) {
 
     const orderIds = [...new Set(dispatches.map((dispatch) => dispatch.order_id))];
     const orders = await Order.findAll({
-        where: { shop_id: shopId, id: { [Op.in]: orderIds } },
-        attributes: ['id', 'order_number'],
+        where: {
+            shop_id: shopId,
+            id: { [Op.in]: orderIds },
+            ...activeOrderWhere(COMMITTED_ORDER_STATUSES),
+        },
+        attributes: ['id', 'order_number', 'order_status', 'fulfillment_status', 'payment_status', 'delivered_at'],
     });
     const orderById = new Map(orders.map((order) => [order.id, order]));
 
-    return dispatches.map((dispatch) => {
+    return dispatches.filter((dispatch) => orderById.has(dispatch.order_id)).map((dispatch) => {
         const order = orderById.get(dispatch.order_id);
         const label = order?.order_number || dispatch.order_id;
         const isFailed = dispatch.status === 'FAILED';
         const createdAt = readTimestamp(dispatch);
         return {
-            id: `courier_failed:order:${dispatch.order_id}`,
+            // Multiple providers may fail for the same order; the dispatch UUID keeps
+            // FlatList/entity keys distinct without changing backend ranking semantics.
+            id: `courier_failed:dispatch:${dispatch.id}`,
             tier: 1,
             urgency_score: roundScore(hoursSince(createdAt, now)),
             signal_type: isFailed ? 'COURIER_FAILED' : 'COURIER_INDETERMINATE',
+            reason_code: isFailed ? 'COURIER_DISPATCH_FAILED' : 'COURIER_DISPATCH_INDETERMINATE',
             reason: isFailed
                 ? `Courier dispatch failed for order ${label} — needs manual retry`
                 : `Courier dispatch status is unresolved for order ${label} — verify with the provider`,
@@ -99,7 +129,7 @@ async function collectCourierSetupBlocked(shopId, now) {
     const candidateOrders = await Order.findAll({
         where: {
             shop_id: shopId,
-            order_status: { [Op.notIn]: READY_TO_SHIP_EXCLUDED_STATUSES },
+            ...activeOrderWhere(COMMITTED_ORDER_STATUSES),
         },
         order: [['created_at', 'ASC']],
         // Order's timestamp attribute is `createdAt` (no explicit rename —
@@ -110,7 +140,15 @@ async function collectCourierSetupBlocked(shopId, now) {
         // `readTimestamp()` guards against (there is nothing for it to find
         // under either key). ORDER BY is unaffected — raw column names work
         // there regardless of the JS attribute name.
-        attributes: ['id', 'order_number', 'createdAt'],
+        attributes: [
+            'id',
+            'order_number',
+            'createdAt',
+            'order_status',
+            'fulfillment_status',
+            'payment_status',
+            'delivered_at',
+        ],
     });
     if (!candidateOrders.length) return [];
 
@@ -131,6 +169,7 @@ async function collectCourierSetupBlocked(shopId, now) {
         tier: 1,
         urgency_score: roundScore(hoursSince(createdAt, now)),
         signal_type: 'COURIER_SETUP_REQUIRED',
+        reason_code: 'COURIER_SETUP_REQUIRED',
         reason: stillBlocked.length === 1
             ? `Courier setup is incomplete and order ${label} is ready to ship`
             : `Courier setup is incomplete — ${stillBlocked.length} orders are ready to ship (oldest: ${label})`,
@@ -192,15 +231,16 @@ async function collectConversationSignals(shopId, now) {
             ? new Date(conversation.updated_at)
             : new Date(conversation.created_at);
         const lastCustomerAt = lastCustomerAtById.get(conversation.id) || fallbackAt;
-        const reason = NEEDS_REPLY_REASON_TEXT[conversation.needs_merchant_reply_reason]
-            || (conversation.hitl
-                ? NEEDS_REPLY_REASON_TEXT.HITL_REQUIRED
-                : NEEDS_REPLY_REASON_TEXT.CUSTOMER_UNANSWERED);
+        const reasonCode = NEEDS_REPLY_REASON_TEXT[conversation.needs_merchant_reply_reason]
+            ? conversation.needs_merchant_reply_reason
+            : (conversation.hitl ? 'HITL_REQUIRED' : 'CUSTOMER_UNANSWERED');
+        const reason = NEEDS_REPLY_REASON_TEXT[reasonCode];
         return {
             id: `inbox_needs_reply:conversation:${conversation.id}`,
             tier: 2,
             urgency_score: roundScore(hoursSince(lastCustomerAt, now)),
             signal_type: 'INBOX_NEEDS_REPLY',
+            reason_code: reasonCode,
             reason,
             entity: { type: 'conversation', id: conversation.id },
             created_at: lastCustomerAt,
@@ -234,6 +274,7 @@ async function collectDraftOrders(shopId, now) {
             tier: 3,
             urgency_score: roundScore(total * hours),
             signal_type: 'DRAFT_ORDER',
+            reason_code: 'DRAFT_ORDER_AWAITING_CONFIRMATION',
             reason: `Draft order ${label} (৳${total}) has been awaiting confirmation for ${Math.round(hours)}h`,
             entity: { type: 'order', id: order.id },
             created_at: createdAt,
@@ -251,13 +292,22 @@ async function collectRtoVerifyOrders(shopId, now) {
     const pendingOrders = await Order.findAll({
         where: {
             shop_id: shopId,
-            order_status: { [Op.notIn]: RTO_PENDING_EXCLUDED_STATUSES },
+            ...activeOrderWhere(RTO_PENDING_ORDER_STATUSES),
             customer_phone: { [Op.ne]: null },
         },
         order: [['created_at', 'ASC']],
         // See the comment in collectCourierSetupBlocked: Order's real
         // attribute name is `createdAt`, not `created_at`.
-        attributes: ['id', 'order_number', 'customer_phone', 'createdAt'],
+        attributes: [
+            'id',
+            'order_number',
+            'customer_phone',
+            'createdAt',
+            'order_status',
+            'fulfillment_status',
+            'payment_status',
+            'delivered_at',
+        ],
     });
     if (!pendingOrders.length) return [];
 
@@ -278,6 +328,7 @@ async function collectRtoVerifyOrders(shopId, now) {
             tier: 4,
             urgency_score: roundScore(hoursSince(createdAt, now)),
             signal_type: 'RTO_VERIFY',
+            reason_code: 'RTO_VERIFICATION_REQUIRED',
             reason: `Customer on order ${label} has an elevated return history — verify before shipping`,
             entity: { type: 'order', id: order.id },
             created_at: createdAt,
@@ -315,6 +366,7 @@ async function collectLowStockProducts(shopId, now) {
                 tier: 5,
                 urgency_score: roundScore(1 - (quantity / threshold)),
                 signal_type: 'LOW_STOCK',
+                reason_code: 'LOW_STOCK',
                 reason: `${product.name} is low on stock (${quantity} left, threshold ${threshold})`,
                 entity: { type: 'product', id: product.id },
                 created_at: createdAt,
@@ -383,6 +435,7 @@ async function getAttentionList(shopId, now = new Date()) {
             tier: item.tier,
             urgency_score: item.urgency_score,
             signal_type: item.signal_type,
+            reason_code: item.reason_code,
             reason: item.reason,
             entity: item.entity,
         })),
@@ -403,6 +456,11 @@ module.exports = {
     sortItems,
     ATTENTION_LIST_CAP,
     CONVERSATION_SCAN_LIMIT,
+    COMMITTED_ORDER_STATUSES,
+    RTO_PENDING_ORDER_STATUSES,
+    TERMINAL_ORDER_STATUSES,
+    ACTIVE_FULFILLMENT_STATUSES,
+    activeOrderWhere,
     READY_TO_SHIP_EXCLUDED_STATUSES,
     RTO_PENDING_EXCLUDED_STATUSES,
 };

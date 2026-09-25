@@ -1,12 +1,14 @@
 import React from 'react';
 import { Pressable, Text } from 'react-native';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AuthProvider, useAuth } from './AuthProvider';
 import { __resetTokenStoreForTests, setAccessToken } from './token-store';
-import { clearRefreshToken, setRefreshToken } from './secure-store';
-import { refreshAccessToken, logout as logoutRequest } from './auth-client';
+import { clearRefreshToken, getSessionIdentity, setRefreshToken, setSessionIdentity } from './secure-store';
+import { logout as logoutRequest, refreshAccessToken, signIn as signInRequest } from './auth-client';
 import { queryClient } from '@/lib/queryClient';
+import { PERSISTED_QUERY_CACHE_KEY } from '@/lib/queryPersistence';
 
 /**
  * Phase 2 contract fix (bug #4 in the mobile/p2-contract lane): before this fix, a cold-start
@@ -20,19 +22,20 @@ import { queryClient } from '@/lib/queryClient';
 jest.mock('./auth-client', () => ({
   ...jest.requireActual('./auth-client'),
   refreshAccessToken: jest.fn(),
-  // Phase 2 Home lane: `logout` is mocked too (rather than left as the real implementation) so
-  // the new "logout clears the query cache" test below never makes a real network call — the real
-  // `logoutRequest` hits `fetchTransport`, which has no server to talk to under Jest.
   logout: jest.fn(),
+  signIn: jest.fn(),
 }));
 
 function Probe() {
-  const { status, user, logout } = useAuth();
+  const { status, user, logout, signIn } = useAuth();
   return (
     <>
       <Text testID="probe">{`${status}:${user?.id ?? 'none'}:${user?.shopId ?? 'none'}`}</Text>
       <Pressable testID="logout-button" onPress={() => void logout()}>
         <Text>logout</Text>
+      </Pressable>
+      <Pressable testID="sign-in-button" onPress={() => void signIn('account-b@example.test', 'password')}>
+        <Text>sign in</Text>
       </Pressable>
     </>
   );
@@ -44,13 +47,33 @@ function Probe() {
 // runtime, reinforcing the same drift-prevention goal as the fixture contract test.
 const mockedRefreshAccessToken = jest.mocked(refreshAccessToken);
 const mockedLogoutRequest = jest.mocked(logoutRequest);
+const mockedSignInRequest = jest.mocked(signInRequest);
+
+const USER_ONE = {
+  id: 'user-1',
+  email: 'account-a@example.test',
+  full_name: null,
+  phone: null,
+  profile_picture: null,
+  shopId: 'shop-1',
+};
+
+const USER_TWO = {
+  id: 'user-2',
+  email: 'account-b@example.test',
+  full_name: null,
+  phone: null,
+  profile_picture: null,
+  shopId: 'shop-2',
+};
 
 beforeEach(async () => {
   __resetTokenStoreForTests();
   await clearRefreshToken();
   mockedRefreshAccessToken.mockReset();
   mockedLogoutRequest.mockReset();
-  mockedLogoutRequest.mockResolvedValue(undefined);
+  mockedLogoutRequest.mockResolvedValue(true);
+  mockedSignInRequest.mockReset();
   queryClient.clear();
 });
 
@@ -99,30 +122,256 @@ describe('AuthProvider cold-start refresh', () => {
   });
 });
 
-describe('AuthProvider logout clears the query cache (Phase 2 Home lane, cross-shop isolation)', () => {
-  it('clears every cached query on logout, so a later sign-in never serves a previous shop\'s cached data', async () => {
-    // Seeds the cache the way `useAttention`/`useToday` actually key it (`@/api/mobile/queryKeys.ts`)
-    // — this is deliberately not an arbitrary key, to prove the exact real cache entries this lane
-    // introduces are the ones being protected here.
+describe('AuthProvider auth-transition cache isolation', () => {
+  it('clears cached Home data before another shop can render it', async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe')).toBeTruthy());
     queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: [] });
     queryClient.setQueryData(['mobile', 'today', 'shop-1'], { order_count: 0 });
-    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeDefined();
+
+    fireEvent.press(screen.getByTestId('logout-button'));
+
+    await waitFor(() => expect(mockedLogoutRequest).toHaveBeenCalledTimes(1));
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
+    expect(queryClient.getQueryData(['mobile', 'today', 'shop-1'])).toBeUndefined();
+  });
+
+  it('clears Home data when automatic token expiry transitions the provider to signed out', async () => {
+    await setRefreshToken('stored-refresh-token');
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('access-token');
+      return { accessToken: 'access-token', user: USER_ONE };
+    });
 
     render(
       <AuthProvider>
         <Probe />
       </AuthProvider>,
     );
-    await waitFor(() => {
-      expect(screen.getByTestId('probe')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: ['account-a'] });
+
+    act(() => setAccessToken(null));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
+  });
+
+  it('clears the previous shop cache when sign-in changes the signed-in account', async () => {
+    await setRefreshToken('stored-refresh-token');
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('account-a-access');
+      return { accessToken: 'account-a-access', user: USER_ONE };
     });
+    mockedSignInRequest.mockImplementation(async () => {
+      setAccessToken('account-b-access');
+      return { ok: true, data: USER_TWO };
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: ['account-a'] });
+
+    fireEvent.press(screen.getByTestId('sign-in-button'));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-2:shop-2'));
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
+  });
+
+  it('does not wipe a newer session when a superseded logout settles late', async () => {
+    await setRefreshToken('stored-refresh-token');
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('account-a-access');
+      return { accessToken: 'account-a-access', user: USER_ONE };
+    });
+    let settleLogout: (applied: boolean) => void = () => undefined;
+    mockedLogoutRequest.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settleLogout = resolve;
+        }),
+    );
+    mockedSignInRequest.mockImplementation(async () => {
+      setAccessToken('account-b-access');
+      return { ok: true, data: USER_TWO };
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+
+    fireEvent.press(screen.getByTestId('logout-button'));
+    await waitFor(() => expect(mockedLogoutRequest).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('sign-in-button'));
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-2:shop-2'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-2'], { items: ['account-b'] });
+
+    // The client reports the stale logout as superseded; the provider must leave account B intact.
+    await act(async () => settleLogout(false));
+
+    expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-2:shop-2');
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-2'])).toEqual({ items: ['account-b'] });
+  });
+
+  it('clears the user and cache when the logout it started is the one that completes', async () => {
+    await setRefreshToken('stored-refresh-token');
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('account-a-access');
+      return { accessToken: 'account-a-access', user: USER_ONE };
+    });
+    mockedLogoutRequest.mockImplementation(async () => {
+      setAccessToken(null);
+      return true;
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: ['account-a'] });
 
     fireEvent.press(screen.getByTestId('logout-button'));
 
-    await waitFor(() => {
-      expect(mockedLogoutRequest).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
     expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toBeUndefined();
-    expect(queryClient.getQueryData(['mobile', 'today', 'shop-1'])).toBeUndefined();
+  });
+});
+
+describe('AuthProvider offline session (ADR M-011)', () => {
+  const IDENTITY = { ...USER_ONE };
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('stays signed out when a signed-out screen clears an absent token (a 2FA-required answer)', async () => {
+    const statuses: string[] = [];
+    function StatusLog() {
+      const { status } = useAuth();
+      statuses.push(status);
+      return null;
+    }
+    render(
+      <AuthProvider>
+        <Probe />
+        <StatusLog />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    statuses.length = 0;
+
+    // auth-client's signIn clears the access token when the server answers "2FA required". A
+    // transient signed-in status here would swap the login screen out and drop its 2FA step.
+    act(() => setAccessToken(null));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(statuses).not.toContain('signedIn');
+    expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none');
+  });
+
+  it('opens the stored user read-only when the cold-start refresh cannot reach the server', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    // Network failure: no token installed, stored session left in place (auth-client contract).
+    mockedRefreshAccessToken.mockResolvedValue(null);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+  });
+
+  it('signs out on cold start when the server rejected the stored session', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      await clearRefreshToken();
+      return null;
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+  });
+
+  it('degrades to the offline session, not sign-out, when the access token is lost but the session is stored', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    mockedRefreshAccessToken.mockImplementation(async () => {
+      setAccessToken('access-token');
+      return { accessToken: 'access-token', user: USER_ONE };
+    });
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    queryClient.setQueryData(['mobile', 'attention', 'shop-1'], { items: ['cached'] });
+
+    act(() => setAccessToken(null));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+    expect(queryClient.getQueryData(['mobile', 'attention', 'shop-1'])).toEqual({ items: ['cached'] });
+  });
+
+  it('logout from an offline session signs out and purges the persisted Home cache', async () => {
+    await setRefreshToken('stored-refresh-token');
+    await setSessionIdentity(IDENTITY);
+    await AsyncStorage.setItem(PERSISTED_QUERY_CACHE_KEY, JSON.stringify({ buster: 'x', timestamp: Date.now() }));
+    mockedRefreshAccessToken.mockResolvedValue(null);
+    mockedLogoutRequest.mockImplementation(async () => {
+      await clearRefreshToken();
+      setAccessToken(null);
+      return true;
+    });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedIn:user-1:shop-1'));
+
+    fireEvent.press(screen.getByTestId('logout-button'));
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    await waitFor(async () => expect(await AsyncStorage.getItem(PERSISTED_QUERY_CACHE_KEY)).toBeNull());
+    await expect(getSessionIdentity()).resolves.toBeNull();
+  });
+
+  it('purges a leftover persisted cache on a cold start with no stored session', async () => {
+    await AsyncStorage.setItem(PERSISTED_QUERY_CACHE_KEY, JSON.stringify({ buster: 'x', timestamp: Date.now() }));
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('probe').props.children).toBe('signedOut:none:none'));
+    await waitFor(async () => expect(await AsyncStorage.getItem(PERSISTED_QUERY_CACHE_KEY)).toBeNull());
   });
 });

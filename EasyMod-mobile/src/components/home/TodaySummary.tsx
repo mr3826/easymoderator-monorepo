@@ -13,22 +13,26 @@ interface TodaySummaryProps {
   isPending: boolean;
   isError: boolean;
   errorKind: ErrorKind | undefined;
+  isOnline: boolean;
   onRetry: () => void;
 }
 
-/**
- * The "Today" summary strip (master brief §4) — merchant-first counts, deliberately no
- * dashboard-style chart/graph: order count, revenue (via the shared BDT formatter), and delivered
- * count, in that order. Renders its own inline loading/error sub-state so a slow or failed
- * `/api/mobile/today` never blocks the (independently-fetched) attention list below it.
- */
-export function TodaySummary({ data, isPending, isError, errorKind, onRetry }: TodaySummaryProps) {
+/** The passive Today strip. A failed refresh keeps the last server snapshot visible and retryable. */
+export function TodaySummary({ data, isPending, isError, errorKind, isOnline, onRetry }: TodaySummaryProps) {
   const { t } = useTranslation();
+
+  if (!data && !isOnline) {
+    return (
+      <View style={styles.card} testID="today-summary-offline">
+        <Text style={styles.errorText}>{t('mobile.home.offline.message')}</Text>
+      </View>
+    );
+  }
 
   if (!data && isPending) {
     return (
       <View style={styles.card} testID="today-summary-loading">
-        <ActivityIndicator color={brandColors.primary} />
+        <ActivityIndicator color={brandColors.primary} accessibilityLabel={t('common.loading')} />
       </View>
     );
   }
@@ -38,7 +42,7 @@ export function TodaySummary({ data, isPending, isError, errorKind, onRetry }: T
       <View style={styles.card} testID="today-summary-error">
         <Text style={styles.errorText}>
           {t('mobile.home.today.unavailable')}
-          {errorKind ? ` — ${t(apiErrorMessageKey(errorKind))}` : ''}
+          {errorKind ? ` - ${t(apiErrorMessageKey(errorKind))}` : ''}
         </Text>
         <Pressable onPress={onRetry} accessibilityRole="button" testID="today-summary-retry">
           <Text style={styles.retryText}>{t('common.retry')}</Text>
@@ -49,23 +53,56 @@ export function TodaySummary({ data, isPending, isError, errorKind, onRetry }: T
 
   if (!data) return null;
 
+  const expectedOrderValue = data.expected_order_value ?? data.revenue;
+  const timezoneNote = data.timezone_note
+    ? t('mobile.home.today.timezoneFallback', { timezone: data.timezone_used })
+    : null;
+
   return (
     <View style={styles.card} testID="today-summary">
       <Text style={styles.title}>{t('mobile.home.today.title')}</Text>
       <View style={styles.row}>
         <View style={styles.tile}>
-          <Text style={styles.value}>{data.order_count}</Text>
-          <Text style={styles.label}>{t('mobile.home.today.orders')}</Text>
+          <Text style={styles.value} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {data.order_count}
+          </Text>
+          <Text style={styles.label} numberOfLines={2}>
+            {t('mobile.home.today.orders')}
+          </Text>
         </View>
         <View style={styles.tile}>
-          <Text style={styles.value}>{formatBdCurrency(data.revenue)}</Text>
-          <Text style={styles.label}>{t('mobile.home.today.revenue')}</Text>
+          <Text style={styles.value} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {formatBdCurrency(expectedOrderValue)}
+          </Text>
+          <Text style={styles.label} numberOfLines={2}>
+            {t('mobile.home.today.revenue')}
+          </Text>
         </View>
         <View style={styles.tile}>
-          <Text style={styles.value}>{data.delivered_count}</Text>
-          <Text style={styles.label}>{t('mobile.home.today.delivered')}</Text>
+          <Text style={styles.value} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {data.delivered_count}
+          </Text>
+          <Text style={styles.label} numberOfLines={2}>
+            {t('mobile.home.today.delivered')}
+          </Text>
         </View>
       </View>
+      {timezoneNote ? (
+        <Text style={styles.timezoneNote} testID="today-timezone-note">
+          {timezoneNote}
+        </Text>
+      ) : null}
+      {isError ? (
+        <View style={styles.staleNotice} testID="today-summary-stale">
+          <Text style={styles.errorText}>
+            {t('mobile.home.stale.message')}
+            {errorKind ? ` - ${t(apiErrorMessageKey(errorKind))}` : ''}
+          </Text>
+          <Pressable onPress={onRetry} accessibilityRole="button" testID="today-summary-retry-stale">
+            <Text style={styles.retryText}>{t('common.retry')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -88,10 +125,12 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: spacing.two,
+    minWidth: 0,
   },
   tile: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     gap: spacing.half,
   },
@@ -99,18 +138,33 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 18,
     color: brandColors.primaryDark,
+    flexShrink: 1,
+    textAlign: 'center',
   },
   label: {
     fontFamily: fontFamily.regular,
     fontSize: 12,
     color: neutral.muted,
     textAlign: 'center',
+    flexShrink: 1,
+  },
+  timezoneNote: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+    color: neutral.muted,
+  },
+  staleNotice: {
+    borderTopWidth: 1,
+    borderTopColor: neutral.border,
+    paddingTop: spacing.two,
+    gap: spacing.one,
   },
   errorText: {
     fontFamily: fontFamily.regular,
     fontSize: 13,
     color: brandColors.text,
     opacity: 0.8,
+    flexShrink: 1,
   },
   retryText: {
     fontFamily: fontFamily.semiBold,

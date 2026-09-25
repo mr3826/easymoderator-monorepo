@@ -1,11 +1,42 @@
 const { AppError } = require('../utils/AppError');
 const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
-const { User } = require('../modules/entities');
+const { User, UserShop } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
 // ADR M-004: native tokens carry a `sid` claim referencing a user_sessions
 // row, looked up below only when that claim is present.
 const Session = require('../modules/auth/session.entity');
+
+const NATIVE_AUTH_PATH = '/api/auth/native';
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+// The complete read surface the mobile app uses: its own Home APIs plus the
+// shop-scoped order/conversation detail reads behind deep links. A native
+// token is refused everywhere else, so a compromised or modified client
+// cannot use it to walk the rest of the web API.
+const NATIVE_READ_ROUTES = [
+    /^\/api\/mobile(?:\/|$)/,
+    new RegExp(`^/api/order/${UUID}$`, 'i'),
+    new RegExp(`^/api/conversation/${UUID}$`, 'i'),
+];
+
+const requestPath = (req) => (req.originalUrl || `${req.baseUrl || ''}${req.path || ''}`).split('?')[0];
+
+const isNativeAuthRoute = (req) => {
+    const path = requestPath(req);
+    return path === NATIVE_AUTH_PATH || path.startsWith(`${NATIVE_AUTH_PATH}/`);
+};
+
+const isNativeReadRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_READ_ROUTES.some((route) => route.test(path));
+};
+
+const hasUnexpiredSession = (session) => {
+    const expiresAt = new Date(session?.expires_at).getTime();
+    return Boolean(session?.is_active) && Number.isFinite(expiresAt) && expiresAt > Date.now();
+};
 
 /**
  * Authentication middleware
@@ -73,10 +104,48 @@ const authenticate = async (req, res, next) => {
         // native-sid-revocation.test.js regression case.
         if (decoded.sid) {
             const session = await Session.findByPk(decoded.sid, {
-                attributes: ['id', 'is_active'],
+                attributes: ['id', 'user_id', 'shop_id', 'is_active', 'expires_at'],
             });
-            if (!session || !session.is_active) {
+            if (!hasUnexpiredSession(session)) {
                 throw new AppError('Session has been revoked. Please login again.', 401);
+            }
+
+            // The access token must still describe its session: same user, and
+            // the shop the session is currently bound to. switch-shop moves the
+            // session and issues a new token, so an older token for the previous
+            // shop stops working immediately instead of at its 15-minute expiry.
+            if (session.user_id !== decoded.userId || (session.shop_id || null) !== (decoded.shopId || null)) {
+                throw new AppError('Session has been revoked. Please login again.', 401);
+            }
+
+            // Native tokens are read-only everywhere except their dedicated
+            // auth/session routes. Web tokens have no sid and retain all
+            // existing mutation privileges.
+            if (!isNativeAuthRoute(req)) {
+                if (!SAFE_METHODS.has(req.method || 'GET')) {
+                    throw new AppError('Native API access is read-only during the mobile pilot.', 403, 'NATIVE_READ_ONLY');
+                }
+                if (!isNativeReadRoute(req)) {
+                    throw new AppError('This API is not available to the mobile app.', 403, 'NATIVE_ROUTE_NOT_ALLOWED');
+                }
+            }
+
+            // A removed staff member loses mobile access on their next request,
+            // not when the access token expires. 401 (not 403) sends the client
+            // through refresh, which fails on the same membership check and
+            // signs the device out.
+            if (decoded.shopId) {
+                const membership = await UserShop.findOne({
+                    attributes: ['id'],
+                    where: { user_id: decoded.userId, shop_id: decoded.shopId, is_active: true },
+                });
+                if (!membership) {
+                    throw new AppError(
+                        'Shop membership is no longer active. Please login again.',
+                        401,
+                        'NATIVE_SHOP_ACCESS_REVOKED',
+                    );
+                }
             }
         }
 

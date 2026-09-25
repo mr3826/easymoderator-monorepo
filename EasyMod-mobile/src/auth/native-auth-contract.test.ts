@@ -3,13 +3,15 @@ import path from 'path';
 
 import {
   signIn,
+  verifyTwoFactor,
   refreshAccessToken,
   signinDataSchema,
+  signinResponseDataSchema,
   unwrapEnvelope,
   __resetRefreshGuardForTests,
 } from './auth-client';
-import { __resetTokenStoreForTests } from './token-store';
-import { clearRefreshToken, setRefreshToken } from './secure-store';
+import { __resetTokenStoreForTests, getAccessToken } from './token-store';
+import { clearRefreshToken, getRefreshToken, setRefreshToken } from './secure-store';
 import type { HttpResponse, RequestOptions, Transport } from '@/api/transport';
 
 /**
@@ -26,11 +28,11 @@ import type { HttpResponse, RequestOptions, Transport } from '@/api/transport';
  * by `EasyMod-backend/src/modules/auth/native/__tests__/native-auth.integration.test.js`'s
  * "drift-prevention fixture" test, against a REAL Express app and a real disposable
  * Postgres/Redis, then committed to the repo. This test loads that exact file and drives it
- * through the real, exported `signIn/refreshAccessToken` functions (via a fake `Transport` that
- * simply returns the captured body) plus the exported production zod schema for the one response
- * shape (`2fa/verify`) mobile has no dedicated wrapper for yet. If either side's response shape
- * drifts in the future, one of these two suites fails immediately and mechanically — no more
- * silent divergence.
+ * through the real, exported `signIn/verifyTwoFactor/refreshAccessToken` functions (via a fake
+ * `Transport` that simply returns the captured body) plus the exported production zod schemas for
+ * the `2fa/verify` success shape and the explicit `requires2fa/tempToken` sign-in handoff. If either side's
+ * response shape drifts in the future, one of these two suites fails immediately and mechanically
+ * — no more silent divergence.
  */
 
 const FIXTURE_PATH = path.join(
@@ -127,6 +129,7 @@ describe('native-auth contract fixture (real backend responses, ADR M-003 drift 
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    if ('requires2fa' in result.data) throw new Error('Expected a token response');
     const expected = fixture.signin.data;
     expect(result.data.id).toBe(expected.user.id);
     expect(result.data.email).toBe(expected.user.email);
@@ -155,9 +158,31 @@ describe('native-auth contract fixture (real backend responses, ADR M-003 drift 
     expect(parsed.success).toBe(true);
   });
 
-  it('documents the requires2fa branch captured in the fixture (mobile has no 2FA UI yet — a pre-existing, separately-tracked gap, not a shape drift)', () => {
-    const data = unwrapEnvelope(fixture.signin2faRequired) as CapturedTwoFaRequiredData;
-    expect(data.requires2fa).toBe(true);
-    expect(typeof data.tempToken).toBe('string');
+  it('verifyTwoFactor sends the captured native body and parses the real success envelope', async () => {
+    const transport = createFakeTransport(async (requestPath, options) => {
+      expect(requestPath).toBe('/api/auth/native/2fa/verify');
+      expect(options).toEqual({
+        method: 'POST',
+        body: { tempToken: 'test-fixture-2fa-temp-token-do-not-use', token: '123456' },
+        skipAuth: true,
+      });
+      return jsonResponse(200, fixture.twoFactorVerify);
+    });
+
+    const result = await verifyTwoFactor('test-fixture-2fa-temp-token-do-not-use', '123456', { transport });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.id).toBe(fixture.twoFactorVerify.data.user.id);
+    expect(result.data.shopId).toBe(fixture.twoFactorVerify.data.shopId);
+    expect(getAccessToken()).toBe(fixture.twoFactorVerify.data.accessToken);
+    await expect(getRefreshToken()).resolves.toBe(fixture.twoFactorVerify.data.refreshToken);
+  });
+
+  it('parses the real requires2fa/tempToken sign-in handoff as an explicit response state', () => {
+    const parsed = signinResponseDataSchema.safeParse(unwrapEnvelope(fixture.signin2faRequired));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).toEqual({ requires2fa: true, tempToken: expect.any(String) });
   });
 });

@@ -1,0 +1,97 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod mobile auth and Home smoke
+tags:
+  - mobile-e2e
+  - smoke
+env:
+  E2E_EMAIL: mobile-dev@easymod.test
+  E2E_PASSWORD: MobileDev123!
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: login-submit
+    timeout: 30000
+- tapOn:
+    id: login-email-input
+- inputText: ${E2E_EMAIL}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-password-input
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: login-password-input
+- inputText: ${E2E_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: login-submit
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 120000
+- assertVisible:
+    id: today-summary
+- takeScreenshot: home-initial
+- scrollUntilVisible:
+    element:
+      id: attention-card-courier_setup_required:shop:.*
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: attention-card-courier_setup_required:shop:.*
+- scrollUntilVisible:
+    element:
+      id: attention-card-courier_failed:dispatch:.*
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: attention-card-courier_failed:dispatch:.*
+- scrollUntilVisible:
+    element:
+      id: attention-card-inbox_needs_reply:conversation:.*
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: attention-card-inbox_needs_reply:conversation:.*
+- scrollUntilVisible:
+    element:
+      id: attention-card-draft_order:order:.*
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: attention-card-draft_order:order:.*
+- scrollUntilVisible:
+    element:
+      id: attention-card-rto_verify:order:.*
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: attention-card-rto_verify:order:.*
+- scrollUntilVisible:
+    element:
+      id: attention-card-low_stock:product:.*
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: attention-card-low_stock:product:.*
+- takeScreenshot: home-six-tiers
+- scrollUntilVisible:
+    element:
+      id: attention-card-inbox_needs_reply:conversation:.*
+    direction: UP
+    timeout: 15000
+- assertVisible:
+    id: attention-card-inbox_needs_reply:conversation:.*
+- tapOn:
+    id: attention-card-inbox_needs_reply:conversation:.*
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 30000
+- takeScreenshot: attention-conversation-resolved

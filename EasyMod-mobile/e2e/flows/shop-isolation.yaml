@@ -1,0 +1,65 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod shop isolation across accounts
+tags:
+  - mobile-e2e
+  - wave25
+  - shop-isolation
+---
+# Shop A (six attention tiers) then shop B (a single low-stock product). Nothing
+# of shop A may render for shop B, from memory or the persisted cache, and a
+# shop A entity id must be unavailable to shop B.
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      id: attention-card-low_stock:product:${E2E_SHOP_A_PRODUCT_ID}
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: tab-more
+- tapOn:
+    id: logout-button
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_SECOND_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: attention-card-low_stock:product:${E2E_SHOP_B_PRODUCT_ID}
+    timeout: 90000
+- assertNotVisible:
+    id: attention-card-(courier|inbox|draft|rto).*
+- assertNotVisible:
+    id: attention-card-low_stock:product:${E2E_SHOP_A_PRODUCT_ID}
+- takeScreenshot: shop-b-home
+# A relaunch restores the persisted cache: still only shop B.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: attention-card-low_stock:product:${E2E_SHOP_B_PRODUCT_ID}
+    timeout: 90000
+- assertNotVisible:
+    id: attention-card-(courier|inbox|draft|rto).*
+- assertNotVisible:
+    id: attention-card-low_stock:product:${E2E_SHOP_A_PRODUCT_ID}
+# Shop A's order id through a deep link: unavailable, identical to not-found.
+- openLink:
+    link: easymodmerchantdev://order/${E2E_SHOP_A_ORDER_ID}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-unavailable
+    timeout: 60000
+- assertNotVisible:
+    id: deeplink-found
+- takeScreenshot: shop-b-cross-shop-link-unavailable

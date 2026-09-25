@@ -21,11 +21,18 @@ export interface ApiClientDeps {
   transport?: Transport;
 }
 
+const BODY_TIMED_OUT = Symbol('bodyTimedOut');
+
+/**
+ * `undefined` for an unreadable body; `BODY_TIMED_OUT` when the transport's timeout aborted the
+ * body read, so a stalled response is reported as a retryable timeout rather than as a
+ * non-retryable "unexpected response shape".
+ */
 async function parseJsonSafe(res: { json: () => Promise<unknown> }): Promise<unknown> {
   try {
     return await res.json();
-  } catch {
-    return undefined;
+  } catch (err) {
+    return err instanceof Error && err.name === 'AbortError' ? BODY_TIMED_OUT : undefined;
   }
 }
 
@@ -75,6 +82,10 @@ export async function apiRequest<T>(
   }
 
   const body = await parseJsonSafe(res);
+
+  if (body === BODY_TIMED_OUT) {
+    return { ok: false, error: normalizeApiError({ isTimeout: true }) };
+  }
 
   if (!res.ok) {
     return { ok: false, error: normalizeApiError({ status: res.status, body }) };

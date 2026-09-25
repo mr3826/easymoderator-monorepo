@@ -8,13 +8,6 @@ import { AuthProvider } from '@/auth/AuthProvider';
 import { queryClient } from '@/lib/queryClient';
 import { __resetTokenStoreForTests } from '@/auth/token-store';
 
-/**
- * Phase 2 Home lane: `(tabs)/index.tsx` now renders the real `HomeScreen` (previously
- * `PlaceholderScreen`). `HomeScreen` calls `useAuth()` (directly, and via `useAttention`/
- * `useToday`) and `useQuery` — this file renders only the `(tabs)` subtree (no root
- * `app/_layout.tsx`, so no `AuthProvider`/`QueryClientProvider` from there), so both must be
- * supplied here instead or mounting Home throws "useAuth must be used within an AuthProvider".
- */
 function Wrapper({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
@@ -32,9 +25,8 @@ describe('tab shell', () => {
   it('renders all five tabs and defaults to the real Home screen', async () => {
     renderRouter(path.resolve(__dirname, '..'), { initialUrl: '/', wrapper: Wrapper });
 
-    // This bare render has no signed-in session (no root `_layout.tsx` auth bootstrap ran), so
-    // `user`/`shopId` are null — Home correctly renders its real "no shop" state rather than a
-    // spinner or a crash. Full attention/today rendering is covered by `HomeScreen.test.tsx`.
+    // No signed-in session is seeded here, so Home should show its no-shop state rather than
+    // attempting the protected endpoint queries.
     expect(await screen.findByText(i18n.t('mobile.home.noShop.title'))).toBeTruthy();
 
     // All five tab bar labels are present in the tab bar itself, even though only the active
@@ -44,6 +36,11 @@ describe('tab shell', () => {
     expect(screen.getByText(i18n.t('mobile.tabs.quickAction'))).toBeTruthy();
     expect(screen.getByText(i18n.t('mobile.tabs.orders'))).toBeTruthy();
     expect(screen.getByText(i18n.t('mobile.tabs.more'))).toBeTruthy();
+
+    // Device E2E navigates by these stable ids, never by the localized labels.
+    for (const id of ['tab-home', 'tab-inbox', 'tab-quick-action', 'tab-orders', 'tab-more']) {
+      expect(screen.getByTestId(id)).toBeTruthy();
+    }
   });
 
   it('renders the Inbox placeholder after navigating to the Inbox tab', async () => {

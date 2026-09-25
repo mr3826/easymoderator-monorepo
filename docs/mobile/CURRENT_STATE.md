@@ -258,9 +258,9 @@ treat their line numbers as approximate until a phase that touches that file re-
 - Request correlation: `x-request-id` header is honored end-to-end into `AuditService.logOperation`
   metadata; there is no separate "source" column on `audit_logs` — mobile attribution (M-005) must
   go into the existing `metadata` JSON field. `[discovery]`
-- `src/config/config.js` currently exposes exactly one feature flag of this shape,
-  `growthOsEnabled`, read from an environment variable with a safe default. This is the pattern
-  ADR M-010 replicates for the five new `MOBILE_*` flags. `[discovery]`
+- `src/config/config.js` exposes `growthOsEnabled` plus the five `MOBILE_*` flags introduced by
+  ADR M-010. Mobile flags have safe defaults and remain independently gateable; current values are
+  verified in the source rather than inferred from this historical discovery note. `[reconciled 2026-09-16]`
 - The production environment variable renderer is a strict allowlist (adding a new env var to
   production requires a deliberate, separate change to that allowlist — not just setting a value)
   — relevant to every human-gated secret this program will eventually need (Firebase, mobile push
@@ -294,11 +294,10 @@ treat their line numbers as approximate until a phase that touches that file re-
   CLI 2.88, `LongPathsEnabled=1` (needed for `node_modules` depth under Android/Gradle tooling).
   Missing and to be provisioned session-locally (never globally): a pinned Node 22 LTS, a pinned
   Node 20 LTS for backend parity, Maestro, and `ANDROID_HOME`/`adb` on `PATH`. `[discovery]`
-- **Correction from Phase 1 (2026-09-14):** no AVD had actually been built from the API 24 system
-  image despite the image itself being present — only `Medium_Phone`/`Medium_Phone_2`/`Pixel_8_Pro`
-  AVDs exist, all API 37.x. An API 24 AVD must be created from the already-present system image
-  before any low-end-hardware perf-budget testing (`MOBILE_PRODUCT_SPEC.md` §4) can run as
-  originally planned. `[re-verified P1]`
+- **Correction from Phase 2 (2026-09-15):** `Nexus_5_API_24` now exists, boots with WHPX, and is
+  the primary low-end target. Native Gradle installation remains unverified because the current
+  deep Windows worktree triggers the documented `react-native-reanimated` CMake object-path limit.
+  `[re-verified P2]`
 
 ## 14. Meta / production-safety constraint (applies to every phase with an authenticated-write test)
 
@@ -366,3 +365,31 @@ rewriting the historical claims or receipts above.
 - Mobile CI remains isolated: no production secrets, environment, SSH, registry push,
   or main trigger. Superseded mobile validation runs are now cancelled by branch/PR
   concurrency; this does not cancel a release or deployment action because none exists.
+
+## 18. Wave 2.5 completion state (2026-09-25)
+
+This appendix supersedes §17 where they differ.
+
+- The integration branch is `feature/mobile-app`. PR #165 integrated:
+  - the formerly uncommitted Wave 2 work, archived byte-for-byte at
+    `archive/mob-wave2-snapshot-2026-09-25`;
+  - PR #152's Home tests;
+  - the 2026-09-20 audit fixes;
+  - E2E fixtures and 15 Maestro flows;
+  - the ADR M-011 offline cache;
+  - the Android release proof.
+- `main` still carries no mobile code. It moved on independently (Growth work), and this program did
+  not change it.
+- **Rulesets.** §17's "`main` is unprotected" no longer holds. `main` has two active rulesets:
+  - `main-require-pull-request` (23832821)
+  - `platform-audit-main-probe` (23753830), required CI checks
+  `feature/mobile-app` has no branch rules. Mobile CI's own `Mobile CI` gate is its merge bar.
+- **Native build proof now exists.** The `android-release` job builds APK + AAB for
+  `armeabi-v7a, arm64-v8a, x86, x86_64` on Linux, verifies them with
+  `scripts/verify-android-artifact.js`, and installs and cold-launches the APK on an API 24 emulator.
+  The `mobile-e2e` job runs every Maestro flow on an API 34 emulator. `DEV_SETUP.md` §11 has the
+  commands; `MOBILE_EXECUTION_STATE.md` has the receipts.
+- **Production-grade signing is still missing.** No release keystore or EAS credentials exist, and CI
+  may not hold secrets (ADR M-009). The release artifact is signed with the debug certificate and
+  labelled `NOT_DISTRIBUTABLE`.
+- **Physical-device proof is still missing.** Everything above ran on emulators.

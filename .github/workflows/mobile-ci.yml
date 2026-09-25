@@ -12,9 +12,21 @@ on:
     branches:
       - feature/mobile-app
       - 'mobile/**'
+    paths:
+      - 'EasyMod-mobile/**'
+      - 'EasyMod-backend/**'
+      - 'docs/mobile/**'
+      - '.github/workflows/mobile-ci.yml'
+      - '.github/scripts/verify-mobile-ci-isolation.js'
+      - '.github/scripts/verify-mobile-protected-paths.js'
+  # No `paths:` filter for pull requests: every PR into feature/mobile-app gets
+  # the full gate, so a change to a shared or protected path (root manifests,
+  # other workflows, .gitleaks.toml, ...) can never skip the protected-paths
+  # guard. Expensive jobs below scope themselves.
   pull_request:
     branches:
       - feature/mobile-app
+    types: [opened, synchronize, reopened, labeled]
 
 # Mobile validation has no release or deployment side effect, so a newer run
 # for the SAME scope can safely supersede an older one. The group is keyed by
@@ -101,10 +113,270 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm test -- --ci
+        # No --forceExit: it was masking leaked QueryClient gcTime timers. jest.setup.ts now
+        # clears the app client after every test, so the suite exits on its own.
+        run: npm test -- --ci --maxWorkers=2
 
       - name: Dependency audit
         run: npm audit --audit-level=high
+
+  android-release:
+    # Plan M-5/M-6/M-15: the release build every supported ABI ships as, built on
+    # Linux (the Windows all-ABI path is unreliable, PR #126), verified, hashed,
+    # uploaded, then installed and cold-launched on the oldest supported API.
+    # Signed with the Android debug certificate: no release keystore exists and
+    # this workflow may not hold secrets, so the manifest marks it
+    # NOT_DISTRIBUTABLE.
+    name: Android release build (all ABIs) + install/launch
+    runs-on: ubuntu-latest
+    needs: [isolation-guard, mobile]
+    timeout-minutes: 90
+    env:
+      APP_VARIANT: preview
+      EXPO_PUBLIC_API_BASE_URL: https://api.easymod.tech
+      APP_BUILD_NUMBER: ${{ github.run_number }}
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPO_NO_TELEMETRY: '1'
+    defaults:
+      run:
+        working-directory: ./EasyMod-mobile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Generate the Android project (clean prebuild)
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Record the configured ABI matrix
+        run: grep -E '^reactNativeArchitectures=' android/gradle.properties | tee android-abis.txt
+
+      - name: Build release APK + AAB (all ABIs)
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          cd android
+          ./gradlew --no-daemon assembleRelease bundleRelease 2>&1 | tee ../artifacts/gradle-release.log
+
+      - name: Verify the artifacts and write the manifest
+        run: >-
+          node scripts/verify-android-artifact.js
+          --apk android/app/build/outputs/apk/release/app-release.apk
+          --aab android/app/build/outputs/bundle/release/app-release.aab
+          --package tech.easymod.merchant.preview
+          --abis armeabi-v7a,arm64-v8a,x86,x86_64
+          --out artifacts
+
+      - name: Enable KVM
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and cold-launch the release APK on API 24 (x86)
+        uses: reactivecircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        with:
+          api-level: 24
+          target: google_apis
+          arch: x86
+          profile: Nexus 5
+          ram-size: 2048M
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: ./EasyMod-mobile
+          script: node scripts/android-install-launch-check.js android/app/build/outputs/apk/release/app-release.apk tech.easymod.merchant.preview artifacts
+
+      - name: Upload release artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-android-release-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            EasyMod-mobile/artifacts/
+            EasyMod-mobile/android-abis.txt
+            EasyMod-mobile/android/app/build/outputs/apk/release/app-release.apk
+            EasyMod-mobile/android/app/build/outputs/bundle/release/app-release.aab
+
+  mobile-e2e-scope:
+    name: Android E2E path scope (opt-in)
+    runs-on: ubuntu-latest
+    needs: [isolation-guard, protected-paths]
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'mobile-e2e') &&
+      needs.isolation-guard.result == 'success' &&
+      needs.protected-paths.result == 'success'
+    outputs:
+      native_touched: ${{ steps.scope.outputs.native_touched }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check mobile and backend path scope
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git rev-parse --verify "$BASE_SHA^{commit}" >/dev/null
+          if git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | awk '/^EasyMod-mobile\// || /^EasyMod-backend\// { found=1 } END { exit found ? 0 : 1 }'; then
+            echo 'native_touched=true' >> "$GITHUB_OUTPUT"
+            echo 'Android E2E scope: mobile/backend paths changed'
+          else
+            echo 'native_touched=false' >> "$GITHUB_OUTPUT"
+            echo 'Android E2E scope: no mobile/backend paths changed; emulator job skipped'
+          fi
+
+  mobile-e2e:
+    name: Android Maestro E2E (opt-in)
+    runs-on: ubuntu-latest
+    needs: [isolation-guard, protected-paths, mobile-e2e-scope]
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'mobile-e2e') &&
+      needs.isolation-guard.result == 'success' &&
+      needs.protected-paths.result == 'success' &&
+      needs.mobile-e2e-scope.result == 'success' &&
+      needs.mobile-e2e-scope.outputs.native_touched == 'true'
+    timeout-minutes: 120
+    env:
+      # Release-mode build of the development variant: an embedded JS bundle (no
+      # Metro), cleartext allowed only for this variant, and the backend reached
+      # through the emulator network (10.0.2.2) so airplane mode really cuts it.
+      APP_VARIANT: development
+      EXPO_PUBLIC_API_BASE_URL: http://10.0.2.2:4000
+      APP_BUILD_NUMBER: ${{ github.run_number }}
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPO_NO_TELEMETRY: '1'
+      E2E_API_BASE_URL: http://127.0.0.1:4000
+      E2E_DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_mobile_e2e
+      E2E_REDIS_URL: redis://127.0.0.1:6379
+      E2E_EMAIL: mobile-dev@easymod.test
+      E2E_PASSWORD: MobileDev123!
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: easymod_mobile_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U e2e -d easymod_mobile_e2e"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install mobile dependencies
+        working-directory: ./EasyMod-mobile
+        run: npm ci
+
+      - name: Generate the Android project (clean prebuild)
+        working-directory: ./EasyMod-mobile
+        run: CI=1 npx expo prebuild --platform android --clean --no-install
+
+      - name: Build the release-mode E2E APK (x86_64, emulator ABI)
+        working-directory: ./EasyMod-mobile
+        run: |
+          set -o pipefail
+          mkdir -p e2e/artifacts
+          cd android
+          ./gradlew --no-daemon assembleRelease -PreactNativeArchitectures=x86_64 2>&1 | tee ../e2e/artifacts/gradle-build.log
+
+      - name: Install Maestro CLI
+        run: |
+          set -euo pipefail
+          export MAESTRO_VERSION='2.6.0'
+          export MAESTRO_DIR="$RUNNER_TEMP/maestro"
+          export MAESTRO_ZIP="$RUNNER_TEMP/maestro.zip"
+          export MAESTRO_UNPACK="$RUNNER_TEMP/maestro-unpack"
+          mkdir -p "$MAESTRO_DIR" "$MAESTRO_UNPACK"
+          curl -fsSL --retry 3 --retry-all-errors --proto '=https' --tlsv1.2 \
+            -o "$MAESTRO_ZIP" \
+            "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo '80185105a5d7e227e3b3fbcf225f45b312508ea676a9fc8e1b1aa1cac8b9ff6e  '"$MAESTRO_ZIP" | sha256sum --check --status
+          unzip -t "$MAESTRO_ZIP" >/dev/null
+          unzip -q "$MAESTRO_ZIP" -d "$MAESTRO_UNPACK"
+          cp -R "$MAESTRO_UNPACK/maestro/." "$MAESTRO_DIR/"
+          echo "$MAESTRO_DIR/bin" >> "$GITHUB_PATH"
+          "$MAESTRO_DIR/bin/maestro" --version
+
+      - name: Enable KVM
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run every Maestro flow on API 34 (x86_64)
+        uses: reactivecircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: ./EasyMod-mobile
+          script: |
+            mkdir -p e2e/artifacts
+            node e2e/run-maestro.js --start-backend --apk android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-maestro-e2e
+          if-no-files-found: ignore
+          path: |
+            EasyMod-mobile/e2e/artifacts/
+            EasyMod-mobile/android/app/build/outputs/apk/release/app-release.apk
 
   backend-regression:
     name: Backend regression (Node 20)
@@ -167,21 +439,18 @@ jobs:
           REDIS_URL: redis://127.0.0.1:6379
         run: npm run test:integration
 
-  # Android Gradle build + Maestro on-emulator flows are opt-in (ADR M-009 —
-  # emulator minutes are metered) and are intentionally NOT defined in this
-  # initial version of the workflow: adding that job means pinning a Java
-  # setup action and an emulator/Maestro-runner action by digest, the same way
-  # every other action in this file is pinned, and no digest is fabricated
-  # here without verifying it against the real action first. The phase that
-  # first needs an on-device/CI Android build (per docs/mobile/MOBILE_ARCHITECTURE.md
-  # §6, ANDROID_DEV_BUILD is currently a local Gradle gate, not a CI job) adds
-  # this job with real, verified pins rather than placeholder ones.
+      - name: Every backend test has exactly one execution home
+        working-directory: ./EasyMod-backend
+        run: npm run test:discovery
+
+      - name: Native auth contract fixture has not drifted from the backend
+        run: node .github/scripts/verify-native-auth-fixture-shape.js
 
   mobile-ci-gate:
     name: Mobile CI
     runs-on: ubuntu-latest
     if: always()
-    needs: [isolation-guard, protected-paths, gitleaks, mobile]
+    needs: [isolation-guard, protected-paths, gitleaks, mobile, android-release, backend-regression, mobile-e2e-scope, mobile-e2e]
     steps:
       - name: Report the mobile CI verdict
         env:
@@ -189,13 +458,34 @@ jobs:
           R_PATHS: ${{ needs.protected-paths.result }}
           R_LEAKS: ${{ needs.gitleaks.result }}
           R_MOBILE: ${{ needs.mobile.result }}
+          R_RELEASE: ${{ needs.android-release.result }}
+          R_BACKEND: ${{ needs.backend-regression.result }}
+          BACKEND_TOUCHED: ${{ needs.protected-paths.outputs.backend_touched }}
+          R_E2E_SCOPE: ${{ needs.mobile-e2e-scope.result }}
+          R_E2E: ${{ needs.mobile-e2e.result }}
         run: |
           set -euo pipefail
           echo "Isolation guard:    $R_GUARD"
           echo "Protected paths:    $R_PATHS"
           echo "Gitleaks:           $R_LEAKS"
           echo "Mobile checks:      $R_MOBILE"
-          if [ "$R_GUARD" != "success" ] || [ "$R_PATHS" != "success" ] || [ "$R_LEAKS" != "success" ] || [ "$R_MOBILE" != "success" ]; then
+          echo "Android release:    $R_RELEASE"
+          echo "Backend regression: $R_BACKEND (backend touched: $BACKEND_TOUCHED)"
+          echo "Mobile E2E scope:   $R_E2E_SCOPE"
+          echo "Mobile E2E:         $R_E2E"
+          fail=0
+          for result in "$R_GUARD" "$R_PATHS" "$R_LEAKS" "$R_MOBILE" "$R_RELEASE"; do
+            [ "$result" = "success" ] || fail=1
+          done
+          # Backend regression may only be skipped when the diff never touched the backend.
+          if [ "$R_BACKEND" != "success" ] && { [ "$R_BACKEND" != "skipped" ] || [ "$BACKEND_TOUCHED" = "true" ]; }; then
+            fail=1
+          fi
+          # Device E2E is label-gated (ADR M-009 cost policy); when it runs it must pass.
+          for result in "$R_E2E_SCOPE" "$R_E2E"; do
+            [ "$result" = "success" ] || [ "$result" = "skipped" ] || fail=1
+          done
+          if [ "$fail" -ne 0 ]; then
             echo "Mobile CI: FAIL"
             exit 1
           fi

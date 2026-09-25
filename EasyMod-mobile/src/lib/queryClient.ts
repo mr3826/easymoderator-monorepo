@@ -1,14 +1,11 @@
 import { QueryClient } from '@tanstack/react-query';
 
+import { HOME_OFFLINE_MAX_AGE_MS } from '@/api/mobile/queryKeys';
+
 /**
  * TanStack Query is the only server-state store (MOBILE_ARCHITECTURE.md §3) — there is no
  * separate global store for server data, only this client plus thin local UI state (active tab,
  * in-progress form drafts) kept in component state/context.
- *
- * Phase 1 does not yet implement the ADR M-011 persisted read-only cache (that needs the
- * concrete allowlisted queries — Home attention list, order list/detail, product list, customer
- * quick-view — which land with the screens that own them); this is the in-memory client those
- * screens will configure `persistQueryClient` against later.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,3 +15,8 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+// ADR M-011: Home reads stay available (shop-keyed, never across shops) for the offline/stale view
+// for as long as they may be shown. Configured here rather than per hook so this app client owns
+// the retention policy; test clients keep their own short-lived defaults.
+queryClient.setQueryDefaults(['mobile'], { gcTime: HOME_OFFLINE_MAX_AGE_MS });

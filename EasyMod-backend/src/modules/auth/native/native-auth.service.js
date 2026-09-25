@@ -16,6 +16,7 @@ const Session = require('../session.entity');
 const totpService = require('../totp.service');
 const { User, UserShop } = require('../../entities');
 const { AppError } = require('../../../utils/AppError');
+const { getRedisClient } = require('../../../utils/redis-client');
 const AuditService = require('../../audit/audit.service');
 const {
     signNativeAccessToken,
@@ -23,6 +24,45 @@ const {
     verifyNativeRefreshToken,
     hashToken,
 } = require('./native-token.util');
+
+// Per-account brute-force boundary for native 2FA. The per-IP limiter in
+// native.routes.js cannot stop guesses spread across many client IPs. Each
+// guess already costs a password sign-in (the challenge is single-use), so only
+// a holder of the password reaches this counter: after TWO_FACTOR_MAX_FAILURES
+// failed codes in the sliding window, the account's native 2FA verification is
+// refused, even with a correct code. Redis errors propagate (fail closed).
+const TWO_FACTOR_FAILURE_PREFIX = 'native_2fa_fail:';
+const TWO_FACTOR_MAX_FAILURES = 5;
+const TWO_FACTOR_FAILURE_WINDOW_SECONDS = 5 * 60;
+
+const twoFactorFailureStore = () => {
+    const redis = getRedisClient();
+    if (!redis) throw new AppError('Two-factor verification is temporarily unavailable.', 503);
+    return redis;
+};
+
+const assertTwoFactorAttemptsRemaining = async (userId) => {
+    const failures = Number(await twoFactorFailureStore().get(`${TWO_FACTOR_FAILURE_PREFIX}${userId}`)) || 0;
+    if (failures >= TWO_FACTOR_MAX_FAILURES) {
+        throw new AppError('Too many 2FA attempts. Please try again later.', 429, 'RATE_LIMIT_EXCEEDED');
+    }
+};
+
+const recordTwoFactorFailure = async (userId) => {
+    const key = `${TWO_FACTOR_FAILURE_PREFIX}${userId}`;
+    const results = await twoFactorFailureStore().multi().incr(key).expire(key, TWO_FACTOR_FAILURE_WINDOW_SECONDS).exec();
+    const failed = (results || []).find(([error]) => error);
+    if (failed) throw failed[0];
+};
+
+const clearTwoFactorFailures = async (userId) => {
+    await twoFactorFailureStore().del(`${TWO_FACTOR_FAILURE_PREFIX}${userId}`);
+};
+
+const hasUnexpiredSession = (session) => {
+    const expiresAt = new Date(session?.expires_at).getTime();
+    return Boolean(session?.is_active) && Number.isFinite(expiresAt) && expiresAt > Date.now();
+};
 
 /**
  * ADR M-005: any audit call this module makes carries metadata.source:
@@ -99,6 +139,24 @@ const signin = async ({ email, password }, req) => {
 };
 
 /**
+ * Chooses the shop a new native session is bound to from the user's *current*
+ * active memberships, with the same precedence as the password path
+ * (auth.service resolveAuthenticatedUser): the last-used shop if still active,
+ * else an owned shop, else any active shop. Memberships can change during the
+ * five-minute 2FA challenge, so `last_logged_shop_id` alone is not proof.
+ */
+const resolveActiveShopId = async (user) => {
+    const memberships = await UserShop.findAll({
+        attributes: ['shop_id', 'role'],
+        where: { user_id: user.id, is_active: true },
+        order: [['createdAt', 'ASC']],
+    });
+    if (memberships.length === 0) return null;
+    if (memberships.some((m) => m.shop_id === user.last_logged_shop_id)) return user.last_logged_shop_id;
+    return (memberships.find((m) => m.role === 'owner') || memberships[0]).shop_id;
+};
+
+/**
  * POST /api/auth/native/2fa/verify
  * Mirrors totp.controller.js's `verify` step-2 flow exactly (same
  * totpService calls), diverging only at the point of token issuance.
@@ -108,12 +166,20 @@ const verifyTwoFactor = async ({ tempToken, token }, req) => {
     if (!userId) {
         throw new AppError('Invalid or expired session. Please login again.', 401);
     }
-    await totpService.verifyTotpToken(userId, String(token));
+    await assertTwoFactorAttemptsRemaining(userId);
+    try {
+        await totpService.verifyTotpToken(userId, String(token));
+    } catch (error) {
+        // Wrong or replayed codes count; infrastructure failures do not.
+        if (error instanceof AppError && error.status === 400) await recordTwoFactorFailure(userId);
+        throw error;
+    }
+    await clearTwoFactorFailures(userId);
 
     const user = await User.findByPk(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const shopId = user.last_logged_shop_id || null;
+    const shopId = await resolveActiveShopId(user);
     if (!shopId) {
         throw new AppError('No active shop session found. Please login again.', 401);
     }
@@ -148,7 +214,7 @@ const refresh = async (refreshTokenBody, req) => {
         throw new AppError('Invalid or expired refresh token', 401);
     }
 
-    if (!session.is_active) {
+    if (!hasUnexpiredSession(session)) {
         throw new AppError('Session has been revoked. Please login again.', 401);
     }
 
@@ -291,18 +357,60 @@ const refresh = async (refreshTokenBody, req) => {
  * additively exported) and revokes the session row — never touches
  * user.refresh_token, the single web slot.
  */
-const logout = async (req) => {
-    const sid = req.user?.sid;
-    if (!sid) {
-        throw new AppError('This endpoint requires a native session token.', 400);
+const logoutWithRefreshToken = async (refreshToken, req) => {
+    let decoded;
+    try {
+        decoded = verifyNativeRefreshToken(refreshToken);
+    } catch (_error) {
+        throw new AppError('Invalid or expired refresh token', 401);
     }
 
-    const authHeader = req.headers.authorization;
+    const { userId, sid, generation } = decoded;
+    if (!userId || !sid || !Number.isInteger(generation)) {
+        throw new AppError('Invalid or expired refresh token', 401);
+    }
+
+    const session = await Session.findByPk(sid);
+    const isCurrentToken = session
+        && session.is_active
+        && session.user_id === userId
+        && hashToken(refreshToken) === session.refresh_token_hash
+        && generation === session.refresh_token_generation;
+
+    if (!isCurrentToken) {
+        throw new AppError('Invalid or expired refresh token', 401);
+    }
+
+    if (req.user?.sid && (req.user.sid !== sid || req.user.userId !== userId)) {
+        throw new AppError('Invalid native session', 401);
+    }
+
+    // Revocation is intentionally allowed for an expired access token (and
+    // even an expired session row) once the current signed refresh token proves
+    // ownership of this exact session. It is a monotonic, non-privileged action.
+    await sessionService.revokeSession(userId, sid);
+};
+
+const logout = async (req, refreshToken = req.body?.refresh_token) => {
+    const sid = req.user?.sid;
+
+    const authHeader = req.headers?.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    if (refreshToken) {
+        await logoutWithRefreshToken(refreshToken, req);
+        if (token && req.user?.sid) {
+            await authService.blacklistToken(token, req.user);
+        }
+        return;
+    }
+
+    if (!sid) {
+        throw new AppError('This endpoint requires a native session token or refresh_token.', 400);
+    }
+
     if (token) {
         await authService.blacklistToken(token, req.user);
     }
-
     await sessionService.revokeSession(req.user.userId, sid);
 };
 
@@ -326,7 +434,7 @@ const switchShop = async (req, shopId) => {
     }
 
     const session = await Session.findByPk(sid);
-    if (!session || !session.is_active || session.user_id !== req.user.userId) {
+    if (!session || !hasUnexpiredSession(session) || session.user_id !== req.user.userId) {
         throw new AppError('Session not found or has been revoked.', 404);
     }
 
@@ -353,4 +461,6 @@ module.exports = {
     refresh,
     logout,
     switchShop,
+    // Disposable E2E fixture reset only (mobile-e2e-fixtures.js).
+    clearTwoFactorFailures,
 };

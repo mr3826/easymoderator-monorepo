@@ -1,23 +1,27 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
-import { toQueryFn, retryNormalizedError } from '@/api/query';
 import { todayResponseSchema, type TodayResponse } from '@/api/mobile/schemas';
 import { mobileQueryKeys } from '@/api/mobile/queryKeys';
-import { useAuth } from '@/auth/AuthProvider';
+import { retryNormalizedError, toQueryFn } from '@/api/query';
 import type { NormalizedError } from '@/api/errors';
+import { useAuth } from '@/auth/AuthProvider';
+import { useNetworkStatus } from './useNetworkStatus';
 
-/**
- * `GET /api/mobile/today` (ADR M-008, Phase 2 Home lane) — the day's order/revenue/delivered
- * summary strip. Disabled while there is no current shop, same reasoning as `useAttention`.
- */
+const fetchToday = toQueryFn('/api/mobile/today', todayResponseSchema);
+
+/** Reads the server-computed Dhaka-day summary for the authenticated current shop. */
 export function useToday(): UseQueryResult<TodayResponse, NormalizedError> {
   const { user } = useAuth();
   const shopId = user?.shopId ?? null;
+  const isOnline = useNetworkStatus();
 
   return useQuery<TodayResponse, NormalizedError>({
     queryKey: mobileQueryKeys.today(shopId),
-    queryFn: toQueryFn('/api/mobile/today', todayResponseSchema),
-    enabled: Boolean(shopId),
+    queryFn: fetchToday,
+    enabled: Boolean(shopId) && isOnline,
     retry: retryNormalizedError,
+    // No placeholderData: a shop switch must render nothing (loading) rather than the previous
+    // shop's data. Offline or after a failed refresh, only the cached entry for *this* shop key is
+    // shown (retention policy: `src/lib/queryClient.ts`).
   });
 }

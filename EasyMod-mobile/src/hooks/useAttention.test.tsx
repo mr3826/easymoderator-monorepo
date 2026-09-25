@@ -14,8 +14,11 @@ jest.mock('@/auth/AuthProvider', () => ({
   useAuth: () => ({ user: mockUser, status: 'signedIn', signIn: jest.fn(), logout: jest.fn() }),
 }));
 
-function createWrapper() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function createClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+}
+
+function wrapperFor(client: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
@@ -26,44 +29,39 @@ beforeEach(() => {
   mockUser = { shopId: 'shop-1' };
 });
 
-const SAMPLE_RESPONSE = {
-  items: [
-    {
-      id: 'low_stock:product:p1',
-      tier: 5 as const,
-      urgency_score: 0.5,
-      signal_type: 'LOW_STOCK' as const,
-      reason: 'Widget is low on stock (1 left, threshold 5)',
-      entity: { type: 'product' as const, id: 'p1' },
-    },
-  ],
-  truncated_count: 0,
-  conversation_scan_truncated: false,
-  generated_at: '2026-09-14T00:00:00.000Z',
-};
+function responseFor(shopLabel: string) {
+  return {
+    items: [
+      {
+        id: `low_stock:product:${shopLabel}`,
+        tier: 5 as const,
+        urgency_score: 0.5,
+        signal_type: 'LOW_STOCK' as const,
+        reason: `${shopLabel} widget is low on stock`,
+        entity: { type: 'product' as const, id: `${shopLabel}-product` },
+      },
+    ],
+    truncated_count: 0,
+    conversation_scan_truncated: false,
+    generated_at: '2026-09-14T00:00:00.000Z',
+  };
+}
 
 describe('useAttention', () => {
   it('calls GET /api/mobile/attention and resolves with the parsed data', async () => {
-    mockedApiRequest.mockResolvedValue({ ok: true, data: SAMPLE_RESPONSE });
+    mockedApiRequest.mockResolvedValue({ ok: true, data: responseFor('shop-1') });
 
-    const { result } = renderHook(() => useAttention(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAttention(), { wrapper: wrapperFor(createClient()) });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(SAMPLE_RESPONSE);
-    expect(mockedApiRequest).toHaveBeenCalledWith(
-      '/api/mobile/attention',
-      expect.anything(),
-      {},
-      {},
-    );
+    expect(result.current.data).toEqual(responseFor('shop-1'));
+    expect(mockedApiRequest).toHaveBeenCalledWith('/api/mobile/attention', expect.anything(), {}, {});
   });
 
   it('is disabled (never calls apiRequest) when the signed-in user has no current shop', async () => {
     mockUser = { shopId: null };
 
-    const { result } = renderHook(() => useAttention(), { wrapper: createWrapper() });
-
-    // Give any accidental fetch a moment to fire before asserting it never did.
+    const { result } = renderHook(() => useAttention(), { wrapper: wrapperFor(createClient()) });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(mockedApiRequest).not.toHaveBeenCalled();
@@ -71,38 +69,42 @@ describe('useAttention', () => {
   });
 
   it('surfaces a NormalizedError (not a generic Error) on failure', async () => {
-    // A non-retryable kind, deliberately: `useAttention` wires `retryNormalizedError` (not the
-    // wrapper QueryClient's own `retry: false`) as its per-query retry policy, and a *retryable*
-    // kind here would actually retry twice with real backoff delay before settling into `isError`,
-    // making this assertion flaky/slow rather than wrong — see `query.test.ts` for that policy's
-    // own dedicated, timer-free coverage.
+    // Non-retryable on purpose: a retryable kind would back off for real before settling.
     const error: NormalizedError = { kind: 'validation', message: 'Bad request', retryable: false };
     mockedApiRequest.mockResolvedValue({ ok: false, error });
 
-    const { result } = renderHook(() => useAttention(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAttention(), { wrapper: wrapperFor(createClient()) });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(error);
   });
 
   it('keys the query by shopId, so two different shops never share a cache entry', async () => {
-    mockedApiRequest.mockResolvedValue({ ok: true, data: SAMPLE_RESPONSE });
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
+    mockedApiRequest.mockResolvedValue({ ok: true, data: responseFor('shop-1') });
+    const wrapper = wrapperFor(createClient());
 
-    mockUser = { shopId: 'shop-1' };
     const first = renderHook(() => useAttention(), { wrapper });
     await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
-    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
 
     mockUser = { shopId: 'shop-2' };
     const second = renderHook(() => useAttention(), { wrapper });
     await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
 
-    // A different shopId is a different query key, so it fetches again rather than reusing
-    // shop-1's cached response.
     expect(mockedApiRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('never shows the previous shop list while the switched-to shop is still loading', async () => {
+    mockedApiRequest.mockResolvedValueOnce({ ok: true, data: responseFor('shop-1') });
+    const { result, rerender } = renderHook(() => useAttention(), { wrapper: wrapperFor(createClient()) });
+    await waitFor(() => expect(result.current.data).toEqual(responseFor('shop-1')));
+
+    // Shop 2's request never settles, so anything rendered meanwhile must come from shop 2 alone.
+    mockedApiRequest.mockReturnValueOnce(new Promise(() => undefined));
+    mockUser = { shopId: 'shop-2' };
+    rerender({});
+
+    await waitFor(() => expect(mockedApiRequest).toHaveBeenCalledTimes(2));
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isPlaceholderData).toBe(false);
   });
 });

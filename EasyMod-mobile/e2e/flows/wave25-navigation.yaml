@@ -1,0 +1,57 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod Wave 2.5 attention navigation
+tags:
+  - mobile-e2e
+  - wave25
+  - navigation
+env:
+  E2E_EMAIL: mobile-dev@easymod.test
+  E2E_PASSWORD: MobileDev123!
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: attention-card-draft_order:order:efc22718-691a-5966-8ac9-9f025c36da8b
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: attention-card-draft_order:order:efc22718-691a-5966-8ac9-9f025c36da8b
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 30000
+- assertVisible:
+    text: "অর্ডার #efc22718-691a-5966-8ac9-9f025c36da8b — সম্পূর্ণ বিস্তারিত পরবর্তী আপডেটে আসছে।"
+- takeScreenshot: wave25-order-navigation
+- back
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: attention-card-inbox_needs_reply:conversation:.*
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: attention-card-inbox_needs_reply:conversation:.*
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 30000
+- takeScreenshot: wave25-conversation-navigation
+- back
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000

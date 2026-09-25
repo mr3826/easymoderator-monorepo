@@ -7,6 +7,8 @@ import i18n from '@/i18n';
 import { setAccessToken, __resetTokenStoreForTests } from '@/auth/token-store';
 import { queryClient } from '@/lib/queryClient';
 import { openDeepLink, __resetDeepLinkDedupeForTests } from '@/lib/deeplink';
+import { __resetPendingDeepLinkForTests } from '@/lib/pending-deeplink';
+import { redirectSystemPath } from '../+native-intent';
 import {
   __resetDeepLinkResolverForTests,
   __setDeepLinkResolverForTests,
@@ -69,6 +71,7 @@ beforeEach(() => {
 
 describe('correct shop resolved', () => {
   it('opens normally for an entity belonging to the signed-in user\'s current shop', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
     renderRouter(APP_ROOT, { initialUrl: '/' });
     await screen.findByText(i18n.t('mobile.tabs.home'));
 
@@ -81,6 +84,7 @@ describe('correct shop resolved', () => {
   });
 
   it('opens normally for a conversation too', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
     renderRouter(APP_ROOT, { initialUrl: '/' });
     await screen.findByText(i18n.t('mobile.tabs.home'));
 
@@ -211,5 +215,62 @@ describe('duplicate tap remains idempotent', () => {
     // still navigate.
     const opened = openDeepLink('order', 'order-100', Date.now() + 60_000);
     expect(opened).toBe(true);
+  });
+});
+
+// Audit P1-5: the cold-launch race described at the top of this file. `+native-intent.ts` parks
+// the inbound link and routes Home; `_layout.tsx` replays it through `openDeepLink` once auth has
+// resolved, so these tests start exactly where the native layer leaves off.
+describe('inbound links that arrive before the signed-in shell exists', () => {
+  beforeEach(() => {
+    __resetPendingDeepLinkForTests();
+  });
+
+  it('opens a cold-launch entity link after auth bootstrap instead of falling back to Home', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
+    expect(redirectSystemPath!({ path: 'easymodmerchantdev://order/order-cold', initial: true })).toBe('/');
+
+    const rendered = renderRouter(APP_ROOT, { initialUrl: '/' });
+
+    expect(await screen.findByText(i18n.t('mobile.deeplink.order.foundTitle'))).toBeTruthy();
+    expect(rendered.getPathname()).toBe('/order/order-cold');
+  });
+
+  it('keeps a link that arrives while signed out and opens it only after sign-in', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
+    act(() => setAccessToken(null));
+    expect(redirectSystemPath!({ path: '/conversation/convo-after-login', initial: true })).toBe('/');
+
+    const rendered = renderRouter(APP_ROOT, { initialUrl: '/' });
+    expect(await screen.findByTestId('login-submit')).toBeTruthy();
+    expect(screen.queryByText(i18n.t('mobile.deeplink.conversation.foundTitle'))).toBeNull();
+
+    await act(async () => {
+      setAccessToken('signed-in-after-link');
+    });
+
+    expect(await screen.findByText(i18n.t('mobile.deeplink.conversation.foundTitle'))).toBeTruthy();
+    expect(rendered.getPathname()).toBe('/conversation/convo-after-login');
+  });
+
+  it('opens a link that arrives while the signed-in app is already running (warm link)', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
+    const rendered = renderRouter(APP_ROOT, { initialUrl: '/' });
+    await screen.findByText(i18n.t('mobile.tabs.home'));
+
+    // Expo Router's order for a warm link (build/link/linking.js): it awaits redirectSystemPath,
+    // and only then navigates to the path it returned. Parking the link commits React (and the
+    // replay effect) first, so the replay must not be undone by that later navigation to `/`.
+    let href: string | null = null;
+    act(() => {
+      href = redirectSystemPath!({ path: 'easymodmerchantdev://order/order-warm', initial: false }) as string;
+    });
+    expect(href).toBe('/');
+    act(() => {
+      router.navigate(href!);
+    });
+
+    expect(await screen.findByText(i18n.t('mobile.deeplink.order.foundTitle'))).toBeTruthy();
+    expect(rendered.getPathname()).toBe('/order/order-warm');
   });
 });

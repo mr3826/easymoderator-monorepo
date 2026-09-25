@@ -1,4 +1,5 @@
 import { redirectSystemPath } from '../+native-intent';
+import { __resetPendingDeepLinkForTests, takePendingDeepLink } from '@/lib/pending-deeplink';
 
 // The exported hook is typed as optional (`NativeIntent['redirectSystemPath']`) because Expo
 // Router's own `NativeIntent` type allows a module not to define it at all — this file's module
@@ -13,6 +14,8 @@ const redirect = redirectSystemPath!;
  * that swallows routes it doesn't own.
  */
 describe('redirectSystemPath', () => {
+  beforeEach(() => __resetPendingDeepLinkForTests());
+
   it.each(['/order', '/order/', 'order', 'order/'])('redirects an empty order id (%s) to Home', (path) => {
     expect(redirect({ path, initial: true })).toBe('/');
   });
@@ -32,12 +35,16 @@ describe('redirectSystemPath', () => {
     expect(redirect({ path: '/conversation#top', initial: true })).toBe('/');
   });
 
-  it('does not redirect a real order id — lets Expo Router match it normally', () => {
-    expect(redirect({ path: '/order/order-1', initial: true })).toBeNull();
+  // Audit P1-5: matching an entity link directly raced the auth bootstrap on cold launch and fell
+  // back to Home, so real entity links are parked for the root navigator to open after sign-in.
+  it('parks a real order id and routes Home until the signed-in shell can open it', () => {
+    expect(redirect({ path: '/order/order-1', initial: true })).toBe('/');
+    expect(takePendingDeepLink()).toEqual({ kind: 'order', id: 'order-1' });
   });
 
-  it('does not redirect a real conversation id', () => {
-    expect(redirect({ path: '/conversation/convo-1', initial: true })).toBeNull();
+  it('parks a real conversation id from a full app-scheme URL on a warm launch', () => {
+    expect(redirect({ path: 'easymodmerchantdev://conversation/convo-1?src=push', initial: false })).toBe('/');
+    expect(takePendingDeepLink()).toEqual({ kind: 'conversation', id: 'convo-1' });
   });
 
   it('never widens into an allowlist for routes this lane does not own', () => {
@@ -45,6 +52,8 @@ describe('redirectSystemPath', () => {
     expect(redirect({ path: '/', initial: true })).toBeNull();
     expect(redirect({ path: '/orders', initial: true })).toBeNull();
     expect(redirect({ path: '/order-summary', initial: true })).toBeNull();
+    expect(redirect({ path: '/order/order-1/timeline', initial: true })).toBeNull();
+    expect(takePendingDeepLink()).toBeNull();
   });
 
   it('falls through to the same safe Home redirect on an unparseable (null) path rather than throwing', () => {

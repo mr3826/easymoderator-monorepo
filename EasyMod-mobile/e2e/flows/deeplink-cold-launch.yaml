@@ -1,0 +1,28 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod cold-launch entity deep link
+tags:
+  - mobile-e2e
+  - wave25
+  - deep-link
+---
+# Audit P1-5: a link that cold-starts the app must open its entity once the
+# stored session is restored, not fall back to Home.
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- stopApp
+- openLink:
+    link: easymodmerchantdev://order/${E2E_SHOP_A_ORDER_ID}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 90000
+- takeScreenshot: deeplink-cold-launch

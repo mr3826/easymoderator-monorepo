@@ -1,0 +1,17 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod package replace keeps the session
+tags:
+  - mobile-e2e
+  - install
+---
+# run-maestro.js runs this right after `adb install -r` of the same artifact over
+# the app signed in by the previous flow: an upgrade/reinstall must keep the
+# stored session and reopen Home without a login.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- assertNotVisible:
+    id: login-email-input
+- takeScreenshot: reinstall-keeps-session

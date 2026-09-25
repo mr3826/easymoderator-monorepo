@@ -1,22 +1,15 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { z } from 'zod';
 
+import { apiRequest, type ApiClientDeps } from '@/api/client';
 import type { DeepLinkEntityKind } from './deeplink';
 
 /**
- * Deep-linked entity resolution (Phase 2, Lane 4).
+ * Deep-linked entity resolution (Wave 2.5, Lane C).
  *
- * No order/conversation *detail* endpoint is wired up for mobile yet — Phase 3 (Inbox) and Phase 4
- * (Orders) own that contract, and the Phase 2 execution plan explicitly makes Lane 3 the program's
- * first real `apiRequest` consumer, not this lane. `app/order/[id].tsx` and
- * `app/conversation/[id].tsx` are placeholder screens for now; a later lane fills in real content.
- *
- * What this lane must still deliver *now*, with real tests, is the security/idempotency state
- * machine the master brief requires: correct-shop resolves normally, a wrong-shop or
- * nonexistent/deleted id is refused identically (never a distinguishable signal), and a transient
- * failure is retryable rather than misreported as either of those. That state machine is built and
- * proven here against an injectable resolver, so a later lane only has to replace
- * `placeholderResolver` with a real `apiRequest` call — the screens, the guard, and their tests do
- * not change.
+ * The existing order and conversation detail APIs already enforce `shop_id` on the server. This
+ * module deliberately resolves through those APIs rather than introducing a second mobile-only
+ * entity endpoint or trusting a shop id supplied by navigation.
  */
 
 export type DeepLinkResolution =
@@ -37,14 +30,47 @@ export type DeepLinkResolution =
 
 export type DeepLinkEntityResolver = (kind: DeepLinkEntityKind, id: string) => Promise<DeepLinkResolution>;
 
-/**
- * Phase 2 placeholder: every deep link the router successfully matches "resolves" to its own id.
- * The screen exists, is reachable, and shows placeholder content — there is nothing behind it yet
- * to say otherwise. Replaced wholesale by a later lane's real `apiRequest`-backed resolver.
- */
-export const placeholderResolver: DeepLinkEntityResolver = async (_kind, id) => ({ kind: 'found', id });
+const entityIdSchema = z.object({ id: z.string() });
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-let activeResolver: DeepLinkEntityResolver = placeholderResolver;
+/**
+ * Test seam retained for callers that need to assert the unavailable state without making a
+ * request. It is not the production resolver.
+ */
+export const placeholderResolver: DeepLinkEntityResolver = async () => ({ kind: 'unavailable' });
+
+function entityPath(kind: DeepLinkEntityKind, id: string): string {
+  const resource = kind === 'order' ? 'order' : 'conversation';
+  return `/api/${resource}/${encodeURIComponent(id)}`;
+}
+
+/**
+ * Resolves an entity through the existing shop-scoped detail API. The optional dependency seam is
+ * test-only; production uses the shared authenticated API client and bearer transport.
+ */
+export async function apiBackedResolver(
+  kind: DeepLinkEntityKind,
+  id: string,
+  deps: ApiClientDeps = {},
+): Promise<DeepLinkResolution> {
+  // Do not let a missing or malformed route parameter fall through to a collection endpoint or a
+  // database cast error. Both are safe, indistinguishable unavailable outcomes to the client.
+  if ((kind !== 'order' && kind !== 'conversation') || !UUID_PATTERN.test(id)) {
+    return { kind: 'unavailable' };
+  }
+
+  const result = await apiRequest<z.infer<typeof entityIdSchema>>(entityPath(kind, id), entityIdSchema, {}, deps);
+  if (!result.ok) {
+    return result.error.retryable ? { kind: 'transientError' } : { kind: 'unavailable' };
+  }
+
+  // A detail response must identify the same target that was requested. Treat an unexpected
+  // response shape or mismatched id as unavailable rather than rendering arbitrary server data.
+  if (result.data.id !== id) return { kind: 'unavailable' };
+  return { kind: 'found', id: result.data.id };
+}
+
+let activeResolver: DeepLinkEntityResolver = apiBackedResolver;
 
 export function useDeepLinkEntity(kind: DeepLinkEntityKind, id: string): UseQueryResult<DeepLinkResolution> {
   return useQuery({
@@ -54,16 +80,19 @@ export function useDeepLinkEntity(kind: DeepLinkEntityKind, id: string): UseQuer
     queryKey: ['deeplink', kind, id],
     queryFn: () => activeResolver(kind, id),
     retry: false,
-    staleTime: 30_000,
+    // Deep-link targets commonly originate from an older notification. Always ask the server when
+    // the destination mounts so deletion/status changes win over a cached existence check.
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
 /** Test-only seam (mirrors `auth-client.ts`'s `__resetRefreshGuardForTests`): swap the resolver a
- * later lane will eventually replace wholesale, without touching the screens or their tests. */
+ * test can replace without touching the screens. */
 export function __setDeepLinkResolverForTests(resolver: DeepLinkEntityResolver): void {
   activeResolver = resolver;
 }
 
 export function __resetDeepLinkResolverForTests(): void {
-  activeResolver = placeholderResolver;
+  activeResolver = apiBackedResolver;
 }

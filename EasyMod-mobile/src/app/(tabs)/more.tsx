@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/auth/AuthProvider';
+import { env, getAppVersion } from '@/config/env';
 import { brandColors, radius, spacing } from '@/theme/tokens';
 
 /**
@@ -27,6 +28,14 @@ export default function MoreScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>{t('mobile.placeholder.phase2', { screen: t('mobile.tabs.more') })}</Text>
       {user ? <Text style={styles.subtitle}>{t('mobile.more.loggedInAs', { email: user.email })}</Text> : null}
+      <Text style={styles.buildInfo} testID="build-info">
+        {t('mobile.more.buildInfo', {
+          version: getAppVersion(),
+          build: env.buildNumber,
+          environment: env.appVariant,
+          gitSha: env.gitSha,
+        })}
+      </Text>
       <Pressable
         style={[styles.button, loggingOut && styles.buttonDisabled]}
         onPress={handleLogout}
@@ -62,6 +71,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: brandColors.text,
     opacity: 0.7,
+  },
+  buildInfo: {
+    maxWidth: 320,
+    fontSize: 12,
+    color: brandColors.text,
+    opacity: 0.65,
+    textAlign: 'center',
   },
   button: {
     backgroundColor: brandColors.destructive,

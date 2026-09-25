@@ -1,0 +1,33 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod Wave 2.5 stale entity safety
+tags:
+  - mobile-e2e
+  - wave25
+  - stale-entity
+env:
+  E2E_EMAIL: mobile-dev@easymod.test
+  E2E_PASSWORD: MobileDev123!
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000
+- openLink:
+    link: easymodmerchantdev://order/22222222-2222-4222-8222-222222222222
+- extendedWaitUntil:
+    visible:
+      id: deeplink-unavailable
+    timeout: 30000
+- takeScreenshot: wave25-stale-entity-unavailable
+- back
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000

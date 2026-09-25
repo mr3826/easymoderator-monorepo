@@ -5,6 +5,8 @@ export type AppVariant = 'development' | 'preview' | 'production';
 interface AppExtra {
   appVariant: AppVariant;
   apiBaseUrl: string;
+  buildNumber: string;
+  gitSha: string;
 }
 
 const DEFAULT_DEV_API_BASE_URL = 'http://localhost:4000';
@@ -19,7 +21,9 @@ function readExtra(): AppExtra {
   const extra = (Constants.expoConfig?.extra ?? {}) as Partial<AppExtra>;
   const appVariant: AppVariant = extra.appVariant ?? 'development';
   const apiBaseUrl = extra.apiBaseUrl ?? DEFAULT_DEV_API_BASE_URL;
-  return { appVariant, apiBaseUrl };
+  const buildNumber = extra.buildNumber ?? 'local';
+  const gitSha = extra.gitSha ?? 'unknown';
+  return { appVariant, apiBaseUrl, buildNumber, gitSha };
 }
 
 export const env: AppExtra = readExtra();

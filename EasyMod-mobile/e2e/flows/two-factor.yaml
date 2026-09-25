@@ -1,0 +1,183 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod native 2FA (required, invalid, expired, success, rate limit)
+tags:
+  - mobile-e2e
+  - wave25
+  - two-factor
+---
+# The native 2FA limiter allows five verification attempts per five minutes per
+# IP; `prepare-2fa` resets the fixture (including that budget) first.
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: prepare-2fa
+- launchApp:
+    clearState: true
+
+# 1. 2FA is required; an invalid code (attempt 1) is refused and consumes the challenge.
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-input
+    timeout: 60000
+- assertNotVisible:
+    id: home-attention-list
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: current-2fa-code
+- tapOn:
+    id: login-2fa-input
+- inputText: ${output.fixture.invalidCode}
+- tapOn:
+    id: login-2fa-submit-control
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-error-invalidCode
+    timeout: 30000
+- takeScreenshot: two-factor-invalid
+- tapOn:
+    id: login-2fa-cancel
+# Cancel returns to the password step. The form keeps what was typed, so relaunch
+# (no state cleared) for empty fields before signing in again.
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 30000
+- stopApp
+- launchApp
+
+# 2. An expired challenge (attempt 2) refuses even the right code.
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-input
+    timeout: 60000
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: expire-2fa-challenge
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: current-2fa-code
+- tapOn:
+    id: login-2fa-input
+- inputText: ${output.fixture.code}
+- tapOn:
+    id: login-2fa-submit-control
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-error-expired
+    timeout: 30000
+- tapOn:
+    id: login-2fa-cancel
+# Cancel returns to the password step. The form keeps what was typed, so relaunch
+# (no state cleared) for empty fields before signing in again.
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 30000
+- stopApp
+- launchApp
+
+# 3. The right code on a fresh challenge (attempt 3) signs in.
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-input
+    timeout: 60000
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: current-2fa-code
+- tapOn:
+    id: login-2fa-input
+- inputText: ${output.fixture.code}
+- tapOn:
+    id: login-2fa-submit-control
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- takeScreenshot: two-factor-success
+- tapOn:
+    id: tab-more
+- tapOn:
+    id: logout-button
+
+# 4. Attempts 4 and 5 are invalid; attempt 6 is rate limited.
+- repeat:
+    times: 2
+    commands:
+      - runFlow:
+          file: ../support/sign-in.yaml
+          env:
+            LOGIN_EMAIL: ${E2E_EMAIL}
+            LOGIN_PASSWORD: ${E2E_PASSWORD}
+      - extendedWaitUntil:
+          visible:
+            id: login-2fa-input
+          timeout: 60000
+      - tapOn:
+          id: login-2fa-input
+      - inputText: ${output.fixture.invalidCode}
+      - tapOn:
+          id: login-2fa-submit-control
+      - extendedWaitUntil:
+          visible:
+            id: login-2fa-error-invalidCode
+          timeout: 30000
+      - tapOn:
+          id: login-2fa-cancel
+      # Cancel returns to the password step. The form keeps what was typed, so relaunch
+      # (no state cleared) for empty fields before signing in again.
+      - extendedWaitUntil:
+          visible:
+            id: login-email-input
+          timeout: 30000
+      - stopApp
+      - launchApp
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-input
+    timeout: 60000
+- tapOn:
+    id: login-2fa-input
+- inputText: ${output.fixture.code}
+- tapOn:
+    id: login-2fa-submit-control
+- extendedWaitUntil:
+    visible:
+      id: login-2fa-error-rateLimited
+    timeout: 30000
+- assertNotVisible:
+    id: home-attention-list
+- takeScreenshot: two-factor-rate-limited

@@ -12,7 +12,14 @@ const VALID_VARIANTS: readonly AppVariant[] = ['development', 'preview', 'produc
 
 function resolveVariant(): AppVariant {
   const raw = process.env.APP_VARIANT ?? process.env.EAS_BUILD_PROFILE ?? 'development';
-  return (VALID_VARIANTS as readonly string[]).includes(raw) ? (raw as AppVariant) : 'development';
+  if (!(VALID_VARIANTS as readonly string[]).includes(raw)) {
+    // A typo'd variant must not silently become `development` — that variant allows cleartext
+    // HTTP and a localhost API default, which a release build must never inherit.
+    throw new Error(
+      `[app.config.ts] Unknown APP_VARIANT/EAS_BUILD_PROFILE "${raw}"; expected one of ${VALID_VARIANTS.join(', ')}.`,
+    );
+  }
+  return raw as AppVariant;
 }
 
 const DEV_DEFAULT_API_BASE_URL = 'http://localhost:4000';
@@ -48,6 +55,45 @@ function resolveApiBaseUrl(variant: AppVariant): string {
   return url;
 }
 
+function resolveBuildNumber(config: ConfigContext['config']): string {
+  const configured =
+    process.env.APP_BUILD_NUMBER ??
+    process.env.EAS_BUILD_NUMBER ??
+    process.env.EAS_BUILD_VERSION ??
+    process.env.BUILD_NUMBER;
+  if (configured) return configured;
+
+  const versionCode = config.android?.versionCode;
+  return versionCode ? String(versionCode) : 'local';
+}
+
+/**
+ * Android versionCode for locally/CI-built artifacts: the numeric build number (CI passes the
+ * workflow run number) so every artifact has a real, increasing version identity and an upgrade
+ * install can be tested. EAS builds keep `appVersionSource: remote` (eas.json), which overrides it.
+ */
+function resolveVersionCode(config: ConfigContext['config']): number {
+  const raw = process.env.APP_BUILD_NUMBER;
+  if (raw !== undefined && raw !== '') {
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 2_100_000_000) {
+      throw new Error(`[app.config.ts] APP_BUILD_NUMBER must be a positive integer versionCode, got "${raw}".`);
+    }
+    return parsed;
+  }
+  return config.android?.versionCode ?? 1;
+}
+
+function resolveGitSha(): string {
+  return (
+    process.env.GIT_SHA ??
+    process.env.EAS_BUILD_GIT_COMMIT_HASH ??
+    process.env.GITHUB_SHA ??
+    process.env.CI_COMMIT_SHA ??
+    'unknown'
+  );
+}
+
 const APP_IDS: Record<AppVariant, string> = {
   development: 'tech.easymod.merchant.dev',
   preview: 'tech.easymod.merchant.preview',
@@ -77,6 +123,8 @@ type ExpoConfigWithLegacyNewArchFlag = ExpoConfig & { newArchEnabled?: boolean }
 export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
   const variant = resolveVariant();
   const apiBaseUrl = resolveApiBaseUrl(variant);
+  const buildNumber = resolveBuildNumber(config);
+  const gitSha = resolveGitSha();
 
   return {
     ...config,
@@ -91,6 +139,20 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
     android: {
       ...config.android,
       package: APP_IDS[variant],
+      versionCode: resolveVersionCode(config),
+      // ADR M-011 promises the persisted Home cache is purged on logout/revocation. Android Auto
+      // Backup would copy it (AsyncStorage) off the device first, beyond that purge, so app data is
+      // never backed up. The SecureStore session is excluded from backup regardless.
+      allowBackup: false,
+      // The Expo prebuild template requests shared-storage access and "draw over other apps"
+      // (SYSTEM_ALERT_WINDOW, a Play-reviewed special permission). The app uses neither, so they
+      // are removed from the merged manifest; scripts/verify-android-artifact.js fails a release
+      // build that requests them again.
+      blockedPermissions: [
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.SYSTEM_ALERT_WINDOW',
+      ],
       adaptiveIcon: {
         foregroundImage: './assets/images/android-icon-foreground.png',
         backgroundImage: './assets/images/android-icon-background.png',
@@ -147,6 +209,8 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
       ...config.extra,
       appVariant: variant,
       apiBaseUrl,
+      buildNumber,
+      gitSha,
     },
   };
 };

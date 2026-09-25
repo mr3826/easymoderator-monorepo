@@ -153,6 +153,33 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         });
         await backdate('orders', order4.id, 2);
 
+        // Terminal/settled rows must not create courier setup, courier
+        // failure, or RTO work even when they are older and RTO-risky. These
+        // statuses are all present in the wider order vocabulary, but none is
+        // an active Home action state.
+        const terminalStatuses = ['delivered', 'completed', 'finalized', 'cancelled', 'refunded'];
+        const terminalOrders = [];
+        for (const [index, orderStatus] of terminalStatuses.entries()) {
+            const terminalOrder = await Order.create({
+                shop_id: shop.id,
+                order_number: `MA-TERMINAL-${index + 1}`,
+                order_status: orderStatus,
+                total: 900 + index,
+                customer_phone: rtoPhone,
+                customer_name: `Terminal ${orderStatus}`,
+            });
+            terminalOrders.push(terminalOrder);
+            await backdate('orders', terminalOrder.id, 30 + index);
+        }
+        const terminalDispatch = await CourierDispatch.create({
+            shop_id: shop.id,
+            order_id: terminalOrders[0].id,
+            provider: 'pathao',
+            idempotency_key: `idem-terminal-${uuidv4()}`,
+            status: 'FAILED',
+        });
+        await backdate('courier_dispatch', terminalDispatch.id, 30);
+
         // Tier 5: one tracked, active, below-threshold product (D1: qualifies)...
         const lowStockProduct = await Product.create({
             shop_id: shop.id, name: 'Low Stock Widget', price: 10,
@@ -179,6 +206,7 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         expect(truncatedCount).toBe(0);
         expect(scanTruncated).toBe(false);
         expect(new Date(generatedAt).toString()).not.toBe('Invalid Date');
+        expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
 
         const byType = (type) => items.find((item) => item.signal_type === type);
 
@@ -186,12 +214,14 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         expect(courierFailed).toBeTruthy();
         expect(courierFailed.tier).toBe(1);
         expect(courierFailed.entity).toEqual({ type: 'order', id: order1.id });
+        expect(courierFailed.reason_code).toBe('COURIER_DISPATCH_FAILED');
         expect(courierFailed.urgency_score).toBeGreaterThan(4.9);
         expect(courierFailed.urgency_score).toBeLessThan(5.5);
 
         const courierSetup = byType('COURIER_SETUP_REQUIRED');
         expect(courierSetup).toBeTruthy();
         expect(courierSetup.tier).toBe(1);
+        expect(courierSetup.reason_code).toBe('COURIER_SETUP_REQUIRED');
         // order2 is the oldest ready-to-ship order still lacking a COMMITTED
         // dispatch, so it — not order1 or order4 — is the referenced entity.
         expect(courierSetup.entity).toEqual({ type: 'order', id: order2.id });
@@ -202,6 +232,7 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         const needsReply = byType('INBOX_NEEDS_REPLY');
         expect(needsReply).toBeTruthy();
         expect(needsReply.tier).toBe(2);
+        expect(needsReply.reason_code).toBe('CUSTOMER_UNANSWERED');
         expect(needsReply.entity).toEqual({ type: 'conversation', id: conversation.id });
         expect(needsReply.urgency_score).toBeGreaterThan(2.9);
         expect(needsReply.urgency_score).toBeLessThan(3.5);
@@ -209,6 +240,7 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         const draftOrder = byType('DRAFT_ORDER');
         expect(draftOrder).toBeTruthy();
         expect(draftOrder.tier).toBe(3);
+        expect(draftOrder.reason_code).toBe('DRAFT_ORDER_AWAITING_CONFIRMATION');
         expect(draftOrder.entity).toEqual({ type: 'order', id: order3.id });
         // total(500) x hours(~10) = ~5000; allow generous drift for test runtime.
         expect(draftOrder.urgency_score).toBeGreaterThan(4900);
@@ -217,6 +249,7 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         const rtoVerify = byType('RTO_VERIFY');
         expect(rtoVerify).toBeTruthy();
         expect(rtoVerify.tier).toBe(4);
+        expect(rtoVerify.reason_code).toBe('RTO_VERIFICATION_REQUIRED');
         expect(rtoVerify.entity).toEqual({ type: 'order', id: order4.id });
         expect(rtoVerify.urgency_score).toBeGreaterThan(1.9);
         expect(rtoVerify.urgency_score).toBeLessThan(2.5);
@@ -224,6 +257,7 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         const lowStock = byType('LOW_STOCK');
         expect(lowStock).toBeTruthy();
         expect(lowStock.tier).toBe(5);
+        expect(lowStock.reason_code).toBe('LOW_STOCK');
         expect(lowStock.entity).toEqual({ type: 'product', id: lowStockProduct.id });
         expect(lowStock.urgency_score).toBeCloseTo(0.8, 5); // 1 - (2/10)
 
@@ -238,14 +272,19 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         // Within tier 1, higher urgency_score (courierSetup, ~20h) ranks
         // above lower urgency_score (courierFailed, ~5h).
         expect(items.indexOf(courierSetup)).toBeLessThan(items.indexOf(courierFailed));
+
+        // Terminal/cancelled/refunded rows, including a failed dispatch on a
+        // delivered row, never leak into any actionable attention signal.
+        expect(items.some((item) => terminalOrders.some((order) => item.entity.id === order.id))).toBe(false);
     }, 30000);
 
-    test('GET /api/mobile/today aggregates order count/revenue (excluding drafts, D3), delivered count, and pending-action counts for the Dhaka window (D4)', async () => {
+    test('GET /api/mobile/today counts only explicit committed statuses, excludes terminal/cancelled/refunded rows, and labels order-derived value (D3/D4)', async () => {
         const fixture = await makeUserWithShop('today');
         track(fixture);
         const { user, shop } = fixture;
 
-        // A real (non-draft) order created "now" — counts toward order_count/revenue.
+        // A real confirmed order created "now" — counts toward order_count
+        // and the order-derived expected value.
         const confirmedOrder = await Order.create({
             shop_id: shop.id, order_number: 'MA-TODAY-1', order_status: 'confirmed', total: 300,
         });
@@ -254,11 +293,38 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         await Order.create({
             shop_id: shop.id, order_number: 'MA-TODAY-2', order_status: 'draft', total: 999,
         });
-        // A delivered-today order — counts toward delivered_count AND (since
-        // it is also created "now" and non-draft) order_count/revenue.
+        // A delivered-today order is terminal: it contributes to delivered_count
+        // but not to active order volume or expected order value.
         const deliveredOrder = await Order.create({
-            shop_id: shop.id, order_number: 'MA-TODAY-3', order_status: 'confirmed', total: 250,
+            shop_id: shop.id, order_number: 'MA-TODAY-3', order_status: 'delivered', total: 250,
             delivered_at: new Date(),
+        });
+        // `processing` is the only other supported non-terminal status. Legacy
+        // declared `placed` and all terminal statuses must not be invented into
+        // today's committed figures.
+        await Order.create({
+            shop_id: shop.id, order_number: 'MA-TODAY-4', order_status: 'processing', total: 75,
+        });
+        for (const [index, orderStatus] of ['completed', 'finalized', 'cancelled', 'refunded'].entries()) {
+            await Order.create({
+                shop_id: shop.id,
+                order_number: `MA-TODAY-TERMINAL-${index + 1}`,
+                order_status: orderStatus,
+                total: 1000 + index,
+            });
+        }
+        await Order.create({
+            shop_id: shop.id,
+            order_number: 'MA-TODAY-REFUNDED-PAYMENT',
+            order_status: 'confirmed',
+            payment_status: 'refunded',
+            total: 800,
+        });
+        await Order.create({
+            shop_id: shop.id,
+            order_number: 'MA-TODAY-LEGACY-PLACED',
+            order_status: 'placed',
+            total: 700,
         });
         // A low-stock product for the pending_actions count.
         await Product.create({
@@ -278,16 +344,18 @@ describe('mobile attention/today (ADR M-008) on PostgreSQL and Redis', () => {
         expect(data.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         expect(data.timezone_used).toBe('Asia/Dhaka');
         expect(data.timezone_note).toBeNull();
-        expect(data.order_count).toBe(2); // confirmedOrder + deliveredOrder, draft excluded
-        expect(data.revenue).toBeCloseTo(300 + 250, 5);
+        expect(data.order_count).toBe(2); // confirmed + processing; draft/terminal/legacy excluded
+        expect(data.expected_order_value).toBeCloseTo(300 + 75, 5);
+        expect(data.revenue).toBeCloseTo(300 + 75, 5); // compatibility alias
+        expect(data.revenue_basis).toBe('expected_order_value');
         expect(data.delivered_count).toBe(1);
         expect(data.pending_actions.draft_orders).toBe(1);
         expect(data.pending_actions.low_stock).toBe(1);
         expect(data.pending_actions.needs_reply).toBe(0);
         expect(data.pending_actions.rto_verify).toBe(0);
-        // Shop has zero DeliveryIntegration rows and two ready-to-ship
-        // orders (confirmedOrder, deliveredOrder) with no COMMITTED
-        // dispatch, so exactly one COURIER_SETUP_REQUIRED pending action.
+        // Shop has zero DeliveryIntegration rows and one active ready-to-ship
+        // order (confirmedOrder) with no COMMITTED dispatch; the delivered row
+        // is terminal and must not create a second setup false positive.
         expect(data.pending_actions.courier_problems).toBe(1);
 
         expect(confirmedOrder.id).toBeTruthy();

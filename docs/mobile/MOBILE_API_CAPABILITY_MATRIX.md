@@ -1,7 +1,7 @@
 # Mobile API Capability Matrix
 
-Status: Living document (Phase 0 baseline)<br>
-Date: 2026-09-13
+Status: Living document (Wave 2 checkpoint)<br>
+Date: 2026-09-16
 
 Legend: **PASS** = exists today and mobile can use it as-is · **PARTIAL** = exists but needs an
 additive backend change before mobile can rely on it safely · **NEW** = does not exist, mobile
@@ -11,12 +11,15 @@ mobile must not fake it.
 | Capability | Mobile phase | Status | Notes / evidence |
 |---|---|---|---|
 | Bearer token auth (read) | P1 | PASS | `authenticate` already accepts `Authorization: Bearer` (`auth.middleware.js:18-19`) |
-| Bearer token issuance (signin/refresh in body) | P1 | NEW | ADR M-004; blocked today by cookie-only tokens + CSRF/Origin on Bearer (`CURRENT_STATE.md` §3) |
-| Per-device session list/revoke | P1 | NEW | repairs existing dead `user_sessions`/`session.routes.js` double-mount (ADR M-004) |
+| Bearer token issuance (signin/refresh in body) | P1 | PASS | Native `/api/auth/native` envelope/refresh-token contract is implemented and fixture-tested (ADR M-004/M-003) |
+| Per-device session list/revoke | P1 | PASS | Native session list/revoke routes use the active `user_sessions` row and expiry checks (ADR M-004) |
 | Shop switch | P1 (if multi-shop staff exist) | PARTIAL | `/api/shop/switch` called by web, does not exist server-side (`CURRENT_STATE.md` §4) — mobile's native auth adds `switch-shop` under the new native namespace; the pre-existing web gap is reported, not fixed by this program |
 | Idempotent mutation support | P1 foundation, used P4/P5 | PASS (reuse) | `audit/idempotency.middleware.js` already correct; manual-order gap closed as part of applying it (ADR M-006) |
-| Attention feed | P2 | NEW | `GET /api/mobile/attention` (ADR M-008) |
-| Today summary (Dhaka-correct) | P2 | NEW | `GET /api/mobile/today` (ADR M-008); existing `/api/dashboard` is UTC-boundary (`CURRENT_STATE.md` §10) |
+| Native read-only mutation policy | P2 | PASS | Native `sid` sessions are server-denied on non-auth mutations; web tokens retain existing behavior |
+| Native cookie/CSRF transport | P1 | PASS | Mobile omits browser credentials; flag-off native routes resolve to 404 before CSRF |
+| Attention feed | P2 | PASS | `GET /api/mobile/attention` is implemented, flag-gated, tenant-scoped, terminal-safe, reason-coded, and consumed by Home (ADR M-008) |
+| Today summary (Dhaka-correct) | P2 | PASS | `GET /api/mobile/today` returns expected order value semantics and is consumed by Home (ADR M-008) |
+| Native 2FA verification | P1 | PASS (Wave 2.5) | Dedicated mobile verify UI uses the existing `requires2fa/tempToken` contract; native route is one-use/TTL-bound and rate-limited to five attempts per five minutes per IP; resend is not supported |
 | Push registration (FCM) | P2 | PASS (reuse) | `POST /api/notifications/subscriptions` already accepts the native FCM token shape (`CURRENT_STATE.md` §8) |
 | Push send correctness (membership-scoped) | P2 | PARTIAL → fixed by Track D #4 | must land before Phase 2 real-device testing (ADR M-007) |
 | Conversation list + needs-reply projection | P3 | PASS | `needs_merchant_reply`, `hitl`, `ai_is_replying` already projected (`CURRENT_STATE.md` §7) |
@@ -37,7 +40,7 @@ mobile must not fake it.
 | Product stock/price update | P6 | PASS | existing update endpoint, reused with idempotency (ADR M-006) |
 | Per-variant write | P6 | DEFERRED | no per-variant update endpoint exists today (`CURRENT_STATE.md` §9) |
 | Photo → Draft extraction | P6 | PASS (reuse) | `POST /api/product/ai-extract` already exists (`CURRENT_STATE.md` §9) |
-| Low-stock signal | P6 (surfaced earlier in P2 attention feed) | PARTIAL | `low_stock_threshold` column exists, never read by any code today (`CURRENT_STATE.md` §9) — P2's attention feed is its first consumer |
+| Low-stock signal | P6 (surfaced earlier in P2 attention feed) | PASS | `low_stock_threshold` is consumed by the flag-gated P2 attention feed with active/tracked filtering |
 | Cross-tenant write protection on products | all phases touching products | PARTIAL → fixed by Track D #1 | mass-assignment gap (`CURRENT_STATE.md` §9) must land before any phase's product mutation tests are considered trustworthy |
 
 No capability in this matrix is marked PASS without a specific file/line citation in
