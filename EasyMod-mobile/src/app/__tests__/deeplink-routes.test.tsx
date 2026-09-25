@@ -69,6 +69,7 @@ beforeEach(() => {
 
 describe('correct shop resolved', () => {
   it('opens normally for an entity belonging to the signed-in user\'s current shop', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
     renderRouter(APP_ROOT, { initialUrl: '/' });
     await screen.findByText(i18n.t('mobile.tabs.home'));
 
@@ -81,6 +82,7 @@ describe('correct shop resolved', () => {
   });
 
   it('opens normally for a conversation too', async () => {
+    __setDeepLinkResolverForTests(async (_kind, id) => ({ kind: 'found', id }));
     renderRouter(APP_ROOT, { initialUrl: '/' });
     await screen.findByText(i18n.t('mobile.tabs.home'));
 
