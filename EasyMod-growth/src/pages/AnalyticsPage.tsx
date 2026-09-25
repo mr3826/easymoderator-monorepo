@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { workspaceApi, type GrowthAnalyticsResponse, type ProspectStatus } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { LoadingState, MessageState } from '@/components/states';
@@ -115,10 +116,10 @@ export function AnalyticsPage() {
         </div>
         <ul className="funnel-steps">
           {funnelSteps.map((step) => (
-            <li key={step.label}>
+     <li key={step.label}>
               <span>{step.label}</span>
               <span className="funnel-bar" style={{ width: `${Math.round((step.value / funnelMax) * 100)}%` }} aria-hidden="true" />
-              <strong>{step.value.toLocaleString()}</strong>
+               <strong>{step.label === 'Qualified' ? <Link to="/prospects?status=qualified">{step.value.toLocaleString()}</Link> : step.value.toLocaleString()}</strong>
             </li>
           ))}
         </ul>
@@ -171,7 +172,7 @@ export function AnalyticsPage() {
                     <th scope="row">
                       <span className={`status-badge ${statusClass(status)}`}>{codeLabel(status)}</span>
                     </th>
-                    <td>{count.toLocaleString()}</td>
+                     <td><Link to={`/prospects?status=${encodeURIComponent(status)}`}>{count.toLocaleString()}</Link></td>
                   </tr>
                 ))}
               </tbody>

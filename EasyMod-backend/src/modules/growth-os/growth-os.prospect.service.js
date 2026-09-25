@@ -20,6 +20,7 @@ const {
   canRead,
 } = require('./growth-os.prospect.scope');
 const { redactSecretiveValues, redactSensitiveUrl } = require('./growth-os.audit-sanitizer');
+const { isEligibleGrowthAssigneeRole } = require('./growth-os.permissions');
 
 const logger = createLogger('GrowthOsProspectService');
 
@@ -350,6 +351,8 @@ function toApiProspect(record, scope) {
     statusChangedAt: data.status_changed_at,
     disqualifiedReason: redacted ? null : data.disqualified_reason,
     ownerUserId: redacted ? null : data.owner_user_id,
+    ownerDisplayName: redacted ? null : (data.ownerUser?.full_name || data.ownerUser?.email || null),
+    ownerEmail: redacted ? null : (data.ownerUser?.email || null),
     assignedAt: redacted ? null : data.assigned_at,
     assignedBy: redacted ? null : data.assigned_by,
     linkedShopId: redacted ? null : data.linked_shop_id,
@@ -515,13 +518,29 @@ async function runWithDatabaseProtection(work, context = {}) {
 }
 
 class GrowthOsProspectService {
+  async listEligibleAssignees({ access, search = '' }) {
+    if (!canManageAll(access)) {
+      throw new AppError('Forbidden: prospect assignment access required.', 403, 'FORBIDDEN');
+    }
+    return repository.listEligibleGrowthAssignees({ search });
+  }
+
   async list({ userId, access, filters = {} }) {
     const scope = assertReadScope(access, userId);
+    const normalizedFilters = { ...filters };
+    if (normalizedFilters.owner === 'me') normalizedFilters.ownerUserId = userId;
+    if (normalizedFilters.owner === 'unassigned') normalizedFilters.ownerUnassigned = true;
+    if (normalizedFilters.owner && normalizedFilters.owner !== 'me' && normalizedFilters.owner !== 'unassigned') {
+      normalizedFilters.ownerUserId = normalizedFilters.owner;
+    }
+    if (normalizedFilters.ownerUserId && scope.kind !== 'all' && normalizedFilters.ownerUserId !== userId) {
+      throw new AppError('You can only filter prospects assigned to yourself.', 403, 'FORBIDDEN');
+    }
     const page = Math.max(1, Number(filters.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 20));
     const result = await runWithDatabaseProtection(() => repository.listProspects({
       scope,
-      filters,
+      filters: normalizedFilters,
       page,
       pageSize,
     }));
@@ -844,16 +863,17 @@ class GrowthOsProspectService {
     if (ownerUserId === undefined || !cleanValue(reason)) throw invalidInput('ownerUserId and reason are required.');
     const db = getSequelize();
     return runWithDatabaseProtection(() => db.transaction(async (transaction) => {
+      let owner = null;
       if (ownerUserId) {
-        const owner = await repository.findUserById(ownerUserId, { transaction, lock: true });
+        owner = await repository.findUserById(ownerUserId, { transaction, lock: true });
         if (!owner) throw new AppError('Owner user was not found.', 404, 'GROWTH_OS_PROSPECT_NOT_FOUND');
         const growthRole = await repository.findActiveGrowthRoleForUser(ownerUserId, {
           transaction,
           lock: true,
         });
-        if (!growthRole) {
+        if (!growthRole || !isEligibleGrowthAssigneeRole(growthRole.role)) {
           throw new AppError(
-            'Owner user must have an active Growth OS role.',
+            'Owner user must have an active Growth OS assignment role.',
             400,
             'GROWTH_OS_PROSPECT_INVALID_OWNER',
           );
@@ -874,6 +894,7 @@ class GrowthOsProspectService {
         assigned_at: nextOwner ? new Date() : null,
         assigned_by: nextOwner ? userId : null,
       }, { transaction });
+      if (typeof prospect.setDataValue === 'function') prospect.setDataValue('ownerUser', owner);
       await recordMutation({
         prospectId: prospect.id,
         actorUserId: userId,

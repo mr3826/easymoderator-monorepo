@@ -20,18 +20,22 @@ function errorMessage(error: unknown) {
     : 'The operational overview could not be loaded. Please try again.';
 }
 
-function AttentionCard({ label, value, warn = false }: { label: string; value: number; warn?: boolean }) {
-  return (
-    <div className="attention-card">
-      <span className={warn ? 'metric warn' : 'metric'}>{value.toLocaleString()}</span>
+function AttentionCard({ label, value, warn = false, to }: { label: string; value: number; warn?: boolean; to?: string }) {
+  const content = (
+    <>
+      <span className={warn ? 'metric warn' : 'metric'}>{(value ?? 0).toLocaleString()}</span>
       <strong>{label}</strong>
-    </div>
+    </>
+  );
+  return (
+    to ? <Link className="attention-card" to={to}>{content}</Link> : <div className="attention-card">{content}</div>
   );
 }
 
 export function HomePage() {
   const { reportApiError, session } = useGrowthAuth();
   const canManageFollowups = session?.permissions.includes('growth_os.followups.manage') ?? false;
+  const canManageAllProspects = session?.permissions.includes('growth_os.prospects.manage_all') ?? false;
   const [home, setHome] = useState<HomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +119,7 @@ export function HomePage() {
               <strong>{myWork.prospectsAssignedToMe.toLocaleString()}</strong>
               <span className="table-subtext"> prospects assigned to you</span>
             </div>
-            <Link className="secondary-button" to="/prospects">Open prospects</Link>
+            <Link className="secondary-button" to="/prospects?owner=me">Open prospects</Link>
           </div>
         </div>
       </section>
@@ -130,18 +134,21 @@ export function HomePage() {
         </div>
         <div className="attention-grid">
           <AttentionCard label="New leads (last 7 days)" value={growthAttention.newLeadsLast7d} />
-          <AttentionCard label="Qualified open" value={growthAttention.qualifiedOpen} />
-          <AttentionCard label="Onboarding open" value={growthAttention.onboardingOpen} />
+          <AttentionCard label="Qualified open" value={growthAttention.qualifiedOpen} to="/prospects?status=qualified" />
+          {canManageAllProspects ? <AttentionCard label="Qualified unassigned" value={growthAttention.unassignedQualified} to="/prospects?status=qualified&owner=unassigned" /> : null}
+          <AttentionCard label="Onboarding open" value={growthAttention.onboardingOpen} to="/prospects?status=onboarding" />
           <AttentionCard
             label="Onboarding stalled (15+ days)"
             value={growthAttention.onboardingStalledOver15d}
             warn={growthAttention.onboardingStalledOver15d > 0}
+            to="/prospects?status=onboarding"
           />
-          <AttentionCard label="Converted (last 7 days)" value={growthAttention.convertedLast7d} />
+          <AttentionCard label="Converted (last 7 days)" value={growthAttention.convertedLast7d} to="/prospects?status=converted" />
           <AttentionCard
             label="Overdue follow-ups in scope"
             value={growthAttention.followupsOverdueInScope}
             warn={growthAttention.followupsOverdueInScope > 0}
+            to="/my-work?state=overdue"
           />
         </div>
       </section>

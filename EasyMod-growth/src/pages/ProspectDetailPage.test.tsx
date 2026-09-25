@@ -88,6 +88,12 @@ describe('ProspectDetailPage', () => {
     stubPanels();
     vi.spyOn(growthApi, 'getProspect').mockResolvedValue(prospect);
     vi.spyOn(growthApi, 'getProspectLinkageSuggestions').mockResolvedValue([]);
+    vi.spyOn(growthApi, 'getEligibleAssignees').mockResolvedValue([{
+      userId: OWNER_ID,
+      displayName: 'Owner One',
+      email: 'owner@example.com',
+      role: 'GROWTH_USER',
+    }]);
   }
 
   it('hides shop-gated transition targets until a shop is linked', async () => {
@@ -149,19 +155,15 @@ describe('ProspectDetailPage', () => {
     expect(screen.getByLabelText(/Reason.*required for disqualification/)).toHaveAttribute('maxLength', '200');
   });
 
-  it('rejects malformed UUID owners before the mutation request', async () => {
+  it('offers human-readable eligible owners before the mutation request', async () => {
     const user = userEvent.setup();
     setup();
-    const assign = vi.spyOn(growthApi, 'assignProspect');
     renderPage();
 
     await screen.findByRole('heading', { name: 'North Star Retail' });
-    await user.type(screen.getByLabelText('Owner user ID'), 'not-a-uuid');
-    await user.type(document.getElementById('assignment-reason') as HTMLTextAreaElement, 'Assign safely');
-    await user.click(screen.getByRole('button', { name: 'Save owner' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Owner user ID must be a valid UUID.');
-    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByRole('option', { name: 'Owner One' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Assign to'), OWNER_ID);
+    expect(screen.getByLabelText('Assign to')).toHaveValue(OWNER_ID);
   });
 
   it('disables assignment controls while the mutation is pending', async () => {
@@ -174,7 +176,7 @@ describe('ProspectDetailPage', () => {
     renderPage();
 
     await screen.findByRole('heading', { name: 'North Star Retail' });
-    await user.type(screen.getByLabelText('Owner user ID'), OWNER_ID);
+    await user.selectOptions(screen.getByLabelText('Assign to'), OWNER_ID);
     await user.type(document.getElementById('assignment-reason') as HTMLTextAreaElement, 'Assign safely');
     await user.click(screen.getByRole('button', { name: 'Save owner' }));
 

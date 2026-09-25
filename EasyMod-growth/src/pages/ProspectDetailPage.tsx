@@ -11,6 +11,7 @@ import {
   type Prospect,
   type ProspectLinkageSuggestion,
   type ProspectStatus,
+  type GrowthAssignee,
 } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
 
@@ -116,6 +117,8 @@ export function ProspectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ownerUserId, setOwnerUserId] = useState('');
+  const [assignees, setAssignees] = useState<GrowthAssignee[]>([]);
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
   const [assignmentReason, setAssignmentReason] = useState('');
   const [nextStatus, setNextStatus] = useState<ProspectStatus>('new');
   const [statusReason, setStatusReason] = useState('');
@@ -175,6 +178,18 @@ export function ProspectDetailPage() {
     };
   }, [canManage, prospectId, reloadToken, reportApiError]);
 
+  useEffect(() => {
+    if (!canManage) return undefined;
+    let active = true;
+    growthApi.getEligibleAssignees()
+      .then((next) => { if (active) setAssignees(next); })
+      .catch((requestError: unknown) => {
+        if (!active) return;
+        setAssigneesError(messageFor(requestError, 'Eligible owner options are unavailable.'));
+      });
+    return () => { active = false; };
+  }, [canManage, reportApiError]);
+
   async function loadTimelinePage(page: number) {
     if (!prospectId || !prospect?.timelinePagination) return;
     setTimelineLoading(true);
@@ -197,10 +212,6 @@ export function ProspectDetailPage() {
     if (!prospectId) return;
     if (!assignmentReason.trim()) {
       setActionError('A reason is required when changing the owner.');
-      return;
-    }
-    if (ownerUserId.trim() && !isUuid(ownerUserId)) {
-      setActionError('Owner user ID must be a valid UUID.');
       return;
     }
     setBusyAction('assign');
@@ -487,17 +498,21 @@ export function ProspectDetailPage() {
               <UserRound aria-hidden="true" />
             </div>
             <dl className="side-details">
-              <div><dt>Owner user ID</dt><dd>{formatValue(prospect.ownerUserId)}</dd></div>
+               <div><dt>Owner</dt><dd>{formatValue(prospect.ownerDisplayName || prospect.ownerUserId)}</dd></div>
               <div><dt>Assigned at</dt><dd>{formatDate(prospect.assignedAt, true)}</dd></div>
               <div><dt>Assigned by</dt><dd>{formatValue(prospect.assignedBy)}</dd></div>
               <div><dt>Created by</dt><dd>{formatValue(prospect.createdBy)}</dd></div>
             </dl>
             {canManage && !isMerged ? (
               <form className="action-form" onSubmit={handleAssignment}>
-                <label htmlFor="owner-user-id">
-                  Owner user ID
-                   <input id="owner-user-id" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} placeholder="Leave blank to unassign" maxLength={36} />
-                </label>
+                 <label htmlFor="owner-user-id">
+                   Assign to
+                    <select id="owner-user-id" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)}>
+                      <option value="">Unassigned</option>
+                      {assignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.displayName}</option>)}
+                    </select>
+                 </label>
+                 {assigneesError ? <p className="form-error" role="alert">{assigneesError}</p> : null}
                 <label htmlFor="assignment-reason">
                   Reason
                    <textarea id="assignment-reason" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} rows={3} maxLength={200} required />

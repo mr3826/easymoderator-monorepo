@@ -130,6 +130,13 @@ router.post('/roles', growthMutationLimiter, requireGrowthOsAccess('growth_os.ro
 router.delete('/roles/:userId', growthMutationLimiter, requireGrowthOsAccess('growth_os.roles.manage'), roleCtrl.revokeRole);
 
 router.get(
+  '/prospect-owners',
+  requireGrowthOsAccess('growth_os.prospects.manage_all'),
+  validateProspect(prospectValidator.eligibleAssignees),
+  prospectCtrl.listEligibleAssignees,
+);
+
+router.get(
   '/prospects',
   requireGrowthOsAccess(hasProspectReadAccess),
   validateProspect(prospectValidator.listProspects),
@@ -211,7 +218,7 @@ router.post(
 
 router.get(
   '/home',
-  requireGrowthOsAccess('growth_os.prospects.read_all'),
+  requireGrowthOsAccess(hasProspectReadAccess),
   workspaceCtrl.home,
 );
 

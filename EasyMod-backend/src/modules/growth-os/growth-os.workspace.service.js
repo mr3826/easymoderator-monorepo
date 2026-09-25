@@ -57,6 +57,7 @@ async function getHome({ access, userId, isSuperAdmin }) {
     myProspects,
     newLeadsWindow,
     qualifiedNow,
+    unassignedQualified,
     onboardingNow,
     convertedWindow,
     staleOnboarding,
@@ -67,6 +68,7 @@ async function getHome({ access, userId, isSuperAdmin }) {
     GrowthOsProspect.count({ where: { ...baseWhere, owner_user_id: userId, status: { [Op.ne]: 'merged' } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'new', created_at: { [Op.gte]: dayFloor(HOME_WINDOW_DAYS) } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified' } }),
+    GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified', owner_user_id: { [Op.is]: null } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding' } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'converted', status_changed_at: { [Op.gte]: dayFloor(HOME_WINDOW_DAYS) } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding', status_changed_at: { [Op.lt]: dayFloor(15) } } }),
@@ -83,6 +85,7 @@ async function getHome({ access, userId, isSuperAdmin }) {
     growthAttention: {
       newLeadsLast7d: newLeadsWindow,
       qualifiedOpen: qualifiedNow,
+      unassignedQualified,
       onboardingOpen: onboardingNow,
       onboardingStalledOver15d: staleOnboarding,
       convertedLast7d: convertedWindow,

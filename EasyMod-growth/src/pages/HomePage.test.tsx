@@ -25,6 +25,7 @@ function makeHome(overrides: Partial<HomeResponse> = {}): HomeResponse {
     growthAttention: {
       newLeadsLast7d: 12,
       qualifiedOpen: 4,
+      unassignedQualified: 0,
       onboardingOpen: 3,
       onboardingStalledOver15d: 1,
       convertedLast7d: 2,
@@ -63,7 +64,7 @@ describe('HomePage', () => {
     expect(screen.getByText('Onboarding stalled (15+ days)')).toBeInTheDocument();
     expect(screen.getByText('Overdue follow-ups in scope')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review in My Work' })).toHaveAttribute('href', '/my-work');
-    expect(screen.getByRole('link', { name: 'Open prospects' })).toHaveAttribute('href', '/prospects');
+    expect(screen.getByRole('link', { name: 'Open prospects' })).toHaveAttribute('href', '/prospects?owner=me');
   });
 
   it('keeps super-admin sections hidden when the payload has no privileged fields', async () => {

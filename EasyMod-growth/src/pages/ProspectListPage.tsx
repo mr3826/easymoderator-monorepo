@@ -11,6 +11,7 @@ import {
   type ProspectListResponse,
   type ProspectSource,
   type ProspectStatus,
+  type GrowthAssignee,
 } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
@@ -22,12 +23,14 @@ function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters 
   const filters: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
   const status = searchParams.get('status');
   const source = searchParams.get('source');
+  const owner = searchParams.get('owner');
   if (status && (PROSPECT_STATUSES as readonly string[]).includes(status)) {
     filters.status = status as ProspectStatus;
   }
   if (source && (PROSPECT_SOURCES as readonly string[]).includes(source)) {
     filters.source = source as ProspectSource;
   }
+  if (owner === 'me' || owner === 'unassigned' || (owner && UUID_PATTERN.test(owner))) filters.owner = owner;
   return filters;
 }
 
@@ -72,7 +75,7 @@ function ProspectRow({ prospect }: { prospect: ProspectListItem }) {
         <span className="source-code">{codeLabel(prospect.source)}</span>
         {prospect.sourceDetail ? <span className="table-subtext">{prospect.sourceDetail}</span> : null}
       </td>
-      <td>{prospect.ownerUserId || 'Unassigned'}</td>
+       <td>{prospect.ownerDisplayName || (prospect.ownerUserId ? 'Historical owner' : 'Unassigned')}</td>
       <td>
         <span className={`status-badge ${statusClass(prospect.status)}`}>
           {codeLabel(prospect.status)}
@@ -95,7 +98,7 @@ function LoadingRows() {
 }
 
 export function ProspectListPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [initialState] = useState(() => makeInitialFilters(searchParams));
   const [filters, setFilters] = useState<ProspectListFilters>(initialState);
   const [draftFilters, setDraftFilters] = useState<ProspectListFilters>(initialState);
@@ -103,8 +106,22 @@ export function ProspectListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
+  const [assignees, setAssignees] = useState<GrowthAssignee[]>([]);
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
   const canCreate = usePermission('growth_os.prospects.manage_all');
   const { reportApiError } = useGrowthAuth();
+
+  useEffect(() => {
+    if (!canCreate) return undefined;
+    let active = true;
+    growthApi.getEligibleAssignees()
+      .then((next) => { if (active) setAssignees(next); })
+      .catch((requestError: unknown) => {
+        if (!active || reportApiError(requestError)) return;
+        setAssigneesError(errorMessage(requestError));
+      });
+    return () => { active = false; };
+  }, [canCreate, reportApiError]);
 
   useEffect(() => {
     let active = true;
@@ -136,6 +153,12 @@ export function ProspectListPage() {
     }
     setFilterValidationError(null);
     setFilters({ ...draftFilters, page: 1, pageSize: draftFilters.pageSize || PAGE_SIZE });
+    const nextParams = new URLSearchParams();
+    if (draftFilters.status) nextParams.set('status', draftFilters.status);
+    if (draftFilters.source) nextParams.set('source', draftFilters.source);
+    if (draftFilters.owner) nextParams.set('owner', draftFilters.owner);
+    if (draftFilters.q) nextParams.set('q', draftFilters.q);
+    setSearchParams(nextParams);
   }
 
   function resetFilters() {
@@ -215,16 +238,19 @@ export function ProspectListPage() {
               {PROSPECT_SOURCES.map((source) => <option key={source} value={source}>{codeLabel(source)}</option>)}
             </select>
           </label>
-          <label htmlFor="prospect-owner">
-            Owner user ID
-            <input
-              id="prospect-owner"
-              value={draftFilters.ownerUserId ?? ''}
-              onChange={(event) => setDraftFilters((current) => ({ ...current, ownerUserId: event.target.value }))}
-              placeholder="Any owner"
-              maxLength={36}
-            />
-          </label>
+           <label htmlFor="prospect-owner">
+             Owner
+             <select
+               id="prospect-owner"
+               value={draftFilters.owner ?? ''}
+               onChange={(event) => setDraftFilters((current) => ({ ...current, owner: event.target.value, ownerUserId: undefined }))}
+             >
+               <option value="">Any owner</option>
+               <option value="me">Mine</option>
+               <option value="unassigned">Unassigned</option>
+               {assignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.displayName}</option>)}
+             </select>
+           </label>
           <label htmlFor="prospect-linked">
             Linkage
             <select
@@ -258,6 +284,7 @@ export function ProspectListPage() {
           </div>
         </form>
         {filterValidationError ? <p className="form-error" role="alert">{filterValidationError}</p> : null}
+        {assigneesError ? <p className="form-error" role="alert">Owner options unavailable: {assigneesError}</p> : null}
       </section>
 
       <section className="content-card" aria-labelledby="prospect-results-title">

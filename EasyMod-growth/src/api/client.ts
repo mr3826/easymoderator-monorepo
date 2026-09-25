@@ -93,6 +93,8 @@ export interface ProspectListItem {
   statusChangedAt: string | null;
   disqualifiedReason: string | null;
   ownerUserId: string | null;
+  ownerDisplayName?: string | null;
+  ownerEmail?: string | null;
   assignedAt: string | null;
   assignedBy: string | null;
   linkedShopId: string | null;
@@ -148,6 +150,7 @@ export interface ProspectListFilters {
   status?: ProspectStatus | '';
   source?: ProspectSource | '';
   ownerUserId?: string;
+  owner?: string;
   q?: string;
   linked?: boolean | '' | 'true' | 'false';
   page?: number;
@@ -190,6 +193,13 @@ export interface ProspectDuplicateCheckResponse {
 export interface ProspectAssignmentPayload {
   ownerUserId: string | null;
   reason: string;
+}
+
+export interface GrowthAssignee {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  role: GrowthRole;
 }
 
 export interface ProspectStatusPayload {
@@ -390,6 +400,7 @@ export const growthApi = {
     if (filters.status) params.set('status', filters.status);
     if (filters.source) params.set('source', filters.source);
     addQueryValue(params, 'ownerUserId', filters.ownerUserId);
+    addQueryValue(params, 'owner', filters.owner);
     addQueryValue(params, 'q', filters.q);
     if (filters.linked !== undefined && filters.linked !== '') params.set('linked', String(filters.linked));
     if (filters.page) params.set('page', String(Math.max(1, Math.floor(filters.page))));
@@ -398,6 +409,16 @@ export const growthApi = {
     const query = params.toString();
     const payload = await request<{ success: true; data: ProspectListResponse }>(
       `/api/internal/growth-os/prospects${query ? `?${query}` : ''}`,
+    );
+    return payload.data;
+  },
+
+  async getEligibleAssignees(search = ''): Promise<GrowthAssignee[]> {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    const query = params.toString();
+    const payload = await request<{ success: true; data: GrowthAssignee[] }>(
+      `/api/internal/growth-os/prospect-owners${query ? `?${query}` : ''}`,
     );
     return payload.data;
   },
@@ -492,7 +513,8 @@ export interface HomeResponse {
   };
   growthAttention: {
     newLeadsLast7d: number;
-    qualifiedOpen: number;
+  qualifiedOpen: number;
+  unassignedQualified: number;
     onboardingOpen: number;
     onboardingStalledOver15d: number;
     convertedLast7d: number;
