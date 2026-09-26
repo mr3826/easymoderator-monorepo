@@ -1,0 +1,220 @@
+name: Mobile Production Proof
+
+# Proves the live mobile API, and the signed Android release running against it,
+# in production (docs/deployment/MOBILE_API_ACTIVATION_RUNBOOK.md).
+#
+# - Manual and main-only, bound to the `production` environment: that is where the
+#   designated test merchant's password lives, and its reviewer gate applies.
+# - EXPECT_MOBILE_API=disabled proves the rollback state and uses no credential.
+# - Uses the signed APK that mobile-release.yml already built for the current
+#   EasyMod-mobile source; it never touches the upload key.
+# - Production access is read-only: HTTPS as the test identities, plus a
+#   log/audit query over SSH that returns counts and mobile-client lines only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Full SHA that production /api/version must report'
+        required: true
+        type: string
+      expect_mobile_api:
+        description: 'enabled = full proof; disabled = rollback-state proof (no credentials)'
+        required: true
+        default: enabled
+        type: choice
+        options: [enabled, disabled]
+      device:
+        description: 'Also run the signed APK on an emulator against production (enabled only)'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: mobile-production-proof
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    name: Production mobile proof
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      # Download the signed release artifact produced by mobile-release.yml.
+      actions: read
+    env:
+      API_BASE_URL: https://api.easymod.tech
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      EXPECT_MOBILE_API: ${{ inputs.expect_mobile_api }}
+      RUN_DEVICE: ${{ inputs.expect_mobile_api == 'enabled' && inputs.device }}
+      PROOF_CLIENT: android/production-proof-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+
+      - name: Validate inputs and open the proof window
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::expected_sha must be a full lowercase SHA'; exit 1; }
+          mkdir -p proof
+          echo "PROOF_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "PROOF_MISSING_ID=$(node -p 'crypto.randomUUID()')" >> "$GITHUB_ENV"
+
+      - name: API proof
+        id: api
+        env:
+          MERCHANT_EMAIL: merchant@easymod.tech
+          MERCHANT_PASSWORD: ${{ inputs.expect_mobile_api == 'enabled' && secrets.META_REVIEW_MERCHANT_PASSWORD || '' }}
+          ADMIN_EMAIL: ${{ vars.SEED_ADMIN_EMAIL || 'admin@easymod.tech' }}
+          ADMIN_PASSWORD: ${{ inputs.expect_mobile_api == 'enabled' && secrets.SEED_ADMIN_PASSWORD || '' }}
+          REPORT_PATH: proof/api-proof.json
+        run: node scripts/mobile-production-proof/api-proof.js
+
+      - name: Locate the signed release of the current mobile source
+        id: release
+        if: ${{ !cancelled() && env.RUN_DEVICE == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow mobile-release.yml --branch main \
+            --status success --limit 1 --json databaseId,headSha)
+          run_id=$(jq -r '.[0].databaseId // empty' <<<"$runs")
+          release_sha=$(jq -r '.[0].headSha // empty' <<<"$runs")
+          test -n "$run_id" && test -n "$release_sha"
+          # A signed artifact is only valid for the mobile source it was built from.
+          if ! git diff --quiet "$release_sha" HEAD -- EasyMod-mobile; then
+            echo "::error::EasyMod-mobile changed after $release_sha; wait for mobile-release.yml to sign the current source"
+            exit 1
+          fi
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n "mobile-release-$release_sha" -D signed
+          (cd signed/release && sha256sum --check SHA256SUMS)
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "release_run=$run_id" >> "$GITHUB_OUTPUT"
+          echo "signed release: run $run_id, source $release_sha"
+
+      - name: Verify the APK is signed by the pinned upload key
+        if: ${{ !cancelled() && steps.release.outcome == 'success' }}
+        run: >-
+          node EasyMod-mobile/scripts/verify-android-artifact.js
+          --apk signed/release/app-release.apk
+          --package tech.easymod.merchant.preview
+          --abis armeabi-v7a,arm64-v8a,x86,x86_64
+          --expect-signer "$(node -p "require('./EasyMod-mobile/release-signing.json').certificateSha256")"
+          --out proof/signed-artifact
+
+      - name: Install Maestro
+        if: ${{ !cancelled() && steps.release.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          export MAESTRO_VERSION='2.6.0'
+          export MAESTRO_DIR="$RUNNER_TEMP/maestro"
+          export MAESTRO_ZIP="$RUNNER_TEMP/maestro.zip"
+          export MAESTRO_UNPACK="$RUNNER_TEMP/maestro-unpack"
+          mkdir -p "$MAESTRO_DIR" "$MAESTRO_UNPACK"
+          curl --fail --silent --show-error --location --retry 3 \
+            -o "$MAESTRO_ZIP" \
+            "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo '80185105a5d7e227e3b3fbcf225f45b312508ea676a9fc8e1b1aa1cac8b9ff6e  '"$MAESTRO_ZIP" | sha256sum --check --status
+          unzip -t "$MAESTRO_ZIP" >/dev/null
+          unzip -q "$MAESTRO_ZIP" -d "$MAESTRO_UNPACK"
+          cp -R "$MAESTRO_UNPACK/maestro/." "$MAESTRO_DIR/"
+          echo "$MAESTRO_DIR/bin" >> "$GITHUB_PATH"
+          "$MAESTRO_DIR/bin/maestro" --version
+
+      - name: Enable KVM
+        if: ${{ !cancelled() && steps.release.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Signed APK against production on API 34 (x86_64)
+        id: device
+        if: ${{ !cancelled() && steps.release.outcome == 'success' }}
+        uses: reactivecircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        env:
+          MAESTRO_PROOF_EMAIL: merchant@easymod.tech
+          MAESTRO_PROOF_PASSWORD: ${{ secrets.META_REVIEW_MERCHANT_PASSWORD }}
+          MAESTRO_PROOF_ORDER_ID: ${{ steps.api.outputs.order_id }}
+          MAESTRO_PROOF_CONVERSATION_ID: ${{ steps.api.outputs.conversation_id }}
+          MAESTRO_PROOF_MISSING_ID: ${{ env.PROOF_MISSING_ID }}
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash scripts/mobile-production-proof/run-device-proof.sh signed/release/app-release.apk proof/device
+
+      - name: Production observability (read-only logs and audit counts)
+        if: ${{ !cancelled() }}
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$PROOF_START" =~ ^[0-9T:Z-]+$ ]]
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          trap 'rm -f ~/.ssh/deploy_key' EXIT
+          remote() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" "$@"; }
+          # Only mobile-client response lines leave the droplet.
+          remote "docker logs --since '$PROOF_START' easymod-backend-1 2>&1 | grep -F '\"client\":\"android/'" \
+            > "$RUNNER_TEMP/mobile-log-lines.jsonl" || true
+          node scripts/mobile-production-proof/log-summary.js proof/observability-logs.json "$PROOF_CLIENT" \
+            < "$RUNNER_TEMP/mobile-log-lines.jsonl"
+          remote "docker exec -i easymod-postgres-1 sh -c 'psql -X -q -A -F \" | \" -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v start=$PROOF_START'" \
+            < scripts/mobile-production-proof/observability.sql | tee proof/observability-audit.txt
+
+      - name: Refuse to publish any file that contains the credential
+        id: scan
+        if: ${{ !cancelled() }}
+        env:
+          MERCHANT_PASSWORD: ${{ secrets.META_REVIEW_MERCHANT_PASSWORD }}
+          ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for secret in "$MERCHANT_PASSWORD" "$ADMIN_PASSWORD"; do
+            [ -n "$secret" ] || continue
+            if grep -rlF -- "$secret" proof; then
+              echo '::error::a proof file contains a credential; nothing is uploaded'
+              exit 1
+            fi
+          done
+
+      - name: Upload the proof
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-production-proof-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            proof/api-proof.json
+            proof/observability-logs.json
+            proof/observability-audit.txt
+            proof/signed-artifact/
+            proof/device/summary.txt
+            proof/device/junit/*.xml
+            proof/device/screenshots/**/*.png

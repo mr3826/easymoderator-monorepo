@@ -191,7 +191,7 @@ function buildRenderedEnv(source = process.env) {
         // Mobile API (ADR M-010): /api/auth/native/*, /api/mobile/* and every
         // native (sid) token. Off unless the MOBILE_API_ENABLED repository
         // variable is exactly "true"; rollback is setting it back to "false"
-        // and redeploying (docs/mobile/PRODUCTION_ACTIVATION.md). The Wave 3
+        // and redeploying (docs/deployment/MOBILE_API_ACTIVATION_RUNBOOK.md). The Wave 3
         // MOBILE_* switches are deliberately not rendered, so no repository
         // setting can turn them on in production.
         MOBILE_API_ENABLED: strictBooleanFlag(source.MOBILE_API_ENABLED, 'MOBILE_API_ENABLED', 'false'),

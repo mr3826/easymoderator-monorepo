@@ -1,0 +1,17 @@
+appId: tech.easymod.merchant.preview
+name: Production deep link - a link that cold-starts the app opens its entity
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- stopApp
+- openLink:
+    link: easymodmerchantpreview://order/${MAESTRO_PROOF_ORDER_ID}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 90000
+- takeScreenshot: order-deeplink-cold
+- back

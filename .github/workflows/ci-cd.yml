@@ -480,7 +480,7 @@ jobs:
           # Mobile API switch (ADR M-010). Operator-owned repository variable:
           # exactly "true" or "false", anything else fails the render.
           # Rollback: set it to "false" and redeploy
-          # (docs/mobile/PRODUCTION_ACTIVATION.md).
+          # (docs/deployment/MOBILE_API_ACTIVATION_RUNBOOK.md).
           MOBILE_API_ENABLED: ${{ vars.MOBILE_API_ENABLED || 'false' }}
           BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
           BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
@@ -935,7 +935,7 @@ jobs:
           # Mobile API switch (ADR M-010). Operator-owned repository variable:
           # exactly "true" or "false", anything else fails the render.
           # Rollback: set it to "false" and redeploy
-          # (docs/mobile/PRODUCTION_ACTIVATION.md).
+          # (docs/deployment/MOBILE_API_ACTIVATION_RUNBOOK.md).
           MOBILE_API_ENABLED: ${{ vars.MOBILE_API_ENABLED || 'false' }}
           # bKash is a LIVE-money gateway. It stays OFF for the controlled pilot
           # (finding F-14/§6). Flip the `BKASH_ENABLED` Actions *variable* to

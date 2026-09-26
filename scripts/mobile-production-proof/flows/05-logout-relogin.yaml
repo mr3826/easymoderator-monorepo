@@ -1,0 +1,45 @@
+appId: tech.easymod.merchant.preview
+name: Production logout, cold relaunch signed out, re-login, final logout
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- tapOn:
+    id: tab-more
+- tapOn:
+    id: logout-button
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 60000
+# Back must not reopen a protected screen.
+- back
+- assertNotVisible:
+    id: home-attention-list
+# The tokens are gone: a cold relaunch lands on login, not Home.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 60000
+- assertNotVisible:
+    id: home-attention-list
+- takeScreenshot: logged-out-relaunch
+- runFlow: sign-in.yaml
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- takeScreenshot: relogin-home
+# Leave no device session behind.
+- tapOn:
+    id: tab-more
+- tapOn:
+    id: logout-button
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 60000
