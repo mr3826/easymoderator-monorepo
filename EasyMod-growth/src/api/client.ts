@@ -590,6 +590,30 @@ export interface GrowthAnalyticsResponse {
     medianHoursCreatedToActivated: number | null;
   };
   leadToActivation: number | null;
+  followupDiscipline: {
+    total: number;
+    open: number;
+    completed: number;
+    cancelled: number;
+    completedOnTime: number;
+    completedLate: number;
+    overdueOpen: number;
+    onTimeRatePct: number | null;
+  };
+  byOwner: Array<{
+    ownerUserId: string;
+    displayName: string;
+    created: number;
+    qualified: number;
+    converted: number;
+    qualificationRatePct: number | null;
+    activationRatePct: number | null;
+  }>;
+  unassigned: {
+    openCount: number;
+    oldestSourceRecordedAt: string | null;
+    oldestAgeDays: number | null;
+  };
   cohort: {
     basis: 'source_recorded_at';
     importedAt: 'created_at';

@@ -2,11 +2,15 @@
 
 const mockProspect = { findAll: jest.fn() };
 const mockEvent = { findAll: jest.fn() };
+const mockFollowup = { count: jest.fn() };
+const mockUser = { findAll: jest.fn().mockResolvedValue([]) };
 const mockShop = {};
 
 jest.mock('../../entities', () => ({
   GrowthOsProspect: mockProspect,
   GrowthOsProspectEvent: mockEvent,
+  GrowthOsFollowup: mockFollowup,
+  User: mockUser,
   Shop: mockShop,
 }));
 jest.mock('../growth-os.prospect.scope', () => ({
@@ -43,6 +47,25 @@ describe('Growth workspace analytics', () => {
       .mockResolvedValueOnce(active)
       .mockResolvedValueOnce([]);
     mockEvent.findAll.mockResolvedValueOnce(events);
+    mockFollowup.count
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(2);
+    mockProspect.findAll
+      .mockResolvedValueOnce([{
+        ownerUserId: 'owner-1', created: 50, qualified: 20, converted: 5,
+      }])
+      .mockResolvedValueOnce([{
+        openCount: 3,
+        oldestAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      }]);
+    mockUser.findAll.mockResolvedValueOnce([{
+      id: 'owner-1', full_name: 'Rumi Operator', email: 'rumi@example.test',
+    }]);
 
     const result = await getGrowthAnalytics({ access: {}, userId: 'growth-user', windowDays: 90 });
 
@@ -56,5 +79,88 @@ describe('Growth workspace analytics', () => {
     expect(mockProspect.findAll.mock.calls.every(([options]) => options.limit === undefined)).toBe(true);
     expect(mockProspect.findAll.mock.calls[3][0].where.source_recorded_at).toBeDefined();
     expect(mockEvent.findAll.mock.calls[0][0].order).toEqual([['created_at', 'ASC'], ['id', 'ASC']]);
+  });
+
+  test('aggregates follow-up discipline, owner performance, and unassigned age', async () => {
+    mockProspect.findAll
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        ownerUserId: 'owner-1', created: 4, qualified: 2, converted: 1,
+      }, {
+        ownerUserId: 'owner-gone', created: 2, qualified: 0, converted: 0,
+      }])
+      .mockResolvedValueOnce([{ openCount: 2, oldestAt: '2026-09-01T06:00:00.000Z' }]);
+    mockEvent.findAll.mockResolvedValueOnce([]);
+    mockFollowup.count
+      .mockResolvedValueOnce(9)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2);
+    mockUser.findAll.mockResolvedValueOnce([
+      { id: 'owner-1', full_name: 'Rumi Operator', email: 'rumi@example.test' },
+    ]);
+
+    const result = await getGrowthAnalytics({ access: {}, userId: 'growth-user', windowDays: 90 });
+
+    expect(result.followupDiscipline).toEqual({
+      total: 9,
+      open: 3,
+      completed: 5,
+      cancelled: 1,
+      completedOnTime: 4,
+      completedLate: 1,
+      overdueOpen: 2,
+      onTimeRatePct: 80,
+    });
+    expect(result.byOwner).toEqual([
+      expect.objectContaining({
+        ownerUserId: 'owner-1',
+        displayName: 'Rumi Operator',
+        created: 4,
+        qualified: 2,
+        converted: 1,
+        qualificationRatePct: 50,
+        activationRatePct: 25,
+      }),
+      expect.objectContaining({
+        ownerUserId: 'owner-gone',
+        displayName: 'Former operator (account removed)',
+        qualificationRatePct: 0,
+        activationRatePct: 0,
+      }),
+    ]);
+    expect(result.unassigned.openCount).toBe(2);
+    expect(result.unassigned.oldestSourceRecordedAt).toBe('2026-09-01T06:00:00.000Z');
+    expect(result.unassigned.oldestAgeDays).toBeGreaterThanOrEqual(0);
+  });
+
+  test('reports null discipline rates instead of dividing by zero', async () => {
+    mockProspect.findAll
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockEvent.findAll.mockResolvedValueOnce([]);
+    mockFollowup.count.mockResolvedValue(0);
+
+    const result = await getGrowthAnalytics({ access: {}, userId: 'growth-user', windowDays: 90 });
+
+    expect(result.followupDiscipline.onTimeRatePct).toBeNull();
+    expect(result.unassigned).toEqual({
+      openCount: 0,
+      oldestSourceRecordedAt: null,
+      oldestAgeDays: null,
+    });
+    expect(result.byOwner).toEqual([]);
   });
 });

@@ -31,6 +31,11 @@ const seedInitialGrowthAdminWorkflowPath = path.resolve(
     '../../../../.github/workflows/seed-initial-growth-admin.yml',
 );
 const seedInitialGrowthAdminWorkflow = fs.readFileSync(seedInitialGrowthAdminWorkflowPath, 'utf8');
+const growthImporterWorkflowPath = path.resolve(
+    __dirname,
+    '../../../../.github/workflows/run-growth-importer.yml',
+);
+const growthImporterWorkflow = fs.readFileSync(growthImporterWorkflowPath, 'utf8');
 
 describe('production workflow branch safety', () => {
     test('build and deploy jobs are restricted to main', () => {
@@ -593,5 +598,40 @@ describe('merchant edge isolation and privileged command coverage', () => {
             return text.includes('appleboy/ssh-action') && !text.includes('command_timeout:');
         });
         expect(offenders).toEqual([]);
+    });
+});
+
+describe('protected growth importer execution', () => {
+    test('is manual, main-only, operator-bound, and serialized on the production environment', () => {
+        expect(growthImporterWorkflow).toContain('workflow_dispatch:');
+        expect(growthImporterWorkflow).toContain(
+            "if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'",
+        );
+        expect(growthImporterWorkflow).toContain('environment: production');
+        expect(growthImporterWorkflow).toContain('group: run-growth-importer');
+        expect(growthImporterWorkflow).toContain('cancel-in-progress: false');
+    });
+
+    test('defaults to dry-run and requires the literal phrase before any apply', () => {
+        expect(growthImporterWorkflow).toContain('default: "dry-run"');
+        expect(growthImporterWorkflow).toContain('"mode=apply requires the literal authorization phrase PRODUCTION-IMPORT-APPLY."');
+        // Only the apply branch passes --apply; the default branch must not.
+        const applyGuard = growthImporterWorkflow.indexOf('"$IMPORT_AUTHORIZATION" != "PRODUCTION-IMPORT-APPLY"');
+        const applyFlag = growthImporterWorkflow.indexOf('import-growth-prospects.js --apply');
+        expect(applyGuard).toBeGreaterThan(-1);
+        expect(applyFlag).toBeGreaterThan(applyGuard);
+    });
+
+    test('enforces the post-apply idempotency gate instead of trusting the first run', () => {
+        expect(growthImporterWorkflow).toContain('SECOND_RUN_WOULD_CREATE=');
+        expect(growthImporterWorkflow).toContain('if [ "$would_create" != "0" ]; then');
+    });
+
+    test('runs the canonical script in the live backend container and persists receipts on the host', () => {
+        expect(growthImporterWorkflow).toContain('scripts/import-growth-prospects.js');
+        expect(growthImporterWorkflow).toContain('com.docker.compose.service=backend');
+        expect(growthImporterWorkflow).toContain('/root/growth-os-receipts');
+        // Inputs must be validated before interpolation into remote commands.
+        expect(growthImporterWorkflow).toContain("case \"$IMPORT_BATCH_SIZE\" in ''|*[!0-9]*) IMPORT_BATCH_SIZE=100;; esac");
     });
 });
