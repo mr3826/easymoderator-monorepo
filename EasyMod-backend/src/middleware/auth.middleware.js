@@ -1,3 +1,4 @@
+const config = require('../config/config');
 const { AppError } = require('../utils/AppError');
 const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
@@ -104,6 +105,13 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
         // auth-token-version.security.test.js and native-sid-revocation.test.js.
         let shopMembershipVerified = false;
         if (decoded.sid) {
+            // ADR M-010 rollback: with MOBILE_API_ENABLED off, the native
+            // sign-in/refresh routes 404 and so must every native token already
+            // issued — including on the order/conversation detail reads, which
+            // live outside the flag-gated routers. Web tokens carry no sid.
+            if (!config.mobileApiEnabled) {
+                throw new AppError('Mobile access is not available. Please login again.', 401, 'NATIVE_API_DISABLED');
+            }
             const session = await Session.findByPk(decoded.sid, {
                 attributes: ['id', 'user_id', 'shop_id', 'is_active', 'expires_at'],
             });
