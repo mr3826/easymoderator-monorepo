@@ -562,6 +562,17 @@ describe('mobile production proof workflow', () => {
         expect(code).toContain('grep -rlF -- "$secret" proof');
         expect(code).toContain("if: ${{ !cancelled() && steps.scan.outcome == 'success' }}");
     });
+
+    test('runs a signed build variant only under that variant\'s own identity', () => {
+        expect(code).toMatch(/^ {6}variant:\n(?: {8}.+\n)*? {8}options: \[preview, production\]$/m);
+        expect(code).toContain('preview) app_id=tech.easymod.merchant.preview; scheme=easymodmerchantpreview; artifact=mobile-release ;;');
+        expect(code).toContain('production) app_id=tech.easymod.merchant; scheme=easymodmerchant; artifact=mobile-release-production ;;');
+        expect(code).toContain('-n "$RELEASE_ARTIFACT-$release_sha"');
+        for (const flag of ['--package "$MAESTRO_PROOF_APP_ID"', '--variant "$RELEASE_VARIANT"', '--source-sha "$RELEASE_SHA"']) {
+            expect(code).toContain(flag);
+            expect(code.indexOf(flag)).toBeLessThan(code.indexOf('android-emulator-runner'));
+        }
+    });
 });
 
 describe('merchant edge isolation and privileged command coverage', () => {

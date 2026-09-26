@@ -6,9 +6,10 @@
 #
 #   run-device-proof.sh <signed apk> <output dir>
 #
-# Maestro reads MAESTRO_PROOF_EMAIL / MAESTRO_PROOF_PASSWORD (and the optional
-# MAESTRO_PROOF_ORDER_ID / MAESTRO_PROOF_CONVERSATION_ID / MAESTRO_PROOF_MISSING_ID)
-# straight from the environment. Nothing here uses `set -x` or puts a credential on a
+# Maestro reads MAESTRO_PROOF_APP_ID / MAESTRO_PROOF_SCHEME (the build variant's
+# application id and deep-link scheme), MAESTRO_PROOF_EMAIL / MAESTRO_PROOF_PASSWORD
+# (and the optional MAESTRO_PROOF_ORDER_ID / MAESTRO_PROOF_CONVERSATION_ID /
+# MAESTRO_PROOF_MISSING_ID) straight from the environment. Nothing here uses `set -x` or puts a credential on a
 # command line. Only screenshots, JUnit reports and the summary are kept, and the
 # workflow scans them for the password before upload.
 set -euo pipefail
@@ -16,8 +17,22 @@ set -euo pipefail
 apk="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 mkdir -p "$2"
 out="$(cd "$2" && pwd)"
-package=tech.easymod.merchant.preview
-flows="$(cd "$(dirname "$0")" && pwd)/flows"
+package="${MAESTRO_PROOF_APP_ID:?}"
+scheme="${MAESTRO_PROOF_SCHEME:?}"
+[[ "$package" =~ ^[a-z][a-z0-9_.]*$ && "$scheme" =~ ^[a-z][a-z0-9]*$ ]]
+
+# The flows name the build variant as ${MAESTRO_PROOF_APP_ID} / ${MAESTRO_PROOF_SCHEME}. A
+# rendered copy carries the literal values, so a flow's appId header never depends on Maestro
+# evaluating it. sign-in.yaml is copied alongside, which keeps the relative runFlow references.
+flows="$(mktemp -d)"
+for flow in "$(cd "$(dirname "$0")" && pwd)"/flows/*.yaml; do
+  sed -e "s|\${MAESTRO_PROOF_APP_ID}|$package|g" -e "s|\${MAESTRO_PROOF_SCHEME}|$scheme|g" \
+    "$flow" > "$flows/$(basename "$flow")"
+done
+if grep -l 'MAESTRO_PROOF_APP_ID\|MAESTRO_PROOF_SCHEME' "$flows"/*.yaml; then
+  echo 'a rendered flow still names the variant placeholder' >&2
+  exit 1
+fi
 
 : "${MAESTRO_PROOF_EMAIL:?}"
 : "${MAESTRO_PROOF_PASSWORD:?}"
@@ -25,7 +40,7 @@ flows="$(cd "$(dirname "$0")" && pwd)/flows"
 
 mkdir -p "$out/junit" "$out/screenshots"
 summary="$out/summary.txt"
-: > "$summary"
+echo "app-id=$package" > "$summary"
 
 adb wait-for-device
 # Emulator-only hygiene, as in EasyMod-mobile/e2e/run-maestro.js: a launcher ANR dialog
