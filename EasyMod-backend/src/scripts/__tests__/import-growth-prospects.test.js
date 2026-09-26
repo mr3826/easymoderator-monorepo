@@ -7,7 +7,7 @@ jest.mock('../../modules/growth-os/growth-os.prospect.service', () => ({
 const {
     crmImportRow,
     partnerImportRow,
-} = require('../import-growth-prospects');
+} = require('../../../scripts/import-growth-prospects');
 
 describe('growth prospect import transformations', () => {
     const shop = (settings, isActive = true) => ({

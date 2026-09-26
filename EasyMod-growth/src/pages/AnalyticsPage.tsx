@@ -205,9 +205,7 @@ export function AnalyticsPage() {
             <thead>
               <tr>
                 <th scope="col">Owner</th>
-                <th scope="col">Created</th>
-                <th scope="col">Qualified or beyond</th>
-                <th scope="col">Converted</th>
+                <th scope="col">Created+</th>                <th scope="col">Qualified+</th>                <th scope="col">Converted+</th>
                 <th scope="col">Qualification rate</th>
                 <th scope="col">Activation rate</th>
               </tr>
