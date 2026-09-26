@@ -98,7 +98,7 @@ export function uniquePhone(seed = Date.now()): string {
 // the last computed code per secret and wait one window when it would collide.
 const lastTotpCode = new Map<string, string>();
 
-async function freshTotpCode(secret: string): Promise<string> {
+export async function freshTotpCode(secret: string): Promise<string> {
   const period = fixtures.totpPeriod || 30;
   let counter = Math.floor(Date.now() / 1000 / period);
   let code = hotp(secret, counter);

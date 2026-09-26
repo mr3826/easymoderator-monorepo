@@ -231,7 +231,7 @@ describe('Growth OS session authorization', () => {
   });
 
   it('resolves a legacy executive to canonical GROWTH_USER without admin permissions', async () => {
-    roleHolder.user = { userId: 'executive-1', email: 'exec@easymod.tech' };
+    roleHolder.user = { userId: 'executive-1', email: 'exec@easymod.tech', mfaVerified: true };
     roleHolder.growthRole = 'BUSINESS_EXECUTIVE';
 
     const res = await request(app).get('/api/internal/growth-os/session');
@@ -249,8 +249,18 @@ describe('Growth OS session authorization', () => {
     expect(res.body.data.permissions).not.toContain('growth_os.admin.merchants.mutate');
   });
 
-  it('grants a canonical GROWTH_USER full workspace without admin or user-management access, no MFA required', async () => {
+  it('requires MFA assurance for the canonical GROWTH_USER role', async () => {
     roleHolder.user = { userId: 'growth-1', email: 'growth@easymod.tech', mfaVerified: false };
+    roleHolder.growthRole = 'GROWTH_USER';
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
+  });
+
+  it('grants a canonical GROWTH_USER full workspace without admin or user-management access when MFA-assured', async () => {
+    roleHolder.user = { userId: 'growth-1', email: 'growth@easymod.tech', mfaVerified: true };
     roleHolder.growthRole = 'GROWTH_USER';
 
     const session = await request(app).get('/api/internal/growth-os/session');
@@ -289,6 +299,16 @@ describe('Growth OS session authorization', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('GROWTH_OS_MERCHANT_CONTEXT_FORBIDDEN');
+  });
+
+  it('requires MFA assurance for legacy scoped roles that alias into canonical members', async () => {
+    roleHolder.user = { userId: 'executive-2', email: 'exec2@easymod.tech', mfaVerified: false };
+    roleHolder.growthRole = 'BUSINESS_EXECUTIVE';
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
   });
 
   it('requires MFA assurance for the canonical SUPER_ADMIN role too', async () => {

@@ -229,21 +229,21 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
       email: executive.email,
       shopId: null,
       tokenVersion: 0,
-      mfaVerified: false,
+      mfaVerified: true,
     });
     marketerToken = generateAccessToken({
       userId: marketer.id,
       email: marketer.email,
       shopId: null,
       tokenVersion: 0,
-      mfaVerified: false,
+      mfaVerified: true,
     });
     growthUserToken = generateAccessToken({
       userId: growthUser.id,
       email: growthUser.email,
       shopId: null,
       tokenVersion: 0,
-      mfaVerified: false,
+      mfaVerified: true,
     });
   });
 
@@ -503,7 +503,29 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
       .send({ contactEmail: foreignPayload.contactEmail });
     expect(conflictingEdit.status).toBe(409);
     expect(conflictingEdit.body.code).toBe('GROWTH_OS_PROSPECT_DUPLICATE');
-    expect(conflictingEdit.body.conflictingProspectId).toBe(foreignId);
+    // The global identity conflict must fail closed, but an out-of-scope
+    // prospect's existence and identifier are never disclosed to a scoped
+    // actor (audit finding: duplicate-probe scope leak).
+    expect(conflictingEdit.body.conflictingProspectId ?? null).toBeNull();
+    expect(JSON.stringify(conflictingEdit.body)).not.toContain(foreignId);
+
+    // In-scope conflicts remain actionable: the id is disclosed when the
+    // actor can already see the conflicting record.
+    const secondAssigned = await createProspect(founderToken, prospectPayload(`second-${suffix}`, {
+      businessName: `Second Assigned ${suffix}`,
+      contactPhone: phoneFor(`second-${suffix}`, '016'),
+      contactEmail: `second-${suffix}@example.test`,
+      pageUrl: `https://facebook.com/second-${suffix}`,
+    }));
+    const secondId = rememberProspect(secondAssigned);
+    await asFounder()
+      .post(`${API_ROOT}/${secondId}/assign`)
+      .send({ ownerUserId: executive.id, reason: 'Scope fixture second assignment' });
+    const visibleConflict = await asExecutive()
+      .patch(`${API_ROOT}/${prospectId}`)
+      .send({ contactEmail: `second-${suffix}@example.test` });
+    expect(visibleConflict.status).toBe(409);
+    expect(visibleConflict.body.conflictingProspectId).toBe(secondId);
   });
 
   it('gives canonical GROWTH_USER full-scope unredacted access on real PostgreSQL', async () => {

@@ -416,6 +416,23 @@ describe('Auth API', () => {
             expect(res.body.message || res.body.error?.message).toContain('no associated shops');
         });
 
+        it('rejects an unmarked shop-less account with 403 even when TOTP is enabled (no pre-boundary challenge)', async () => {
+            User.findOne.mockResolvedValue({
+                ...mockUser,
+                shops: [],
+                last_logged_shop_id: null,
+                settings: { totp_enabled: true },
+            });
+
+            const res = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: mockUser.email, password: 'correct-password' });
+
+            expect(res.status).toBe(403);
+            expect(res.body.message || res.body.error?.message).toContain('no associated shops');
+            expect(res.body.data?.requires2fa).toBeUndefined();
+        });
+
         it('should return 400 when email is missing', async () => {
             const res = await request(app)
                 .post('/api/auth/signin')

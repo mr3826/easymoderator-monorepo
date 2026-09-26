@@ -1,10 +1,17 @@
 import { test, expect } from '@playwright/test';
-import { authStatePath, fixtures, pageRequest, runStamp, signIn } from './support';
+import {
+  authStatePath,
+  fixtures,
+  freshTotpCode,
+  pageRequest,
+  runStamp,
+  signIn,
+} from './support';
 
 test.describe.configure({ mode: 'serial' });
 test.use({ storageState: authStatePath('super') });
 
-const created: { email: string; fullName: string; password: string }[] = [];
+const created: { email: string; fullName: string; password: string; totpSecret?: string }[] = [];
 
 async function createUserViaUi(
   page: import('@playwright/test').Page,
@@ -59,7 +66,14 @@ test('the created user is server-enforced GROWTH_USER; suspend and revoke deny f
 
   const createdContext = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const createdPage = await createdContext.newPage();
-  const initialSignIn = await signIn(createdPage, { id: '', email: fresh.email, password: fresh.password, role: 'GROWTH_USER' });
+  // GROWTH_USER now carries the same server-required MFA assurance as the
+  // privileged roles: password-only sessions must be steered to enrollment,
+  // not into the ledger.
+  const initialSignIn = await signIn(
+    createdPage,
+    { id: '', email: fresh.email, password: fresh.password, role: 'GROWTH_USER' },
+    { assertAuthorized: false },
+  );
   if (initialSignIn.signinBody?.requiresPasswordChange || initialSignIn.signinBody?.data?.requiresPasswordChange) {
     await expect(createdPage).toHaveURL(/\/change-password$/);
     const changedPassword = `E2E-Changed-${runStamp()}!`;
@@ -75,10 +89,40 @@ test('the created user is server-enforced GROWTH_USER; suspend and revoke deny f
     await changePasswordResponse;
     await expect(createdPage).toHaveURL(/\/login$/);
     fresh.password = changedPassword;
-    await signIn(createdPage, { id: '', email: fresh.email, password: fresh.password, role: 'GROWTH_USER' });
-  } else {
-    await expect(createdPage).toHaveURL(/\/$/);
+    await signIn(
+      createdPage,
+      { id: '', email: fresh.email, password: fresh.password, role: 'GROWTH_USER' },
+      { assertAuthorized: false },
+    );
   }
+
+  // Server-enforced subordinate MFA: a password-only GROWTH_USER session is
+  // denied at every Growth route and steered through enrollment, not into
+  // the ledger.
+  await expect(createdPage).toHaveURL(/\/enroll-mfa$/);
+  await expect(createdPage.getByRole('heading', { name: 'Add multi-factor authentication' })).toBeVisible();
+  const deniedBeforeMfa = await pageRequest(createdPage, '/api/internal/growth-os/session');
+  expect(deniedBeforeMfa.status).toBe(403);
+  expect(deniedBeforeMfa.body?.code).toBe('GROWTH_OS_MFA_REQUIRED');
+
+  const secret = ((await createdPage.getByTestId('mfa-secret').textContent()) ?? '').trim();
+  expect(secret.length).toBeGreaterThan(16);
+  await createdPage.getByLabel('Current 6-digit code').fill(await freshTotpCode(secret));
+  const enableResponse = createdPage.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response.url().endsWith('/api/auth/2fa/enable')
+    && response.status() === 200
+  ));
+  await createdPage.getByRole('button', { name: 'Verify and enable' }).click();
+  await enableResponse;
+  await expect(createdPage).toHaveURL(/\/login$/);
+  await expect(createdPage.getByText('MFA enabled. Sign in again to complete verification.')).toBeVisible();
+
+  fresh.totpSecret = secret;
+  await signIn(
+    createdPage,
+    { id: '', email: fresh.email, password: fresh.password, role: 'GROWTH_USER', totpSecret: secret },
+  );
   await expect(createdPage.getByText('GROWTH_USER', { exact: true })).toBeVisible();
 
   const session = await pageRequest(createdPage, '/api/internal/growth-os/session');

@@ -803,12 +803,23 @@ class GrowthOsProspectService {
               normalized_page: values.normalized_page,
             });
           }
+          // Identity uniqueness is a global database constraint, so the
+          // conflict probe must stay global to fail gracefully. Disclose the
+          // conflicting id only when it is inside the caller's own scope;
+          // scoped users otherwise learn merely that a conflict exists.
           const conflict = await repository.findDuplicateProspects(identity, {
             scope: null,
             excludeId: row.id,
             transaction,
           });
-          if (conflict[0]) throw duplicateError(conflict[0].id);
+          if (conflict[0]) {
+            const visibleConflict = await repository.findDuplicateProspects(identity, {
+              scope,
+              excludeId: row.id,
+              transaction,
+            });
+            throw duplicateError(visibleConflict[0] ? visibleConflict[0].id : null);
+          }
           await row.update(values, { transaction });
           await recordMutation({
             prospectId: row.id,
