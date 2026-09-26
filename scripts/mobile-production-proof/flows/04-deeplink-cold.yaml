@@ -1,4 +1,4 @@
-appId: tech.easymod.merchant.preview
+appId: ${MAESTRO_PROOF_APP_ID}
 name: Production deep link - a link that cold-starts the app opens its entity
 ---
 # MAESTRO_PROOF_COLD_LINK is `order/<id>` when production Home surfaces an order,
@@ -10,7 +10,7 @@ name: Production deep link - a link that cold-starts the app opens its entity
     timeout: 90000
 - stopApp
 - openLink:
-    link: easymodmerchantpreview://${MAESTRO_PROOF_COLD_LINK}
+    link: ${MAESTRO_PROOF_SCHEME}://${MAESTRO_PROOF_COLD_LINK}
 - extendedWaitUntil:
     visible:
       id: deeplink-found

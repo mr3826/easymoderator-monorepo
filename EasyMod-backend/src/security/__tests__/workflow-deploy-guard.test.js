@@ -562,6 +562,17 @@ describe('mobile production proof workflow', () => {
         expect(code).toContain('grep -rlF -- "$secret" proof');
         expect(code).toContain("if: ${{ !cancelled() && steps.scan.outcome == 'success' }}");
     });
+
+    test('runs a signed build variant only under that variant\'s own identity', () => {
+        expect(code).toMatch(/^ {6}variant:\n(?: {8}.+\n)*? {8}options: \[preview, production\]$/m);
+        expect(code).toContain('preview) app_id=tech.easymod.merchant.preview; scheme=easymodmerchantpreview; artifact=mobile-release ;;');
+        expect(code).toContain('production) app_id=tech.easymod.merchant; scheme=easymodmerchant; artifact=mobile-release-production ;;');
+        expect(code).toContain('-n "$RELEASE_ARTIFACT-$release_sha"');
+        for (const flag of ['--package "$MAESTRO_PROOF_APP_ID"', '--variant "$RELEASE_VARIANT"', '--source-sha "$RELEASE_SHA"']) {
+            expect(code).toContain(flag);
+            expect(code.indexOf(flag)).toBeLessThan(code.indexOf('android-emulator-runner'));
+        }
+    });
 });
 
 describe('merchant edge isolation and privileged command coverage', () => {
@@ -625,6 +636,22 @@ describe('protected growth importer execution', () => {
     test('enforces the post-apply idempotency gate instead of trusting the first run', () => {
         expect(growthImporterWorkflow).toContain('SECOND_RUN_WOULD_CREATE=');
         expect(growthImporterWorkflow).toContain('if [ "$would_create" != "0" ]; then');
+    });
+
+    test('refuses the idempotency proof unless the verification scan demonstrably completed', () => {
+        // The importer exits 1 on per-row rejections while completing the scan,
+        // and appends a sentinel row on a mid-scan read failure — so row-count
+        // equality alone cannot prove completeness. The gate must capture the
+        // apply status through the pipe, reject source-read failures, require
+        // every source row accounted for, and require the same rejected set.
+        expect(growthImporterWorkflow).toContain('apply_rc=${PIPESTATUS[0]}');
+        expect(growthImporterWorkflow).toContain('verify_rc=${PIPESTATUS[0]}');
+        expect(growthImporterWorkflow).toContain('PROBE_READ_FAILURE');
+        expect(growthImporterWorkflow).toContain('if [ "$verify_read_failure" = "true" ]; then');
+        expect(growthImporterWorkflow).toContain('verification pass incomplete');
+        expect(growthImporterWorkflow).toContain('if [ -z "$verify_failed" ] || [ "$verify_failed" != "$apply_failed" ]; then');
+        expect(growthImporterWorkflow).toContain('VERIFY_COMPLETED_WITH_KNOWN_ROW_REJECTIONS');
+        expect(growthImporterWorkflow).toContain('exit "$apply_rc"');
     });
 
     test('runs the canonical script in the live backend container and persists receipts on the host', () => {

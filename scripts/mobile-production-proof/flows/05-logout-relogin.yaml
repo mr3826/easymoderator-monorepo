@@ -1,4 +1,4 @@
-appId: tech.easymod.merchant.preview
+appId: ${MAESTRO_PROOF_APP_ID}
 name: Production logout, cold relaunch signed out, re-login, final logout
 ---
 - launchApp

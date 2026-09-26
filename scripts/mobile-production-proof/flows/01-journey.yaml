@@ -1,4 +1,4 @@
-appId: tech.easymod.merchant.preview
+appId: ${MAESTRO_PROOF_APP_ID}
 name: Production journey - sign in, Home, navigation, refresh, foreign entity, restart
 ---
 - launchApp:
@@ -57,7 +57,7 @@ name: Production journey - sign in, Home, navigation, refresh, foreign entity, r
 - takeScreenshot: 05-refreshed
 # An entity this shop does not own must not open.
 - openLink:
-    link: easymodmerchantpreview://order/${MAESTRO_PROOF_MISSING_ID}
+    link: ${MAESTRO_PROOF_SCHEME}://order/${MAESTRO_PROOF_MISSING_ID}
 - extendedWaitUntil:
     visible:
       id: deeplink-unavailable

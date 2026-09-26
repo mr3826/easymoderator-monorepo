@@ -652,7 +652,25 @@ class GrowthOsProspectService {
         // is excluded from activation TIMING rather than being synthesized.
         if (importMode && activationEventAt && values.status === 'converted') {
           const when = new Date(activationEventAt);
-          if (!Number.isNaN(when.getTime())) {
+          // Evidence must not predate the cohort anchor: an activation before
+          // the source was recorded would fall outside every windowed timing
+          // query anyway (durationHours rejects negative durations), so the
+          // event is only written when chronologically coherent.
+          const cohortAt = new Date(values.source_recorded_at || prospect.created_at);
+          const evidenceUsable = !Number.isNaN(when.getTime())
+            && !Number.isNaN(cohortAt.getTime())
+            && when.getTime() >= cohortAt.getTime();
+          if (!evidenceUsable) {
+            // A dropped canonical activation must never be invisible: the row
+            // still counts in funnel.activated (status + active shop) but is
+            // excluded from activation timing until real evidence exists.
+            logger.info('Growth OS import dropped activation backfill evidence', {
+              prospectId: prospect.id,
+              sourceReference: values.source_reference,
+              reason: 'EVIDENCE_PREDATES_COHORT_OR_UNPARSEABLE',
+            });
+          }
+          if (evidenceUsable) {
             await models.GrowthOsProspectEvent.create({
               prospect_id: prospect.id,
               actor_user_id: null,

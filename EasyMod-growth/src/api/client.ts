@@ -601,7 +601,7 @@ export interface GrowthAnalyticsResponse {
     onTimeRatePct: number | null;
   };
   byOwner: Array<{
-    ownerUserId: string;
+    ownerUserId: string | null;
     displayName: string;
     created: number;
     qualified: number;

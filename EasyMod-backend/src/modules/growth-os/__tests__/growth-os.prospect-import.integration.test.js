@@ -183,7 +183,7 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
 
   it('backfills canonical activated events only where linked-shop evidence exists', async () => {
     const id = suffix();
-    async function activationFixture(tag, settings) {
+    async function activationFixture(tag, settings, leadCreatedAt = new Date('2026-09-01T00:00:00.000Z')) {
       const tenant = await Tenant.create({ name: `Activation import ${id}-${tag}` });
       const shop = await Shop.create({
         unique_code: `act${tag}${id.slice(0, 8)}`,
@@ -214,7 +214,7 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
           business_name: `Activation Evidence ${id} ${tag}`,
           status: 'converted',
         },
-        created_at: new Date('2026-09-01T00:00:00.000Z'),
+        created_at: leadCreatedAt,
       });
       sourceReferences.push(key);
       const fixture = { tenant, shop, owner, lead, key };
@@ -226,6 +226,13 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
       first_ai_reply: { occurred_at: '2026-09-05T10:00:00.000Z' },
     });
     const bare = await activationFixture('b', {});
+    // Evidence that predates the cohort anchor is chronologically incoherent
+    // (durationHours would reject it): no event, no fabricated ordering.
+    const predating = await activationFixture('c', {
+      first_ai_reply: { occurred_at: '2026-08-15T10:00:00.000Z' },
+    }, new Date('2026-09-01T00:00:00.000Z'));
+    // activationFixture default lead created_at is 2026-09-01; 'c' keeps it so
+    // evidence 2026-08-15 < cohort.
 
     const applied = await run({
       apply: true,
@@ -258,6 +265,16 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
       raw: true,
     });
     expect(bareActivated).toHaveLength(0);
+
+    const predatingRow = await GrowthOsProspect.findOne({
+      where: { source_reference: predating.key }, raw: true,
+    });
+    expect(predatingRow.status).toBe('converted');
+    const predatingActivated = await GrowthOsProspectEvent.findAll({
+      where: { prospect_id: predatingRow.id, event_type: 'activated' },
+      raw: true,
+    });
+    expect(predatingActivated).toHaveLength(0);
 
     // Re-running the importer over the same sources must duplicate nothing.
     await run({

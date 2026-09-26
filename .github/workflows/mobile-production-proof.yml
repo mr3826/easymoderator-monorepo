@@ -7,7 +7,8 @@ name: Mobile Production Proof
 #   designated test merchant's password lives, and its reviewer gate applies.
 # - EXPECT_MOBILE_API=disabled proves the rollback state and uses no credential.
 # - Uses the signed APK that mobile-release.yml already built for the current
-#   EasyMod-mobile source; it never touches the upload key.
+#   EasyMod-mobile source; it never touches the upload key. `variant` picks the
+#   preview (internal QA) or the production (Play) build of that source.
 # - Production access is read-only: HTTPS as the test identities, plus a
 #   log/audit query over SSH that returns counts and mobile-client lines only.
 
@@ -29,6 +30,12 @@ on:
         required: false
         default: true
         type: boolean
+      variant:
+        description: 'Signed build to run on the device: preview (tech.easymod.merchant.preview) or production (tech.easymod.merchant)'
+        required: false
+        default: preview
+        type: choice
+        options: [preview, production]
 
 concurrency:
   group: mobile-production-proof
@@ -53,6 +60,7 @@ jobs:
       EXPECTED_SHA: ${{ inputs.expected_sha }}
       EXPECT_MOBILE_API: ${{ inputs.expect_mobile_api }}
       RUN_DEVICE: ${{ inputs.expect_mobile_api == 'enabled' && inputs.device }}
+      RELEASE_VARIANT: ${{ inputs.variant || 'preview' }}
       PROOF_CLIENT: android/production-proof-${{ github.run_id }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -68,6 +76,17 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::expected_sha must be a full lowercase SHA'; exit 1; }
+          # Each variant's identity, as app.config.ts builds it and mobile-release.yml names it.
+          case "$RELEASE_VARIANT" in
+            preview) app_id=tech.easymod.merchant.preview; scheme=easymodmerchantpreview; artifact=mobile-release ;;
+            production) app_id=tech.easymod.merchant; scheme=easymodmerchant; artifact=mobile-release-production ;;
+            *) echo '::error::variant must be preview or production'; exit 1 ;;
+          esac
+          {
+            echo "MAESTRO_PROOF_APP_ID=$app_id"
+            echo "MAESTRO_PROOF_SCHEME=$scheme"
+            echo "RELEASE_ARTIFACT=$artifact"
+          } >> "$GITHUB_ENV"
           mkdir -p proof
           echo "PROOF_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           echo "PROOF_MISSING_ID=$(node -p 'crypto.randomUUID()')" >> "$GITHUB_ENV"
@@ -99,18 +118,23 @@ jobs:
             echo "::error::EasyMod-mobile changed after $release_sha; wait for mobile-release.yml to sign the current source"
             exit 1
           fi
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n "mobile-release-$release_sha" -D signed
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n "$RELEASE_ARTIFACT-$release_sha" -D signed
           (cd signed/release && sha256sum --check SHA256SUMS)
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_run=$run_id" >> "$GITHUB_OUTPUT"
-          echo "signed release: run $run_id, source $release_sha"
+          echo "signed $RELEASE_VARIANT release: run $run_id, source $release_sha"
 
       - name: Verify the APK is signed by the pinned upload key
         if: ${{ !cancelled() && steps.release.outcome == 'success' }}
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
         run: >-
           node EasyMod-mobile/scripts/verify-android-artifact.js
           --apk signed/release/app-release.apk
-          --package tech.easymod.merchant.preview
+          --aab signed/release/app-release.aab
+          --package "$MAESTRO_PROOF_APP_ID"
+          --variant "$RELEASE_VARIANT"
+          --source-sha "$RELEASE_SHA"
           --abis armeabi-v7a,arm64-v8a,x86,x86_64
           --expect-signer "$(node -p "require('./EasyMod-mobile/release-signing.json').certificateSha256")"
           --out proof/signed-artifact

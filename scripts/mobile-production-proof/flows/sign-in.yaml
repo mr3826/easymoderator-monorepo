@@ -1,4 +1,4 @@
-appId: tech.easymod.merchant.preview
+appId: ${MAESTRO_PROOF_APP_ID}
 # Shared password step for the production proof. Maestro reads MAESTRO_* from the
 # environment, so the credential never appears on a command line or in this file.
 ---
