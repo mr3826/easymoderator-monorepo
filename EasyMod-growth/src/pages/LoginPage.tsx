@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
@@ -11,6 +11,24 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Consume-on-read must not happen in the state initializer: StrictMode
+  // double-invokes it in development, which would erase the flash before the
+  // committed render sees it. Read here, clear in the mount effect.
+  const [mfaJustEnrolled] = useState(() => {
+    try {
+      return window.sessionStorage.getItem('growth-os.mfa-enrolled.v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!mfaJustEnrolled) return;
+    try {
+      window.sessionStorage.removeItem('growth-os.mfa-enrolled.v1');
+    } catch {
+      // Best-effort cleanup; the flag is scoped to this tab.
+    }
+  }, [mfaJustEnrolled]);
 
   if (auth.status === 'authenticated') {
     const redirectTo = typeof location.state === 'object' && location.state && 'from' in location.state
@@ -87,6 +105,9 @@ export function LoginPage() {
             {auth.error ? <p className="form-error">{auth.error}</p> : null}
             {typeof location.state === 'object' && location.state && 'passwordChanged' in location.state && location.state.passwordChanged ? (
               <p className="state-copy" role="status">Password changed. Sign in with your new password.</p>
+            ) : null}
+            {mfaJustEnrolled ? (
+              <p className="state-copy" role="status">MFA enabled. Sign in again to complete verification.</p>
             ) : null}
             <button className="primary-button" type="submit" disabled={submitting}>
               <LogIn aria-hidden="true" />

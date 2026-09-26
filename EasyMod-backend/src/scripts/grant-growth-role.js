@@ -15,6 +15,7 @@ const { sequelize } = require('../utils/database/database-setup');
 const User = require('../modules/user/user.entity');
 const roleService = require('../modules/growth-os/growth-os.roles.service');
 const { GROWTH_OS_ROLES } = require('../modules/growth-os/growth-os.permissions');
+const { closeAllRedis } = require('../config/redis');
 
 const VALID_ROLES = [GROWTH_OS_ROLES.SUPER_ADMIN];
 const USAGE = 'Usage: GROWTH_BOOTSTRAP_ACTOR_EMAIL=<configured-operator-email> node src/scripts/grant-growth-role.js <email> <SUPER_ADMIN>';
@@ -63,6 +64,11 @@ async function run(args = process.argv.slice(2)) {
         return { email, role, actor: actorUser.id, result, userId: user.id };
     } finally {
         await sequelize.close().catch(() => {});
+        // bootstrapRole invalidates live sessions and purges role caches, so
+        // Redis clients are lazily connected with ref'd handles. Close them or
+        // the process outlives the completed grant and keeps the privileged
+        // SSH channel open until the transport command timeout.
+        await closeAllRedis().catch(() => {});
     }
 }
 

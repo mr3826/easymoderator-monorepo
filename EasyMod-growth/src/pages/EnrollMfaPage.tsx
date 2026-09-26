@@ -43,8 +43,14 @@ export function EnrollMfaPage() {
     setActionError(null);
     try {
       await growthApi.enableTwoFactor(token.trim());
-      await auth.logout();
       setDone(true);
+      // The enrollment endpoint rotates credentials. A one-shot sessionStorage
+      // flash survives the route guard's redirect to sign-in (a router-state
+      // hand-off races the guard's own Navigate), mirroring the forced
+      // password-change confirmation UX.
+      try { window.sessionStorage.setItem('growth-os.mfa-enrolled.v1', '1'); } catch { /* storage optional */ }
+      await auth.logout();
+      navigate('/login', { replace: true });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Verification failed. Try again.');
     } finally {
@@ -70,9 +76,10 @@ export function EnrollMfaPage() {
         <p className="eyebrow">Internal workspace</p>
         <h1 id="mfa-title">Add multi-factor authentication</h1>
         <p>
-          Super Admin access requires a time-based one-time password (TOTP).
-          Add the secret below to your authenticator app, then confirm with a
-          generated code.
+          The Growth workspace requires a time-based one-time password (TOTP)
+          for operator accounts because records contain merchant contact
+          details. Add the secret below to your authenticator app, then confirm
+          with a generated code.
         </p>
 
         {done ? (

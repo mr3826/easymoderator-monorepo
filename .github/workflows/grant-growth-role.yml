@@ -78,6 +78,10 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 120s
+          # `timeout` covers the SSH connection only; the remote command gets
+          # appleboy's 10-minute default. Cap it explicitly so a transport
+          # default can never mislabel a committed grant as a failed run.
+          command_timeout: 15m
           # Forward inputs as named env vars so they are not interpolated into
           # the remote shell (avoids command injection through the email field).
           envs: TARGET_EMAIL,TARGET_ROLE,BOOTSTRAP_ACTOR_EMAIL,GITHUB_ACTOR
