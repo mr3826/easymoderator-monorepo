@@ -24,6 +24,20 @@ function makeAnalytics(overrides: Partial<GrowthAnalyticsResponse> = {}): Growth
     lostReasons: { price: 4 },
     timing: { medianHoursToFirstContact: 6.5, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
     leadToActivation: 5,
+    followupDiscipline: {
+      total: 9, open: 3, completed: 5, cancelled: 1,
+      completedOnTime: 4, completedLate: 1, overdueOpen: 2, onTimeRatePct: 80,
+    },
+    byOwner: [{
+      ownerUserId: 'owner-1',
+      displayName: 'Rumi Operator',
+      created: 4,
+      qualified: 2,
+      converted: 1,
+      qualificationRatePct: 50,
+      activationRatePct: 25,
+    }],
+    unassigned: { openCount: 2, oldestSourceRecordedAt: '2026-09-01T06:00:00.000Z', oldestAgeDays: 12 },
     cohort: {
       basis: 'source_recorded_at',
       importedAt: 'created_at',
@@ -94,6 +108,18 @@ describe('AnalyticsPage', () => {
       .find((link) => (link.getAttribute('href') ?? '').startsWith('/prospects?sourceRecordedAfter='));
     expect(createdLink).toBeDefined();
     expect(createdLink?.textContent).toBe('100');
+  });
+
+  it('renders follow-up discipline, owner performance, and unassigned age', async () => {
+    vi.spyOn(workspaceApi, 'growthAnalytics').mockResolvedValue(makeAnalytics());
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Follow-up discipline' });
+    expect(screen.getByText('80%')).toBeInTheDocument();
+    const ownerLink = screen.getByRole('link', { name: 'Rumi Operator' });
+    expect(ownerLink).toHaveAttribute('href', '/prospects?owner=owner-1');
+    expect(screen.getByText(/2 unassigned live prospects · oldest 12 days/)).toBeInTheDocument();
   });
 
   it('scales funnel bars proportionally to the largest stage', async () => {
