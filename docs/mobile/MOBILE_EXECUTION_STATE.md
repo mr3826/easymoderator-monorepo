@@ -608,6 +608,7 @@ PHYSICAL_RUN_5=state-preflight PASS, logout PASS; stopped at two-factor by owner
 PHYSICAL_RUN_7=state-preflight, session-expiry, session-revocation PASS with the pull-retry sub-flow (one pull each)
 PHYSICAL_RESULT=PASS (each of the 15 flows passed on the phone at least once; no app crash; every failure was a flow or Maestro issue)
 CI_E2E_FLAKE=session-revocation failed once on the API 34 emulator (Mobile CI 36217683123): the pull gesture never reached the app, and no request followed the revocation. session-expiry and session-revocation now pull through support/pull-to-refresh-until-signed-out.yaml, which waits for the list to settle and retries the gesture only (at most 3 times). The final login and no-Home assertions are unchanged.
+CI_LAUNCH_CHECK_FLAKE=the API 24 install/launch check timed out once (Mobile CI 36222583388). The emulator's own Google Messaging app crashed on the fresh boot, and its "has stopped" dialog hid the app's login screen from uiautomator; the app itself was displayed in 1.1 s with no crash. android-install-launch-check.js now closes other apps' system dialogs before each look, and on failure saves the window dump and a screenshot. A crash of this app still fails the check.
 DEVICE_HYGIENE=only the test app and disposable seed accounts; test app and Maestro driver apps uninstalled; airplane mode and stay-awake restored
 
 MOBILE_CHECKS=PASS (typecheck, lint, Jest 24 suites / 251 tests, npm audit)

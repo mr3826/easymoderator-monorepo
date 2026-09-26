@@ -39,7 +39,17 @@ function waitFor(description, predicate, timeoutMs) {
   throw new Error(`Timed out after ${timeoutMs / 1000}s waiting for ${description}`);
 }
 
+// A freshly booted emulator image sometimes crashes one of its own apps (seen:
+// Google Messaging on API 24), and the "has stopped" dialog then covers the
+// screen, so `uiautomator dump` captures the dialog instead of this app.
+// Closing system dialogs before each look removes only that overlay. A crash
+// of this app still fails assertNoCrash, through the crash buffer and pidof.
+function dismissForeignSystemDialogs() {
+  tryRun(['shell', 'am', 'broadcast', '-a', 'android.intent.action.CLOSE_SYSTEM_DIALOGS']);
+}
+
 function loginScreenVisible() {
+  dismissForeignSystemDialogs();
   tryRun(['shell', 'uiautomator', 'dump', '/sdcard/window.xml']);
   return /login-email-input/.test(tryRun(['shell', 'cat', '/sdcard/window.xml']));
 }
@@ -94,6 +104,9 @@ try {
   fs.writeFileSync(path.join(outDir, 'install-launch.txt'), `RESULT=FAIL ${error.message}\n`);
   try {
     fs.writeFileSync(path.join(outDir, 'install-launch-logcat.txt'), tryRun(['logcat', '-d', '-v', 'threadtime']).slice(-2_000_000));
+    // What was on screen when the check gave up.
+    fs.writeFileSync(path.join(outDir, 'install-launch-window.xml'), tryRun(['shell', 'cat', '/sdcard/window.xml']));
+    fs.writeFileSync(path.join(outDir, 'install-launch-failure.png'), run(['exec-out', 'screencap', '-p'], { encoding: 'buffer' }));
   } catch {
     // best effort
   }
