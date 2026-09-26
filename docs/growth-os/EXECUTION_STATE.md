@@ -1168,3 +1168,144 @@ session value is recorded here.
   `v1.0.2-rc3` release worktree and its dirty files, mobile branches, mobile
   CI, and mobile source were never reset, rebased, stashed, cleaned, deleted,
   committed into, or otherwise modified by this task.
+
+---
+
+## 2026-09-26 — MVP-1 Remediation, Real-Data Cutover & Value-Measurement Receipt
+
+Independent-audit remediation executed end to end against production. Scope
+discipline: no new product features; frozen roadmap untouched; mobile
+worktrees/branches never modified.
+
+### Remediation PRs (all merged to main, all gates green)
+
+- PR #179 `fix/growth-mvp1-remediation` (merge `831fb45e`): Quick Add
+  browser-local due-time defect closed via the canonical
+  `fromBusinessDateTimeLocal`/`toBusinessDateTimeLocal` contract (pinned by
+  `growthTime` unit tests, a deterministic Quick Add assertion, and a
+  Playwright spec executed in BOTH Asia/Dhaka and UTC browser projects);
+  canonical `activated=true` list filter (converted + active linked shop)
+  shared by Home, Analytics funnel, Sources column, and every drill-through;
+  merged tombstones excluded from default lists and search; frozen
+  `stalledBefore` boundary makes stalled drill-throughs equal their card;
+  Operations AI metrics now count activity inside the window
+  (`message.created_at`, distinct AI-touched conversations); notes and
+  timeline events surface operator names with removed/system/redacted
+  fallbacks (no raw UUIDs); URL-backed filter state with live query-only
+  navigation sync while search text stays out of URLs by PII policy;
+  dead `ATTENTION_WINDOW_DAYS` removed. Review round: validator rejects
+  contradictory `activated`+`status/stage`, own-note authorship parity under
+  redaction, Quick Add full schedule-block reset, FollowUpsPage bare-navigation
+  tab sync, panel parser alignment.
+- PR #184 `fix/growth-mvp1-security-workflows` (merge `53cfa8e9`): every
+  canonical Growth session now requires the MFA assurance claim
+  (`GROWTH_USER` joins `MFA_REQUIRED_ROLES`; legacy roles follow via canonical
+  alias); enrollment copy operator-generic; StrictMode-safe completion
+  hand-off to sign-in; auth boundary runs BEFORE TOTP challenge issuance
+  (suspended operators get 403, never a fresh temp token); subordinate
+  GROWTH_USER browser E2E proves rotation → denial-without-MFA → enrollment →
+  assured re-login → suspend/revoke fail-closed; `grant-growth-role` closes
+  Redis handles (committed-grant-then-red-X hang root cause); explicit
+  `command_timeout` on privileged SSH steps (grants 15m, deploy 30m);
+  `grant-platform-admin` rebuilt to Growth parity (advisory + row locks,
+  mandatory audit row with `GITHUB_ACTOR`, transactional session
+  invalidation, strict cache re-confirm incl. NOOP convergence, distinct exit
+  codes) and its workflow gained actor binding; update-prospect duplicate
+  probe no longer discloses out-of-scope prospect ids (race path included,
+  unit + integration regression).
+- PR #186 `fix/growth-mvp1-edge-isolation` (merge `bdafc560`): Caddy no
+  longer `depends_on` growth-frontend — merchant TLS edge boots without the
+  internal SPA (per-request upstream resolution; guard-pinned); backups no
+  longer hard-fail when the internal SPA is down (deployment-record digest
+  fallback, digest-pinned contract preserved); remaining privileged SSH
+  workflows capped (`backup` 30m, restore drill 30m, `purge` 15m, `qdrant`
+  45m, `seed-meta-review` 15m) with a directory-wide guard rule that any
+  appleboy workflow must declare `command_timeout`.
+- PR #185 `feat/growth-mvp1-data-cutover` (merge `c3388832`): activation
+  import rule — imported converted rows carry a canonical `activated` event
+  ONLY with linked-shop `first_ai_reply` evidence, written at the historical
+  instant; no evidence → no synthesized event (counted in funnel, excluded
+  from timing). Analytics measurement (existing tables only): follow-up
+  discipline (on-time/late/overdue/cancelled + rate), owner performance
+  (created/qualified/converted + rates, cohort basis), unassigned open age.
+  Protected `run-growth-importer.yml`: dry-run default, literal-phrase apply
+  authorization, actor/environment/concurrency gates, host-side input
+  hardening, receipts on the droplet.
+- PRs #187/#188/#190 (merges before `ec8fd4fc`): importer workflow quoting
+  fix (single quotes inside the single-quoted ssh program — fail-closed, zero
+  writes), per-row receipt evidence echo, and rc-capture so row failures
+  never abort before evidence and the idempotency gate.
+- PR #193 `fix/growth-cutover-hardening` (merge `e6bf0c7e`): adversarial
+  review hardening — idempotency proof requires a demonstrably COMPLETE
+  verification scan (SOURCE_READ_FAILED sentinel refused, full row
+  accounting, identical rejected-row set); activation clamp drop logged with
+  source reference; `byOwner` redaction parity (null owner ids for redacted
+  scopes); AnalyticsPage/SourcesPage version-skew normalization (backend
+  rollback degrades to neutral values, not an app-level crash); guard tests
+  pin every gate line.
+
+### Runtime deployment (exact-SHA, gate discipline)
+
+- Interim deploy `bdafc560` (run `36243485372` + growth swap `36244737728`,
+  growth digest `d2cb6c40…`) — verified: `/api/version` gitSha, 58
+  migrations, growth build-info aligned, boundary 401, merchant hosts 200.
+- FINAL deploy `e6bf0c7e` (run `36250821060`, success): backend
+  `/api/version` = `e6bf0c7ea038ab7ca092f0edb25a691342ed6243`,
+  `migrations.count=58`, latest `20260914_001_native_session_refresh_lineage`;
+  growth `build-info.json` = same SHA (image digest
+  `sha256:85a3ee2241a9912779cd6268b6d0ea8d4b69772ea253374a8efe578dfc133b68`
+  built by growth-os run `36250464586`); growth `/health/ready` 200; growth
+  root 200; unauthenticated `/api/internal/growth-os/session` 401; apex and
+  app hosts 200. `PRODUCTION_DEPLOY_ENABLED` restored to `false` after each
+  dispatch window. Mobile wave-2 backend code rode main into this runtime per
+  monorepo contract (`MOBILE_API_ENABLED` already true; native routes gated
+  by their own tests).
+
+### Real-data cutover (Workstreams J/K)
+
+- Dry-run review passes: runs `36245996452` (counts), `36246299579` (evidence
+  plumbing proved), `36247168710` (row evidence): `SOURCE_ROWS=6` (all
+  `crm_lead` signups; `partner_applications` contributed 0),
+  `WOULD_CREATE=4`, `SKIPPED_DUPLICATE=1`, `REJECTED=1`.
+- APPLY run `36251822972` (authorization phrase + production environment
+  approval): `IMPORTED=4` (`crm:lead:signup:7de23c4f…`, `3d0624d6…`,
+  `36b74cb3…`, `fe866b70…` → ledger ids `2c92e2af…`*, `d5d85436…`,
+  `b21730a7…`, `d1db0b51…`), `MERGED=0`, `SKIPPED=1` (identity dedupe onto
+  existing prospect `2c92e2af…`), `REJECTED=1`
+  (`crm:lead:signup:7d35049d-ec5a-431b-b2a5-a857181efc2f`,
+  `GROWTH_OS_PROSPECT_INVALID_INPUT` — permanently invalid legacy source
+  row; recorded in host receipts for triage; the importer correctly refused
+  to fabricate data). Job exit 1 is the designed signal for a rejected row.
+- IDEMPOTENCY (enforced gate, not trust): post-apply verification dry-run —
+  `VERIFY_ROWS=6` (== apply total), `VERIFY_READ_FAILURE=false`,
+  `VERIFY_FAILED=1` (== apply failed set), **`SECOND_RUN_WOULD_CREATE=0`**,
+  `VERIFY_COMPLETED_WITH_KNOWN_ROW_REJECTIONS`. All five created/deduped
+  sources resolved to their ledger ids on re-run.
+- Receipts persisted on the droplet:
+  `/root/growth-os-receipts/growth-prospect-import-gha-36251822972-{apply,verify}.{stdout,receipt}.json`
+  (source references and outcomes only — no contact PII by design).
+- Post-import health: `/api/version` 200, backend `/health/ready` 200, growth
+  `/health/ready` 200, apex 200, app 200, growth boundary 401.
+
+### Value measurement baseline (Workstream L)
+
+Analytics now computes from the ledger alone: follow-up discipline
+(on-time/late/overdue-open/cancelled + on-time rate), owner performance
+(created/qualified/converted + qualification/activation rates per owner on
+the source cohort), unassigned open count + oldest age. No browser telemetry
+added. Baseline values require an authenticated operator session to read
+(`PROOF_REQUIRES_OPERATOR_SESSION` for numeric capture); the definitions and
+queries are deployed at `e6bf0c7e`.
+
+### Status
+
+```text
+MVP1_REMEDIATION_STATUS=COMPLETE
+REAL_DATA_CUTOVER_STATUS=COMPLETE (4 imported, 1 deduped, 1 rejected-and-recorded)
+IMPORT_IDEMPOTENCY=VERIFIED (SECOND_RUN_WOULD_CREATE=0, completeness-gated)
+PRODUCTION_RUNTIME_SHA=e6bf0c7ea038ab7ca092f0edb25a691342ed6243
+DEPLOYMENT_GATE=false (restored)
+NEW_FEATURE_DEVELOPMENT=FROZEN_PENDING_USAGE_EVIDENCE
+VALUE_REALIZATION=NOT_YET_PROVEN (observation window starts with real operator usage)
+MOBILE_WORK_PROTECTED=YES
+```

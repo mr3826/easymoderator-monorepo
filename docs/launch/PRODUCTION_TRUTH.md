@@ -230,3 +230,36 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-dep
 - `UNVERIFIED`: authenticated Growth operator walkthrough, Growth image digest,
   Sentry receipt, and live rollback execution remain external/unavailable proof
   boundaries; no claim is made for them.
+
+---
+
+## 2026-09-26T15:20Z — MVP-1 Remediation Runtime + Real-Data Cutover
+
+- `PRODUCTION_RUNTIME_SHA`: `e6bf0c7ea038ab7ca092f0edb25a691342ed6243`
+  (deploy run `36250821060`, success, `production` environment approved).
+  Backend `/api/version` and Growth `build-info.json` both report this SHA;
+  the Growth image is digest-pinned
+  `sha256:85a3ee2241a9912779cd6268b6d0ea8d4b69772ea253374a8efe578dfc133b68`.
+- `MIGRATION`: `/version` reports 58 migrations, latest
+  `20260914_001_native_session_refresh_lineage` (mobile wave-2 lineage;
+  Growth schema unchanged since `20260925_001`).
+- `READINESS`: backend `/health/ready` 200; growth `/health/ready` 200;
+  growth root 200; apex 200; app 200.
+- `AUTHORIZATION_BOUNDARY`: unauthenticated
+  `/api/internal/growth-os/session` and `/prospects` return 401; non-proxied
+  API paths on the growth host return 404.
+- `EDGE_ISOLATION`: Caddy no longer depends on the internal Growth SPA
+  container at boot (PR #186); merchant hosts verified 200 with Growth
+  routing intact.
+- `REAL_DATA_IMPORT`: protected `run-growth-importer` apply run `36251822972`
+  imported 4 historical prospects (1 additional source deduplicated onto an
+  existing identity; 1 permanently invalid source row rejected and recorded).
+  Post-apply verification: full 6-row scan, identical rejection set,
+  `SECOND_RUN_WOULD_CREATE=0` — idempotency enforced by gate, receipts under
+  `/root/growth-os-receipts/`.
+- `DEPLOYMENT_GATE`: `PRODUCTION_DEPLOY_ENABLED=false` restored
+  (2026-09-26T15:17Z window closed after final verification).
+- `UNVERIFIED`: authenticated operator walkthrough of the imported ledger and
+  numeric value-measurement baseline require an operator-held MFA session
+  (`PROOF_REQUIRES_OPERATOR_SESSION`); Sentry provider receipt remains
+  `USER_CONFIGURATION_REQUIRED`. No claim is made beyond deployed evidence.
