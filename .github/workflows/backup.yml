@@ -98,6 +98,9 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 300s
+          # pg_dump + validation + off-site upload must not be reaped by the
+          # transport's hidden 10-minute command default.
+          command_timeout: 30m
           envs: DO_TOKEN,BACKUP_ENCRYPTION_KEY,SPACES_ACCESS_KEY_ID,SPACES_SECRET_ACCESS_KEY,SPACES_ENDPOINT,BACKUP_BUCKET,OFFSITE_RETENTION_DAYS,BACKUP_RUN_ID
           script: |
             set -euo pipefail
@@ -139,7 +142,17 @@ jobs:
               exit 1
             fi
             if [ -z "$RUNNING_GROWTH_IMAGE" ]; then
-              echo "::error::BACKUP_GROWTH_IMAGE_CONTRACT_FAILED growth-frontend-is-not-running"
+              # Backups protect merchant data; the internal Growth SPA is not
+              # part of that contract and must not block one. Satisfy the
+              # compose interpolation contract with the deployment-recorded
+              # pinned reference instead of the running container.
+              echo "::notice::BACKUP_GROWTH_IMAGE_SOURCE=deployment-record growth-frontend is not running"
+              # The host is not guaranteed to run node; parse the recorded
+              # deployment metadata with portable tools only.
+              RUNNING_GROWTH_IMAGE=$(sed -n 's/.*"GROWTH_IMAGE_DIGEST": *"\([^"]*\)".*/\1/p' /opt/easymod/deployment-metadata.json 2>/dev/null | head -n 1)
+            fi
+            if [ -z "$RUNNING_GROWTH_IMAGE" ]; then
+              echo "::error::BACKUP_GROWTH_IMAGE_CONTRACT_FAILED no running container or deployment-record reference for growth"
               exit 1
             fi
 
@@ -415,6 +428,7 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 900s
+          command_timeout: 30m
           envs: RESTORE_DRILL_RUN_ID,FORWARD_MIGRATION_IMAGE,GH_TOKEN,GH_ACTOR,GHCR_BACKEND
           script: |
             set -euo pipefail

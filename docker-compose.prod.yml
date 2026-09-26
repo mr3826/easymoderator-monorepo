@@ -42,12 +42,16 @@ services:
       - caddy_config:/config
     networks:
       - internal
+    # No dependency on growth-frontend by design: Growth is the internal
+    # staff workspace, and a broken or stopped SPA image must never cold-block
+    # the TLS edge that serves merchant traffic (api/app/easymod.tech).
+    # Caddy resolves `reverse_proxy growth-frontend:8080` per request, so the
+    # growth.easymod.tech host answers 502 until that container is up while
+    # every merchant host keeps working; restoring growth restores its route.
     depends_on:
       backend:
         condition: service_healthy
       frontend:
-        condition: service_started
-      growth-frontend:
         condition: service_started
 
   # ── Backend: Express API ──────────────────────────────────────────────────
