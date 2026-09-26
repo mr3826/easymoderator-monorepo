@@ -28,9 +28,11 @@ describe('growthTime business-day contract (Asia/Dhaka, fixed +06)', () => {
   it('renders instants in the business zone independent of host locale', () => {
     // 2026-09-27T18:00Z is 2026-09-28 00:00 in Dhaka — the rendered day must
     // be the business day, never the UTC calendar day.
+    // Digit-level assertions keep this host-locale independent: the day
+    // component must be 28 (business day), never 27 (UTC calendar day).
     const rendered = formatGrowthDateTime('2026-09-27T18:00:00.000Z');
-    expect(rendered).toMatch(/Sep(tember)? 28/);
-    expect(rendered).not.toMatch(/Sep(tember)? 27/);
+    expect(rendered).toMatch(/28(?!\d)/);
+    expect(rendered).not.toMatch(/(^|\D)27(\D|$)/);
   });
 
   it('rejects malformed datetime-local values instead of guessing', () => {

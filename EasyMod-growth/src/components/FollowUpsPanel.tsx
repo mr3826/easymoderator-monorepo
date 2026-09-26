@@ -68,7 +68,9 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
 
   async function addFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const due = new Date(dueAt);
+    // Validate with the same business-zone parser used for the payload so the
+    // guard can never disagree with what actually gets submitted.
+    const due = fromBusinessDateTimeLocal(dueAt);
     if (!dueAt || Number.isNaN(due.getTime())) {
       setFormError('Choose a valid due date and time.');
       return;
@@ -82,7 +84,7 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
     try {
       await workspaceApi.createFollowup({
         prospectId,
-        dueAt: fromBusinessDateTimeLocal(dueAt).toISOString(),
+        dueAt: due.toISOString(),
         action: action.trim(),
         note: note.trim() || null,
       });

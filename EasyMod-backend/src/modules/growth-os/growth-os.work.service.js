@@ -370,19 +370,23 @@ async function updateFollowup({
 
 // ── Notes ───────────────────────────────────────────────────────────────────
 
-function toApiNote(row, { redactAuthor = false } = {}) {
-  const author = redactAuthor ? null : row.authorUser || null;
+function toApiNote(row, { redactAuthor = false, viewerUserId = null } = {}) {
+  // A redacted scope still sees its own authorship attributed to itself; only
+  // other people's identities are hidden, keeping create and list responses
+  // consistent for the acting operator.
+  const redacted = redactAuthor === true && row.author_user_id !== viewerUserId;
+  const author = redacted ? null : row.authorUser || null;
   return {
     id: row.id,
     targetType: row.target_type,
     targetId: row.target_id,
-    authorUserId: redactAuthor ? null : (row.author_user_id || null),
+    authorUserId: redacted ? null : (row.author_user_id || null),
     // Live-joined projection for operator-facing attribution. A null
     // authorUserId without authorRedacted means the author record no longer
     // exists (FK SET NULL); the UI renders that as a removed-operator
     // fallback rather than a name or a raw UUID.
     authorDisplayName: author ? (author.full_name || author.email || null) : null,
-    authorRedacted: redactAuthor === true,
+    authorRedacted: redacted,
     body: row.body,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -485,7 +489,7 @@ async function listNotes({
     offset: (resolvedPage - 1) * resolvedPageSize,
   });
   return {
-    items: rows.map((row) => toApiNote(row, { redactAuthor })),
+    items: rows.map((row) => toApiNote(row, { redactAuthor, viewerUserId: actorUserId })),
     total: count,
     page: resolvedPage,
     pageSize: resolvedPageSize,

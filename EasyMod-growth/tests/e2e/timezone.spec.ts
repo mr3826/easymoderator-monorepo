@@ -71,8 +71,6 @@ test.describe('follow-up date browser-independence contract', () => {
     const row = page.locator('tr', { hasText: action });
     await expect(row).toBeVisible();
     await expect(row.locator('time')).toHaveText(expectedDueText);
-    const dayNumber = String(Number.parseInt(selectedDay.slice(8, 10), 10));
-    await expect(row.locator('time')).toContainText(dayNumber);
 
     // Completing must not change the due day; the row keeps one explicit
     // Due cell and one labeled Completed moment.
