@@ -151,7 +151,6 @@ async function run(environment = process.env) {
                 email,
                 password: await hashPassword(password),
                 full_name: displayName,
-                role: 'internal',
                 is_active: true,
                 is_verified: true,
                 platform_role: null,
