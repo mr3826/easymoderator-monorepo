@@ -378,9 +378,15 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
     byOwner: ownerRows
       .map((row) => {
         const user = ownerById.get(row.ownerUserId);
+        // Same attribution policy as the prospect list: redacted scopes see
+        // neither operator names NOR owner ids — only cohort numbers, so a
+        // source-scoped reader cannot build per-operator profiles from them.
+        const displayName = scope.redacted === true
+          ? 'Operator details restricted'
+          : (user ? (user.full_name || user.email) : 'Former operator (account removed)');
         return {
-          ownerUserId: row.ownerUserId,
-          displayName: user ? (user.full_name || user.email) : 'Former operator (account removed)',
+          ownerUserId: scope.redacted === true ? null : row.ownerUserId,
+          displayName,
           created: Number(row.created),
           qualified: Number(row.qualified),
           converted: Number(row.converted),

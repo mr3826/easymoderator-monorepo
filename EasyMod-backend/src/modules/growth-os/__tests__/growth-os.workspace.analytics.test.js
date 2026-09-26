@@ -18,6 +18,7 @@ jest.mock('../growth-os.prospect.scope', () => ({
 }));
 
 const { getGrowthAnalytics } = require('../growth-os.workspace.service');
+const { resolveProspectScope } = require('../growth-os.prospect.scope');
 
 describe('Growth workspace analytics', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -139,6 +140,34 @@ describe('Growth workspace analytics', () => {
     expect(result.unassigned.openCount).toBe(2);
     expect(result.unassigned.oldestSourceRecordedAt).toBe('2026-09-01T06:00:00.000Z');
     expect(result.unassigned.oldestAgeDays).toBeGreaterThanOrEqual(0);
+  });
+
+  test('hides owner display names from redacted source scopes', async () => {
+    resolveProspectScope.mockReturnValueOnce({
+      kind: 'source', where: { source: 'facebook' }, redacted: true,
+    });
+    mockProspect.findAll
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        ownerUserId: 'owner-1', created: 2, qualified: 1, converted: 1,
+      }])
+      .mockResolvedValueOnce([]);
+    mockEvent.findAll.mockResolvedValueOnce([]);
+    mockFollowup.count.mockResolvedValue(0);
+    mockUser.findAll.mockResolvedValueOnce([
+      { id: 'owner-1', full_name: 'Visible Name', email: 'v@example.test' },
+    ]);
+
+    const result = await getGrowthAnalytics({ access: {}, userId: 'marketer-1', windowDays: 90 });
+
+    expect(result.byOwner[0].displayName).toBe('Operator details restricted');
+    expect(result.byOwner[0].ownerUserId).toBeNull();
+    expect(JSON.stringify(result.byOwner)).not.toContain('Visible Name');
+    expect(JSON.stringify(result.byOwner)).not.toContain('owner-1');
   });
 
   test('reports null discipline rates instead of dividing by zero', async () => {
