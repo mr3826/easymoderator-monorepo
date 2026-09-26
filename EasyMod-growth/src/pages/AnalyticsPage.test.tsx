@@ -85,6 +85,15 @@ describe('AnalyticsPage', () => {
     expect(statusLink.getAttribute('href')).toContain('status=new');
     expect(statusLink.getAttribute('href')).toContain('sourceRecordedAfter=');
     expect(statusLink.getAttribute('href')).toContain('sourceRecordedBefore=');
+    const activatedLink = screen.getAllByRole('link')
+      .find((link) => (link.getAttribute('href') ?? '').includes('activated=true'));
+    expect(activatedLink?.getAttribute('href')).toBe(
+      '/prospects?activated=true&sourceRecordedAfter=2026-06-15T08%3A00%3A00.000Z&sourceRecordedBefore=2026-09-13T08%3A00%3A00.000Z',
+    );
+    const createdLink = screen.getAllByRole('link')
+      .find((link) => (link.getAttribute('href') ?? '').startsWith('/prospects?sourceRecordedAfter='));
+    expect(createdLink).toBeDefined();
+    expect(createdLink?.textContent).toBe('100');
   });
 
   it('scales funnel bars proportionally to the largest stage', async () => {

@@ -110,6 +110,35 @@ describe('ProspectListPage', () => {
     expect(screen.getByLabelText('Source')).toHaveValue('manual_entry');
   });
 
+  it('hydrates the canonical activated drill, frozen stalled boundary, linkage, and page', async () => {
+    permissionMock.mockReturnValue(true);
+    const getProspects = vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);
+
+    renderPage('/prospects?activated=true&stalledBefore=2026-08-29T08%3A00%3A00.000Z&linked=false&page=2&pageSize=50');
+
+    await waitFor(() => expect(getProspects).toHaveBeenCalledWith({
+      page: 2,
+      pageSize: 50,
+      activated: true,
+      stalledBefore: '2026-08-29T08:00:00.000Z',
+      linked: false,
+    }));
+  });
+
+  it('reset clears URL-derived drill bounds instead of restoring them', async () => {
+    const user = userEvent.setup();
+    permissionMock.mockReturnValue(true);
+    const getProspects = vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);
+
+    renderPage('/prospects?status=qualified&stalledBefore=2026-08-29T08%3A00%3A00.000Z');
+    await screen.findByRole('link', { name: 'North Star Retail' });
+    getProspects.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+
+    await waitFor(() => expect(getProspects).toHaveBeenCalledWith({ page: 1, pageSize: 20 }));
+  });
+
   it('ignores unknown search param values', async () => {
     permissionMock.mockReturnValue(true);
     const getProspects = vi.spyOn(growthApi, 'getProspects').mockResolvedValue(result);

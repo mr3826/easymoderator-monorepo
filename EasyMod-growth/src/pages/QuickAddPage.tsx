@@ -12,6 +12,7 @@ import {
 } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { usePermission } from '@/auth/usePermission';
+import { fromBusinessDateTimeLocal, toBusinessDateTimeLocal } from '@/growthTime';
 
 interface QuickAddValues {
   businessName: string;
@@ -40,13 +41,7 @@ function trimmed(value: string) {
   return normalized || undefined;
 }
 
-function pad(value: number) {
-  return String(value).padStart(2, '0');
-}
 
-function toDateTimeLocal(date: Date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 function validate(values: QuickAddValues): string | null {
   if (!values.businessName.trim()) return 'Business name is required.';
@@ -71,7 +66,8 @@ export function QuickAddPage() {
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<ProspectListItem | null>(null);
-  const [scheduleDueAt, setScheduleDueAt] = useState(() => toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+  const [scheduleDueAt, setScheduleDueAt] = useState(() =>
+    toBusinessDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()));
   const [scheduleAction, setScheduleAction] = useState('Call');
   const [scheduleNote, setScheduleNote] = useState('');
   const [scheduling, setScheduling] = useState(false);
@@ -162,7 +158,7 @@ export function QuickAddPage() {
   async function scheduleFirstFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!created) return;
-    const dueDate = new Date(scheduleDueAt);
+    const dueDate = fromBusinessDateTimeLocal(scheduleDueAt);
     if (!scheduleDueAt || Number.isNaN(dueDate.getTime())) {
       setScheduleError('Choose a valid due date and time.');
       return;

@@ -60,18 +60,23 @@ describe('SourcesPage', () => {
 
     expect(await screen.findByText('facebook')).toBeInTheDocument();
     expect(screen.getByText('manual entry')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'facebook' }).getAttribute('href')).toContain('source=facebook');
-    expect(screen.getByRole('link', { name: 'facebook' }).getAttribute('href')).toContain('sourceRecordedAfter=');
-    expect(screen.getByRole('link', { name: 'facebook' }).getAttribute('href')).toContain('sourceRecordedBefore=');
-    expect(screen.getByRole('link', { name: 'manual entry' }).getAttribute('href')).toContain('source=manual_entry');
-    expect(screen.getByRole('link', { name: 'manual entry' }).getAttribute('href')).toContain('sourceRecordedAfter=');
+    expect(screen.getAllByRole('link', { name: 'facebook' })[0].getAttribute('href')).toContain('source=facebook');
+    expect(screen.getAllByRole('link', { name: 'facebook' })[0].getAttribute('href')).toContain('sourceRecordedAfter=');
+    expect(screen.getAllByRole('link', { name: 'facebook' })[0].getAttribute('href')).toContain('sourceRecordedBefore=');
+    expect(screen.getAllByRole('link', { name: 'manual entry' })[0].getAttribute('href')).toContain('source=manual_entry');
+    expect(screen.getAllByRole('link', { name: 'manual entry' })[0].getAttribute('href')).toContain('sourceRecordedAfter=');
 
     const [facebookRow, manualRow] = screen.getAllByRole('row').slice(1);
     expect(within(facebookRow).getByText('facebook')).toBeInTheDocument();
-    expect(within(facebookRow).getByText('40')).toBeInTheDocument();
-    expect(within(facebookRow).getByText('4')).toBeInTheDocument();
+    // Every counted cell drills through to its exact population.
+    expect(within(facebookRow).getByRole('link', { name: '40' }).getAttribute('href'))
+      .toBe('/prospects?source=facebook&sourceRecordedAfter=2026-06-15T08%3A00%3A00.000Z&sourceRecordedBefore=2026-09-13T08%3A00%3A00.000Z');
+    const facebookActivated = within(facebookRow).getByRole('link', { name: '4' });
+    expect(facebookActivated.getAttribute('href')).toContain('source=facebook');
+    expect(facebookActivated.getAttribute('href')).toContain('activated=true');
     expect(within(facebookRow).getByText('10%')).toBeInTheDocument();
-    expect(within(manualRow).getByText('10')).toBeInTheDocument();
+    expect(within(manualRow).getByRole('link', { name: '10' })).toBeInTheDocument();
+    expect(within(manualRow).getByRole('link', { name: '0' }).getAttribute('href')).toContain('activated=true');
     expect(within(manualRow).getByText('0%')).toBeInTheDocument();
     expect(screen.getByText(/controlled source value/)).toBeInTheDocument();
   });
