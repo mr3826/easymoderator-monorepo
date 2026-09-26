@@ -173,7 +173,7 @@ jobs:
             # workflow edit — backup.yml, growth-os.yml, security-scan.yml.
             while IFS= read -r path; do
               case "$path" in
-                EasyMod-backend/*|docker-compose.prod.yml|docker-compose.test.yml|scripts/run-backend-integration.js|scripts/rollback-rehearsal.sh|package.json|package-lock.json|.github/workflows/ci-cd.yml|.github/workflows/grant-growth-role.yml|.github/workflows/seed-initial-growth-admin.yml)
+                EasyMod-backend/*|docker-compose.prod.yml|docker-compose.test.yml|scripts/run-backend-integration.js|scripts/rollback-rehearsal.sh|package.json|package-lock.json|.github/workflows/ci-cd.yml|.github/workflows/grant-growth-role.yml|.github/workflows/seed-initial-growth-admin.yml|.github/workflows/grant-platform-admin.yml)
                   backend=true
                   ;;
               esac

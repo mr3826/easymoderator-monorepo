@@ -171,6 +171,21 @@ describe('production workflow branch safety', () => {
         expect(grantGrowthRoleWorkflow).not.toContain('INITIAL_GROWTH_ADMIN_PASSWORD');
     });
 
+    test('runs the platform-admin grant on the running backend without Compose interpolation', () => {
+        const platformAdminWorkflow = fs.readFileSync(
+            path.resolve(__dirname, '../../../../.github/workflows/grant-platform-admin.yml'),
+            'utf8',
+        );
+        expect(platformAdminWorkflow).toContain("if: github.ref == 'refs/heads/main'");
+        expect(platformAdminWorkflow).toContain('environment: production');
+        expect(platformAdminWorkflow).toContain('group: grant-platform-admin');
+        expect(platformAdminWorkflow).toContain("--filter 'label=com.docker.compose.service=backend'");
+        expect(platformAdminWorkflow).toContain('docker exec \\');
+        expect(platformAdminWorkflow).toContain('node src/scripts/grant-platform-admin.js');
+        expect(platformAdminWorkflow).not.toContain('docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T');
+        expect(workflow).toContain('.github/workflows/grant-platform-admin.yml');
+    });
+
     test('keeps browser and server Sentry configuration boundaries separate', () => {
         expect(workflow).toContain('VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}');
         expect(workflow.match(/VITE_SENTRY_DSN=\$\{\{ vars\.VITE_SENTRY_DSN \}\}/g)).toHaveLength(2);
