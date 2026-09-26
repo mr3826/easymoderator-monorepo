@@ -133,6 +133,7 @@ jobs:
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --apply --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-apply --receipt /tmp/growth-os-receipts/apply.json" \
                     | tee /root/growth-os-receipts/${run_id}-apply.stdout.json
                   docker cp "$backend_container:/tmp/growth-os-receipts/apply.json" "/root/growth-os-receipts/${run_id}-apply.receipt.json"
+                  docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/apply.json\"); for (const row of r.rows) console.log(\"IMPORT_ROW \" + JSON.stringify(row)); console.log(\"IMPORT_SUMMARY \" + JSON.stringify(r.summary));"
                   echo "APPLY_DONE run_id=$run_id"
                   # Idempotency gate: the same ledger must now report zero new
                   # writes. Any would-create row after a completed apply fails
@@ -159,6 +160,10 @@ jobs:
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-dry --receipt /tmp/growth-os-receipts/dry.json" \
                     | tee /root/growth-os-receipts/${run_id}-dry.stdout.json
                   docker cp "$backend_container:/tmp/growth-os-receipts/dry.json" "/root/growth-os-receipts/${run_id}-dry.receipt.json"
+                  # Echo per-row outcomes (source references, outcome, error
+                  # codes only; the receipt format carries no contact fields)
+                  # so an apply decision is reviewed against evidence, not totals.
+                  docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/dry.json\"); for (const row of r.rows) console.log(\"IMPORT_ROW \" + JSON.stringify(row)); console.log(\"IMPORT_SUMMARY \" + JSON.stringify(r.summary));"
                   echo "DRY_RUN_DONE run_id=$run_id"
                 fi
               '
