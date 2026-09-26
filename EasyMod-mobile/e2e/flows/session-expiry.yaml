@@ -23,8 +23,8 @@ tags:
       apiBaseUrl: ${E2E_API_BASE_URL}
       controlToken: ${E2E_CONTROL_TOKEN}
       action: expire-sessions
-- swipe:
-    direction: DOWN
+- runFlow:
+    file: ../support/pull-to-refresh-until-signed-out.yaml
 - extendedWaitUntil:
     visible:
       id: login-email-input

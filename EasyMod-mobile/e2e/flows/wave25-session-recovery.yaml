@@ -26,8 +26,8 @@ env:
       apiBaseUrl: ${E2E_API_BASE_URL}
       email: ${E2E_EMAIL}
       password: ${E2E_PASSWORD}
-- swipe:
-    direction: DOWN
+- runFlow:
+    file: ../support/pull-to-refresh-until-signed-out.yaml
 - extendedWaitUntil:
     visible:
       id: login-email-input

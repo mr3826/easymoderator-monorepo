@@ -570,6 +570,7 @@ WAVE_3_STATUS=LOCKED
 ### Wave 2.5 - Release closure (2026-09-26, PR #172)
 
 This receipt draws on four sources:
+
 - Mobile CI run 36209099028 (#46) on PR head `542bf795d42b53eb9bef8d184bc5485cd65a526e`, for the Android
   build and emulator E2E.
 - The USB phone runs.
@@ -604,7 +605,9 @@ PHYSICAL_RUN_2=two-factor FAIL (the per-IP window expired on the slower phone; f
 PHYSICAL_RUN_3=two-factor PASS (596 s) with the final flow, including the 429 lockout after five invalid codes
 PHYSICAL_RUN_4=10 PASS (state-preflight to session-revocation); logout FAIL (a tap on the More tab did not register); stopped when Maestro hung starting the two-factor session
 PHYSICAL_RUN_5=state-preflight PASS, logout PASS; stopped at two-factor by owner decision (already proven in run 3)
+PHYSICAL_RUN_7=state-preflight, session-expiry, session-revocation PASS with the pull-retry sub-flow (one pull each)
 PHYSICAL_RESULT=PASS (each of the 15 flows passed on the phone at least once; no app crash; every failure was a flow or Maestro issue)
+CI_E2E_FLAKE=session-revocation failed once on the API 34 emulator (Mobile CI 36217683123): the pull gesture never reached the app, and no request followed the revocation. session-expiry and session-revocation now pull through support/pull-to-refresh-until-signed-out.yaml, which waits for the list to settle and retries the gesture only (at most 3 times). The final login and no-Home assertions are unchanged.
 DEVICE_HYGIENE=only the test app and disposable seed accounts; test app and Maestro driver apps uninstalled; airplane mode and stay-awake restored
 
 MOBILE_CHECKS=PASS (typecheck, lint, Jest 24 suites / 251 tests, npm audit)
