@@ -26,6 +26,11 @@ const grantGrowthRoleWorkflowPath = path.resolve(
     '../../../../.github/workflows/grant-growth-role.yml',
 );
 const grantGrowthRoleWorkflow = fs.readFileSync(grantGrowthRoleWorkflowPath, 'utf8');
+const seedInitialGrowthAdminWorkflowPath = path.resolve(
+    __dirname,
+    '../../../../.github/workflows/seed-initial-growth-admin.yml',
+);
+const seedInitialGrowthAdminWorkflow = fs.readFileSync(seedInitialGrowthAdminWorkflowPath, 'utf8');
 
 describe('production workflow branch safety', () => {
     test('build and deploy jobs are restricted to main', () => {
@@ -35,6 +40,13 @@ describe('production workflow branch safety', () => {
         expect(buildBlock).toContain("github.ref == 'refs/heads/main'");
         expect(deployBlock).toContain("github.event_name == 'workflow_dispatch'");
         expect(deployBlock).toContain("github.ref == 'refs/heads/main'");
+    });
+
+    test('routes privileged Growth workflows through the semantic backend and Growth gates', () => {
+        expect(workflow).toContain('.github/workflows/grant-growth-role.yml');
+        expect(workflow).toContain('.github/workflows/seed-initial-growth-admin.yml');
+        const growthCase = workflow.slice(workflow.indexOf('EasyMod-growth/*'), workflow.indexOf('EasyMod-growth/*') + 600);
+        expect(growthCase).toContain('.github/workflows/seed-initial-growth-admin.yml');
     });
 
     test('deploy passes the Action Gate secret to production rendering', () => {
@@ -134,6 +146,29 @@ describe('production workflow branch safety', () => {
         expect(grantGrowthRoleWorkflow).toContain('docker exec \\');
         expect(grantGrowthRoleWorkflow).toContain('node src/scripts/grant-growth-role.js');
         expect(grantGrowthRoleWorkflow).not.toContain('docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T');
+    });
+
+    test('protects the one-time initial-admin seed behind main, production, concurrency, and a masked secret', () => {
+        expect(seedInitialGrowthAdminWorkflow).toContain(
+            "if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'",
+        );
+        expect(seedInitialGrowthAdminWorkflow).toContain('environment: production');
+        expect(seedInitialGrowthAdminWorkflow).toContain('group: seed-initial-growth-admin');
+        expect(seedInitialGrowthAdminWorkflow).toContain('INITIAL_GROWTH_ADMIN_PASSWORD: ${{ secrets.INITIAL_GROWTH_ADMIN_PASSWORD }}');
+        expect(seedInitialGrowthAdminWorkflow).toContain('node src/scripts/seed-initial-growth-admin.js');
+        expect(seedInitialGrowthAdminWorkflow).toContain('docker exec -i \\');
+        expect(seedInitialGrowthAdminWorkflow).toContain("| ssh -i \"$key_file\"");
+        expect(seedInitialGrowthAdminWorkflow).not.toContain('envs: TARGET_EMAIL,INITIAL_GROWTH_ADMIN_PASSWORD,GITHUB_ACTOR');
+        expect(seedInitialGrowthAdminWorkflow).not.toContain('-e INITIAL_GROWTH_ADMIN_PASSWORD=');
+        expect(seedInitialGrowthAdminWorkflow).not.toMatch(/INITIAL_GROWTH_ADMIN_PASSWORD\s*:\s*['"]/);
+        expect(seedInitialGrowthAdminWorkflow).not.toContain('echo "${INITIAL_GROWTH_ADMIN_PASSWORD}"');
+    });
+
+    test('keeps the canonical grant workflow dependent on the seeded identity and protected actor', () => {
+        expect(grantGrowthRoleWorkflow).toContain('GROWTH_BOOTSTRAP_ACTOR_EMAIL');
+        expect(grantGrowthRoleWorkflow).toContain('environment: production');
+        expect(grantGrowthRoleWorkflow).toContain('node src/scripts/grant-growth-role.js');
+        expect(grantGrowthRoleWorkflow).not.toContain('INITIAL_GROWTH_ADMIN_PASSWORD');
     });
 
     test('keeps browser and server Sentry configuration boundaries separate', () => {

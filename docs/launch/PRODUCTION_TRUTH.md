@@ -125,6 +125,27 @@ check before reporting success.
 - `MOBILE`: no mobile worktree, branch, dirty file, source, CI, or concurrent
   agent state was modified.
 
+## 2026-09-26 Growth bootstrap implementation receipt
+
+The pre-bootstrap account deadlock is resolved in the pending Growth change;
+this receipt does not claim production execution. The protected
+`seed-initial-growth-admin.yml` workflow creates only the dedicated shop-less
+operator identity with a transient secret, production password hashing, forced
+rotation, and a one-time marker. The canonical `grant-growth-role.yml` workflow
+remains the only role mutation path and now requires completed rotation and
+real MFA before its transactional audited `SUPER_ADMIN` grant; it clears the
+marker and invalidates sessions in that transaction. The workflow streams the
+temporary password to the running container and never places it in process
+arguments, logs, source, or audit payloads.
+
+- `BOOTSTRAP_IMPLEMENTATION`: `PENDING_MERGE_AND_LIVE_PROOF`
+- `BOOTSTRAP_LIVE_SEED`: `NOT_RUN`
+- `PASSWORD_ROTATION`: `NOT_PROVEN`
+- `MFA`: `NOT_PROVEN`
+- `GROWTH_BOOTSTRAP_ACTOR_EMAIL`: `NOT_CONFIGURED`
+- `VITE_SENTRY_DSN`: `NOT_DISCOVERABLE_FROM_AUTHORIZED_SOURCES`
+- `MOBILE_WORK`: `PROTECTED_AND_UNMODIFIED`
+
 ## Commercial model rollout status
 
 The rollback-safe runtime and current Growth control-plane migrations are deployed

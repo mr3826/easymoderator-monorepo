@@ -183,6 +183,17 @@ workflow accepts only an existing target email and the canonical
 to bootstrap after an active Super Admin already exists. Do not use raw SQL or
 pass an actor identity as a workflow-dispatch input.
 
+The one-time deadlock resolution is implemented by
+`.github/workflows/seed-initial-growth-admin.yml`. Its protected production
+secret supplies the temporary password at execution time; the script hashes it
+through the existing auth utility, creates no merchant membership or shop, and
+sets forced password rotation plus a private bootstrap marker. It deliberately
+does not create a Growth role. The canonical role workflow refuses the target
+until rotation and real MFA are complete, then clears the marker transactionally
+with the audited `SUPER_ADMIN` grant and session invalidation. This implementation
+receipt supersedes the old account-provisioning gap; the historical SQL above
+remains non-executable.
+
 After the first Super Admin is established, use the authenticated Growth OS
 user-administration screen for grants, suspension, role changes, and revocation.
 Those operations remain transactional with required audit persistence and role

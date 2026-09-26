@@ -5,13 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 
 const authState = vi.hoisted(() => ({
+  status: 'authenticated' as string,
   permissions: [] as string[],
 }));
 
 vi.mock('@/auth/GrowthAuthProvider', () => ({
   GrowthAuthProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useGrowthAuth: () => ({
-    status: 'authenticated',
+    status: authState.status,
     session: {
       internalUserId: 'growth-user',
       displayName: 'Growth User',
@@ -68,7 +69,17 @@ function renderAt(path: string) {
 
 describe('Growth prospect route permissions', () => {
   afterEach(() => {
+    authState.status = 'authenticated';
     authState.permissions = [];
+  });
+
+  it('shows the protected pending-grant boundary after bootstrap MFA', () => {
+    authState.status = 'bootstrap-pending';
+
+    renderAt('/enroll-mfa');
+
+    expect(screen.getByText('MFA verified; access grant pending')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Return to sign in' })).toBeInTheDocument();
   });
 
   it('allows a read permission to reach the prospect list route', () => {

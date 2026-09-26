@@ -288,6 +288,17 @@ path are explicit in `.github/workflows/ci-cd.yml:668-669`, `:870-883`.
 
 **Status: `OPEN`.**
 
+Implementation closure added on 2026-09-26 (live proof remains open): the
+supported path now starts with the protected
+`.github/workflows/seed-initial-growth-admin.yml` workflow. It creates only a
+shop-less internal identity with a production password hash, forced password
+rotation, and an internal bootstrap marker. It does not grant a Growth role.
+The canonical `grant-growth-role.yml` path now requires that seeded identity to
+finish password rotation and real MFA enrollment, then clears the marker in the
+same transaction as the role grant, audit row, and session invalidation.
+The prior existing-user requirement below describes the pre-seed deadlock and
+must not be used as an alternative account-promotion path.
+
 Files and surfaces:
 
 - `.github/workflows/grant-growth-role.yml:1-73`.
@@ -297,11 +308,11 @@ Files and surfaces:
 
 Acceptance criteria:
 
-1. Identify an existing production app user and configure the explicit
+1. Configure the explicit
    `GROWTH_BOOTSTRAP_ACTOR_EMAIL` secret in the protected `production`
-   environment. The workflow must not accept an actor as dispatch input or
-   create/mutate the user account.
-2. Dispatch `grant-growth-role.yml` with the target email and canonical
+   environment after the seeded identity exists. The role workflow must not
+   accept an actor as dispatch input or create a user account.
+2. Dispatch `grant-growth-role.yml` with the seeded target email and canonical
    `SUPER_ADMIN` role. Do not execute raw SQL; the old SQL procedure has been
    removed from the supported runbook.
 3. Capture the role-service result and the `growth_os:role_granted` audit row.

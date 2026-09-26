@@ -88,6 +88,11 @@ function buildAccess(rawRole) {
   };
 }
 
+function getInitialBootstrapState(user) {
+  if (user?.bootstrapOperator !== true) return null;
+  return user.mfaVerified === true ? 'pending' : 'mfa-required';
+}
+
 function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
   return async (req, _res, next) => {
     try {
@@ -107,6 +112,30 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
         : (Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission])
           .some((permission) => hasPermission(permissionRole, permission));
       if (!access || !hasRequiredPermission) {
+        if (!access) {
+          const bootstrapState = getInitialBootstrapState(req.user);
+          if (bootstrapState === 'password-change-required') {
+            throw new AppError(
+              'The initial Growth OS administrator must complete password rotation first.',
+              403,
+              'GROWTH_OS_BOOTSTRAP_PASSWORD_CHANGE_REQUIRED',
+            );
+          }
+          if (bootstrapState === 'mfa-required') {
+            throw new AppError(
+              'The initial Growth OS administrator must enroll MFA first.',
+              403,
+              'GROWTH_OS_BOOTSTRAP_MFA_REQUIRED',
+            );
+          }
+          if (bootstrapState === 'pending') {
+            throw new AppError(
+              'The initial Growth OS administrator is ready for the audited role grant.',
+              403,
+              'GROWTH_OS_BOOTSTRAP_PENDING',
+            );
+          }
+        }
         throw new AppError('Forbidden: Growth OS access required.', 403, 'GROWTH_OS_FORBIDDEN');
       }
 

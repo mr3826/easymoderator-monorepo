@@ -80,12 +80,13 @@ const verify = async (req, res, next) => {
 
         // Resolve shop context from active memberships, never from a stale
         // last_logged_shop_id left by an earlier merchant session.
-        const { getActiveGrowthOsRole } = require('./auth.service');
+        const { getActiveGrowthOsRole, isInitialGrowthBootstrapUser } = require('./auth.service');
         const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
         if (activeGrowthOsRole === undefined) {
             throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
         }
         const isGrowthOsUser = Boolean(activeGrowthOsRole);
+        const isInitialBootstrapUser = isInitialGrowthBootstrapUser(user);
         const activeShops = Array.isArray(user.shops) ? user.shops : [];
         let shopId = null;
         if (!isGrowthOsUser && activeShops.length > 0) {
@@ -99,7 +100,7 @@ const verify = async (req, res, next) => {
         // A null shopId is only acceptable for internal Growth OS staff
         // accounts (no active shop membership); everyone else must re-login.
         if (!shopId) {
-            if (!isGrowthOsUser) {
+            if (!isGrowthOsUser && !isInitialBootstrapUser) {
                 throw new AppError('No active shop session found. Please login again.', 401);
             }
         }
@@ -113,6 +114,7 @@ const verify = async (req, res, next) => {
             shopId,
             tokenVersion: user.token_version,
             mfaVerified: true,
+            bootstrapOperator: isInitialBootstrapUser,
             ...(temporaryPasswordAuthData
                 ? {
                     passwordChangeRequired: true,
@@ -124,6 +126,7 @@ const verify = async (req, res, next) => {
             userId: user.id,
             tokenVersion: user.token_version,
             mfaVerified: true,
+            bootstrapOperator: isInitialBootstrapUser,
             ...(temporaryPasswordAuthData
                 ? {
                     passwordChangeRequired: true,

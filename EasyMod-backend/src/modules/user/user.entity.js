@@ -23,6 +23,21 @@ const User = sequelize.define('User', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    role: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        defaultValue: 'owner'
+    },
+    is_active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    },
+    is_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
     phone: {
         type: DataTypes.STRING,
         allowNull: true

@@ -43,8 +43,8 @@ export function EnrollMfaPage() {
     setActionError(null);
     try {
       await growthApi.enableTwoFactor(token.trim());
+      await auth.logout();
       setDone(true);
-      growthApi.logout().catch(() => undefined);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Verification failed. Try again.');
     } finally {
