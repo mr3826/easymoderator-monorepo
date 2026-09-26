@@ -129,18 +129,25 @@ jobs:
                     echo "mode=apply requires the literal authorization phrase PRODUCTION-IMPORT-APPLY." >&2
                     exit 1
                   fi
+                  # The importer exits 1 when individual rows failed while
+                  # still completing every other row. Capture that status
+                  # instead of letting set -e abort before the per-row
+                  # evidence and the idempotency gate run.
+                  apply_rc=0
                   docker exec \
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --apply --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-apply --receipt /tmp/growth-os-receipts/apply.json" \
-                    | tee /root/growth-os-receipts/${run_id}-apply.stdout.json
+                    | tee /root/growth-os-receipts/${run_id}-apply.stdout.json || apply_rc=${PIPESTATUS[0]}
                   docker cp "$backend_container:/tmp/growth-os-receipts/apply.json" "/root/growth-os-receipts/${run_id}-apply.receipt.json"
                   docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/apply.json\"); for (const row of r.rows) console.log(\"IMPORT_ROW \" + JSON.stringify(row)); console.log(\"IMPORT_SUMMARY \" + JSON.stringify(r.summary));"
-                  echo "APPLY_DONE run_id=$run_id"
+                  echo "APPLY_DONE run_id=$run_id apply_rc=$apply_rc"
                   # Idempotency gate: the same ledger must now report zero new
                   # writes. Any would-create row after a completed apply fails
                   # this job loudly instead of hiding drift.
+                  verify_rc=0
                   second=$(docker exec \
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-verify --receipt /tmp/growth-os-receipts/verify.json" \
-                    | tee /root/growth-os-receipts/${run_id}-verify.stdout.json)
+                    | tee /root/growth-os-receipts/${run_id}-verify.stdout.json) || verify_rc=${PIPESTATUS[0]}
+                  echo "VERIFY_PASS_RC=$verify_rc"
                   docker cp "$backend_container:/tmp/growth-os-receipts/verify.json" "/root/growth-os-receipts/${run_id}-verify.receipt.json"
                   # Extract counts.wouldCreate from the JSON emitted by the
                   # verification pass, with portable awk only: no single
@@ -155,15 +162,27 @@ jobs:
                     echo "::error::post-apply verification dry-run reports $would_create would-create rows; idempotency is broken"
                     exit 1
                   fi
+                  # Surface per-row failures (exit 1 from the apply pass) after
+                  # the idempotency gate has run, so a rejected row is visible
+                  # in the same job as its counts.
+                  if [ "$apply_rc" -ne 0 ]; then
+                    echo "::warning::apply pass exited $apply_rc; see IMPORT_ROW lines for rejected sources"
+                    exit "$apply_rc"
+                  fi
                 else
+                  dry_rc=0
                   docker exec \
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-dry --receipt /tmp/growth-os-receipts/dry.json" \
-                    | tee /root/growth-os-receipts/${run_id}-dry.stdout.json
+                    | tee /root/growth-os-receipts/${run_id}-dry.stdout.json || dry_rc=${PIPESTATUS[0]}
                   docker cp "$backend_container:/tmp/growth-os-receipts/dry.json" "/root/growth-os-receipts/${run_id}-dry.receipt.json"
                   # Echo per-row outcomes (source references, outcome, error
                   # codes only; the receipt format carries no contact fields)
                   # so an apply decision is reviewed against evidence, not totals.
                   docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/dry.json\"); for (const row of r.rows) console.log(\"IMPORT_ROW \" + JSON.stringify(row)); console.log(\"IMPORT_SUMMARY \" + JSON.stringify(r.summary));"
-                  echo "DRY_RUN_DONE run_id=$run_id"
+                  echo "DRY_RUN_DONE run_id=$run_id dry_rc=$dry_rc"
+                  if [ "$dry_rc" -ne 0 ]; then
+                    echo "::warning::dry-run pass exited $dry_rc; see IMPORT_ROW lines for rejected sources"
+                    exit "$dry_rc"
+                  fi
                 fi
               '
