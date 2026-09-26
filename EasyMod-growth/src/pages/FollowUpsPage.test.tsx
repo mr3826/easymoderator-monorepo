@@ -102,6 +102,41 @@ describe('FollowUpsPage', () => {
     await waitFor(() => expect(list).toHaveBeenCalledWith({ state: 'overdue', owner: undefined, page: 1, pageSize: 50 }));
   });
 
+  it('renders due and completion moments in the fixed business clock and labels completed rows', async () => {
+    // 2026-09-26T18:30Z is 2026-09-27 00:30 in Asia/Dhaka: the Due cell must
+    // show the business day (Sep 27), and a completed row must say "Completed".
+    vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(makeList([makeFollowup({
+      dueAt: '2026-09-26T18:30:00.000Z',
+      status: 'completed',
+      overdue: false,
+      completedAt: '2026-09-27T04:00:00.000Z',
+    })]));
+
+    renderPage();
+
+    const businessDayCells = await screen.findAllByRole('cell', { name: /Sep 27/ });
+    expect(businessDayCells[0].textContent).toMatch(/^Sep 27/);
+    expect(businessDayCells[1].textContent).toMatch(/^Completed /);
+  });
+
+  it('paginates with URL-backed page state', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue({
+      items: [makeFollowup()],
+      total: 120,
+      page: 1,
+      pageSize: 50,
+    });
+    const list = vi.mocked(workspaceApi.listFollowups);
+
+    renderPage();
+    await screen.findByText('Call back about activation');
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ state: 'open', owner: undefined, page: 2, pageSize: 50 }));
+  });
+
   it('shows an inline error with retry when the list request fails', async () => {
     vi.spyOn(workspaceApi, 'listFollowups').mockRejectedValue(new ApiError('Workspace unavailable', 500));
 

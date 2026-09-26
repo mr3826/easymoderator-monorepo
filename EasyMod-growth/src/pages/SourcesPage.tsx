@@ -141,8 +141,22 @@ export function SourcesPage() {
                         {codeLabel(row.source)}
                       </Link>
                     </th>
-                    <td>{row.leads.toLocaleString()}</td>
-                    <td>{row.activated.toLocaleString()}</td>
+                    <td>
+                      <Link
+                        className="table-link"
+                        to={`/prospects?source=${encodeURIComponent(row.source)}${cohortSuffix}`}
+                      >
+                        {row.leads.toLocaleString()}
+                      </Link>
+                    </td>
+                    <td>
+                      <Link
+                        className="table-link"
+                        to={`/prospects?source=${encodeURIComponent(row.source)}&activated=true${cohortSuffix}`}
+                      >
+                        {row.activated.toLocaleString()}
+                      </Link>
+                    </td>
                     <td>
                       <span className="source-code">{rateLabel(row)}</span>
                     </td>

@@ -63,7 +63,13 @@ const listProspects = {
     owner: Joi.alternatives().try(Joi.valid('me', 'unassigned'), uuid),
     q: Joi.string().trim().max(200),
     linked: Joi.boolean().truthy('true').falsy('false'),
+    // `activated` is the canonical converted-plus-active-shop population;
+    // combining it with a raw status/stage filter would silently dominate the
+    // other predicate, so contradictory drill URLs fail closed.
+    activated: Joi.boolean().truthy('true').falsy('false').when('status', { is: Joi.exist(), then: Joi.forbidden() })
+      .when('stage', { is: Joi.exist(), then: Joi.forbidden() }),
     stalled: Joi.boolean().truthy('true').falsy('false'),
+    stalledBefore: Joi.date().iso(),
     createdAfter: Joi.date().iso(),
     createdBefore: Joi.date().iso(),
     statusChangedAfter: Joi.date().iso(),

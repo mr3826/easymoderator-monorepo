@@ -23,6 +23,7 @@ function makeNote(overrides: Partial<InternalNote> = {}): InternalNote {
     targetType: 'prospect',
     targetId: 'prospect-1',
     authorUserId: 'me-1',
+    authorDisplayName: 'Dana Founder',
     body: 'Owner prefers WhatsApp over calls.',
     createdAt: '2026-09-10T09:00:00.000Z',
     updatedAt: '2026-09-10T09:00:00.000Z',
@@ -55,6 +56,33 @@ describe('NotesPanel', () => {
     expect(screen.getByText('Internal notes — never visible to merchants')).toBeInTheDocument();
     expect(workspaceApi.listNotes).toHaveBeenCalledWith('prospect', 'target-1', { page: 1, pageSize: 20 });
     expect(screen.getByRole('button', { name: /Delete note/ })).toBeInTheDocument();
+  });
+
+  it('renders operator names instead of raw UUIDs and honest fallbacks', async () => {
+    permissionMock.mockReturnValue(true);
+    vi.spyOn(workspaceApi, 'listNotes').mockResolvedValue(list([
+      makeNote(),
+      makeNote({
+        id: 'note-gone',
+        authorUserId: null,
+        authorDisplayName: null,
+        body: 'Note by a removed account.',
+      }),
+      makeNote({
+        id: 'note-redacted',
+        authorUserId: null,
+        authorDisplayName: null,
+        authorRedacted: true,
+        body: 'Note seen through a restricted source scope.',
+      }),
+    ]));
+
+    renderPanel();
+
+    expect(await screen.findByText(/Dana Founder ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Former operator \(account removed\) ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Operator details restricted ·/)).toBeInTheDocument();
+    expect(screen.queryByText(/me-1 ·/)).not.toBeInTheDocument();
   });
 
   it('hides all note surfaces unless the notes permission is granted', async () => {

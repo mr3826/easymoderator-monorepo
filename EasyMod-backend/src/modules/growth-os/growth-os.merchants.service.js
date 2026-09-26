@@ -459,7 +459,7 @@ async function requestChannelReconnect({
 
 async function getOperations({ windowDays = 7 } = {}) {
   const {
-    Shop, Subscription, PaymentTransaction, MetaChannel, Message, Conversation,
+    Shop, Subscription, PaymentTransaction, MetaChannel, Message,
   } = require('../entities');
   const window = Math.min(Math.max(parseInt(windowDays, 10) || 7, 1), 90);
   const since = new Date(Date.now() - window * 24 * 60 * 60 * 1000);
@@ -483,11 +483,15 @@ async function getOperations({ windowDays = 7 } = {}) {
     }),
     PaymentTransaction.count({ where: { status: 'failed', created_at: { [Op.gte]: since } } }),
     MetaChannel.count({ where: { status: { [Op.in]: ['TOKEN_EXPIRED', 'REVOKED', 'ERROR'] } } }),
+    // AI replies actually sent inside the window (message.created_at), not
+    // messages on conversations merely created inside the window.
+    Message.count({ where: { sender: 'ai', created_at: { [Op.gte]: since } } }).catch(() => null),
+    // Distinct conversations touched by an AI reply inside the window.
     Message.count({
-      include: [{ model: Conversation, as: 'conversation', required: true, where: { created_at: { [Op.gte]: since } } }],
-      where: { sender: 'ai' },
+      col: 'conversation_id',
+      distinct: true,
+      where: { sender: 'ai', created_at: { [Op.gte]: since } },
     }).catch(() => null),
-    Conversation.count({ where: { created_at: { [Op.gte]: since } } }),
   ]);
 
   return {

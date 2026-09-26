@@ -127,11 +127,25 @@ function searchWhere(value, GrowthOsProspect) {
   return { [Op.or]: predicates };
 }
 
+// Canonical activation population: a converted prospect whose linked shop is
+// currently active. Home cards, Analytics, Sources, timing, and the
+// `activated=true` drill-through all resolve to exactly this predicate.
+function isActivatedFilter(filters = {}) {
+  return filters.activated === true || filters.activated === 'true';
+}
+
 function prospectFilters(filters = {}, GrowthOsProspect) {
   const clauses = [];
   const where = {};
-  if (filters.status) where.status = filters.status;
-  if (filters.stage === 'qualified') where.status = { [Op.in]: ['qualified', 'onboarding', 'converted'] };
+  if (isActivatedFilter(filters)) {
+    where.status = 'converted';
+    where.linked_shop_id = { [Op.ne]: null };
+  } else if (filters.status) where.status = filters.status;
+  else if (filters.stage === 'qualified') where.status = { [Op.in]: ['qualified', 'onboarding', 'converted'] };
+  // Merged rows are tombstones, not actionable records. Lists and metric
+  // drill-throughs exclude them by default; they stay reachable through the
+  // explicit `status=merged` filter and direct id lookups.
+  else where.status = { [Op.ne]: 'merged' };
   if (filters.source) where.source = filters.source;
   const ownerUserId = filters.ownerUserId || filters.owner_user_id;
   if (ownerUserId) where.owner_user_id = ownerUserId;
@@ -145,7 +159,11 @@ function prospectFilters(filters = {}, GrowthOsProspect) {
   const statusChangedAt = {};
   if (filters.statusChangedAfter) statusChangedAt[Op.gte] = new Date(filters.statusChangedAfter);
   if (filters.statusChangedBefore) statusChangedAt[Op.lte] = new Date(filters.statusChangedBefore);
-  if (filters.stalled === true || filters.stalled === 'true') {
+  if (filters.stalledBefore) {
+    // Explicit frozen boundary from the metric response keeps a drill-through
+    // population identical to the count that produced it.
+    statusChangedAt[Op.lt] = new Date(filters.stalledBefore);
+  } else if (filters.stalled === true || filters.stalled === 'true') {
     statusChangedAt[Op.lt] = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
   }
   if (Reflect.ownKeys(statusChangedAt).length > 0) where.status_changed_at = statusChangedAt;
@@ -180,11 +198,18 @@ function prospectFilters(filters = {}, GrowthOsProspect) {
 }
 
 async function listProspects({ scope, filters = {}, page = 1, pageSize = 20, transaction } = {}) {
-  const { GrowthOsProspect } = getModels();
+  const { GrowthOsProspect, Shop } = getModels();
+  const include = relationshipIncludes();
+  if (isActivatedFilter(filters)) {
+    const shopInclude = include.find((entry) => entry.as === 'linkedShop');
+    shopInclude.model = Shop;
+    shopInclude.required = true;
+    shopInclude.where = { is_active: true };
+  }
   const options = {
     where: scopedWhere(scope, prospectFilters(filters, GrowthOsProspect)),
     attributes: PROSPECT_ATTRIBUTES,
-    include: relationshipIncludes(),
+    include,
     order: [['created_at', 'DESC'], ['id', 'DESC']],
     limit: pageSize,
     offset: (page - 1) * pageSize,

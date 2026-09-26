@@ -60,10 +60,32 @@ export function runStamp(): string {
   return `${Date.now()}`;
 }
 
+// datetime-local strings for Growth scheduling must carry the Asia/Dhaka
+// business calendar (the app's canonical contract), never the runner host's
+// local zone — otherwise the harness replicates the very defect it tests.
+export function businessDateTimeLocal(value: Date, hour = 9, minute = 0): string {
+  const day = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${day}T${pad(hour)}:${pad(minute)}`;
+}
+
 export function dateTimeLocalPlus(offsetMs: number): string {
   const value = new Date(Date.now() + offsetMs);
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(value));
+  const minute = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    minute: '2-digit',
+  }).format(value));
+  return businessDateTimeLocal(value, hour, minute);
 }
 
 export function uniquePhone(seed = Date.now()): string {

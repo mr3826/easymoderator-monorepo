@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { FollowUpsPanel } from '@/components/FollowUpsPanel';
 import { NotesPanel } from '@/components/NotesPanel';
+import { formatGrowthDateTime } from '@/growthTime';
 import {
   ApiError,
   growthApi,
@@ -42,7 +43,18 @@ function formatDate(value: string | null | undefined, includeTime = false) {
 }
 
 function formatAuditValue(value: string | null) {
-  return value || 'Not provided';
+  if (!value) return 'Not provided';
+  // Timestamp-shaped event values (e.g. a follow-up due instant) must render
+  // in the same Asia/Dhaka business clock as every other Growth queue.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return formatGrowthDateTime(value);
+  return value;
+}
+
+function formatEventActor(event: Prospect['timeline'][number]) {
+  if (event.actorDisplayName) return event.actorDisplayName;
+  if (event.actorRedacted) return 'Operator details restricted';
+  if (!event.actorUserId) return 'System (automatic)';
+  return 'Former operator (account removed)';
 }
 
 function messageFor(error: unknown, fallback: string) {
@@ -91,7 +103,7 @@ function TimelineEvent({ event }: { event: Prospect['timeline'][number] }) {
           <time dateTime={event.createdAt}>{formatDate(event.createdAt, true)}</time>
         </div>
         <dl className="timeline-details">
-          <div><dt>Actor</dt><dd>{formatValue(event.actorUserId)}</dd></div>
+          <div><dt>Actor</dt><dd>{formatEventActor(event)}</dd></div>
           {event.fromValue || event.toValue ? (
             <>
               <div><dt>From</dt><dd>{formatAuditValue(event.fromValue)}</dd></div>

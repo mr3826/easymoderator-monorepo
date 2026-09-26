@@ -66,21 +66,26 @@ export function AnalyticsPage() {
     );
   }
 
-  const funnelSteps = [
-    { label: 'Created', value: data.funnel.created },
+  const cohortQuery = new URLSearchParams();
+  if (data.cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', data.cohort.sourceRecordedFrom);
+  if (data.cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', data.cohort.sourceRecordedTo);
+  const cohortBase = cohortQuery.toString();
+  const cohortSuffix = cohortBase ? `&${cohortBase}` : '';
+
+  // Every funnel step the ledger can express drills through to the exact same
+  // population its number was counted from; `activated=true` is the canonical
+  // activation predicate shared with Home and Sources.
+  const funnelSteps: Array<{ label: string; value: number; drill?: string }> = [
+    { label: 'Created', value: data.funnel.created, drill: cohortBase ? `/prospects?${cohortBase}` : '/prospects' },
     { label: 'Contacted or beyond', value: data.funnel.contactedOrBeyond },
-    { label: 'Qualified or beyond', value: data.funnel.qualified },
-    { label: 'Onboarding', value: data.funnel.onboarding },
-    { label: 'Growth activated', value: data.funnel.activated },
+    { label: 'Qualified or beyond', value: data.funnel.qualified, drill: `/prospects?stage=qualified${cohortSuffix}` },
+    { label: 'Onboarding', value: data.funnel.onboarding, drill: `/prospects?status=onboarding${cohortSuffix}` },
+    { label: 'Growth activated', value: data.funnel.activated, drill: `/prospects?activated=true${cohortSuffix}` },
   ];
   const funnelMax = Math.max(1, ...funnelSteps.map((step) => step.value));
   const statusRows = Object.entries(data.byStatus ?? {})
     .filter((entry): entry is [ProspectStatus, number] => typeof entry[1] === 'number')
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
-  const cohortQuery = new URLSearchParams();
-  if (data.cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', data.cohort.sourceRecordedFrom);
-  if (data.cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', data.cohort.sourceRecordedTo);
-  const cohortSuffix = cohortQuery.toString() ? `&${cohortQuery.toString()}` : '';
 
   return (
     <main className="page-content" aria-labelledby="analytics-title">
@@ -123,9 +128,9 @@ export function AnalyticsPage() {
      <li key={step.label}>
               <span>{step.label}</span>
               <span className="funnel-bar" style={{ width: `${Math.round((step.value / funnelMax) * 100)}%` }} aria-hidden="true" />
-               <strong>{step.label === 'Qualified or beyond'
-                 ? <Link to={`/prospects?stage=qualified${cohortSuffix}`}>{step.value.toLocaleString()}</Link>
-                 : step.value.toLocaleString()}</strong>
+               <strong>{step.drill
+                  ? <Link to={step.drill}>{step.value.toLocaleString()}</Link>
+                  : step.value.toLocaleString()}</strong>
             </li>
           ))}
         </ul>
@@ -165,7 +170,7 @@ export function AnalyticsPage() {
         ) : (
           <div className="table-scroll">
             <table className="data-table">
-              <caption className="sr-only">Prospects created in the window, grouped by current status</caption>
+              <caption className="sr-only">Prospects whose source was recorded in the window, grouped by current status</caption>
               <thead>
                 <tr>
                   <th scope="col">Status</th>

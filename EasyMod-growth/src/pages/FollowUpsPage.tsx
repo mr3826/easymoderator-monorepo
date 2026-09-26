@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -50,7 +50,9 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
       ? initialState as FollowupState
       : 'open',
   );
-  const [page, setPage] = useState(1);
+  const initialPage = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const [page, setPage] = useState(initialPage);
+  const appliedUrlRef = useRef(searchParams.toString());
   const [result, setResult] = useState<FollowupListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,14 +93,39 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
     setReloadToken((current) => current + 1);
   }
 
-  function selectTab(nextState: FollowupState) {
+  // Query-only navigation (Home drill links, back/forward) must re-derive the
+  // tab and page instead of keeping stale mount-time state.
+  useEffect(() => {
+    const current = searchParams.toString();
+    if (current === appliedUrlRef.current) return;
+    appliedUrlRef.current = current;
+    const urlState = searchParams.get('state');
+    if (urlState && STATE_TABS.some((tab) => tab.value === urlState)) {
+      setState(urlState as FollowupState);
+    } else {
+      // A bare navigation (sidebar link, back to no-params) means the default
+      // queue; leaving a previously selected tab active would make the URL
+      // advertise a population the page is not showing.
+      setState('open');
+    }
+    const urlPage = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+    setPage(urlPage);
+  }, [searchParams]);
+
+  function navigateView(nextState: FollowupState, nextPage: number) {
     setState(nextState);
-    setPage(1);
+    setPage(nextPage);
     setRescheduleId(null);
     setActionError(null);
-    const nextParams = new URLSearchParams(searchParams);
+    const nextParams = new URLSearchParams();
     nextParams.set('state', nextState);
+    if (nextPage > 1) nextParams.set('page', String(nextPage));
+    appliedUrlRef.current = nextParams.toString();
     setSearchParams(nextParams);
+  }
+
+  function selectTab(nextState: FollowupState) {
+    navigateView(nextState, 1);
   }
 
   async function runAction(followup: Followup, kind: ActionKey['kind']) {
@@ -288,7 +315,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
                           )
                         ) : (
                           <span className="table-subtext">
-                            {followup.status === 'completed' && followup.completedAt ? `Done ${formatGrowthDateTime(followup.completedAt)}` : 'No actions'}
+                            {followup.status === 'completed' && followup.completedAt ? `Completed ${formatGrowthDateTime(followup.completedAt)}` : followup.status === 'cancelled' ? 'Cancelled (no completion time)' : 'No actions'}
                           </span>
                         )}
                       </td>
@@ -304,7 +331,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
                   className="secondary-button"
                   type="button"
                   disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  onClick={() => navigateView(state, Math.max(1, page - 1))}
                 >
                   Previous
                 </button>
@@ -312,7 +339,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
                   className="secondary-button"
                   type="button"
                   disabled={page >= totalPages}
-                  onClick={() => setPage((current) => current + 1)}
+                  onClick={() => navigateView(state, page + 1)}
                 >
                   Next
                 </button>

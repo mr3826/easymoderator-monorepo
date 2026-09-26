@@ -113,6 +113,8 @@ export interface ProspectTimelineEvent {
   id: string;
   eventType: string;
   actorUserId: string | null;
+  actorDisplayName: string | null;
+  actorRedacted?: boolean;
   fromValue: string | null;
   toValue: string | null;
   reason: string | null;
@@ -155,6 +157,8 @@ export interface ProspectListFilters {
   linked?: boolean | '' | 'true' | 'false';
   stage?: 'qualified';
   stalled?: boolean | 'true';
+  activated?: boolean | 'true';
+  stalledBefore?: string;
   createdAfter?: string;
   createdBefore?: string;
   statusChangedAfter?: string;
@@ -413,6 +417,8 @@ export const growthApi = {
     if (filters.linked !== undefined && filters.linked !== '') params.set('linked', String(filters.linked));
     addQueryValue(params, 'stage', filters.stage);
     if (filters.stalled) params.set('stalled', String(filters.stalled));
+    if (filters.activated) params.set('activated', String(filters.activated));
+    addQueryValue(params, 'stalledBefore', filters.stalledBefore);
     addQueryValue(params, 'createdAfter', filters.createdAfter);
     addQueryValue(params, 'createdBefore', filters.createdBefore);
     addQueryValue(params, 'statusChangedAfter', filters.statusChangedAfter);
@@ -673,6 +679,8 @@ export interface InternalNote {
   targetType: 'prospect' | 'user' | 'shop';
   targetId: string;
   authorUserId: string | null;
+  authorDisplayName: string | null;
+  authorRedacted?: boolean;
   body: string;
   createdAt: string;
   updatedAt: string;

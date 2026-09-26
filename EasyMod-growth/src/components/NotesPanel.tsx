@@ -129,7 +129,8 @@ export function NotesPanel({ targetType, targetId }: { targetType: InternalNote[
               <div>
                 <p>{note.body}</p>
                 <span className="table-subtext">
-                  {note.authorUserId || 'Unknown author'} · {formatGrowthDateTime(note.createdAt)}
+                  {note.authorDisplayName
+                    || (note.authorRedacted ? 'Operator details restricted' : 'Former operator (account removed)')} · {formatGrowthDateTime(note.createdAt)}
                 </span>
               </div>
               {note.authorUserId && note.authorUserId === session?.internalUserId ? (

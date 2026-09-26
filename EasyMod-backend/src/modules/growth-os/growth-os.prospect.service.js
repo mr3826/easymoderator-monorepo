@@ -377,6 +377,11 @@ function toApiEvent(record, scope) {
     prospectId: data.prospect_id,
     eventType: data.event_type,
     actorUserId: data.actor_user_id,
+    // Operator-facing attribution: joined name, then email. Redacted scopes
+    // keep the documented id-only actor contract (name/email are omitted by
+    // the repository include) and never see display names.
+    actorDisplayName: redacted ? null : (data.actor?.full_name || data.actor?.email || null),
+    actorRedacted: redacted === true,
     fromValue: data.from_value,
     toValue: data.to_value,
     reason: redacted ? null : data.reason,
