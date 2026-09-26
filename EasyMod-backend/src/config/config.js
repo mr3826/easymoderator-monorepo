@@ -31,6 +31,16 @@ module.exports = {
     bodySizeLimit: process.env.BODY_SIZE_LIMIT || '35mb',
     allowSelfSignedTls: process.env.ALLOW_SELF_SIGNED_TLS === 'true',
     growthOsEnabled: process.env.GROWTH_OS_ENABLED === 'true',
+    // ADR M-010: five independent mobile-program flags, same pattern as
+    // growthOsEnabled above — boolean, read once at config load, default
+    // false when the env var is absent or anything other than the literal
+    // string 'true'. Only mobileApiEnabled is consumed in Phase 1; the other
+    // four are defined now so later phases don't need another config.js edit.
+    mobileApiEnabled: process.env.MOBILE_API_ENABLED === 'true',
+    mobilePushEnabled: process.env.MOBILE_PUSH_ENABLED === 'true',
+    mobileOrderMutationsEnabled: process.env.MOBILE_ORDER_MUTATIONS_ENABLED === 'true',
+    mobileCourierActionsEnabled: process.env.MOBILE_COURIER_ACTIONS_ENABLED === 'true',
+    mobileAiDraftsEnabled: process.env.MOBILE_AI_DRAFTS_ENABLED === 'true',
     corsOrigins: process.env.CORS_ORIGINS
         ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
         : [],

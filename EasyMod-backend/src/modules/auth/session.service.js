@@ -1,9 +1,19 @@
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 const Session = require('./session.entity');
 const { AppError } = require('../../utils/AppError');
 const { getRedisClient } = require('../../utils/redis-client');
+
+// Pre-existing bug fix (ADR M-004): every query below used `sequelize.Op`,
+// which this Sequelize version only exposes as a static on the `Sequelize`
+// class, never on a connected instance — `sequelize.Op` is `undefined`, so
+// every one of these where-clauses threw "Cannot read properties of
+// undefined (reading 'gt'/'ne')" the moment it actually ran. This was never
+// caught because createSession had no caller before native auth (this ADR
+// is its first real caller, per CURRENT_STATE.md §3) — repairing it is
+// required for that wiring to function at all, not a separate cleanup.
 
 const SESSION_PREFIX = 'session:';
 const MAX_CONCURRENT_SESSIONS = 3; // Configurable limit for concurrent sessions
@@ -48,7 +58,7 @@ const createSession = async (user, shopId, req) => {
             where: {
                 user_id: user.id,
                 is_active: true,
-                expires_at: { [sequelize.Op.gt]: new Date() }
+                expires_at: { [Op.gt]: new Date() }
             },
             transaction
         });
@@ -59,7 +69,7 @@ const createSession = async (user, shopId, req) => {
                 where: {
                     user_id: user.id,
                     is_active: true,
-                    expires_at: { [sequelize.Op.gt]: new Date() }
+                    expires_at: { [Op.gt]: new Date() }
                 },
                 order: [['last_activity_at', 'ASC']],
                 transaction
@@ -175,7 +185,7 @@ const validateSession = async (sessionToken) => {
         where: {
             session_token: sessionToken,
             is_active: true,
-            expires_at: { [sequelize.Op.gt]: new Date() }
+            expires_at: { [Op.gt]: new Date() }
         },
         include: [{
             model: require('../entities').User,
@@ -221,7 +231,7 @@ const getUserSessions = async (userId) => {
         where: {
             user_id: userId,
             is_active: true,
-            expires_at: { [sequelize.Op.gt]: new Date() }
+            expires_at: { [Op.gt]: new Date() }
         },
         order: [['last_activity_at', 'DESC']],
         attributes: [
@@ -298,7 +308,7 @@ const revokeOtherSessions = async (userId, currentSessionId) => {
     const sessions = await Session.findAll({
         where: {
             user_id: userId,
-            id: { [sequelize.Op.ne]: currentSessionId },
+            id: { [Op.ne]: currentSessionId },
             is_active: true
         }
     });
@@ -323,9 +333,13 @@ const revokeOtherSessions = async (userId, currentSessionId) => {
     return sessions.length;
 };
 
-// Helper functions for device detection
+// Helper functions for device detection.
+// Pre-existing bug fix (ADR M-004): all three threw on a missing User-Agent
+// header (`undefined.toLowerCase()`) — again never observed because
+// createSession had no caller. A native client (or any request without a
+// User-Agent) can legitimately omit this header.
 const detectDeviceType = (userAgent) => {
-    const ua = userAgent.toLowerCase();
+    const ua = (userAgent || '').toLowerCase();
     if (/mobile|android|iphone|ipad|phone/i.test(ua)) {
         return 'mobile';
     } else if (/tablet|ipad/i.test(ua)) {
@@ -335,7 +349,7 @@ const detectDeviceType = (userAgent) => {
 };
 
 const detectOS = (userAgent) => {
-    const ua = userAgent.toLowerCase();
+    const ua = (userAgent || '').toLowerCase();
     if (/windows/i.test(ua)) return 'Windows';
     if (/mac/i.test(ua)) return 'macOS';
     if (/linux/i.test(ua)) return 'Linux';
@@ -345,7 +359,7 @@ const detectOS = (userAgent) => {
 };
 
 const detectBrowser = (userAgent) => {
-    const ua = userAgent.toLowerCase();
+    const ua = (userAgent || '').toLowerCase();
     if (/chrome/i.test(ua)) return 'Chrome';
     if (/firefox/i.test(ua)) return 'Firefox';
     if (/safari/i.test(ua)) return 'Safari';

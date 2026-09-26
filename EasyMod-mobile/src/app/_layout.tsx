@@ -1,0 +1,93 @@
+import '@/i18n';
+
+import { useEffect, useSyncExternalStore } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { Stack } from 'expo-router';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import { View, StyleSheet } from 'react-native';
+
+import { AuthProvider, useAuth } from '@/auth/AuthProvider';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { OfflineBanner } from '@/components/OfflineBanner';
+import { openDeepLink } from '@/lib/deeplink';
+import {
+  getPendingDeepLinkVersion,
+  subscribePendingDeepLink,
+  takePendingDeepLink,
+} from '@/lib/pending-deeplink';
+import { queryClient } from '@/lib/queryClient';
+import { fontsToLoad } from '@/theme/fonts';
+import { brandColors } from '@/theme/tokens';
+
+SplashScreen.preventAutoHideAsync();
+
+function RootNavigator() {
+  const { status } = useAuth();
+  const pendingDeepLinkVersion = useSyncExternalStore(subscribePendingDeepLink, getPendingDeepLinkVersion);
+
+  // Replay a parked inbound entity link (see `+native-intent.ts`) once the protected screens exist.
+  // Child effects run first, so the Stack below is mounted by the time this navigates. The replay
+  // waits one macrotask: for a link that arrives while the app is running, Expo Router awaits
+  // `redirectSystemPath` and only then navigates to the `/` it returned, after this effect has
+  // already committed; opening the entity first would be undone by that navigation. The link is
+  // taken inside the timer, so a superseded run leaves it parked for the next one.
+  useEffect(() => {
+    if (status !== 'signedIn') return undefined;
+    const timer = setTimeout(() => {
+      const link = takePendingDeepLink();
+      if (link) openDeepLink(link.kind, link.id);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [status, pendingDeepLinkVersion]);
+
+  // While bootstrapping (attempting a silent refresh from a stored refresh token), render
+  // nothing — the splash screen is still up at this point.
+  if (status === 'loading') return null;
+
+  return (
+    <View style={styles.appRoot}>
+      <OfflineBanner />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Protected guard={status === 'signedIn'}>
+          <Stack.Screen name="(tabs)" />
+          {/* Deep-link destinations (Phase 2, Lane 4) — gated the same as the rest of the signed-in
+              app so a deep link opened while signed out lands on login first, never here. */}
+          <Stack.Screen name="order/[id]" />
+          <Stack.Screen name="conversation/[id]" />
+        </Stack.Protected>
+        <Stack.Protected guard={status !== 'signedIn'}>
+          <Stack.Screen name="login" />
+        </Stack.Protected>
+      </Stack>
+      <StatusBar style="dark" />
+    </View>
+  );
+}
+
+export default function RootLayout() {
+  useFonts(fontsToLoad);
+
+  useEffect(() => {
+    // Font loading is progressive; a missing font asset must not block auth or navigation.
+    void SplashScreen.hideAsync();
+  }, []);
+
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
+}
+
+const styles = StyleSheet.create({
+  appRoot: {
+    flex: 1,
+    backgroundColor: brandColors.background,
+  },
+});

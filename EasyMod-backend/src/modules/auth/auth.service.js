@@ -333,9 +333,19 @@ const isInitialGrowthBootstrapUser = (user) => user?.settings?.internal_growth_b
 const hasActiveGrowthOsRole = async (userId) => Boolean(await getActiveGrowthOsRole(userId));
 
 /**
- * Authenticate user (with lockout check)
+ * Verify credentials (lockout + password + Growth OS role lookup + temporary
+ * password state + TOTP gate) and resolve which shop a successful login lands
+ * in. Extracted out of authenticateUser so a second caller (native auth, ADR
+ * M-004) reuses the exact same password/lockout/2FA logic without inheriting
+ * authenticateUser's token issuance and single web refresh-token slot.
+ *
+ * authenticateUser below calls it and then does exactly what it always did
+ * with the result, so its external behaviour is unchanged.
+ *
+ * Returns either { requires2fa: true, tempToken, ...temporaryPasswordAuthData }
+ * or { user, loggedShopId, isGrowthOsUser, temporaryPasswordAuthData }.
  */
-const authenticateUser = async (email, password) => {
+const resolveAuthenticatedUser = async (email, password) => {
     // Check if account is locked
     await checkAccountLockout(email);
 
@@ -416,6 +426,19 @@ const authenticateUser = async (email, password) => {
         // Update last logged shop
         await user.update({ last_logged_shop_id: loggedShopId });
     }
+
+    return { user, loggedShopId, isGrowthOsUser, temporaryPasswordAuthData };
+};
+
+/**
+ * Authenticate user (with lockout check)
+ */
+const authenticateUser = async (email, password) => {
+    const resolved = await resolveAuthenticatedUser(email, password);
+    if (resolved.requires2fa) {
+        return resolved;
+    }
+    const { user, loggedShopId, temporaryPasswordAuthData } = resolved;
 
     // Generate tokens with shopId and token_version included
     const accessToken = generateAccessToken({
@@ -839,5 +862,8 @@ module.exports = {
     hasActiveGrowthOsRole,
     getActiveGrowthOsRole,
     isInitialGrowthBootstrapUser,
-    invalidateUserSessions
+    invalidateUserSessions,
+    // ADR M-004: reused (not duplicated) by the native auth module.
+    resolveAuthenticatedUser,
+    blacklistToken,
 };

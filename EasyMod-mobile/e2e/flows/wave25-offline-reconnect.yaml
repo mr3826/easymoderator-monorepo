@@ -1,0 +1,61 @@
+appId: tech.easymod.merchant.dev
+name: EasyMod offline, offline cold restart (ADR M-011) and reconnect
+tags:
+  - mobile-e2e
+  - wave25
+  - offline
+onFlowStart:
+  - runFlow: ../support/restore-online.yaml
+onFlowComplete:
+  - runFlow: ../support/restore-online.yaml
+---
+# The E2E build talks to the backend through the emulator network (10.0.2.2),
+# not adb reverse, so airplane mode really cuts it off.
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../support/sign-in.yaml
+    env:
+      LOGIN_EMAIL: ${E2E_EMAIL}
+      LOGIN_PASSWORD: ${E2E_PASSWORD}
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- assertVisible:
+    id: today-summary
+- setAirplaneMode: enabled
+- extendedWaitUntil:
+    visible:
+      id: home-offline-cached
+    timeout: 30000
+- assertVisible:
+    id: attention-card-.*
+- takeScreenshot: offline-cached
+# Process death while offline: the persisted read-only Home comes back without a
+# network round trip, for the same user and shop.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-offline-cached
+    timeout: 60000
+- assertVisible:
+    id: attention-card-.*
+- assertNotVisible:
+    id: login-email-input
+- takeScreenshot: offline-cold-restart
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    notVisible:
+      id: home-offline-cached
+    timeout: 60000
+- swipe:
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
+      id: today-summary
+    timeout: 60000
+- assertVisible:
+    id: attention-card-.*
+- takeScreenshot: reconnected

@@ -1,0 +1,26 @@
+appId: tech.easymod.merchant.dev
+---
+# Pull Home to refresh after the server has ended the session, until the app is
+# back on the login screen.
+#
+# A pull made while the list is still settling can be dropped before it reaches
+# the app: on the CI emulator, one run sent no request at all after the pull.
+# So pull again, at most three times. This retries only the gesture. The first
+# pull that reaches the app is answered 401, and an app that ignored that would
+# ignore every later 401 too, so a real sign-out defect still fails. The calling
+# flow asserts the login screen and that no Home data remains.
+- waitForAnimationToEnd:
+    timeout: 5000
+- repeat:
+    times: 3
+    while:
+      notVisible:
+        id: login-email-input
+    commands:
+      - swipe:
+          direction: DOWN
+      - extendedWaitUntil:
+          visible:
+            id: login-email-input
+          timeout: 15000
+          optional: true

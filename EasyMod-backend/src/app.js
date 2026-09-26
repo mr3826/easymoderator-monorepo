@@ -20,6 +20,7 @@ const telegramWebhookRoutes = require('./modules/webhooks/telegram-webhook.route
 const { AppError, globalErrorHandler } = require('./utils/AppError');
 const { initSentry, sentryCaptureException } = require('./config/sentry');
 const { requestContextMiddleware } = require('./middleware/request-context.middleware');
+const { mobileClientContext } = require('./middleware/mobile-client-context.middleware');
 const createSessionMiddleware = require('./middleware/session.middleware');
 const xssSanitize = require('./middleware/xss-sanitize.middleware');
 
@@ -139,6 +140,9 @@ app.use(cookieParser());
 
 // Request context middleware (must be early — provides req.logger for P2-5)
 app.use(requestContextMiddleware);
+
+// ADR M-005: read X-EM-Client (if present) for mobile-mutation audit attribution.
+app.use(mobileClientContext);
 
 // Session middleware (Redis-backed in production)
 app.use(createSessionMiddleware());

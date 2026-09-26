@@ -1,0 +1,148 @@
+name: Mobile Release
+
+# Signed Android release build (ADR M-013, docs/mobile/adr/M-013-release-signing.md).
+# Runs only for pushes to main that change the mobile app; never for a pull request, never
+# on demand. The upload key reaches exactly one step ("Sign with the upload key") from the
+# `mobile-release` environment, whose deployment branch policy admits main only. Nothing is
+# distributed from here: the signed APK/AAB are uploaded as this run's artifact.
+# .github/scripts/verify-mobile-ci-isolation.js checks this file's shape on every mobile PR.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'EasyMod-mobile/**'
+      - '.github/workflows/mobile-release.yml'
+
+# A release build is never cancelled halfway; a newer push to main queues behind it.
+concurrency:
+  group: mobile-release-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release:
+    name: Signed Android release (all ABIs) + install/launch
+    runs-on: ubuntu-latest
+    environment: mobile-release
+    timeout-minutes: 120
+    env:
+      APP_VARIANT: preview
+      EXPO_PUBLIC_API_BASE_URL: https://api.easymod.tech
+      GIT_SHA: ${{ github.sha }}
+      EXPO_NO_TELEMETRY: '1'
+    defaults:
+      run:
+        working-directory: ./EasyMod-mobile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # The version code is main's commit count: monotonic on main and reproducible per SHA.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: EasyMod-mobile/package-lock.json
+
+      - name: Derive the version code
+        run: echo "APP_BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+
+      - name: Install
+        run: npm ci
+
+      - name: Generate the Android project (clean prebuild)
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Record the configured ABI matrix
+        run: |
+          mkdir -p release
+          grep -E '^reactNativeArchitectures=' android/gradle.properties | tee release/android-abis.txt
+
+      - name: Build release APK + AAB (all ABIs, R8)
+        run: |
+          set -o pipefail
+          mkdir -p release-logs
+          cd android
+          ./gradlew --no-daemon assembleRelease bundleRelease 2>&1 | tee ../release-logs/gradle-release.log
+
+      - name: Sign with the upload key
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          ANDROID_UPLOAD_KEY_ALIAS="$(node -p "require('./release-signing.json').keyAlias")"
+          export ANDROID_UPLOAD_KEY_ALIAS
+          bash scripts/sign-android-release.sh \
+            android/app/build/outputs/apk/release/app-release.apk \
+            android/app/build/outputs/bundle/release/app-release.aab \
+            release
+
+      - name: Verify the signed artifacts against the pinned upload key
+        run: >-
+          node scripts/verify-android-artifact.js
+          --apk release/app-release.apk
+          --aab release/app-release.aab
+          --package tech.easymod.merchant.preview
+          --abis armeabi-v7a,arm64-v8a,x86,x86_64
+          --mapping android/app/build/outputs/mapping/release/mapping.txt
+          --expect-signer "$(node -p "require('./release-signing.json').certificateSha256")"
+          --out release
+
+      - name: Enable KVM
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and cold-launch the signed APK on API 24 (x86)
+        uses: reactivecircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        with:
+          api-level: 24
+          target: google_apis
+          arch: x86
+          profile: Nexus 5
+          ram-size: 2048M
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: ./EasyMod-mobile
+          script: node scripts/android-install-launch-check.js release/app-release.apk tech.easymod.merchant.preview release
+
+      - name: Checksums
+        run: |
+          cp android/app/build/outputs/mapping/release/mapping.txt release/r8-mapping.txt
+          cd release
+          sha256sum app-release.apk app-release.aab r8-mapping.txt > SHA256SUMS
+          cat SHA256SUMS
+
+      # Only a fully verified, signed and launched release is uploaded.
+      - name: Upload the signed release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-release-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            EasyMod-mobile/release/
+            EasyMod-mobile/release-logs/
+
+      - name: Upload build logs (failed run)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-release-logs-${{ github.sha }}
+          if-no-files-found: ignore
+          path: EasyMod-mobile/release-logs/

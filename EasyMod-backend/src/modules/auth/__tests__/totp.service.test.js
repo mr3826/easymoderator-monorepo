@@ -16,6 +16,18 @@ const mockRedis = {
     get: jest.fn((key) => Promise.resolve(redisStore[key] || null)),
     setex: jest.fn((key, ttl, val) => { redisStore[key] = val; return Promise.resolve('OK'); }),
     del: jest.fn((key) => { delete redisStore[key]; return Promise.resolve(1); }),
+    // Real Redis executes SET ... NX and GETDEL atomically; the mock does the
+    // same by resolving each synchronously at call time.
+    set: jest.fn((key, val, ...args) => {
+        if (args.includes('NX') && key in redisStore) return Promise.resolve(null);
+        redisStore[key] = val;
+        return Promise.resolve('OK');
+    }),
+    getdel: jest.fn((key) => {
+        const value = key in redisStore ? redisStore[key] : null;
+        delete redisStore[key];
+        return Promise.resolve(value);
+    }),
     status: 'ready'
 };
 
@@ -150,12 +162,27 @@ describe('TOTP Service Security', () => {
 
             await totpService.verifyTotpToken(userId, token);
 
-            // The implementation should have marked the token as used in Redis
-            expect(mockRedis.setex).toHaveBeenCalledWith(
-                expect.stringContaining('totp_used:'),
-                expect.any(Number),
-                '1'
-            );
+            // The code is recorded as used, so presenting it again is refused.
+            expect(redisStore[`totp_used:${userId}:${token}`]).toBe('1');
+            await expect(totpService.verifyTotpToken(userId, token))
+                .rejects
+                .toThrow('already used');
+        });
+
+        it('accepts a code exactly once when two verifications race', async () => {
+            const userId = 'user-1';
+            const secret = await enableTestTotp(userId);
+            const token = currentTotpToken(secret);
+
+            const results = await Promise.allSettled([
+                totpService.verifyTotpToken(userId, token),
+                totpService.verifyTotpToken(userId, token),
+            ]);
+
+            expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+            const rejected = results.filter((r) => r.status === 'rejected');
+            expect(rejected).toHaveLength(1);
+            expect(rejected[0].reason.message).toMatch(/already used/);
         });
 
         it('should reject reused TOTP tokens', async () => {
@@ -235,7 +262,21 @@ describe('TOTP Service Security', () => {
             const result = await totpService.consumeTempToken(tempToken);
 
             expect(result).toBe(userId);
-            expect(mockRedis.del).toHaveBeenCalledWith(`totp_temp:${tempToken}`);
+            expect(redisStore[`totp_temp:${tempToken}`]).toBeUndefined();
+            await expect(totpService.consumeTempToken(tempToken)).resolves.toBeNull();
+        });
+
+        it('hands a temp token to exactly one of two concurrent consumers', async () => {
+            const tempToken = 'temp-token-race';
+            redisStore[`totp_temp:${tempToken}`] = 'user-1';
+
+            const results = await Promise.all([
+                totpService.consumeTempToken(tempToken),
+                totpService.consumeTempToken(tempToken),
+            ]);
+
+            expect(results.filter((r) => r === 'user-1')).toHaveLength(1);
+            expect(results.filter((r) => r === null)).toHaveLength(1);
         });
 
         it('should return null for invalid temp token', async () => {
