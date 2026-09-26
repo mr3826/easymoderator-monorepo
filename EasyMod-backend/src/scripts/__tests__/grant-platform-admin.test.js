@@ -90,7 +90,7 @@ describe('grant-platform-admin CLI', () => {
         expect(closeAllRedis).toHaveBeenCalledTimes(1);
     });
 
-    test('no-op changes do not audit, invalidate, or rewrite caches', async () => {
+    test('no-op changes skip audit and invalidation but still converge the cache', async () => {
         User.findOne.mockResolvedValue({ id: 'user-9', platform_role: 'SUPER_ADMIN' });
 
         const result = await run(['ops@example.test', 'SUPER_ADMIN']);
@@ -98,7 +98,9 @@ describe('grant-platform-admin CLI', () => {
         expect(result.noop).toBe(true);
         expect(AuditService.logOperation).not.toHaveBeenCalled();
         expect(invalidateUserSessions).not.toHaveBeenCalled();
-        expect(cacheService.setStrict).not.toHaveBeenCalled();
+        // A re-run after an exit-4 partial failure must repair the cache even
+        // when the role itself no longer changes.
+        expect(cacheService.setStrict).toHaveBeenCalledWith('user:user-9:platform_role', 'SUPER_ADMIN', 60);
     });
 
     test('missing users fail with exit code 2 after cleanup', async () => {

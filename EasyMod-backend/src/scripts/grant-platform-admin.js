@@ -31,6 +31,18 @@ function cliError(message, exitCode = 1) {
   return error;
 }
 
+async function reconfirmCache(cacheKey, value) {
+  const confirmed = typeof cacheService.setStrict === 'function'
+    ? await cacheService.setStrict(cacheKey, value, 60)
+    : await cacheService.set(cacheKey, value, 60).then(() => true);
+  if (confirmed !== true) {
+    throw cliError(
+      'FAIL: platform_role cache could not be re-confirmed; the change is committed but cached privilege may persist for up to 60 seconds. Re-run to converge.',
+      4,
+    );
+  }
+}
+
 const USAGE = 'Usage: node src/scripts/grant-platform-admin.js <email> <SUPPORT_ADMIN|SUPER_ADMIN|NONE>';
 
 function resolveGithubActor() {
@@ -85,20 +97,15 @@ async function run(args) {
       return { user, previousRole, noop: false };
     });
 
+    // The cache re-confirmation also runs on the NOOP path so an operator's
+    // "re-run to converge" after an exit-4 response actually converges even
+    // if a previous crash left a stale privileged cache within its 60s TTL.
+    const cacheKey = `user:${outcome.user.id}:platform_role`;
     if (outcome.noop) {
+      await reconfirmCache(cacheKey, outcome.previousRole || 'NONE');
       return { noop: true, email, role: outcome.previousRole };
     }
-
-    const cacheKey = `user:${outcome.user.id}:platform_role`;
-    const confirmed = typeof cacheService.setStrict === 'function'
-      ? await cacheService.setStrict(cacheKey, role || 'NONE', 60)
-      : await cacheService.set(cacheKey, role || 'NONE', 60).then(() => true);
-    if (confirmed !== true) {
-      throw cliError(
-        'FAIL: platform_role cache could not be re-confirmed; the change is committed but cached privilege may persist for up to 60 seconds. Re-run to converge.',
-        4,
-      );
-    }
+    await reconfirmCache(cacheKey, role || 'NONE');
     return { noop: false, email, userId: outcome.user.id, role };
   } finally {
     await sequelize.close().catch(() => {});

@@ -865,7 +865,16 @@ class GrowthOsProspectService {
             scope: null,
             excludeId: prospectId,
           });
-          if (conflict) throw duplicateError(conflict.id);
+          if (conflict) {
+            // Same disclosure policy as the pre-write probe: the constraint
+            // proves a global conflict exists, but the foreign id is only
+            // named when it lives inside the caller's own scope.
+            const visible = await safeFindConflict(identity, values, {
+              scope,
+              excludeId: prospectId,
+            });
+            throw duplicateError(visible ? visible.id : null);
+          }
           throw internalError();
         }
         throw error;
