@@ -134,13 +134,12 @@ describe('Growth OS session authorization', () => {
   });
 
   it('exposes only the MFA enrollment boundary for the marked seed identity', async () => {
-    const { User } = require('../../entities');
-    roleHolder.user = { userId: 'bootstrap-1', email: 'growth-admin@easymod.tech' };
-    User.findByPk.mockResolvedValueOnce({
-      id: 'bootstrap-1',
-      must_change_password: false,
-      settings: { internal_growth_bootstrap: true, totp_enabled: false },
-    });
+    roleHolder.user = {
+      userId: 'bootstrap-1',
+      email: 'growth-admin@easymod.tech',
+      bootstrapOperator: true,
+      mfaVerified: false,
+    };
 
     const res = await request(app).get('/api/internal/growth-os/session');
 
@@ -149,13 +148,12 @@ describe('Growth OS session authorization', () => {
   });
 
   it('does not grant Growth access after MFA until the audited role grant completes', async () => {
-    const { User } = require('../../entities');
-    roleHolder.user = { userId: 'bootstrap-1', email: 'growth-admin@easymod.tech', mfaVerified: true };
-    User.findByPk.mockResolvedValueOnce({
-      id: 'bootstrap-1',
-      must_change_password: false,
-      settings: { internal_growth_bootstrap: true, totp_enabled: true },
-    });
+    roleHolder.user = {
+      userId: 'bootstrap-1',
+      email: 'growth-admin@easymod.tech',
+      bootstrapOperator: true,
+      mfaVerified: true,
+    };
 
     const res = await request(app).get('/api/internal/growth-os/session');
 
