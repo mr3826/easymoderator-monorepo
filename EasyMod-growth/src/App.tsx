@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { GrowthAuthProvider, useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -29,10 +29,29 @@ import { SearchPage } from '@/pages/SearchPage';
 import { SessionExpiredPage } from '@/pages/SessionExpiredPage';
 import { SourcesPage } from '@/pages/SourcesPage';
 import { GrowthUnavailablePage } from '@/pages/GrowthUnavailablePage';
-import { LoadingState } from '@/components/states';
+import { LoadingState, MessageState } from '@/components/states';
+
+function BootstrapPendingRoute() {
+  const auth = useGrowthAuth();
+  const navigate = useNavigate();
+
+  const returnToSignIn = async () => {
+    await auth.logout();
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <MessageState eyebrow="Initial operator" title="MFA verified; access grant pending">
+      <p>The protected Growth OS role grant must complete before workspace access is available.</p>
+      <button className="primary-button" type="button" onClick={returnToSignIn}>Return to sign in</button>
+    </MessageState>
+  );
+}
 
 function MfaSetupRoute() {
   const { status } = useGrowthAuth();
+  if (status === 'bootstrap-pending') return <BootstrapPendingRoute />;
+  if (status === 'bootstrap-mfa-required') return <EnrollMfaPage />;
   if (status === 'mfa-required' || status === 'authenticated') return <EnrollMfaPage />;
   if (status === 'loading') return <LoadingState />;
   return <Navigate to="/login" replace />;

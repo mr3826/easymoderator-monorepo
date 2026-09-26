@@ -68,6 +68,37 @@ async function assertNoActiveMerchantMembership(targetUserId, transaction) {
   }
 }
 
+function assertBootstrapTargetReady(target) {
+  if (target.is_active === false) {
+    throw new AppError(
+      'The initial Growth OS administrator account is inactive.',
+      409,
+      'GROWTH_OS_BOOTSTRAP_TARGET_INACTIVE',
+    );
+  }
+  if (target.settings?.internal_growth_bootstrap !== true) {
+    throw new AppError(
+      'The target account was not created by the protected initial-admin seed.',
+      409,
+      'GROWTH_OS_BOOTSTRAP_TARGET_NOT_SEEDED',
+    );
+  }
+  if (target.must_change_password !== false) {
+    throw new AppError(
+      'The initial Growth OS administrator must complete password rotation first.',
+      409,
+      'GROWTH_OS_BOOTSTRAP_PASSWORD_CHANGE_REQUIRED',
+    );
+  }
+  if (target.settings?.totp_enabled !== true) {
+    throw new AppError(
+      'The initial Growth OS administrator must enroll MFA first.',
+      409,
+      'GROWTH_OS_BOOTSTRAP_MFA_REQUIRED',
+    );
+  }
+}
+
 async function invalidateRoleCache(userId, transaction) {
   try {
     const deleted = await cacheService.delete(roleCacheKey(userId));
@@ -225,7 +256,7 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
     else await assertAuthorizedActor(actorUserId, transaction);
 
     const target = await User.findByPk(targetUserId, {
-      attributes: ['id'],
+      attributes: ['id', 'email', 'full_name', 'is_active', 'must_change_password', 'settings'],
       transaction,
       lock: transaction.LOCK?.UPDATE,
     });
@@ -234,6 +265,7 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
     }
 
     await assertNoActiveMerchantMembership(targetUserId, transaction);
+    if (bootstrap) assertBootstrapTargetReady(target);
 
     const existing = await GrowthOsUserRole.findOne({
       where: {
@@ -258,6 +290,15 @@ async function grantRole({ actorUserId, targetUserId, role, reason, ipAddress, u
       revoked_at: null,
       metadata: { source: 'growth_os_role_admin' },
     }, { transaction });
+
+    if (bootstrap) {
+      await target.update({
+        settings: {
+          ...(target.settings && typeof target.settings === 'object' ? target.settings : {}),
+          internal_growth_bootstrap: false,
+        },
+      }, { transaction });
+    }
 
     await writeAudit({
       actorUserId,

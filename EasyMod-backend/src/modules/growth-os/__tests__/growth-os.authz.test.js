@@ -133,6 +133,36 @@ describe('Growth OS session authorization', () => {
     expect(res.status).toBe(403);
   });
 
+  it('exposes only the MFA enrollment boundary for the marked seed identity', async () => {
+    const { User } = require('../../entities');
+    roleHolder.user = { userId: 'bootstrap-1', email: 'growth-admin@easymod.tech' };
+    User.findByPk.mockResolvedValueOnce({
+      id: 'bootstrap-1',
+      must_change_password: false,
+      settings: { internal_growth_bootstrap: true, totp_enabled: false },
+    });
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_BOOTSTRAP_MFA_REQUIRED');
+  });
+
+  it('does not grant Growth access after MFA until the audited role grant completes', async () => {
+    const { User } = require('../../entities');
+    roleHolder.user = { userId: 'bootstrap-1', email: 'growth-admin@easymod.tech', mfaVerified: true };
+    User.findByPk.mockResolvedValueOnce({
+      id: 'bootstrap-1',
+      must_change_password: false,
+      settings: { internal_growth_bootstrap: true, totp_enabled: true },
+    });
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_BOOTSTRAP_PENDING');
+  });
+
   it('returns a controlled 503 when the authorization store is unavailable', async () => {
     const { GrowthOsUserRole } = require('../../entities');
     roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech' };

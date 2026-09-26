@@ -382,6 +382,40 @@ describe('Auth API', () => {
             expect(cookieStr).toContain('HttpOnly');
         });
 
+        it('allows only the marked initial operator to authenticate without a shop', async () => {
+            const bootstrapUser = {
+                ...mockUser,
+                shops: [],
+                last_logged_shop_id: null,
+                settings: { internal_growth_bootstrap: true },
+                update: jest.fn(() => Promise.resolve()),
+            };
+            User.findOne.mockResolvedValue(bootstrapUser);
+
+            const res = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: bootstrapUser.email, password: 'correct-password' });
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.currentShop).toBeNull();
+        });
+
+        it('continues to reject an unmarked shop-less account', async () => {
+            User.findOne.mockResolvedValue({
+                ...mockUser,
+                shops: [],
+                last_logged_shop_id: null,
+                settings: {},
+            });
+
+            const res = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: mockUser.email, password: 'correct-password' });
+
+            expect(res.status).toBe(403);
+            expect(res.body.message || res.body.error?.message).toContain('no associated shops');
+        });
+
         it('should return 400 when email is missing', async () => {
             const res = await request(app)
                 .post('/api/auth/signin')
@@ -594,6 +628,30 @@ describe('Auth API', () => {
             if (res.status === 200) {
                 expect(res.headers['set-cookie']).toBeDefined();
             }
+        });
+
+        it('fails closed when the Growth role store is unavailable for a bootstrap refresh', async () => {
+            const crypto = require('crypto');
+            const { GrowthOsUserRole } = require('src/modules/entities');
+            const { generateRefreshToken } = require('src/utils/jwt.util');
+            const refreshToken = generateRefreshToken({
+                userId: mockUser.id,
+                tokenVersion: mockUser.token_version,
+            });
+            const bootstrapUser = {
+                ...mockUser,
+                shops: [],
+                last_logged_shop_id: null,
+                settings: { internal_growth_bootstrap: true },
+                refresh_token: crypto.createHash('sha256').update(refreshToken).digest('hex'),
+            };
+            User.findByPk.mockResolvedValue(bootstrapUser);
+            GrowthOsUserRole.findOne.mockRejectedValue(new Error('role store unavailable'));
+
+            await expect(authService.validateRefreshToken(refreshToken)).rejects.toMatchObject({
+                status: 503,
+                code: 'AUTH_ROLE_LOOKUP_UNAVAILABLE',
+            });
         });
     });
 

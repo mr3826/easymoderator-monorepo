@@ -325,6 +325,12 @@ const getActiveGrowthOsRole = async (userId) => {
     }
 };
 
+// The one-time seed account must be able to complete password rotation and MFA
+// enrollment before it receives its first Growth OS role. This marker is set
+// only by the protected seed workflow and cleared transactionally by the
+// canonical first-role grant. It is not a Growth authorization decision.
+const isInitialGrowthBootstrapUser = (user) => user?.settings?.internal_growth_bootstrap === true;
+
 const hasActiveGrowthOsRole = async (userId) => Boolean(await getActiveGrowthOsRole(userId));
 
 /**
@@ -386,7 +392,9 @@ const authenticateUser = async (email, password) => {
     // role; the token then carries a null shopId, which every shop-scoped
     // merchant route rejects on scope. Everyone else keeps the historical
     // 403 behaviour unchanged.
-    if (!isGrowthOsUser && (!user.shops || user.shops.length === 0)) {
+    if (!isGrowthOsUser
+        && !isInitialGrowthBootstrapUser(user)
+        && (!user.shops || user.shops.length === 0)) {
         throw new AppError('User has no associated shops', 403);
     }
 
@@ -700,8 +708,14 @@ const validateRefreshToken = async (refreshToken) => {
                 await clearStaleShopSession(user);
                 throw new AppError('Invalid refresh token', 401);
             }
-        } else if (!(await hasActiveGrowthOsRole(user.id))) {
-            throw new AppError('No active shop session found. Please login again.', 401);
+        } else {
+            const activeGrowthOsRole = await getActiveGrowthOsRole(user.id);
+            if (activeGrowthOsRole === undefined) {
+                throw new AppError('Unable to verify internal access role. Please retry.', 503, 'AUTH_ROLE_LOOKUP_UNAVAILABLE');
+            }
+            if (!activeGrowthOsRole && !isInitialGrowthBootstrapUser(user)) {
+                throw new AppError('No active shop session found. Please login again.', 401);
+            }
         }
 
         // Generate new access token with shopId and token_version
@@ -715,6 +729,7 @@ const validateRefreshToken = async (refreshToken) => {
 
         return { accessToken, userId: user.id, shopId: selectedShopId };
     } catch (error) {
+        if (error?.code === 'AUTH_ROLE_LOOKUP_UNAVAILABLE') throw error;
         throw new AppError('Invalid or expired refresh token', 401);
     }
 };
@@ -758,6 +773,9 @@ const getAuthContext = async (userId, shopIdFromToken) => {
         return { user: userResponse, currentShop: null, allShops: [] };
     }
     if (!user.shops || user.shops.length === 0) {
+        if (isInitialGrowthBootstrapUser(user)) {
+            return { user: userResponse, currentShop: null, allShops: [] };
+        }
         throw new AppError('User has no associated shops', 403);
     }
 
@@ -818,5 +836,6 @@ module.exports = {
     generateUniqueShopCode,
     hasActiveGrowthOsRole,
     getActiveGrowthOsRole,
+    isInitialGrowthBootstrapUser,
     invalidateUserSessions
 };

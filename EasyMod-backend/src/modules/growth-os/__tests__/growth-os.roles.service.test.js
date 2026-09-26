@@ -89,6 +89,15 @@ describe('Growth OS role and merchant membership boundary', () => {
 
   it('allows the configured one-time bootstrap actor to establish the first Super Admin', async () => {
     process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL = 'bootstrap@example.com';
+    const bootstrapTarget = {
+      id: ACTOR_ID,
+      email: 'bootstrap@example.com',
+      full_name: 'Bootstrap Operator',
+      is_active: true,
+      must_change_password: false,
+      settings: { internal_growth_bootstrap: true, totp_enabled: true },
+      update: jest.fn(),
+    };
     const roleRecord = {
       id: 'role-bootstrap',
       user_id: ACTOR_ID,
@@ -98,7 +107,7 @@ describe('Growth OS role and merchant membership boundary', () => {
     };
     User.findByPk
       .mockResolvedValueOnce({ id: ACTOR_ID, email: 'bootstrap@example.com' })
-      .mockResolvedValueOnce({ id: ACTOR_ID });
+      .mockResolvedValueOnce(bootstrapTarget);
     GrowthOsUserRole.findOne
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
@@ -116,5 +125,61 @@ describe('Growth OS role and merchant membership boundary', () => {
       role: 'SUPER_ADMIN',
       granted_by: ACTOR_ID,
     }), expect.objectContaining({ transaction: mockTransaction }));
+    expect(bootstrapTarget.update).toHaveBeenCalledWith(
+      { settings: { internal_growth_bootstrap: false, totp_enabled: true } },
+      { transaction: mockTransaction },
+    );
+  });
+
+  it('refuses first Super Admin bootstrap before password rotation or MFA', async () => {
+    process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL = 'bootstrap@example.com';
+    User.findByPk
+      .mockResolvedValueOnce({ id: ACTOR_ID, email: 'bootstrap@example.com' })
+      .mockResolvedValueOnce({
+        id: ACTOR_ID,
+        is_active: true,
+        must_change_password: true,
+        settings: { internal_growth_bootstrap: true, totp_enabled: false },
+      });
+    GrowthOsUserRole.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    await expect(roles.bootstrapRole({
+      actorUserId: ACTOR_ID,
+      targetUserId: ACTOR_ID,
+      role: 'SUPER_ADMIN',
+      reason: 'Initial Growth OS bootstrap',
+    })).rejects.toMatchObject({
+      status: 409,
+      code: 'GROWTH_OS_BOOTSTRAP_PASSWORD_CHANGE_REQUIRED',
+    });
+    expect(GrowthOsUserRole.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses first Super Admin bootstrap for an unmarked shop-less account', async () => {
+    process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL = 'bootstrap@example.com';
+    User.findByPk
+      .mockResolvedValueOnce({ id: ACTOR_ID, email: 'bootstrap@example.com' })
+      .mockResolvedValueOnce({
+        id: ACTOR_ID,
+        is_active: true,
+        must_change_password: false,
+        settings: { totp_enabled: true },
+      });
+    GrowthOsUserRole.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    await expect(roles.bootstrapRole({
+      actorUserId: ACTOR_ID,
+      targetUserId: ACTOR_ID,
+      role: 'SUPER_ADMIN',
+      reason: 'Initial Growth OS bootstrap',
+    })).rejects.toMatchObject({
+      status: 409,
+      code: 'GROWTH_OS_BOOTSTRAP_TARGET_NOT_SEEDED',
+    });
+    expect(GrowthOsUserRole.create).not.toHaveBeenCalled();
   });
 });

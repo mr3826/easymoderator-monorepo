@@ -18,7 +18,11 @@ export function LoginPage() {
       : '/';
     return <Navigate to={redirectTo} replace />;
   }
-  if (auth.status === 'mfa-required') return <Navigate to="/enroll-mfa" replace />;
+  if (auth.status === 'mfa-required'
+    || auth.status === 'bootstrap-mfa-required'
+    || auth.status === 'bootstrap-pending') {
+    return <Navigate to="/enroll-mfa" replace />;
+  }
   if (auth.status === 'unavailable') return <GrowthUnavailablePage />;
   if (auth.status === 'password-change-required') return <Navigate to="/change-password" replace />;
 

@@ -88,6 +88,17 @@ function buildAccess(rawRole) {
   };
 }
 
+async function getInitialBootstrapState(userId) {
+  const { User } = require('../entities');
+  const user = await User.findByPk(userId, {
+    attributes: ['must_change_password', 'settings'],
+  });
+  const settings = user?.settings && typeof user.settings === 'object' ? user.settings : {};
+  if (settings.internal_growth_bootstrap !== true) return null;
+  if (user.must_change_password === true) return 'password-change-required';
+  return settings.totp_enabled === true ? 'pending' : 'mfa-required';
+}
+
 function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
   return async (req, _res, next) => {
     try {
@@ -107,6 +118,30 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
         : (Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission])
           .some((permission) => hasPermission(permissionRole, permission));
       if (!access || !hasRequiredPermission) {
+        if (!access) {
+          const bootstrapState = await getInitialBootstrapState(userId);
+          if (bootstrapState === 'password-change-required') {
+            throw new AppError(
+              'The initial Growth OS administrator must complete password rotation first.',
+              403,
+              'GROWTH_OS_BOOTSTRAP_PASSWORD_CHANGE_REQUIRED',
+            );
+          }
+          if (bootstrapState === 'mfa-required') {
+            throw new AppError(
+              'The initial Growth OS administrator must enroll MFA first.',
+              403,
+              'GROWTH_OS_BOOTSTRAP_MFA_REQUIRED',
+            );
+          }
+          if (bootstrapState === 'pending') {
+            throw new AppError(
+              'The initial Growth OS administrator is ready for the audited role grant.',
+              403,
+              'GROWTH_OS_BOOTSTRAP_PENDING',
+            );
+          }
+        }
         throw new AppError('Forbidden: Growth OS access required.', 403, 'GROWTH_OS_FORBIDDEN');
       }
 

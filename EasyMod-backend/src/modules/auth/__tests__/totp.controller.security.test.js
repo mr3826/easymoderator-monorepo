@@ -17,6 +17,7 @@ jest.mock('../auth.service', () => ({
   getTemporaryPasswordAuthData: jest.fn(() => null),
   hasActiveGrowthOsRole: jest.fn(),
   getActiveGrowthOsRole: jest.fn(),
+  isInitialGrowthBootstrapUser: jest.fn(() => false),
 }));
 jest.mock('../../entities', () => ({
   User: { findByPk: jest.fn() },
