@@ -1,0 +1,163 @@
+name: Run Growth Prospect Importer
+
+# -----------------------------------------------------------------------------
+# Protected production execution of the canonical Phase 3 historical importer
+# (crm_lead audit rows + partner_applications -> Growth OS ledger).
+#
+# Dry-run is the default and writes nothing. `apply` additionally requires the
+# literal authorization phrase, executes once, then RE-RUNS in dry-run mode and
+# fails the job unless the second pass reports zero would-create rows for the
+# same sources — the idempotency proof is enforced, not assumed.
+#
+# Receipts (source references and outcomes only, no contact PII) are persisted
+# on the host under /root/growth-os-receipts for the execution record.
+# -----------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Execution mode"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - apply
+      authorization:
+        description: "For mode=apply only, type PRODUCTION-IMPORT-APPLY"
+        required: false
+        default: ""
+        type: string
+      batch_size:
+        description: "Source read batch size (1-1000)"
+        required: false
+        default: "100"
+        type: string
+
+concurrency:
+  group: run-growth-importer
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    name: Execute importer on production
+    if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Derive pinned SSH host fingerprint
+        id: ssh_host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Run importer in the live backend container
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          IMPORT_MODE: ${{ inputs.mode }}
+          IMPORT_AUTHORIZATION: ${{ inputs.authorization }}
+          IMPORT_BATCH_SIZE: ${{ inputs.batch_size }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/easymod-growth-importer-key"
+          umask 077
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > "$key_file"
+          printf '%s\n%s\n%s\n%s\n' \
+            "$IMPORT_MODE" \
+            "$IMPORT_AUTHORIZATION" \
+            "$IMPORT_BATCH_SIZE" \
+            "$GITHUB_RUN_ID" \
+          | ssh -i "$key_file" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=20 \
+              root@"$DEPLOY_HOST" '
+                set -euo pipefail
+                IFS= read -r IMPORT_MODE
+                IFS= read -r IMPORT_AUTHORIZATION
+                IFS= read -r IMPORT_BATCH_SIZE
+                IFS= read -r GITHUB_RUN_ID
+                cd /opt/easymod
+                backend_container=$(docker ps \
+                  --filter "label=com.docker.compose.service=backend" \
+                  --filter "status=running" \
+                  --format "{{.ID}}" | head -n 1)
+                if [ -z "$backend_container" ]; then
+                  echo "No running Compose backend container was found." >&2
+                  exit 1
+                fi
+                if ! docker exec "$backend_container" test -f scripts/import-growth-prospects.js; then
+                  echo "The deployed runtime does not contain the canonical importer." >&2
+                  exit 1
+                fi
+                mkdir -p /root/growth-os-receipts
+                # Inputs reach the remote shell; harden before interpolation.
+                case "$IMPORT_BATCH_SIZE" in ''|*[!0-9]*) IMPORT_BATCH_SIZE=100;; esac
+                case "$GITHUB_RUN_ID" in ''|*[!0-9]*) echo "Unexpected run id." >&2; exit 1;; esac
+                run_id="growth-prospect-import-gha-$GITHUB_RUN_ID"
+                if [ "$IMPORT_MODE" = "apply" ]; then
+                  if [ "$IMPORT_AUTHORIZATION" != "PRODUCTION-IMPORT-APPLY" ]; then
+                    echo "mode=apply requires the literal authorization phrase PRODUCTION-IMPORT-APPLY." >&2
+                    exit 1
+                  fi
+                  docker exec \
+                    "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --apply --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-apply --receipt /tmp/growth-os-receipts/apply.json" \
+                    | tee /root/growth-os-receipts/${run_id}-apply.stdout.json
+                  docker cp "$backend_container:/tmp/growth-os-receipts/apply.json" "/root/growth-os-receipts/${run_id}-apply.receipt.json"
+                  echo "APPLY_DONE run_id=$run_id"
+                  # Idempotency gate: the same ledger must now report zero new
+                  # writes. Any would-create row after a completed apply fails
+                  # this job loudly instead of hiding drift.
+                  second=$(docker exec \
+                    "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-verify --receipt /tmp/growth-os-receipts/verify.json" \
+                    | tee /root/growth-os-receipts/${run_id}-verify.stdout.json)
+                  docker cp "$backend_container:/tmp/growth-os-receipts/verify.json" "/root/growth-os-receipts/${run_id}-verify.receipt.json"
+                  would_create=$(printf "%s" "$second" | node -e "
+                    let data = '';
+                    process.stdin.on('data', (chunk) => { data += chunk; });
+                    process.stdin.on('end', () => {
+                      const line = data.trim().split('\n').filter(Boolean).pop();
+                      const parsed = JSON.parse(line);
+                      process.stdout.write(String(parsed.counts.wouldCreate));
+                    });
+                  ")
+                  echo "SECOND_RUN_WOULD_CREATE=$would_create"
+                  if [ "$would_create" != "0" ]; then
+                    echo "::error::post-apply verification dry-run reports $would_create would-create rows; idempotency is broken"
+                    exit 1
+                  fi
+                else
+                  docker exec \
+                    "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-dry --receipt /tmp/growth-os-receipts/dry.json" \
+                    | tee /root/growth-os-receipts/${run_id}-dry.stdout.json
+                  docker cp "$backend_container:/tmp/growth-os-receipts/dry.json" "/root/growth-os-receipts/${run_id}-dry.receipt.json"
+                  echo "DRY_RUN_DONE run_id=$run_id"
+                fi
+              '

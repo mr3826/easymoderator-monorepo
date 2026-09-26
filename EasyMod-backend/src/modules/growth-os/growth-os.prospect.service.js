@@ -596,6 +596,7 @@ class GrowthOsProspectService {
     audit = {},
     internal = false,
     importMode = false,
+    activationEventAt = null,
   }) {
     if (!internal && !canManageAll(access)) {
       throw new AppError('Forbidden: prospect creation access required.', 403, 'FORBIDDEN');
@@ -643,6 +644,26 @@ class GrowthOsProspectService {
           newValues: auditSnapshot(prospect),
           ...mutationAudit(audit),
         }, transaction);
+        // Activation-import rule (documented in 05-internal-control-plane.md):
+        // an imported converted row carries a canonical `activated` event only
+        // when historical evidence proves the same business outcome (the linked
+        // shop's recorded first successful AI reply). No evidence, no event —
+        // the row still counts in funnel.activated (status + active shop) but
+        // is excluded from activation TIMING rather than being synthesized.
+        if (importMode && activationEventAt && values.status === 'converted') {
+          const when = new Date(activationEventAt);
+          if (!Number.isNaN(when.getTime())) {
+            await models.GrowthOsProspectEvent.create({
+              prospect_id: prospect.id,
+              actor_user_id: null,
+              event_type: 'activated',
+              from_value: 'imported',
+              to_value: 'converted',
+              metadata: { activation_backfill: true, evidence: 'linked_shop.first_ai_reply' },
+              created_at: when,
+            }, { transaction });
+          }
+        }
         return { prospect, created: true, skippedDuplicate: false };
       });
     } catch (error) {
@@ -669,7 +690,15 @@ class GrowthOsProspectService {
     return { data: toApiProspect(result.prospect, scope), created: result.created };
   }
 
-  async createImported({ data, source, sourceReference, dryRun = true, runId = null, reservations = null }) {
+  async createImported({
+    data,
+    source,
+    sourceReference,
+    dryRun = true,
+    runId = null,
+    reservations = null,
+    activationEvidenceAt = null,
+  }) {
     const payload = {
       ...data,
       source,
@@ -728,6 +757,7 @@ class GrowthOsProspectService {
       data: payload,
       internal: true,
       importMode: true,
+      activationEventAt: activationEvidenceAt,
       audit: {
         metadata: {
           source: values.source,

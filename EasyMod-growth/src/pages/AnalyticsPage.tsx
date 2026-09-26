@@ -25,6 +25,10 @@ function statusClass(status: ProspectStatus) {
   return `status-${status.replace(/_/g, '-')}`;
 }
 
+function rateLabel(value: number | null) {
+  return value === null ? '—' : `${value}%`;
+}
+
 export function AnalyticsPage() {
   const { reportApiError } = useGrowthAuth();
   const [windowDays, setWindowDays] = useState<number>(90);
@@ -154,6 +158,79 @@ export function AnalyticsPage() {
             <strong>Median hours to Growth activation</strong>
         </div>
       </div>
+
+      <section className="content-card" aria-labelledby="discipline-breakdown-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Follow-up loop, ledger-wide</p>
+            <h3 id="discipline-breakdown-title">Follow-up discipline</h3>
+          </div>
+        </div>
+        <div className="attention-grid">
+          <div className="content-card attention-card">
+            <span className={data.followupDiscipline.onTimeRatePct !== null && data.followupDiscipline.onTimeRatePct < 80 ? 'metric warn' : 'metric'}>{rateLabel(data.followupDiscipline.onTimeRatePct)}</span>
+            <strong>Completed on time</strong>
+          </div>
+          <div className="content-card attention-card">
+            <span className="metric">{data.followupDiscipline.completedLate.toLocaleString()}</span>
+            <strong>Completed late</strong>
+          </div>
+          <div className="content-card attention-card">
+            <span className={data.followupDiscipline.overdueOpen > 0 ? 'metric warn' : 'metric'}>{data.followupDiscipline.overdueOpen.toLocaleString()}</span>
+            <strong>Open overdue</strong>
+          </div>
+          <div className="content-card attention-card">
+            <span className="metric">{data.followupDiscipline.cancelled.toLocaleString()}</span>
+            <strong>Cancelled</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="content-card" aria-labelledby="owner-performance-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Source cohort of the selected window</p>
+            <h3 id="owner-performance-title">Owner performance</h3>
+          </div>
+          <p className="state-copy">
+            {data.unassigned.openCount.toLocaleString()} unassigned live prospect{data.unassigned.openCount === 1 ? '' : 's'}
+            {data.unassigned.oldestAgeDays !== null
+              ? ` · oldest ${data.unassigned.oldestAgeDays.toLocaleString()} day${data.unassigned.oldestAgeDays === 1 ? '' : 's'}`
+              : ''}
+          </p>
+        </div>
+        <div className="table-scroll">
+          <table className="data-table">
+            <caption className="sr-only">Owner-attributed cohort performance with qualification and activation rates</caption>
+            <thead>
+              <tr>
+                <th scope="col">Owner</th>
+                <th scope="col">Created+</th>                <th scope="col">Qualified+</th>                <th scope="col">Converted+</th>
+                <th scope="col">Qualification rate</th>
+                <th scope="col">Activation rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byOwner.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="table-subtext">No owner-attributed prospects were captured in this cohort.</td>
+                </tr>
+              ) : data.byOwner.map((row) => (
+                <tr key={row.ownerUserId}>
+                  <th scope="row">
+                    <Link className="table-link" to={`/prospects?owner=${encodeURIComponent(row.ownerUserId)}`}>{row.displayName}</Link>
+                  </th>
+                  <td>{row.created.toLocaleString()}</td>
+                  <td>{row.qualified.toLocaleString()}</td>
+                  <td>{row.converted.toLocaleString()}</td>
+                  <td>{rateLabel(row.qualificationRatePct)}</td>
+                  <td>{rateLabel(row.activationRatePct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="content-card" aria-labelledby="status-breakdown-title">
         <div className="section-heading">

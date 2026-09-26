@@ -42,14 +42,26 @@ function importedStatus(metadata, linkedShop, reason) {
   return VALID_IMPORTED_STATUSES.has(status) ? status : 'new';
 }
 
+// Historical activation evidence: the linked shop's recorded first successful
+// AI reply. Import converts with this evidence get a canonical `activated`
+// event at that instant; without evidence the row is excluded from activation
+// timing rather than given a synthesized event.
+function activationEvidenceAt(linkedShop, status) {
+  if (status !== 'converted') return null;
+  const occurredAt = objectValue(linkedShop?.settings).first_ai_reply?.occurred_at;
+  return occurredAt || null;
+}
+
 function crmImportRow(row, user, shop) {
   const metadata = objectValue(row.metadata);
   const linkedShop = activeShop(shop);
   const sourceDetail = metadata.lead_source || metadata.source || null;
   const disqualifiedReason = metadata.disqualified_reason || metadata.objection || null;
+  const status = importedStatus(metadata, linkedShop, disqualifiedReason);
   return {
     source: sourceValue(sourceDetail),
     sourceReference: row.idempotency_key || `crm_lead:${row.id}`,
+    activationEvidenceAt: activationEvidenceAt(linkedShop, status),
     data: {
       businessName: metadata.business_name || metadata.businessName || metadata.shop_name
         || linkedShop?.name || linkedShop?.shop_name || user?.full_name || user?.email
@@ -63,7 +75,7 @@ function crmImportRow(row, user, shop) {
       sourceDetail: sourceDetail ? String(sourceDetail).slice(0, 160) : null,
       linkedShopId: linkedShop?.id || null,
       linkedUserId: linkedShop ? (user?.id || null) : null,
-      status: importedStatus(metadata, linkedShop, disqualifiedReason),
+      status,
       disqualified_reason: disqualifiedReason,
       source_recorded_at: row.created_at || null,
       metadata: {
@@ -80,9 +92,11 @@ function partnerImportRow(row, user, shop) {
   const linkedShop = activeShop(shop);
   const disqualifiedReason = row.status === 'rejected'
     ? (row.notes || 'Partner application rejected') : null;
+  const status = importedStatus({ status: row.status }, linkedShop, disqualifiedReason);
   return {
     source: 'partner_form',
     sourceReference: `partner_application:${row.id}`,
+    activationEvidenceAt: activationEvidenceAt(linkedShop, status),
     data: {
       businessName: row.business_name,
       contactName: user?.full_name || null,
@@ -93,7 +107,7 @@ function partnerImportRow(row, user, shop) {
       sourceDetail: 'partner_form',
       linkedShopId: linkedShop?.id || null,
       linkedUserId: linkedShop ? (user?.id || null) : null,
-      status: importedStatus({ status: row.status }, linkedShop, disqualifiedReason),
+      status,
       disqualified_reason: disqualifiedReason,
       source_recorded_at: row.created_at || null,
       metadata: {
@@ -124,7 +138,7 @@ async function relatedRows(rows) {
   const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];
   const [users, shops, memberships] = await Promise.all([
     userIds.length ? User.findAll({ where: { id: userIds }, attributes: ['id', 'email', 'full_name', 'phone'] }) : [],
-    shopIds.length ? Shop.findAll({ where: { id: shopIds }, attributes: ['id', 'name', 'shop_name', 'is_active'] }) : [],
+    shopIds.length ? Shop.findAll({ where: { id: shopIds }, attributes: ['id', 'name', 'shop_name', 'is_active', 'settings'] }) : [],
     UserShop && shopIds.length
       ? UserShop.findAll({
         where: { shop_id: shopIds, role: 'owner', is_active: true },
@@ -243,6 +257,7 @@ async function run(options = {}) {
         const result = await prospectService.createImported({
           data: row.data, source: row.source, sourceReference: row.sourceReference,
           dryRun: !parsed.apply, runId: parsed.runId, reservations,
+          activationEvidenceAt: row.activationEvidenceAt || null,
         });
         const outcome = result.created ? 'created' : result.skippedDuplicate ? 'skipped-duplicate' : 'would-create';
         counts[result.created ? 'created' : result.skippedDuplicate ? 'skippedDuplicate' : 'wouldCreate'] += 1;

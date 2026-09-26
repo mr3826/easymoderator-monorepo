@@ -210,7 +210,9 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
   const window = Math.min(Math.max(parseInt(windowDays, 10) || 90, 7), 365);
   const since = dayFloor(window);
   const until = new Date();
-  const { GrowthOsProspect, GrowthOsProspectEvent, Shop } = getModels();
+  const {
+    GrowthOsProspect, GrowthOsProspectEvent, GrowthOsFollowup, Shop, User,
+  } = getModels();
   const scope = resolveProspectScope(access, userId);
   const baseWhere = { ...scope.where, status: { [Op.ne]: 'merged' } };
   const cohortWhere = { ...baseWhere, source_recorded_at: { [Op.gte]: since, [Op.lte]: until } };
@@ -263,6 +265,56 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
     }),
   ]);
 
+  // Core value-loop telemetry: follow-up discipline, owner performance, and
+  // unassigned aging, aggregated server-side from the existing ledger only.
+  const [
+    followupTotal, followupOpen, followupCompleted, followupCancelled,
+    followupOnTime, followupLate, followupOverdueOpen, ownerRows, unassignedRows,
+  ] = await Promise.all([
+    GrowthOsFollowup.count(),
+    GrowthOsFollowup.count({ where: { status: 'open' } }),
+    GrowthOsFollowup.count({ where: { status: 'completed' } }),
+    GrowthOsFollowup.count({ where: { status: 'cancelled' } }),
+    GrowthOsFollowup.count({
+      where: { status: 'completed', completed_at: { [Op.lte]: col('due_at') } },
+    }),
+    GrowthOsFollowup.count({
+      where: { status: 'completed', completed_at: { [Op.gt]: col('due_at') } },
+    }),
+    GrowthOsFollowup.count({ where: { status: 'open', due_at: { [Op.lt]: until } } }),
+    GrowthOsProspect.findAll({
+      attributes: [
+        [col('owner_user_id'), 'ownerUserId'],
+        [literal('COUNT(*)::int'), 'created'],
+        [literal("COUNT(*) FILTER (WHERE status IN ('qualified','onboarding','converted'))::int"), 'qualified'],
+        [literal("COUNT(*) FILTER (WHERE status = 'converted')::int"), 'converted'],
+      ],
+      where: { ...cohortWhere, owner_user_id: { [Op.ne]: null } },
+      group: ['owner_user_id'],
+      raw: true,
+    }),
+    GrowthOsProspect.findAll({
+      attributes: [
+        [literal('COUNT(*)::int'), 'openCount'],
+        [fn('MIN', col('source_recorded_at')), 'oldestAt'],
+      ],
+      where: {
+        ...baseWhere,
+        owner_user_id: null,
+        status: { [Op.in]: ['new', 'contacted', 'qualifying', 'qualified', 'onboarding'] },
+      },
+      raw: true,
+    }),
+  ]);
+  const ownerUserIds = ownerRows.map((row) => row.ownerUserId).filter(Boolean);
+  const ownerUsers = ownerUserIds.length
+    ? await User.findAll({
+      where: { id: ownerUserIds },
+      attributes: ['id', 'full_name', 'email'],
+      raw: true,
+    })
+    : [];
+  const ownerById = new Map(ownerUsers.map((user) => [user.id, user]));
   const statusCounts = statusRows.reduce((acc, row) => { acc[row.status] = Number(row.count); return acc; }, {});
   const created = prospectRows.length;
   const activated = activatedRows.length;
@@ -311,6 +363,48 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
        medianHoursCreatedToActivated: medianHours(durationHours(activatedRows, eventTimesByProspect(eventRows, 'activated', 'converted'))),
     },
     leadToActivation: created > 0 ? Math.round((activated / created) * 1000) / 10 : null,
+    followupDiscipline: {
+      total: followupTotal,
+      open: followupOpen,
+      completed: followupCompleted,
+      cancelled: followupCancelled,
+      completedOnTime: followupOnTime,
+      completedLate: followupLate,
+      overdueOpen: followupOverdueOpen,
+      onTimeRatePct: followupCompleted > 0
+        ? Math.round((followupOnTime / followupCompleted) * 1000) / 10
+        : null,
+    },
+    byOwner: ownerRows
+      .map((row) => {
+        const user = ownerById.get(row.ownerUserId);
+        return {
+          ownerUserId: row.ownerUserId,
+          displayName: user ? (user.full_name || user.email) : 'Former operator (account removed)',
+          created: Number(row.created),
+          qualified: Number(row.qualified),
+          converted: Number(row.converted),
+          qualificationRatePct: Number(row.created) > 0
+            ? Math.round((Number(row.qualified) / Number(row.created)) * 1000) / 10
+            : null,
+          activationRatePct: Number(row.created) > 0
+            ? Math.round((Number(row.converted) / Number(row.created)) * 1000) / 10
+            : null,
+        };
+      })
+      .sort((left, right) => right.created - left.created || String(left.displayName).localeCompare(String(right.displayName))),
+    unassigned: (() => {
+      const aggregate = unassignedRows[0] || {};
+      const openCount = Number(aggregate.openCount || 0);
+      const oldestAt = aggregate.oldestAt ? new Date(aggregate.oldestAt) : null;
+      return {
+        openCount,
+        oldestSourceRecordedAt: oldestAt ? oldestAt.toISOString() : null,
+        oldestAgeDays: oldestAt
+          ? Math.max(0, Math.floor((until.getTime() - oldestAt.getTime()) / (24 * 60 * 60 * 1000)))
+          : null,
+      };
+    })(),
     notAvailable: NOT_AVAILABLE_METRICS,
      cohort: {
        basis: 'source_recorded_at',

@@ -23,6 +23,9 @@ function makeAnalytics(overrides: Partial<GrowthAnalyticsResponse> = {}): Growth
     lostReasons: {},
     timing: { medianHoursToFirstContact: null, medianHoursToQualification: null, medianHoursToFirstFollowup: null, medianHoursCreatedToActivated: null },
     leadToActivation: null,
+    followupDiscipline: { total: 0, open: 0, completed: 0, cancelled: 0, completedOnTime: 0, completedLate: 0, overdueOpen: 0, onTimeRatePct: null },
+    byOwner: [],
+    unassigned: { openCount: 0, oldestSourceRecordedAt: null, oldestAgeDays: null },
     cohort: {
       basis: 'source_recorded_at',
       importedAt: 'created_at',

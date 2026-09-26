@@ -5,7 +5,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { AuditLog, GrowthOsProspect, GrowthOsProspectEvent, PartnerApplication, User } = require('../../entities');
+const {
+  AuditLog, GrowthOsProspect, GrowthOsProspectEvent, PartnerApplication, Shop, Tenant, User,
+} = require('../../entities');
 const { run } = require('../../../../scripts/import-growth-prospects');
 const prospectService = require('../growth-os.prospect.service');
 
@@ -15,6 +17,7 @@ let partnerApplication;
 let duplicatePartnerApplication;
 let tombstonePartnerApplication;
 let sourceReferences;
+const activationFixtures = [];
 const receiptDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'growth-import-'));
 
 function receiptRows(result) {
@@ -57,6 +60,12 @@ async function removeImportedFixtures() {
   if (duplicatePartnerApplication) await PartnerApplication.destroy({ where: { id: duplicatePartnerApplication.id } });
   if (tombstonePartnerApplication) await PartnerApplication.destroy({ where: { id: tombstonePartnerApplication.id } });
   if (sourceUser) await User.destroy({ where: { id: sourceUser.id } });
+  for (const activation of activationFixtures) {
+    await AuditLog.destroy({ where: { id: activation.lead.id } });
+    await User.destroy({ where: { id: activation.owner.id } });
+    await Shop.destroy({ where: { id: activation.shop.id } });
+    await Tenant.destroy({ where: { id: activation.tenant.id } });
+  }
 }
 
 describe('Growth OS prospect import on real PostgreSQL', () => {
@@ -170,6 +179,95 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
       status: partnerBefore.status,
       notes: partnerBefore.notes,
     });
+  });
+
+  it('backfills canonical activated events only where linked-shop evidence exists', async () => {
+    const id = suffix();
+    async function activationFixture(tag, settings) {
+      const tenant = await Tenant.create({ name: `Activation import ${id}-${tag}` });
+      const shop = await Shop.create({
+        unique_code: `act${tag}${id.slice(0, 8)}`,
+        tenant_id: tenant.id,
+        shop_name: `Activation Shop ${id} ${tag}`,
+        name: `Activation Shop ${id} ${tag}`,
+        is_active: true,
+        settings,
+      });
+      const owner = await User.create({
+        email: `activation-${tag}-${id}@example.test`,
+        password: 'integration-only',
+        full_name: `Activation Owner ${tag}`,
+        phone: phoneFor(`${tag}-${id}`, '019'),
+        token_version: 0,
+        settings: {},
+      });
+      const key = `phase3-act-${id}-${tag}`;
+      const lead = await AuditLog.create({
+        user_id: owner.id,
+        shop_id: shop.id,
+        action: 'crm:lead_created',
+        resource_type: 'crm_lead',
+        resource_id: `crm-lead-${id}-${tag}`,
+        idempotency_key: key,
+        metadata: {
+          lead_source: 'signup',
+          business_name: `Activation Evidence ${id} ${tag}`,
+          status: 'converted',
+        },
+        created_at: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      sourceReferences.push(key);
+      const fixture = { tenant, shop, owner, lead, key };
+      activationFixtures.push(fixture);
+      return fixture;
+    }
+
+    const evidenced = await activationFixture('a', {
+      first_ai_reply: { occurred_at: '2026-09-05T10:00:00.000Z' },
+    });
+    const bare = await activationFixture('b', {});
+
+    const applied = await run({
+      apply: true,
+      runId: `activation-${suffix()}`,
+      receipt: path.join(receiptDirectory, `activation-${id}.json`),
+    });
+    expect(applied.counts.failed).toBe(0);
+
+    const [evidencedRow, bareRow] = await Promise.all([
+      GrowthOsProspect.findOne({ where: { source_reference: evidenced.key }, raw: true }),
+      GrowthOsProspect.findOne({ where: { source_reference: bare.key }, raw: true }),
+    ]);
+    expect(evidencedRow.status).toBe('converted');
+    expect(bareRow.status).toBe('converted');
+
+    const evidencedEvents = await GrowthOsProspectEvent.findAll({
+      where: { prospect_id: evidencedRow.id },
+      raw: true,
+    });
+    const backfilled = evidencedEvents.filter((event) => event.event_type === 'activated');
+    expect(backfilled).toHaveLength(1);
+    expect(new Date(backfilled[0].created_at).toISOString()).toBe('2026-09-05T10:00:00.000Z');
+    expect(backfilled[0].metadata).toMatchObject({
+      activation_backfill: true,
+      evidence: 'linked_shop.first_ai_reply',
+    });
+
+    const bareActivated = await GrowthOsProspectEvent.findAll({
+      where: { prospect_id: bareRow.id, event_type: 'activated' },
+      raw: true,
+    });
+    expect(bareActivated).toHaveLength(0);
+
+    // Re-running the importer over the same sources must duplicate nothing.
+    await run({
+      apply: true,
+      runId: `activation-repeat-${suffix()}`,
+      receipt: path.join(receiptDirectory, `activation-repeat-${id}.json`),
+    });
+    expect(await GrowthOsProspectEvent.count({
+      where: { prospect_id: evidencedRow.id, event_type: 'activated' },
+    })).toBe(1);
   });
 
   it('re-links an importer record when its prior source reference is merged', async () => {
