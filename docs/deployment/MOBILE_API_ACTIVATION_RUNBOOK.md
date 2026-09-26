@@ -80,7 +80,8 @@ gh workflow run mobile-production-proof.yml --ref main \
   -f expected_sha=<full SHA production serves> -f expect_mobile_api=enabled -f device=true
 ```
 
-**API proof** (`scripts/mobile-production-proof/api-proof.js`, as the designated test merchant
+**API proof** (`scripts/mobile-production-proof/api-proof.js`, paced under the `/api/auth` limit of
+10 requests per minute per IP, as the designated test merchant
 `merchant@easymod.tech`):
 
 - **Health:** web app, Growth OS, `/health/ready` and the served commit.
@@ -116,7 +117,8 @@ It then runs on an API 34 emulator against production:
 - sign-in, Home, all tabs, pull-to-refresh;
 - a foreign-entity deep link (unavailable);
 - restart with the session kept;
-- real order and conversation deep links (warm, and cold for the order);
+- real order and conversation deep links from Home (warm), and a cold-start link (the order, or the
+  conversation when Home has no order);
 - logout, cold relaunch signed out, re-login, logout.
 
 **Observability:** read-only over SSH. It takes only the mobile-client response lines from the

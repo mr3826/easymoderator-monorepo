@@ -51,6 +51,9 @@ run_flow() {
     echo "$name=FAIL" >> "$summary"
     failed=1
   fi
+  # Maestro also writes debug files here (commands-*.json holds every resolved
+  # inputText, i.e. the password). Keep screenshots only.
+  find "$out/screenshots/$name" -type f ! -name '*.png' -delete
 }
 
 skip_flow() {
@@ -69,9 +72,15 @@ else
   skip_flow 03-deeplink-conversation 'no conversation on production Home'
 fi
 if [ -n "${MAESTRO_PROOF_ORDER_ID:-}" ]; then
+  export MAESTRO_PROOF_COLD_LINK="order/$MAESTRO_PROOF_ORDER_ID"
+elif [ -n "${MAESTRO_PROOF_CONVERSATION_ID:-}" ]; then
+  export MAESTRO_PROOF_COLD_LINK="conversation/$MAESTRO_PROOF_CONVERSATION_ID"
+fi
+if [ -n "${MAESTRO_PROOF_COLD_LINK:-}" ]; then
   run_flow 04-deeplink-cold
+  echo "04-deeplink-cold.entity=${MAESTRO_PROOF_COLD_LINK%%/*}" >> "$summary"
 else
-  skip_flow 04-deeplink-cold 'no order on production Home'
+  skip_flow 04-deeplink-cold 'no order or conversation on production Home'
 fi
 run_flow 05-logout-relogin
 
