@@ -56,12 +56,22 @@ const requestContextMiddleware = (req, res, next) => {
     });
     
     // Log response when finished
+    const startedAt = process.hrtime.bigint();
+    // Express rewrites req.path inside each mounted router, so at send time it
+    // is router-relative (`/today`, `/:id`). Keep the full path seen here, the
+    // same value "Incoming request" logs, so per-route metrics are unambiguous.
+    const requestPath = req.path;
     const originalSend = res.send;
     res.send = function(data) {
         req.logger.info('Response sent', {
             statusCode: res.statusCode,
             method: req.method,
-            path: req.path
+            path: requestPath,
+            durationMs: Number((process.hrtime.bigint() - startedAt) / 1000000n),
+            // ADR M-005: the mobile app sends `X-EM-Client: android/<version>`
+            // (req.mobileClient); web requests log null. Splits mobile
+            // 401/403/5xx rates, latency and app version from web traffic.
+            client: typeof req.mobileClient === 'string' ? req.mobileClient.slice(0, 64) : null,
         });
         return originalSend.call(this, data);
     };
