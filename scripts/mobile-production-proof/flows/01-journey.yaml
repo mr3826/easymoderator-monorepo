@@ -1,0 +1,80 @@
+appId: tech.easymod.merchant.preview
+name: Production journey - sign in, Home, navigation, refresh, foreign entity, restart
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 90000
+- takeScreenshot: 00-login
+- runFlow: sign-in.yaml
+# Home is backed by /api/mobile/today and /api/mobile/attention. The list renders
+# for a busy shop and for an empty one (the empty states are its empty component).
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: today-summary
+    timeout: 60000
+- assertNotVisible:
+    id: home-error
+- takeScreenshot: 01-home
+- tapOn:
+    id: tab-orders
+- takeScreenshot: 02-orders
+- tapOn:
+    id: tab-inbox
+- takeScreenshot: 03-inbox
+- tapOn:
+    id: tab-quick-action
+- tapOn:
+    id: tab-more
+- extendedWaitUntil:
+    visible:
+      id: build-info
+    timeout: 15000
+- assertVisible:
+    id: logout-button
+- takeScreenshot: 04-more
+- tapOn:
+    id: tab-home
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000
+# Pull to refresh against production.
+- swipe:
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
+      id: today-summary
+    timeout: 60000
+- assertNotVisible:
+    id: home-error
+- takeScreenshot: 05-refreshed
+# An entity this shop does not own must not open.
+- openLink:
+    link: easymodmerchantpreview://order/${MAESTRO_PROOF_MISSING_ID}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-unavailable
+    timeout: 60000
+- takeScreenshot: 06-deeplink-foreign-entity
+- back
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000
+# The session survives an app restart without a new sign-in.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- assertNotVisible:
+    id: login-email-input
+- takeScreenshot: 07-after-restart

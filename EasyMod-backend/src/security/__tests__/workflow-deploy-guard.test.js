@@ -55,6 +55,20 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain('AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}');
     });
 
+    test('renders the mobile API switch from the operator variable, off by default, at both production render sites', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const dryRunBlock = workflow.match(/\n  deployment-config:\n([\s\S]*?)\n  docker-build-validation:/)?.[1];
+        const line = "MOBILE_API_ENABLED: ${{ vars.MOBILE_API_ENABLED || 'false' }}";
+
+        expect(deployBlock).toContain(line);
+        expect(dryRunBlock).toContain(line);
+        // It is a public switch, never a secret, and nothing else in the
+        // workflow may set or override it.
+        expect(workflow.match(/MOBILE_API_ENABLED:/g)).toHaveLength(2);
+        expect(workflow).not.toMatch(/secrets\.MOBILE_/);
+        expect(workflow).not.toMatch(/MOBILE_(PUSH|ORDER_MUTATIONS|COURIER_ACTIONS|AI_DRAFTS)_ENABLED|MOBILE_E2E_FIXTURES/);
+    });
+
     test('pull requests can run tests but cannot build deployable images', () => {
         const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
@@ -477,5 +491,70 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain(
             'DEPLOYED_COMMIT: ${{ github.event.inputs.existing_candidate_sha || github.sha }}',
         );
+    });
+});
+
+// The production mobile proof holds a real test merchant's password, reads the
+// signed release and opens a read-only SSH session. Pin that envelope so a later
+// edit cannot quietly widen it (docs/deployment/MOBILE_API_ACTIVATION_RUNBOOK.md).
+describe('mobile production proof workflow', () => {
+    const proof = fs
+        .readFileSync(path.join(workflowDirectory, 'mobile-production-proof.yml'), 'utf8')
+        .replace(/\r\n/g, '\n');
+    const proofSql = fs.readFileSync(
+        path.resolve(__dirname, '../../../../scripts/mobile-production-proof/observability.sql'),
+        'utf8',
+    );
+    const code = proof.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+
+    test('is manual, main-only and bound to the production environment', () => {
+        expect(code).toMatch(/^on:\n {2}workflow_dispatch:/m);
+        expect(code).not.toMatch(/^\s+(push|pull_request|pull_request_target|schedule|workflow_run):/m);
+        expect(code).toContain("if: github.ref == 'refs/heads/main'");
+        expect(code).toMatch(/^ {4}environment: production$/m);
+        expect(code).toContain('cancel-in-progress: false');
+    });
+
+    test('is read-only toward the repository and never sees the upload key', () => {
+        expect(code).toMatch(/^permissions:\n {2}contents: read\n/m);
+        expect(code).not.toMatch(/:\s*write\b/);
+        expect(code).not.toMatch(/ANDROID_UPLOAD|KEYSTORE/);
+        const secrets = [...new Set([...code.matchAll(/secrets\.([A-Za-z0-9_]+)/g)].map((match) => match[1]))].sort();
+        expect(secrets).toEqual([
+            'DEPLOY_HOST',
+            'DO_SSH_KNOWN_HOSTS',
+            'DO_SSH_PRIVATE_KEY',
+            'META_REVIEW_MERCHANT_PASSWORD',
+            'SEED_ADMIN_PASSWORD',
+        ]);
+        expect(code).not.toMatch(/toJSON\(\s*secrets\s*\)|\$\{\{\s*secrets\s*\}\}/);
+    });
+
+    test('keeps credentials out of the rollback-state proof', () => {
+        expect(code).toContain("MERCHANT_PASSWORD: ${{ inputs.expect_mobile_api == 'enabled' && secrets.META_REVIEW_MERCHANT_PASSWORD || '' }}");
+        expect(code).toContain("ADMIN_PASSWORD: ${{ inputs.expect_mobile_api == 'enabled' && secrets.SEED_ADMIN_PASSWORD || '' }}");
+        expect(code).toContain("RUN_DEVICE: ${{ inputs.expect_mobile_api == 'enabled' && inputs.device }}");
+    });
+
+    test('uses production over SSH read-only, with a pinned host key', () => {
+        expect(code).toContain('StrictHostKeyChecking=yes');
+        expect(code).toContain('ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts');
+        expect(code).not.toMatch(/ssh-keyscan|StrictHostKeyChecking=no|scp |docker compose|docker (run|restart|stop|rm)\b/);
+        const remoteCommands = [...code.matchAll(/remote "([^\n]*)"/g)].map((match) => match[1]);
+        expect(remoteCommands).toHaveLength(2);
+        expect(remoteCommands[0]).toMatch(/^docker logs --since '\$PROOF_START' easymod-backend-1 /);
+        expect(remoteCommands[1]).toMatch(/^docker exec -i easymod-postgres-1 sh -c 'psql /);
+        expect(proofSql).toContain('BEGIN TRANSACTION READ ONLY;');
+        expect(proofSql).toContain('ROLLBACK;');
+        expect(proofSql).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE|GRANT|COPY)\b/i);
+    });
+
+    test('verifies the signed artifact before any device run and scans every upload for the credential', () => {
+        expect(code).toContain('git diff --quiet "$release_sha" HEAD -- EasyMod-mobile');
+        expect(code).toContain('sha256sum --check SHA256SUMS');
+        expect(code).toContain("--expect-signer \"$(node -p \"require('./EasyMod-mobile/release-signing.json').certificateSha256\")\"");
+        expect(code.indexOf('--expect-signer')).toBeLessThan(code.indexOf('android-emulator-runner'));
+        expect(code).toContain('grep -rlF -- "$secret" proof');
+        expect(code).toContain("if: ${{ !cancelled() && steps.scan.outcome == 'success' }}");
     });
 });

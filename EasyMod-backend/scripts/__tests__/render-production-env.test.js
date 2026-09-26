@@ -305,6 +305,39 @@ describe('Facebook Login for Business configuration (2026-09-22 incident)', () =
     });
 });
 
+describe('mobile API switch (ADR M-010)', () => {
+    test('defaults off when the repository variable is unset or empty', () => {
+        expect(buildRenderedEnv(validSource()).MOBILE_API_ENABLED).toBe('false');
+        expect(buildRenderedEnv(validSource({ MOBILE_API_ENABLED: '' })).MOBILE_API_ENABLED).toBe('false');
+    });
+
+    test('an explicit "true" reaches .env.prod, and "false" rolls it back', () => {
+        expect(buildRenderedEnv(validSource({ MOBILE_API_ENABLED: 'true' })).MOBILE_API_ENABLED).toBe('true');
+        expect(buildRenderedEnv(validSource({ MOBILE_API_ENABLED: 'false' })).MOBILE_API_ENABLED).toBe('false');
+    });
+
+    test.each(['TRUE', 'True', '1', 'yes', 'enabled', 'true '])(
+        'refuses the ambiguous value %j instead of shipping a silently-off switch',
+        (value) => {
+            expect(() => buildRenderedEnv(validSource({ MOBILE_API_ENABLED: value })))
+                .toThrow(/MOBILE_API_ENABLED must be exactly "true" or "false"/);
+        },
+    );
+
+    test('never renders the Wave 3 switches or the device-E2E fixture controls', () => {
+        const env = buildRenderedEnv(validSource({
+            MOBILE_API_ENABLED: 'true',
+            MOBILE_PUSH_ENABLED: 'true',
+            MOBILE_ORDER_MUTATIONS_ENABLED: 'true',
+            MOBILE_COURIER_ACTIONS_ENABLED: 'true',
+            MOBILE_AI_DRAFTS_ENABLED: 'true',
+            MOBILE_E2E_FIXTURES_ENABLED: 'true',
+            MOBILE_E2E_FIXTURES_TOKEN: 'x'.repeat(40),
+        }));
+        expect(Object.keys(env).filter((name) => name.startsWith('MOBILE_'))).toEqual(['MOBILE_API_ENABLED']);
+    });
+});
+
 describe('Meta profile enrichment switch', () => {
     test('defaults off and can be enabled deliberately', () => {
         expect(buildRenderedEnv(validSource()).META_USER_PROFILE_ENABLED).toBe('false');

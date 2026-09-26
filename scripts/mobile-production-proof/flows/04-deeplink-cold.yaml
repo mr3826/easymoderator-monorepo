@@ -1,0 +1,19 @@
+appId: tech.easymod.merchant.preview
+name: Production deep link - a link that cold-starts the app opens its entity
+---
+# MAESTRO_PROOF_COLD_LINK is `order/<id>` when production Home surfaces an order,
+# otherwise `conversation/<id>` (run-device-proof.sh chooses).
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- stopApp
+- openLink:
+    link: easymodmerchantpreview://${MAESTRO_PROOF_COLD_LINK}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 90000
+- takeScreenshot: entity-deeplink-cold
+- back

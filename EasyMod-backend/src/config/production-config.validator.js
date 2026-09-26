@@ -196,6 +196,18 @@ function validateProductionConfig(env = process.env) {
     if (enabled(env.BKASH_ENABLED) && env.BKASH_SANDBOX !== 'false') {
         invalid.push('BKASH_SANDBOX');
     }
+    // config.js reads the mobile API switch as `=== 'true'`. Refuse anything
+    // else so a production deploy never boots in a state the operator did not
+    // actually choose (ADR M-010).
+    if (env.MOBILE_API_ENABLED !== undefined && !['true', 'false'].includes(env.MOBILE_API_ENABLED)) {
+        invalid.push('MOBILE_API_ENABLED');
+    }
+    // The device-E2E fixture controls reset shops and sessions. They already
+    // refuse to register outside NODE_ENV=test; a deployed environment that
+    // carries either setting is misconfigured and must not boot.
+    for (const name of ['MOBILE_E2E_FIXTURES_ENABLED', 'MOBILE_E2E_FIXTURES_TOKEN']) {
+        if (env[name] !== undefined) invalid.push(name);
+    }
     if (!env.SENTRY_DSN && !env.SLACK_ALERT_WEBHOOK_URL) {
         missing.push('SENTRY_DSN|SLACK_ALERT_WEBHOOK_URL');
     }

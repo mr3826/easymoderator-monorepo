@@ -266,8 +266,16 @@ export function QuickAddPage() {
             </form>
           )}
           <button className="secondary-button" type="button" onClick={() => {
+            // Clear the whole success/schedule block: a carried-over
+            // `scheduledAt` would falsely confirm a follow-up the next
+            // prospect never received.
             setCreated(null);
             setValues(initialValues);
+            setScheduledAt(null);
+            setScheduleError(null);
+            setScheduleDueAt(toBusinessDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()));
+            setScheduleAction('Call');
+            setScheduleNote('');
           }}>
             Add another prospect
           </button>

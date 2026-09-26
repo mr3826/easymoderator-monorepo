@@ -1,0 +1,30 @@
+appId: tech.easymod.merchant.preview
+# Shared password step for the production proof. Maestro reads MAESTRO_* from the
+# environment, so the credential never appears on a command line or in this file.
+---
+- extendedWaitUntil:
+    visible:
+      id: login-email-input
+    timeout: 60000
+- tapOn:
+    id: login-email-input
+- eraseText: 80
+- inputText: ${MAESTRO_PROOF_EMAIL}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-password-input
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: login-password-input
+- eraseText: 80
+- inputText: ${MAESTRO_PROOF_PASSWORD}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-submit
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: login-submit

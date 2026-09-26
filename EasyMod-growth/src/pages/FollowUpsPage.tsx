@@ -102,6 +102,11 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
     const urlState = searchParams.get('state');
     if (urlState && STATE_TABS.some((tab) => tab.value === urlState)) {
       setState(urlState as FollowupState);
+    } else {
+      // A bare navigation (sidebar link, back to no-params) means the default
+      // queue; leaving a previously selected tab active would make the URL
+      // advertise a population the page is not showing.
+      setState('open');
     }
     const urlPage = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
     setPage(urlPage);
