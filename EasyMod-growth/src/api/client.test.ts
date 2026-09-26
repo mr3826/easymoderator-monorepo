@@ -89,6 +89,24 @@ describe('Growth API security contract', () => {
     expect(requestOptions.headers).not.toHaveProperty('X-CSRF-Token');
   });
 
+  it('serializes the canonical activated drill-through and frozen stalled boundary', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, {
+      success: true,
+      data: { items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await growthApi.getProspects({
+      activated: true,
+      stalledBefore: '2026-08-29T08:00:00.000Z',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/internal/growth-os/prospects?activated=true&stalledBefore=2026-08-29T08%3A00%3A00.000Z',
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
   it('uses a CSRF-protected POST body for duplicate preflight', async () => {
     vi.resetModules();
     const fetchMock = vi.fn((url: string) => Promise.resolve(

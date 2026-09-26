@@ -131,12 +131,16 @@ describe('QuickAddPage', () => {
     expect(screen.getByText('facebook')).toBeInTheDocument();
     expect(screen.getByLabelText('Action *')).toHaveValue('Call');
 
+    // The selected wall-clock must be interpreted as Asia/Dhaka business time
+    // regardless of the browser zone: 20:00 BST === 14:00Z, host-independently.
+    await user.clear(screen.getByLabelText('Due date *'));
+    await user.type(screen.getByLabelText('Due date *'), '2026-09-27T20:00');
     await user.click(screen.getByRole('button', { name: 'Schedule follow-up' }));
 
     await waitFor(() => expect(createFollowup).toHaveBeenCalledWith(expect.objectContaining({
       prospectId: 'prospect-9',
       action: 'Call',
-      dueAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      dueAt: '2026-09-27T14:00:00.000Z',
     })));
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ source: 'facebook', pageUrl: 'https://facebook.com/rahim' }));
     expect(await screen.findByText(/First follow-up scheduled/)).toBeInTheDocument();

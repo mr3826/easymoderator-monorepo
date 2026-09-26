@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Filter, Plus, RefreshCw, Search } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -26,6 +26,11 @@ function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters 
   const owner = searchParams.get('owner');
   const stage = searchParams.get('stage');
   const stalled = searchParams.get('stalled');
+  const stalledBefore = searchParams.get('stalledBefore');
+  const activated = searchParams.get('activated');
+  const linked = searchParams.get('linked');
+  const page = searchParams.get('page');
+  const pageSize = searchParams.get('pageSize');
   const createdAfter = searchParams.get('createdAfter');
   const createdBefore = searchParams.get('createdBefore');
   const statusChangedAfter = searchParams.get('statusChangedAfter');
@@ -41,6 +46,13 @@ function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters 
   if (owner === 'me' || owner === 'unassigned' || (owner && UUID_PATTERN.test(owner))) filters.owner = owner;
   if (stage === 'qualified') filters.stage = stage;
   if (stalled === 'true') filters.stalled = true;
+  if (stalledBefore) filters.stalledBefore = stalledBefore;
+  if (activated === 'true') filters.activated = true;
+  if (linked === 'true') filters.linked = true;
+  else if (linked === 'false') filters.linked = false;
+  const parsedPage = Number.parseInt(page ?? '', 10);
+  if (Number.isFinite(parsedPage) && parsedPage > 1) filters.page = parsedPage;
+  if ([20, 50, 100].includes(Number(pageSize))) filters.pageSize = Number(pageSize);
   if (createdAfter) filters.createdAfter = createdAfter;
   if (createdBefore) filters.createdBefore = createdBefore;
   if (statusChangedAfter) filters.statusChangedAfter = statusChangedAfter;
@@ -48,6 +60,31 @@ function makeInitialFilters(searchParams: URLSearchParams): ProspectListFilters 
   if (sourceRecordedAfter) filters.sourceRecordedAfter = sourceRecordedAfter;
   if (sourceRecordedBefore) filters.sourceRecordedBefore = sourceRecordedBefore;
   return filters;
+}
+
+// URL serialization must cover every hydratable filter so a shared or
+// re-navigated link resolves to the same population the card counted. Search
+// text (`q`) and raw ownerUserId stay out of the URL by deliberate PII policy.
+function serializeFilters(filters: ProspectListFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  if (filters.source) params.set('source', filters.source);
+  if (filters.owner) params.set('owner', filters.owner);
+  if (filters.stage) params.set('stage', filters.stage);
+  if (filters.stalled) params.set('stalled', 'true');
+  if (filters.stalledBefore) params.set('stalledBefore', filters.stalledBefore);
+  if (filters.activated) params.set('activated', 'true');
+  if (filters.linked === true || filters.linked === 'true') params.set('linked', 'true');
+  else if (filters.linked === false || filters.linked === 'false') params.set('linked', 'false');
+  if (filters.createdAfter) params.set('createdAfter', filters.createdAfter);
+  if (filters.createdBefore) params.set('createdBefore', filters.createdBefore);
+  if (filters.statusChangedAfter) params.set('statusChangedAfter', filters.statusChangedAfter);
+  if (filters.statusChangedBefore) params.set('statusChangedBefore', filters.statusChangedBefore);
+  if (filters.sourceRecordedAfter) params.set('sourceRecordedAfter', filters.sourceRecordedAfter);
+  if (filters.sourceRecordedBefore) params.set('sourceRecordedBefore', filters.sourceRecordedBefore);
+  if (filters.page && filters.page > 1) params.set('page', String(filters.page));
+  if (filters.pageSize && filters.pageSize !== PAGE_SIZE) params.set('pageSize', String(filters.pageSize));
+  return params;
 }
 
 function codeLabel(value: string) {
@@ -118,6 +155,7 @@ export function ProspectListPage() {
   const [initialState] = useState(() => makeInitialFilters(searchParams));
   const [filters, setFilters] = useState<ProspectListFilters>(initialState);
   const [draftFilters, setDraftFilters] = useState<ProspectListFilters>(initialState);
+  const appliedUrlRef = useRef(searchParams.toString());
   const [result, setResult] = useState<ProspectListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +176,25 @@ export function ProspectListPage() {
       });
     return () => { active = false; };
   }, [canCreate, reportApiError]);
+
+  // Query-only navigation (sidebar clicks, back/forward, shared links) must
+  // re-derive filters instead of keeping stale mount-time state. Self-writes
+  // are ignored so submitting a search does not wipe the in-memory `q`.
+  useEffect(() => {
+    const current = searchParams.toString();
+    if (current === appliedUrlRef.current) return;
+    appliedUrlRef.current = current;
+    const urlFilters = makeInitialFilters(searchParams);
+    setFilters(urlFilters);
+    setDraftFilters(urlFilters);
+  }, [searchParams]);
+
+  function applyFilters(nextFilters: ProspectListFilters) {
+    setFilters(nextFilters);
+    const params = serializeFilters(nextFilters);
+    appliedUrlRef.current = params.toString();
+    setSearchParams(params);
+  }
 
   useEffect(() => {
     let active = true;
@@ -168,26 +225,17 @@ export function ProspectListPage() {
       return;
     }
     setFilterValidationError(null);
-    setFilters({ ...draftFilters, page: 1, pageSize: draftFilters.pageSize || PAGE_SIZE });
-    const nextParams = new URLSearchParams();
-    if (draftFilters.status) nextParams.set('status', draftFilters.status);
-    if (draftFilters.source) nextParams.set('source', draftFilters.source);
-    if (draftFilters.owner) nextParams.set('owner', draftFilters.owner);
-    // Keep contact/search text out of browser history, referrers, and copied URLs.
-    if (draftFilters.stage) nextParams.set('stage', draftFilters.stage);
-    if (draftFilters.stalled) nextParams.set('stalled', 'true');
-    if (draftFilters.createdAfter) nextParams.set('createdAfter', draftFilters.createdAfter);
-    if (draftFilters.createdBefore) nextParams.set('createdBefore', draftFilters.createdBefore);
-    if (draftFilters.statusChangedAfter) nextParams.set('statusChangedAfter', draftFilters.statusChangedAfter);
-    if (draftFilters.statusChangedBefore) nextParams.set('statusChangedBefore', draftFilters.statusChangedBefore);
-    if (draftFilters.sourceRecordedAfter) nextParams.set('sourceRecordedAfter', draftFilters.sourceRecordedAfter);
-    if (draftFilters.sourceRecordedBefore) nextParams.set('sourceRecordedBefore', draftFilters.sourceRecordedBefore);
-    setSearchParams(nextParams);
+    // Search text (`q`) stays in memory only: serializeFilters never puts
+    // contact/search terms into browser history, referrers, or copied URLs.
+    applyFilters({ ...draftFilters, page: 1, pageSize: draftFilters.pageSize || PAGE_SIZE });
   }
 
   function resetFilters() {
-    setDraftFilters(initialState);
-    setFilters(initialState);
+    // Reset clears the applied view entirely (URL-derived drill bounds
+    // included) instead of restoring them.
+    const cleared: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
+    setDraftFilters(cleared);
+    applyFilters(cleared);
     setFilterValidationError(null);
   }
 
@@ -365,7 +413,7 @@ export function ProspectListPage() {
                   className="secondary-button"
                   type="button"
                   disabled={currentPage <= 1}
-                  onClick={() => setFilters((current) => ({ ...current, page: currentPage - 1 }))}
+                  onClick={() => applyFilters({ ...filters, page: currentPage - 1 })}
                 >
                   Previous
                 </button>
@@ -373,7 +421,7 @@ export function ProspectListPage() {
                   className="secondary-button"
                   type="button"
                   disabled={currentPage >= totalPages}
-                  onClick={() => setFilters((current) => ({ ...current, page: currentPage + 1 }))}
+                  onClick={() => applyFilters({ ...filters, page: currentPage + 1 })}
                 >
                   Next
                 </button>

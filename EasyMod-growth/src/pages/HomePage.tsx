@@ -146,18 +146,18 @@ export function HomePage() {
             label="Onboarding stalled (15+ days)"
             value={growthAttention.onboardingStalledOver15d}
             warn={growthAttention.onboardingStalledOver15d > 0}
-            to={`/prospects?status=onboarding&stalled=true`}
+            to={`/prospects?status=onboarding&stalledBefore=${encodeURIComponent(home.windows.stalledBefore)}`}
           />
           <AttentionCard
             label="Qualified stalled (15+ days)"
             value={growthAttention.qualifiedStalledOver15d}
             warn={growthAttention.qualifiedStalledOver15d > 0}
-            to="/prospects?status=qualified&stalled=true"
+            to={`/prospects?status=qualified&stalledBefore=${encodeURIComponent(home.windows.stalledBefore)}`}
           />
           <AttentionCard
-            label="Converted (last 7 days)"
+            label="Activated (last 7 days)"
             value={growthAttention.convertedLast7d}
-            to={`/prospects?status=converted&statusChangedAfter=${encodeURIComponent(home.windows.attentionSince)}&statusChangedBefore=${encodeURIComponent(home.windows.attentionUntil)}`}
+            to={`/prospects?activated=true&statusChangedAfter=${encodeURIComponent(home.windows.attentionSince)}&statusChangedBefore=${encodeURIComponent(home.windows.attentionUntil)}`}
           />
           <AttentionCard
             label="Overdue follow-ups in scope"

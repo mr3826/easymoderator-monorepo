@@ -17,6 +17,20 @@ const {
 const prospectRepository = require('../growth-os.prospect.repository');
 const prospectService = require('../growth-os.prospect.service');
 const app = require('../../../app');
+const { rateLimitRedis } = require('../../../config/redis');
+
+// This suite drives many server-side mutations as one actor; clear the
+// distributed Growth limiter windows between tests so rate limiting never
+// masks real status-code assertions (CI runs the same file on real Redis).
+async function resetGrowthRateLimits() {
+  if (!rateLimitRedis || typeof rateLimitRedis.scan !== 'function') return;
+  let cursor = '0';
+  do {
+    const [next, keys] = await rateLimitRedis.scan(cursor, 'MATCH', 'rl:growth-os*', 'COUNT', 500);
+    cursor = next;
+    if (keys.length > 0) await rateLimitRedis.del(...keys);
+  } while (cursor !== '0');
+}
 
 const API_ROOT = '/api/internal/growth-os/prospects';
 
@@ -122,6 +136,7 @@ async function removeProspects() {
 
 describe('Growth OS prospects on real PostgreSQL and Redis', () => {
   beforeAll(async () => {
+    await resetGrowthRateLimits();
     const suffix = fixtureSuffix();
     tenant = await Tenant.create({ name: `Growth OS integration ${suffix}` });
     shop = await Shop.create({
@@ -234,6 +249,7 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
 
   afterEach(async () => {
     await removeProspects();
+    await resetGrowthRateLimits();
   });
 
   afterAll(async () => {
@@ -751,6 +767,95 @@ describe('Growth OS prospects on real PostgreSQL and Redis', () => {
     expect(backslash.status).toBe(200);
     expect(backslash.body.data.items.map((item) => item.id)).toContain(literalId);
     expect(backslash.body.data.items.map((item) => item.id)).not.toContain(broadId);
+  });
+
+  it('excludes merged tombstones by default and honors an explicit merged filter', async () => {
+    const suffix = fixtureSuffix();
+    const target = rememberProspect(await createProspect(founderToken, prospectPayload(`keep-${suffix}`, {
+      businessName: `Parity Target ${suffix}`,
+      contactPhone: phoneFor(`parity-keep-${suffix}`, '018'),
+      contactEmail: `parity-keep-${suffix}@example.test`,
+      pageUrl: `https://facebook.com/parity-keep-${suffix}`,
+    })));
+    const tombstone = rememberProspect(await createProspect(founderToken, prospectPayload(`gone-${suffix}`, {
+      businessName: `Parity Tombstone ${suffix}`,
+      contactPhone: phoneFor(`parity-gone-${suffix}`, '017'),
+      contactEmail: `parity-gone-${suffix}@example.test`,
+      pageUrl: `https://facebook.com/parity-gone-${suffix}`,
+    })));
+
+    const merged = await asFounder().post(`${API_ROOT}/${tombstone}/merge`).send({
+      targetProspectId: target,
+      reason: 'Parity fixture merge',
+    });
+    expect(merged.status).toBe(200);
+
+    const defaults = await asFounder().get(API_ROOT).query({ pageSize: 100 });
+    const defaultIds = defaults.body.data.items.map((item) => item.id);
+    expect(defaultIds).toContain(target);
+    expect(defaultIds).not.toContain(tombstone);
+
+    const explicit = await asFounder().get(API_ROOT).query({ status: 'merged' });
+    expect(explicit.body.data.items.map((item) => item.id)).toContain(tombstone);
+  });
+
+  it('resolves activated=true to converted rows behind a currently active shop only', async () => {
+    const suffix = fixtureSuffix();
+    const row = rememberProspect(await createProspect(founderToken, prospectPayload(`activated-${suffix}`, {
+      businessName: `Activated Gate ${suffix}`,
+      contactPhone: phoneFor(`activated-${suffix}`, '018'),
+      contactEmail: `activated-${suffix}@example.test`,
+      pageUrl: `https://facebook.com/activated-${suffix}`,
+    })));
+    const model = await GrowthOsProspect.findByPk(row);
+    await model.update({ status: 'converted', linked_shop_id: shop.id });
+
+    const active = await asFounder().get(API_ROOT).query({ activated: 'true', pageSize: 100 });
+    expect(active.status).toBe(200);
+    expect(active.body.data.items.map((item) => item.id)).toContain(row);
+
+    await shop.update({ is_active: false });
+    const inactive = await asFounder().get(API_ROOT).query({ activated: 'true', pageSize: 100 });
+    expect(inactive.body.data.items.map((item) => item.id)).not.toContain(row);
+    const rawConverted = await asFounder().get(API_ROOT).query({ status: 'converted', pageSize: 100 });
+    expect(rawConverted.body.data.items.map((item) => item.id)).toContain(row);
+    await shop.update({ is_active: true });
+  });
+
+  it('freezes the stalled boundary when a drill-through supplies an explicit stalledBefore', async () => {
+    const suffix = fixtureSuffix();
+    const row = rememberProspect(await createProspect(founderToken, prospectPayload(`stalled-${suffix}`, {
+      businessName: `Stalled Boundary ${suffix}`,
+      contactPhone: phoneFor(`stalled-${suffix}`, '018'),
+      contactEmail: `stalled-${suffix}@example.test`,
+      pageUrl: `https://facebook.com/stalled-${suffix}`,
+    })));
+    const model = await GrowthOsProspect.findByPk(row);
+    await model.update({
+      status: 'qualified',
+      status_changed_at: new Date(Date.now() - 15.2 * 24 * 60 * 60 * 1000),
+    });
+
+    const moving = await asFounder().get(API_ROOT).query({ status: 'qualified', stalled: 'true', pageSize: 100 });
+    expect(moving.body.data.items.map((item) => item.id)).toContain(row);
+
+    // A boundary captured while the row was still inside the 15-day window
+    // (15.5 days ago here) must exclude the row even though the moving
+    // default boundary (15 days ago at query time) includes it.
+    const frozen = await asFounder().get(API_ROOT).query({
+      status: 'qualified',
+      stalledBefore: new Date(Date.now() - 15.5 * 24 * 60 * 60 * 1000).toISOString(),
+      pageSize: 100,
+    });
+    expect(frozen.status).toBe(200);
+    expect(frozen.body.data.items.map((item) => item.id)).not.toContain(row);
+
+    const frozenMatch = await asFounder().get(API_ROOT).query({
+      status: 'qualified',
+      stalledBefore: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+      pageSize: 100,
+    });
+    expect(frozenMatch.body.data.items.map((item) => item.id)).toContain(row);
   });
 
   it('rolls back the prospect and event when the real audit insert fails', async () => {

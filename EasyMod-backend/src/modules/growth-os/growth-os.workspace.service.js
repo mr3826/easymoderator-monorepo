@@ -13,7 +13,6 @@ const { escapeLike, likePattern } = require('./growth-os.merchants.service');
 const { getBusinessDayBounds } = require('./growth-os.time');
 
 const HOME_WINDOW_DAYS = 7;
-const ATTENTION_WINDOW_DAYS = 30;
 
 function getModels() {
   return require('../entities');
@@ -83,7 +82,18 @@ async function getHome({ access, userId, isSuperAdmin }) {
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified' } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified', owner_user_id: { [Op.is]: null } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding' } }),
-    GrowthOsProspect.count({ where: { ...baseWhere, status: 'converted', status_changed_at: { [Op.gte]: attentionSince, [Op.lte]: now } } }),
+    // Canonical activated population (same predicate as the `activated=true`
+    // list filter and funnel.activated): converted with a currently active
+    // linked shop.
+    GrowthOsProspect.count({
+      where: {
+        ...baseWhere,
+        status: 'converted',
+        linked_shop_id: { [Op.ne]: null },
+        status_changed_at: { [Op.gte]: attentionSince, [Op.lte]: now },
+      },
+      include: [{ model: Shop, as: 'linkedShop', required: true, attributes: [], where: { is_active: true } }],
+    }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'onboarding', status_changed_at: { [Op.lt]: stalledBefore } } }),
     GrowthOsProspect.count({ where: { ...baseWhere, status: 'qualified', status_changed_at: { [Op.lt]: stalledBefore } } }),
     GrowthOsFollowup.count({ where: { status: 'open', due_at: { [Op.lt]: now } }, include: followupScopeInclude }),
@@ -351,7 +361,7 @@ async function globalSearch({ access, userId, query, isSuperAdmin }) {
   if (phoneDigits.length >= 7) {
     prospectOr.push({ normalized_phone: { [Op.iLike]: `%${escapeLike(phoneDigits.slice(-10))}%` } });
   }
-  const prospectWhere = { ...prospectScope.where, [Op.or]: prospectOr };
+  const prospectWhere = { ...prospectScope.where, status: { [Op.ne]: 'merged' }, [Op.or]: prospectOr };
   const prospectRows = await GrowthOsProspect.findAll({
     where: prospectWhere,
     attributes: ['id', 'business_name', 'status', 'source', 'owner_user_id', 'contact_name', 'contact_phone', 'contact_email'],
@@ -460,5 +470,4 @@ module.exports = {
   getGrowthAnalytics,
   globalSearch,
   HOME_WINDOW_DAYS,
-  ATTENTION_WINDOW_DAYS,
 };

@@ -84,13 +84,16 @@ describe('HomePage', () => {
     expect(newLeadsLink?.getAttribute('href')).toContain('status=new');
     expect(newLeadsLink?.getAttribute('href')).toContain('createdAfter=');
     expect(newLeadsLink?.getAttribute('href')).toContain('createdBefore=');
-    const convertedLink = screen.getByText('Converted (last 7 days)').closest('a');
-    expect(convertedLink?.getAttribute('href')).toContain('statusChangedAfter=');
-    expect(convertedLink?.getAttribute('href')).toContain('statusChangedBefore=');
+    const activatedLink = screen.getByText('Activated (last 7 days)').closest('a');
+    expect(activatedLink?.getAttribute('href')).toContain('activated=true');
+    expect(activatedLink?.getAttribute('href')).toContain('statusChangedAfter=');
+    expect(activatedLink?.getAttribute('href')).toContain('statusChangedBefore=');
     const stalledOnboardingLink = screen.getByText('Onboarding stalled (15+ days)').closest('a');
-    expect(stalledOnboardingLink?.getAttribute('href')).toBe('/prospects?status=onboarding&stalled=true');
+    expect(stalledOnboardingLink?.getAttribute('href'))
+      .toBe(`/prospects?status=onboarding&stalledBefore=${encodeURIComponent('2026-08-29T08:00:00.000Z')}`);
     const stalledQualifiedLink = screen.getByText('Qualified stalled (15+ days)').closest('a');
-    expect(stalledQualifiedLink?.getAttribute('href')).toBe('/prospects?status=qualified&stalled=true');
+    expect(stalledQualifiedLink?.getAttribute('href'))
+      .toBe(`/prospects?status=qualified&stalledBefore=${encodeURIComponent('2026-08-29T08:00:00.000Z')}`);
   });
 
   it('keeps super-admin sections hidden when the payload has no privileged fields', async () => {

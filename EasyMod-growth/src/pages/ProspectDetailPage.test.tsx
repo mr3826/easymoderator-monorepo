@@ -96,6 +96,56 @@ describe('ProspectDetailPage', () => {
     }]);
   }
 
+  it('renders timeline actor names, system-event distinction, and business-clock timestamps', async () => {
+    setup(makeProspect({
+      timeline: [
+        {
+          id: 'ev-1',
+          eventType: 'followup_created',
+          actorUserId: OWNER_ID,
+          actorDisplayName: 'Timeline Owner Person',
+          fromValue: null,
+          // Stored UTC instant of 00:30 on the Sep 27 Asia/Dhaka business day.
+          toValue: '2026-09-26T18:30:00.000Z',
+          reason: null,
+          changedFields: [],
+          metadata: null,
+          createdAt: '2026-09-26T09:00:00.000Z',
+        },
+        {
+          id: 'ev-2',
+          eventType: 'activated',
+          actorUserId: null,
+          actorDisplayName: null,
+          fromValue: 'onboarding',
+          toValue: 'converted',
+          reason: 'first_successful_ai_reply',
+          changedFields: [],
+          metadata: null,
+          createdAt: '2026-09-26T18:30:00.000Z',
+        },
+      ],
+      timelinePagination: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+    }));
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'North Star Retail' });
+    expect(screen.getByText('Timeline Owner Person')).toBeInTheDocument();
+    expect(screen.getByText('System (automatic)')).toBeInTheDocument();
+    const dueText = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'Asia/Dhaka',
+      timeZoneName: 'short',
+    }).format(new Date('2026-09-26T18:30:00.000Z'));
+    expect(screen.getByText(dueText)).toBeInTheDocument();
+    // The raw UTC serialization must never surface next to business-clock text.
+    expect(screen.queryByText(/2026-09-26T18:30:00\.000Z/)).not.toBeInTheDocument();
+  });
+
   it('hides shop-gated transition targets until a shop is linked', async () => {
     setup();
     renderPage();

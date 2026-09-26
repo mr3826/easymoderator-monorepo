@@ -23,6 +23,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Growth business-day semantics are Asia/Dhaka; the canonical browser
+    // clock must match the server, not the CI host.
+    timezoneId: 'Asia/Dhaka',
   },
   projects: [
     {
@@ -34,6 +37,16 @@ export default defineConfig({
       name: 'chromium',
       dependencies: ['auth-setup'],
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Proves follow-up dates survive a non-business browser zone: the same
+      // wall-clock selection must store, bucket, and render identically in
+      // UTC, so USER_SELECTED_BUSINESS_DATE === SERVER_BUCKET_DATE ===
+      // DISPLAYED_DATE is enforced end to end, not just by unit contract.
+      name: 'chromium-utc-browser',
+      dependencies: ['auth-setup'],
+      testMatch: /timezone\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], timezoneId: 'UTC' },
     },
   ],
   webServer: {
