@@ -1,0 +1,20 @@
+appId: tech.easymod.merchant.preview
+name: Production deep link - a real conversation from Home, app running
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 90000
+- openLink:
+    link: easymodmerchantpreview://conversation/${MAESTRO_PROOF_CONVERSATION_ID}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-found
+    timeout: 60000
+- takeScreenshot: conversation-deeplink-warm
+- back
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000

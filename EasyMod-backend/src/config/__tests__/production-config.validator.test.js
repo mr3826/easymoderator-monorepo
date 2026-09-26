@@ -236,3 +236,38 @@ describe('production configuration validation', () => {
         expect(result.valid).toBe(true);
     });
 });
+
+describe('mobile API production switches (ADR M-010)', () => {
+    test.each(['true', 'false'])('accepts MOBILE_API_ENABLED=%s', (value) => {
+        expect(validateProductionConfig(validEnv({ MOBILE_API_ENABLED: value }))).toMatchObject({ valid: true });
+    });
+
+    test('an absent MOBILE_API_ENABLED is valid (the runtime reads it as off)', () => {
+        const env = validEnv();
+        delete env.MOBILE_API_ENABLED;
+        expect(validateProductionConfig(env)).toMatchObject({ valid: true });
+    });
+
+    test.each(['TRUE', 'True', '1', 'yes', 'on', ' true', ''])(
+        'rejects the ambiguous MOBILE_API_ENABLED value %j',
+        (value) => {
+            const result = validateProductionConfig(validEnv({ MOBILE_API_ENABLED: value }));
+            expect(result.invalid).toContain('MOBILE_API_ENABLED');
+            expect(result.valid).toBe(false);
+        },
+    );
+
+    test.each(['MOBILE_E2E_FIXTURES_ENABLED', 'MOBILE_E2E_FIXTURES_TOKEN'])(
+        'refuses to boot a deployed environment that carries %s',
+        (name) => {
+            const result = validateProductionConfig(validEnv({ [name]: 'false' }));
+            expect(result.invalid).toContain(name);
+            expect(() => assertProductionConfig(validEnv({ [name]: 'x'.repeat(40) }))).toThrow(name);
+        },
+    );
+
+    test('the same fixture settings do not affect tests or development', () => {
+        const env = { NODE_ENV: 'test', MOBILE_E2E_FIXTURES_ENABLED: 'true', MOBILE_API_ENABLED: 'yes' };
+        expect(validateProductionConfig(env)).toMatchObject({ valid: true });
+    });
+});

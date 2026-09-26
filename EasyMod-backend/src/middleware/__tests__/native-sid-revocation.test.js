@@ -10,6 +10,9 @@
  */
 
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'test-access-secret-key-32-chars!!';
+// Native tokens are only honoured while the mobile API is on (ADR M-010);
+// native-api-disabled.test.js covers the flag-off refusal.
+process.env.MOBILE_API_ENABLED = 'true';
 
 jest.mock('src/utils/cache.service', () => ({
     get: jest.fn(async () => null),

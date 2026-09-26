@@ -61,4 +61,31 @@ describe('request context logging', () => {
         expect(JSON.stringify(mockLogger.info.mock.calls)).not.toContain('01700000000');
         expect(next).toHaveBeenCalledTimes(1);
     });
+
+    it('records latency and the mobile client identity on the response log', () => {
+        const req = { headers: {}, user: null, method: 'GET', path: '/api/mobile/today', query: {}, ip: '127.0.0.1' };
+        const res = { set: jest.fn(), send: jest.fn(), statusCode: 200 };
+        requestContextMiddleware(req, res, jest.fn());
+
+        // mobileClientContext runs after this middleware; the value is read at send time.
+        req.mobileClient = `android/1.0.0 ${'x'.repeat(200)}`;
+        res.send('{}');
+
+        const [, meta] = mockLogger.info.mock.calls.find(([message]) => message === 'Response sent');
+        expect(meta).toMatchObject({ statusCode: 200, method: 'GET', path: '/api/mobile/today' });
+        expect(Number.isInteger(meta.durationMs)).toBe(true);
+        expect(meta.durationMs).toBeGreaterThanOrEqual(0);
+        expect(meta.client).toHaveLength(64);
+        expect(meta.client.startsWith('android/1.0.0')).toBe(true);
+    });
+
+    it('logs a null client for web requests', () => {
+        const req = { headers: {}, user: null, method: 'GET', path: '/api/dashboard', query: {}, ip: '127.0.0.1' };
+        const res = { set: jest.fn(), send: jest.fn(), statusCode: 200 };
+        requestContextMiddleware(req, res, jest.fn());
+        res.send('{}');
+
+        const [, meta] = mockLogger.info.mock.calls.find(([message]) => message === 'Response sent');
+        expect(meta.client).toBeNull();
+    });
 });
