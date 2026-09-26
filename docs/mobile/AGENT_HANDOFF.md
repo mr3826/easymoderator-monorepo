@@ -168,10 +168,11 @@ emulator job and the arm64 phone APK build. Signed release retrieval and the USB
   - `android-device-apk`: label-gated arm64 build for a USB phone
   - the `Mobile CI` gate over all of them
 - `mobile-release.yml` runs on pushes to `main` that change `EasyMod-mobile/`:
-  - it builds without secrets;
-  - it signs in one step with the upload key from the main-only `mobile-release` environment;
-  - it verifies against the pinned fingerprint and installs/launches on API 24;
-  - it uploads `mobile-release-<sha>`.
+  - it builds both variants, `preview` and `production` (`tech.easymod.merchant`, the Play build), without secrets;
+  - it signs each in one step with the upload key from the main-only `mobile-release` environment;
+  - it verifies each against the pinned fingerprint and its own variant, package and source SHA, then
+    installs/launches on API 24;
+  - it uploads `mobile-release-<sha>` (preview) and `mobile-release-production-<sha>`.
 
   It distributes nothing. See ADR M-013 for rotation and recovery.
 - Do not modify production deploy, release, Meta, billing, database migration or non-mobile workflow

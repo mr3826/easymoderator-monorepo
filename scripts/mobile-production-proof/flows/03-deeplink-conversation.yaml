@@ -1,4 +1,4 @@
-appId: tech.easymod.merchant.preview
+appId: ${MAESTRO_PROOF_APP_ID}
 name: Production deep link - a real conversation from Home, app running
 ---
 - launchApp
@@ -7,7 +7,7 @@ name: Production deep link - a real conversation from Home, app running
       id: home-attention-list
     timeout: 90000
 - openLink:
-    link: easymodmerchantpreview://conversation/${MAESTRO_PROOF_CONVERSATION_ID}
+    link: ${MAESTRO_PROOF_SCHEME}://conversation/${MAESTRO_PROOF_CONVERSATION_ID}
 - extendedWaitUntil:
     visible:
       id: deeplink-found

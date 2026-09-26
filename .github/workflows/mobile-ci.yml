@@ -193,6 +193,8 @@ jobs:
           --apk android/app/build/outputs/apk/release/app-release.apk
           --aab android/app/build/outputs/bundle/release/app-release.aab
           --package tech.easymod.merchant.preview
+          --variant preview
+          --source-sha "$GIT_SHA"
           --abis armeabi-v7a,arm64-v8a,x86,x86_64
           --mapping android/app/build/outputs/mapping/release/mapping.txt
           --out artifacts
@@ -211,6 +213,21 @@ jobs:
             exit 1
           fi
           echo 'The debug-signed build was refused as a release, as required.'
+
+      - name: A preview build cannot pass as the production (Play) build (negative control)
+        run: |
+          set -uo pipefail
+          if node scripts/verify-android-artifact.js \
+            --apk android/app/build/outputs/apk/release/app-release.apk \
+            --aab android/app/build/outputs/bundle/release/app-release.aab \
+            --package tech.easymod.merchant \
+            --variant production \
+            --abis armeabi-v7a,arm64-v8a,x86,x86_64 \
+            --out "$RUNNER_TEMP/variant-negative-control"; then
+            echo '::error::the preview build passed verification as the production build'
+            exit 1
+          fi
+          echo 'The preview build was refused as the production build, as required.'
 
       - name: Prove the signing path with a throwaway key (never a release key)
         run: |
