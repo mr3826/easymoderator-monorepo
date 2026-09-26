@@ -400,9 +400,10 @@ This appendix supersedes §18 where they differ.
 
 - **Mobile is on `main`.** PR #172 merged `feature/mobile-app@e4bd2702` together with `main@aea32ddd`.
   `feature/mobile-app` is retired; mobile PRs now target `main`.
-- **Flags stay off.** The five `MOBILE_*` flags still default to false. Production keeps answering 404
-  on `/api/mobile/*` and `/api/auth/native/*` until the owner enables `MOBILE_API_ENABLED` at deploy
-  time.
+- **Mobile API on in production (2026-09-26).** `MOBILE_API_ENABLED` is rendered from its repository
+  variable (PR #180) and was switched on by owner instruction. It was proven by
+  `mobile-production-proof.yml` run 36237374273. The four Wave 3 `MOBILE_*` flags stay off and are
+  never rendered. See [`MOBILE_API_ACTIVATION_RUNBOOK.md`](../deployment/MOBILE_API_ACTIVATION_RUNBOOK.md).
 - **Production deploy is gated separately.** `PRODUCTION_DEPLOY_ENABLED=false` on 2026-09-26, so
   merging does not deploy.
 - **§15 boundary.**
