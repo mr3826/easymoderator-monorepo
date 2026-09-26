@@ -51,8 +51,41 @@ function record(name, pass, detail = '') {
 }
 
 const randomUuid = () => crypto.randomUUID();
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
-async function call(method, path, { token, body, headers = {}, base = API } = {}) {
+// app.js limits every /api/auth/* request to 10 per minute per IP, and this
+// proof makes about twenty from one runner. Pace them with the limiter's own
+// RateLimit-* headers instead of reading its 429s as auth results; a 429 is
+// answered before authentication, so a paced retry never counts as a login.
+const authWindow = { remaining: null, resetAt: 0 };
+
+function trackAuthWindow(res) {
+    const remaining = Number(res.headers.get('ratelimit-remaining'));
+    const resetSeconds = Number(res.headers.get('ratelimit-reset'));
+    if (Number.isFinite(remaining)) authWindow.remaining = remaining;
+    if (Number.isFinite(resetSeconds)) authWindow.resetAt = Date.now() + resetSeconds * 1000;
+}
+
+async function call(method, path, options = {}) {
+    const isAuth = (options.base || API) === API && String(path).startsWith('/api/auth');
+    if (!isAuth) return send(method, path, options);
+
+    if (authWindow.remaining !== null && authWindow.remaining <= 1 && Date.now() < authWindow.resetAt) {
+        await sleep(authWindow.resetAt - Date.now() + 1000);
+        authWindow.remaining = null;
+    }
+    let res = await send(method, path, options);
+    trackAuthWindow(res);
+    if (res.status === 429) {
+        await sleep(Math.max(authWindow.resetAt - Date.now(), 0) + 1000);
+        authWindow.remaining = null;
+        res = await send(method, path, options);
+        trackAuthWindow(res);
+    }
+    return res;
+}
+
+async function send(method, path, { token, body, headers = {}, base = API } = {}) {
     const requestHeaders = { Accept: 'application/json', 'X-EM-Client': CLIENT, ...headers };
     if (token) requestHeaders.Authorization = `Bearer ${token}`;
     if (body !== undefined) requestHeaders['Content-Type'] = 'application/json';
