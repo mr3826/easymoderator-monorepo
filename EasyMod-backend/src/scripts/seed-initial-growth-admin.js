@@ -87,7 +87,7 @@ async function findPendingBootstrapUser(transaction) {
         const rows = await sequelize.query(
             `SELECT id, email
                FROM users
-              WHERE settings @> CAST(:marker AS jsonb)
+              WHERE CAST(settings AS jsonb) @> CAST(:marker AS jsonb)
               LIMIT 1
               FOR UPDATE`,
             {
