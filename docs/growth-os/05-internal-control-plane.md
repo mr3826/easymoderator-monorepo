@@ -129,9 +129,13 @@ endpoints share a `120` requests/minute limiter; Growth mutations share a
 
 TOTP is stored encrypted with AES-256-GCM. When TOTP is enabled, sign-in
 returns a short-lived temporary challenge; only successful verification issues
-the full session cookies with `mfaVerified: true`. The protected raw roles are
-`SUPER_ADMIN`, `FOUNDER`, and `GROWTH_MANAGER`. `GROWTH_USER` and the other
-legacy roles do not receive an MFA requirement from this middleware.
+the full session cookies with `mfaVerified: true`. Every Growth OS session
+requires the MFA assurance claim: canonical `SUPER_ADMIN` and `GROWTH_USER`
+(held PII/write policy), legacy `FOUNDER`/`GROWTH_MANAGER` by raw role, and
+all remaining legacy compatibility roles through their canonical alias. A
+password-only Growth session is rejected with `GROWTH_OS_MFA_REQUIRED` before
+any workspace route, and the SPA steers the operator through TOTP enrollment
+rather than into an error state.
 
 Logout blacklists the access token and clears the refresh token. Role grant,
 role change, revoke, suspension, password reset, and explicit session revoke
@@ -207,17 +211,27 @@ new -> contacted -> qualifying -> qualified -> onboarding -> converted
 
 Side paths are `disqualified` and `unreachable`; a disqualified record can
 reopen to `qualifying`, and an unreachable record can return to `contacted`.
-`qualified -> converted` remains legal for legacy imports/backfills. A record
-must have a linked shop before entering `onboarding` or `converted`; merged
-records cannot be edited, and converted records have no further status
-transitions. The current field-update path does not make converted rows fully
-immutable.
+There is no operator `qualified -> converted` transition; converted status is
+reached only through the activation sync below (or, for historical rows,
+through an import that sets the initial status directly). A record must have a
+linked shop before entering `onboarding` or `converted`; merged records cannot
+be edited, and converted records have no further status transitions. The
+current field-update path does not make converted rows fully immutable.
+
+The canonical activation population — used by the Home activated card, the
+Analytics funnel, the Sources activated column, the list `activated=true`
+filter, and every drill-through link built from them — is exactly: status
+`converted`, a linked shop, and that shop currently active. Counted metrics
+must be drill-verifiable: a link generated from a metric carries the same
+population predicates and the same frozen window/boundary the metric used
+(for example the stalled cards pass the computed `stalledBefore` instant
+instead of letting the destination re-derive a moving 15-day cutoff).
 
 The activation event is source-of-truth driven by the merchant engine:
 
 1. A prospect is linked to an existing shop and moved to `onboarding`.
 2. The merchant path records the shop's first successful AI reply in
-   `settings.activation.activated_at` with the first conversation ID.
+   `settings.first_ai_reply.occurred_at` with the first conversation ID.
 3. The Growth activation hook finds linked prospects still in `onboarding`,
    changes them to `converted`, and writes an `activated` event with reason
    `first_successful_ai_reply` and the shop/conversation IDs.
@@ -253,19 +267,39 @@ logs.
 
 `EasyMod-backend/scripts/import-growth-prospects.js` is a legacy one-off
 compatibility importer, not a bounded production ingestion service. It loads
-the full legacy `crm_lead` and `partner` sets, processes them serially, and is
+the full legacy `crm_lead` and `partner` sets in bounded read batches, and is
 dry-run by default; `--apply` is required to write. Source references and
-normalized identity are checked for duplicates. The current importer has no
-batch pagination or production ingestion status API, so no bounded-import
-improvement should be claimed.
+normalized identity are checked for duplicates, and reruns skip already
+imported sources. Production execution goes only through the protected
+`run-growth-importer.yml` workflow (main + operator binding + production
+environment + serialized concurrency; apply additionally requires the literal
+`PRODUCTION-IMPORT-APPLY` phrase). After an apply, the workflow re-runs the
+importer in dry-run mode and FAILS unless the verification pass reports zero
+would-create rows — repeat-run idempotency is enforced by the pipeline.
+Receipts (source references, outcomes, conflict pointers — no contact PII)
+are persisted under `/root/growth-os-receipts/`.
+
+Activation-import rule: an imported row becomes `converted` only with an
+active linked shop. It receives a canonical `activated` event only when the
+shop's history proves the same business outcome (`settings.first_ai_reply.occurred_at`);
+the event is written at that historical instant. Converted rows without
+evidence are never synthesized an activation event and are therefore counted
+in activation totals but excluded from activation timing. The importer still
+has no production ingestion status API, so no bounded-import improvement
+should be claimed.
 
 ### Follow-ups and notes
 
 Follow-ups are operator actions attached to a prospect. Their states are
 `open`, `completed`, and `cancelled`; `overdue` and `due_today` are query
-filters derived from `due_at` in UTC. An API response contains the prospect ID
-and name, owner/creator IDs, due time, action, note, status, completion time,
-derived overdue flag, and timestamps.
+filters derived from `due_at` against the Asia/Dhaka business day (the fixed
+UTC+06 business calendar in `growth-os.time.js` / `growthTime.ts`). All
+writers convert `datetime-local` selections through the canonical
+`fromBusinessDateTimeLocal` helper — never browser-local `Date` parsing — so
+the selected wall-clock instant is stored identically regardless of the
+operator's browser zone. An API response contains the prospect ID and name,
+owner/creator IDs, due time, action, note, status, completion time, derived
+overdue flag, and timestamps.
 
 - Create defaults the owner to the actor; an explicit owner must have an active
   Growth OS role.
@@ -274,9 +308,9 @@ derived overdue flag, and timestamps.
   themselves or retain its current owner.
 - `action` is capped at 200 characters and the follow-up note at 2,000.
 - Page size is bounded to 100, with default page size 50 in the service.
-- Completed follow-ups cannot be reopened; the current service does not make
-  `cancelled` rows immutable, so callers must not assume cancellation is
-  terminal outside the UI.
+- Completed and cancelled are terminal: the service accepts transitions and
+  edits only from `open` rows, so neither outcome can be silently reopened
+  through any current endpoint.
 
 Notes are internal-only records with target types `prospect`, `user`, or `shop`.
 Prospect notes follow prospect scope; user/shop operational notes require a
@@ -284,6 +318,16 @@ raw canonical `SUPER_ADMIN`. Notes are soft-deleted, excluded from normal list
 results, and remain represented by their audit record. Prospect note creation
 also appends a `note_added` timeline event. Note bodies are capped at 4,000
 characters.
+
+Operator-facing attribution: note list and create responses expose a joined
+`authorDisplayName` (full name, then email), never a raw author UUID as the
+primary label. A null author id with no display name renders as a removed-
+account fallback; timeline events with a null actor render as system events.
+Under redacted source scope, other operators' identities are hidden
+(`authorRedacted`), consistent with timeline actor-name omission; the acting
+user always sees their own attribution. Prospect timeline events whose values
+are timestamps render in the Asia/Dhaka business clock like every other
+surface.
 
 ## Search Contract
 
@@ -344,14 +388,22 @@ CAC, and cohort-retention events; no campaign/workflow builder; no broad export;
 no autonomous AI action; the 10-result unpaginated search; and the legacy
 unbounded importer. These are not evidence of a production deployment.
 
-## Deployment Receipt
+## Deployment Status
+
+This document is the living contract; execution truth lives in
+`EXECUTION_STATE.md` receipts and `docs/launch/PRODUCTION_TRUTH.md`.
+
+Growth OS is deployed to production behind its own image and pinned-digest
+contract (initial rollout and MVP-1 closure receipts are dated in
+`EXECUTION_STATE.md`; the live backend/Growth runtime SHAs are recorded in
+`PRODUCTION_TRUTH.md` and re-verifiable at `api.easymod.tech/api/version`
+and `growth.easymod.tech/build-info.json`). The historical snapshot below
+was accurate only at drafting time and is preserved as dated record.
 
 ```text
+HISTORICAL_SNAPSHOT_2026-09 (pre-rollout, no longer the current status):
 DEPLOYMENT_STATUS=NOT_DEPLOYED_TO_PRODUCTION
 PRODUCTION_MUTATED=NO
 META_REVIEW_CONFIGURATION_CHANGED=NO
 PRODUCTION_WORKFLOW_OR_CONFIG_MUTATED=NO
 ```
-
-No production workflow, production configuration, merchant data, or deployed
-service was changed as part of this documentation snapshot.

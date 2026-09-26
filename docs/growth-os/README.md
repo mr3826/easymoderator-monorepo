@@ -21,8 +21,9 @@ not override the current code, refs, or these two living documents.
 ## Access Boundary
 
 Growth routes are mounted at `/api/internal/growth-os` behind the existing
-authentication and server-side Growth role middleware. Founder and Growth
-Manager sessions require the existing MFA assurance claim. Prospect scope is
+authentication and server-side Growth role middleware. Every Growth OS
+session — canonical `GROWTH_USER` operators included — requires the existing
+MFA assurance claim. Prospect scope is
 resolved from `req.growthOs.permissions`; client state never authorizes a row.
 
 ## Phase 3 Surface
