@@ -477,6 +477,11 @@ jobs:
           META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
+          # Mobile API switch (ADR M-010). Operator-owned repository variable:
+          # exactly "true" or "false", anything else fails the render.
+          # Rollback: set it to "false" and redeploy
+          # (docs/mobile/PRODUCTION_ACTIVATION.md).
+          MOBILE_API_ENABLED: ${{ vars.MOBILE_API_ENABLED || 'false' }}
           BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
           BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
           BKASH_USERNAME: ${{ secrets.BKASH_USERNAME }}
@@ -927,6 +932,11 @@ jobs:
           META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
+          # Mobile API switch (ADR M-010). Operator-owned repository variable:
+          # exactly "true" or "false", anything else fails the render.
+          # Rollback: set it to "false" and redeploy
+          # (docs/mobile/PRODUCTION_ACTIVATION.md).
+          MOBILE_API_ENABLED: ${{ vars.MOBILE_API_ENABLED || 'false' }}
           # bKash is a LIVE-money gateway. It stays OFF for the controlled pilot
           # (finding F-14/§6). Flip the `BKASH_ENABLED` Actions *variable* to
           # "true" only once every BKASH_* secret is set AND a real-money test

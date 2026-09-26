@@ -13,6 +13,20 @@ function enabledFlag(value) {
 }
 
 /**
+ * Render a runtime switch that the backend reads as `=== 'true'`. Any value
+ * other than the two literals would silently mean "off" at runtime (or, for
+ * "TRUE", look on in the repository settings while being off in production),
+ * so it fails the render instead. Unset renders the default.
+ */
+function strictBooleanFlag(value, name, defaultValue) {
+    const raw = value === undefined || value === null || value === '' ? defaultValue : String(value);
+    if (raw !== 'true' && raw !== 'false') {
+        throw new Error(`${name} must be exactly "true" or "false"`);
+    }
+    return raw;
+}
+
+/**
  * Register a derived secret with the Actions log scrubber. The transformed key
  * is not itself a GitHub secret, so without this it would not be masked if it
  * ever leaked into a stack trace. No-op outside Actions so a local render never
@@ -174,6 +188,13 @@ function buildRenderedEnv(source = process.env) {
         // Growth remains authorization-gated; this enables the protected
         // runtime surface without granting any role or bypassing MFA.
         GROWTH_OS_ENABLED: source.GROWTH_OS_ENABLED || 'true',
+        // Mobile API (ADR M-010): /api/auth/native/*, /api/mobile/* and every
+        // native (sid) token. Off unless the MOBILE_API_ENABLED repository
+        // variable is exactly "true"; rollback is setting it back to "false"
+        // and redeploying (docs/mobile/PRODUCTION_ACTIVATION.md). The Wave 3
+        // MOBILE_* switches are deliberately not rendered, so no repository
+        // setting can turn them on in production.
+        MOBILE_API_ENABLED: strictBooleanFlag(source.MOBILE_API_ENABLED, 'MOBILE_API_ENABLED', 'false'),
         EMBEDDING_PROVIDER: source.EMBEDDING_PROVIDER || '',
         EMBEDDING_MODEL: source.EMBEDDING_MODEL || '',
         OPENAI_EMBEDDING_MODEL: source.OPENAI_EMBEDDING_MODEL || '',

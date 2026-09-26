@@ -55,6 +55,20 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain('AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}');
     });
 
+    test('renders the mobile API switch from the operator variable, off by default, at both production render sites', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const dryRunBlock = workflow.match(/\n  deployment-config:\n([\s\S]*?)\n  docker-build-validation:/)?.[1];
+        const line = "MOBILE_API_ENABLED: ${{ vars.MOBILE_API_ENABLED || 'false' }}";
+
+        expect(deployBlock).toContain(line);
+        expect(dryRunBlock).toContain(line);
+        // It is a public switch, never a secret, and nothing else in the
+        // workflow may set or override it.
+        expect(workflow.match(/MOBILE_API_ENABLED:/g)).toHaveLength(2);
+        expect(workflow).not.toMatch(/secrets\.MOBILE_/);
+        expect(workflow).not.toMatch(/MOBILE_(PUSH|ORDER_MUTATIONS|COURIER_ACTIONS|AI_DRAFTS)_ENABLED|MOBILE_E2E_FIXTURES/);
+    });
+
     test('pull requests can run tests but cannot build deployable images', () => {
         const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
