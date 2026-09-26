@@ -101,7 +101,6 @@ describe('seed-initial-growth-admin', () => {
             email: DEFAULT_EMAIL,
             password: 'bcrypt-hash-only',
             full_name: 'Growth Administrator',
-            role: 'internal',
             is_active: true,
             is_verified: true,
             must_change_password: true,
