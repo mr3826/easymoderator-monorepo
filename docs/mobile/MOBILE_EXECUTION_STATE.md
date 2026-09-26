@@ -3,7 +3,24 @@
 This is the living ledger and phase-receipt log for the mobile program. Every phase appends a
 receipt in the format below (master brief §25) and updates the flag/file ledger.
 
-## Current checkpoint - Wave 2.5 completion (2026-09-25, PR #165)
+## Current checkpoint - Wave 2.5 release closure (2026-09-26, PR #172 into `main`)
+
+- **Mobile is on `main`.** PR #172 merged `feature/mobile-app` and `main` line by line, keeping both
+  sides' `auth.middleware.js` checks, and added the release work:
+  - upload-key signing on `main` (ADR M-013);
+  - R8 and resource shrinking;
+  - fail-closed artifact verification against the pinned signer.
+- **Physical device: PASS.** Every one of the 15 Maestro flows passed on a USB-attached arm64 phone
+  (Android 13, SDK 33) against the R8 release-mode build. The passes were spread over several runs of
+  the same APK, and the receipt below records each run, including the failures.
+- **CI on the PR head passed:** mobile checks, backend regression, `android-release` and emulator E2E.
+- The signed APK/AAB is built by `mobile-release.yml` for the merge commit. Its hashes are recorded
+  on PR #172 and in the run's `SHA256SUMS`.
+- **Distribution** is the workflow artifact only (internal QA sideload). There is no Play or EAS
+  channel yet; that needs an owner decision and account.
+- Production flags stay off, and Wave 3 stays locked.
+
+## Previous checkpoint - Wave 2.5 completion (2026-09-25, PR #165)
 
 - All Wave 2 work is committed. PR #165 (`feat/mobile-release-completion` → `feature/mobile-app`)
   integrates:

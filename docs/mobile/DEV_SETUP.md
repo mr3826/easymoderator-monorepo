@@ -708,3 +708,6 @@ docker rm -f easymod-mobile-e2e-pg easymod-mobile-e2e-redis
   own driver apps for the run.
 - The flows touch only the test app (`tech.easymod.merchant.dev`) and the disposable seed accounts.
 - `offline-reconnect` toggles the phone's airplane mode and restores it afterwards.
+- On a real phone Maestro occasionally drops a tap, or hangs while starting a flow's session (its log
+  repeats "Failed to record heartbeat"). Stop the run, then re-run only the affected flows with
+  `--flows <name>,...`. Keep both runs' artifacts, and record the first failure next to the re-run.

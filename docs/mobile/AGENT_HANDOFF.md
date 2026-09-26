@@ -55,6 +55,8 @@ Last updated: 2026-09-26 (PR #172, mobile integrated into `main`).
   - The shop membership must still be active.
   - Outside `/api/auth/native/*`, the token is read-only and limited to `/api/mobile/*` and the
     order/conversation detail GETs.
+  - 2FA is optional for each merchant. Sign-in asks for a code only when the account has it switched on
+    (`settings.totp_enabled`, the same rule as the web); otherwise it issues the session directly.
   - 2FA challenges are single-use (atomic Lua `GET`+`DEL`, shared with the web). Each challenge is bound
     to the token generation that passed the password step.
   - Codes are replay-protected (`SET NX EX`, fails closed in production and staging).
@@ -98,11 +100,17 @@ Last updated: 2026-09-26 (PR #172, mobile integrated into `main`).
 
 ## Current Phase
 
-- Wave 2.5 is complete in code, CI and emulator E2E (PR #165).
-- External items that remain:
-  - A production signing keystore / EAS credentials. The CI release APK is debug-signed and marked
-    NOT_DISTRIBUTABLE.
-  - A physical-device run. The proof so far is the API 24 and API 34 emulators.
+- Wave 2.5 is released on `main` (PR #172). The proof covers:
+  - code and CI;
+  - all 15 Maestro flows on the API 34 emulator;
+  - install and launch on API 24;
+  - every one of the 15 flows passed on a physical arm64 phone (Android 13) against the R8 build.
+    The passes were spread over several USB runs; see `MOBILE_EXECUTION_STATE.md`, "Release closure".
+- Signed builds come from `mobile-release.yml` as the `mobile-release-<sha>` workflow artifact, signed
+  with the pinned upload key. That artifact is the only distribution channel: internal QA sideload,
+  kept 90 days. The app is not on Play or EAS.
+- Production answers 404 on the mobile routes until the owner sets `MOBILE_API_ENABLED` at deploy time,
+  so the signed `preview` build currently proves install and launch only.
 - Wave 3 (Shared Inbox / Needs Me) stays locked until the owner opens it.
 
 ## Verification Commands
@@ -131,7 +139,7 @@ npm run test:backend:integration:docker
 ```
 
 Android and device E2E: see `DEV_SETUP.md` §11. On a PR, the `mobile-e2e` label opts into the
-emulator job.
+emulator job and the arm64 phone APK build. Signed release retrieval and the USB phone pass are in §12.
 
 ## CI and Protected Areas
 
@@ -162,6 +170,9 @@ emulator job.
 
 ## Next Wave
 
-- Before any distribution: provision a release keystore / EAS credentials, and run a physical-device pass.
+- Store distribution needs an owner decision and a Play Console (or EAS) account. When that happens,
+  register the existing upload key (ADR M-013) as the Play upload key. Never generate a new one.
+- Turning mobile on in production is a deploy-time owner decision (`MOBILE_API_ENABLED`). After that,
+  sign in with a real merchant account on the signed `preview` build on a phone.
 - Wave 3 planning only after the owner unlocks it. Keep native mutation capabilities disabled until each
   write operation has an explicit server flag and policy review.

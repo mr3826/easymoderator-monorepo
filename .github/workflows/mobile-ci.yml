@@ -443,7 +443,7 @@ jobs:
     # source and R8 build as the emulator E2E APK, but it reaches the disposable
     # backend through `adb reverse` (http://localhost:4000) instead of the
     # emulator's host alias. Uploaded for the physical-device pass
-    # (docs/mobile/DEV_SETUP.md §11); opt-in with the same `mobile-e2e` label.
+    # (docs/mobile/DEV_SETUP.md §12); opt-in with the same `mobile-e2e` label.
     name: Android device test APK (arm64, opt-in)
     runs-on: ubuntu-latest
     needs: [isolation-guard, protected-paths, mobile-e2e-scope]
