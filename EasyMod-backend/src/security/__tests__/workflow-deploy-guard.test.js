@@ -632,6 +632,12 @@ describe('protected growth importer execution', () => {
         expect(growthImporterWorkflow).toContain('com.docker.compose.service=backend');
         expect(growthImporterWorkflow).toContain('/root/growth-os-receipts');
         // Inputs must be validated before interpolation into remote commands.
-        expect(growthImporterWorkflow).toContain("case \"$IMPORT_BATCH_SIZE\" in ''|*[!0-9]*) IMPORT_BATCH_SIZE=100;; esac");
+        expect(growthImporterWorkflow).toContain('case "$IMPORT_BATCH_SIZE" in "" | *[!0-9]*) IMPORT_BATCH_SIZE=100;; esac');
+        // The remote program travels inside single quotes to ssh; apostrophes
+        // inside it silently terminate the quoting (observed in run 36245354832).
+        const remoteProgram = growthImporterWorkflow.split('root@"$DEPLOY_HOST" ')[1] || '';
+        const quotedBody = remoteProgram.slice(remoteProgram.indexOf("'") + 1, remoteProgram.lastIndexOf("'"));
+        expect(quotedBody.length).toBeGreaterThan(500);
+        expect((quotedBody.match(/'/g) || []).length).toBe(0);
     });
 });
