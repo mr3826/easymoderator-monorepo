@@ -119,8 +119,10 @@ jobs:
                 fi
                 mkdir -p /root/growth-os-receipts
                 # Inputs reach the remote shell; harden before interpolation.
-                case "$IMPORT_BATCH_SIZE" in ''|*[!0-9]*) IMPORT_BATCH_SIZE=100;; esac
-                case "$GITHUB_RUN_ID" in ''|*[!0-9]*) echo "Unexpected run id." >&2; exit 1;; esac
+                # The whole program travels inside single quotes to ssh, so
+                # nothing here may contain a single quote character.
+                case "$IMPORT_BATCH_SIZE" in "" | *[!0-9]*) IMPORT_BATCH_SIZE=100;; esac
+                case "$GITHUB_RUN_ID" in "" | *[!0-9]*) echo "Unexpected run id." >&2; exit 1;; esac
                 run_id="growth-prospect-import-gha-$GITHUB_RUN_ID"
                 if [ "$IMPORT_MODE" = "apply" ]; then
                   if [ "$IMPORT_AUTHORIZATION" != "PRODUCTION-IMPORT-APPLY" ]; then
@@ -139,16 +141,15 @@ jobs:
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-verify --receipt /tmp/growth-os-receipts/verify.json" \
                     | tee /root/growth-os-receipts/${run_id}-verify.stdout.json)
                   docker cp "$backend_container:/tmp/growth-os-receipts/verify.json" "/root/growth-os-receipts/${run_id}-verify.receipt.json"
-                  would_create=$(printf "%s" "$second" | node -e "
-                    let data = '';
-                    process.stdin.on('data', (chunk) => { data += chunk; });
-                    process.stdin.on('end', () => {
-                      const line = data.trim().split('\n').filter(Boolean).pop();
-                      const parsed = JSON.parse(line);
-                      process.stdout.write(String(parsed.counts.wouldCreate));
-                    });
-                  ")
+                  # Extract counts.wouldCreate from the JSON emitted by the
+                  # verification pass, with portable awk only: no single
+                  # quotes are allowed in this program, and the host may lack node.
+                  would_create=$(printf "%s" "$second" | awk "/wouldCreate/ {gsub(/[^0-9]/, \"\", \$0); print; exit}")
                   echo "SECOND_RUN_WOULD_CREATE=$would_create"
+                  if [ -z "$would_create" ]; then
+                    echo "::error::could not extract wouldCreate from the verification pass"
+                    exit 1
+                  fi
                   if [ "$would_create" != "0" ]; then
                     echo "::error::post-apply verification dry-run reports $would_create would-create rows; idempotency is broken"
                     exit 1
