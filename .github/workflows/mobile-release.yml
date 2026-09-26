@@ -4,7 +4,10 @@ name: Mobile Release
 # Runs only for pushes to main that change the mobile app; never for a pull request, never
 # on demand. The upload key reaches exactly one step ("Sign with the upload key") from the
 # `mobile-release` environment, whose deployment branch policy admits main only. Nothing is
-# distributed from here: the signed APK/AAB are uploaded as this run's artifact.
+# distributed from here: the signed APK/AAB are uploaded as this run's artifacts.
+# Every run signs both build variants of the same source with the same upload key:
+#   preview    -> tech.easymod.merchant.preview, artifact mobile-release-<sha> (internal QA sideload)
+#   production -> tech.easymod.merchant, artifact mobile-release-production-<sha> (the Play AAB)
 # .github/scripts/verify-mobile-ci-isolation.js checks this file's shape on every mobile PR.
 
 on:
@@ -25,12 +28,24 @@ permissions:
 
 jobs:
   signed-release:
-    name: Signed Android release (all ABIs) + install/launch
+    name: Signed Android release, ${{ matrix.variant }} (all ABIs) + install/launch
     runs-on: ubuntu-latest
     environment: mobile-release
     timeout-minutes: 120
+    strategy:
+      # Each variant completes its own evidence; the run fails if either variant fails.
+      fail-fast: false
+      matrix:
+        include:
+          # mobile-production-proof.yml downloads the preview artifact by this name.
+          - variant: preview
+            package: tech.easymod.merchant.preview
+            artifact: mobile-release
+          - variant: production
+            package: tech.easymod.merchant
+            artifact: mobile-release-production
     env:
-      APP_VARIANT: preview
+      APP_VARIANT: ${{ matrix.variant }}
       EXPO_PUBLIC_API_BASE_URL: https://api.easymod.tech
       GIT_SHA: ${{ github.sha }}
       EXPO_NO_TELEMETRY: '1'
@@ -90,11 +105,15 @@ jobs:
             release
 
       - name: Verify the signed artifacts against the pinned upload key
+        env:
+          APP_PACKAGE: ${{ matrix.package }}
         run: >-
           node scripts/verify-android-artifact.js
           --apk release/app-release.apk
           --aab release/app-release.aab
-          --package tech.easymod.merchant.preview
+          --package "$APP_PACKAGE"
+          --variant "$APP_VARIANT"
+          --source-sha "$GIT_SHA"
           --abis armeabi-v7a,arm64-v8a,x86,x86_64
           --mapping android/app/build/outputs/mapping/release/mapping.txt
           --expect-signer "$(node -p "require('./release-signing.json').certificateSha256")"
@@ -119,7 +138,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: ./EasyMod-mobile
-          script: node scripts/android-install-launch-check.js release/app-release.apk tech.easymod.merchant.preview release
+          script: node scripts/android-install-launch-check.js release/app-release.apk ${{ matrix.package }} release
 
       - name: Checksums
         run: |
@@ -132,7 +151,7 @@ jobs:
       - name: Upload the signed release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mobile-release-${{ github.sha }}
+          name: ${{ matrix.artifact }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 90
           path: |
@@ -143,6 +162,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mobile-release-logs-${{ github.sha }}
+          name: ${{ matrix.artifact }}-logs-${{ github.sha }}
           if-no-files-found: ignore
           path: EasyMod-mobile/release-logs/
