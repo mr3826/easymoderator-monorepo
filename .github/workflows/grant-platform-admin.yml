@@ -82,13 +82,26 @@ jobs:
           timeout: 120s
           # Forward inputs as named env vars so they are NOT string-interpolated
           # into the remote shell (avoids command injection via the email field).
+          # Use the already-running Compose backend container directly:
+          # `docker compose exec` interpolates every required image variable
+          # before it can exec, but .env.prod intentionally contains runtime
+          # secrets/config only; the running container is the authoritative
+          # production code target.
           envs: TARGET_EMAIL,TARGET_ROLE
           script: |
-            set -e
+            set -euo pipefail
             cd /opt/easymod
             echo "==> Setting platform_role=${TARGET_ROLE} for ${TARGET_EMAIL}"
-            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
-              node src/scripts/grant-platform-admin.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
+            backend_container=$(docker ps \
+              --filter 'label=com.docker.compose.service=backend' \
+              --filter 'status=running' \
+              --format '{{.ID}}' | head -n 1)
+            if [ -z "${backend_container}" ]; then
+              echo 'No running Compose backend container was found.' >&2
+              exit 1
+            fi
+            docker exec \
+              "${backend_container}" node src/scripts/grant-platform-admin.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
             echo "==> Done."
         env:
           TARGET_EMAIL: ${{ inputs.email }}
