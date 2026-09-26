@@ -254,6 +254,24 @@ async function assertDeviceTools() {
   return { adb, maestro };
 }
 
+// Emulator images sometimes leave another app's "isn't responding" or "has
+// stopped" dialog on screen. In CI, a Pixel Launcher ANR on API 34 covered the
+// login screen for every flow of a run. On an emulator only, ask the system not
+// to show error dialogs and close any that are up before each flow. A physical
+// phone's settings are never touched, and a crash of this app still fails its
+// flow, because the app is then not on screen.
+async function isEmulator(adb) {
+  const kernelQemu = await captureCommand(adb, ['shell', 'getprop', 'ro.kernel.qemu']);
+  const bootQemu = await captureCommand(adb, ['shell', 'getprop', 'ro.boot.qemu']);
+  return kernelQemu === '1' || bootQemu === '1';
+}
+
+async function closeSystemDialogs(adb) {
+  await runCommand(adb, ['shell', 'am', 'broadcast', '-a', 'android.intent.action.CLOSE_SYSTEM_DIALOGS'], {
+    stdio: 'ignore',
+  });
+}
+
 function localApiConfig() {
   const raw = process.env.E2E_API_BASE_URL || DEFAULT_API_BASE_URL;
   let parsed;
@@ -567,11 +585,18 @@ async function main() {
   let deviceTools = null;
   let apkPath = null;
   let backendEnvironmentForChild = null;
+  let emulator = false;
+  let previousHideErrorDialogs = null;
   const results = [];
   let exitCode = 1;
 
   try {
     deviceTools = await assertDeviceTools();
+    emulator = await isEmulator(deviceTools.adb);
+    if (emulator) {
+      previousHideErrorDialogs = await captureCommand(deviceTools.adb, ['shell', 'settings', 'get', 'global', 'hide_error_dialogs']);
+      await runCommand(deviceTools.adb, ['shell', 'settings', 'put', 'global', 'hide_error_dialogs', '1'], { stdio: 'ignore' });
+    }
     apkPath = options.install ? resolveApkPath(options.apkPath) : null;
     if (options.startBackend) {
       backendEnvironmentForChild = backendEnvironment(password, apiConfig.port, controlToken);
@@ -621,6 +646,7 @@ async function main() {
             throw new Error('APK reinstall over the signed-in app failed.');
           }
         }
+        if (emulator) await closeSystemDialogs(deviceTools.adb);
         console.log(`\n=== FLOW ${flow.name} (${flow.file}) ===`);
         passed = (await runFlow(deviceTools.maestro, flow, flowEnv)) === 0;
       } catch (error) {
@@ -651,6 +677,13 @@ async function main() {
         await captureDeviceLog(adb);
       } catch (error) {
         console.error(`E2E log capture failed: ${error.message}`);
+      }
+      if (emulator) {
+        // Leave a developer's emulator as it was.
+        const restore = !previousHideErrorDialogs || previousHideErrorDialogs === 'null'
+          ? ['shell', 'settings', 'delete', 'global', 'hide_error_dialogs']
+          : ['shell', 'settings', 'put', 'global', 'hide_error_dialogs', previousHideErrorDialogs];
+        await runCommand(adb, restore, { stdio: 'ignore' }).catch(() => {});
       }
     }
   }
