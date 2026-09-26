@@ -1077,3 +1077,94 @@ frontend changes remain untouched.
   configuration-dependent: create/select an existing shop-less production
   account with MFA, configure the protected actor secret and target email, and
   provide a canonical browser Sentry DSN plus human-visible event receipt.
+
+## 2026-09-26 (evening) live bootstrap execution receipt — deadlock resolved
+
+The first-operator deadlock is closed in production. All steps below executed
+through the canonical protected workflows; no credential, DSN, MFA secret, or
+session value is recorded here.
+
+- `DEPLOYMENT_CHAIN`: exact merged SHAs deployed through the existing gate;
+  `PRODUCTION_DEPLOY_ENABLED` was set true only for each bounded dispatch and
+  restored to false. Production runtime is `5d1929dbc1d247de010e4724d649740d9e5b35c0`
+  (backend `/version` and Growth `build-info.json` both confirm; 57 migrations;
+  Growth image digest pinned; unauthenticated Growth API returns 401).
+  Earlier deploy of `bc781d45` and intermediate `e3c7016a`/`18b78ff9` runs are
+  historical receipts: the first failed the live schema audit (no `users.role`
+  column) and rolled back before service replacement — the model was corrected
+  to the existing schema; production data was never mutated by it.
+- `INITIAL_ADMIN_SEED`: `seed-initial-growth-admin.yml` run `36218828021`
+  succeeded on production. The first attempt (run `36216031493`) failed closed
+  before insertion when the live `users.settings` column proved to be `json`
+  rather than `jsonb`; the containment query was cast accordingly (merged via
+  PR #175) with no partial write. The seeded identity is shop-less, active,
+  non-revoked, has no merchant membership, a production bcrypt hash of the
+  protected temporary credential, forced rotation, and the one-time bootstrap
+  marker only.
+- `PASSWORD_ROTATION`: completed through the normal forced first-login change
+  flow. The bootstrap temporary credential was verified to no longer
+  authenticate (`Invalid credentials`). The post-rotation password exists only
+  as a bcrypt hash; no copy is retained in repository, workflow, audit, or
+  automation storage — operator recovery is the standard email reset for the
+  account address.
+- `MFA`: real enrollment through the production `/auth/2fa/setup` → genuine
+  TOTP verification → `/auth/2fa/enable` flow. No SQL flag, no bypass, no
+  exception. Login challenge enforcement verified: password-only sign-in is
+  rejected with an MFA step-up; the Growth Users control plane shows
+  `MFA: Yes`. The enrolled authenticator seed was displayed only inside the
+  one-time setup UI and is never reproduced in documents.
+- `GROWTH_BOOTSTRAP_ACTOR_EMAIL`: configured in the protected production
+  environment to the seeded operator address, matching the actor semantics
+  asserted by the canonical role service (actor must equal the first target).
+- `SUPER_ADMIN_GRANT`: `grant-growth-role.yml` run `36220618508` executed the
+  audited `bootstrapRole` transaction. The backend log line `OK: ... =>
+  SUPER_ADMIN (user a5004286-2908-4841-a09f-1a907127c642)` is the positive
+  effect receipt; the workflow's red step is the post-output drone-ssh channel
+  timeout after Redis handles kept the session open past the 10-minute command
+  timeout — the grant committed before that artifact appeared. Effects verified
+  independently: pre-existing sessions returned 401 (invalidated), the audit
+  trail shows `growth_os:role_granted` with GitHub actor `mr3826`, and a fresh
+  MFA-authenticated session resolved `SUPER_ADMIN` with full workspace scopes.
+- `AUTHENTICATED_GROWTH_PROOF`: full production walkthrough passed as
+  `Growth Administrator` (`SUPER_ADMIN`): Home/My Work queues, Prospects list
+  with filters/pagination, Quick Add create, edit-form update, lifecycle
+  transition, notes with attribution, follow-up create/complete/reschedule/
+  cancel, state queues (due today/overdue/cancelled/completed), Sources,
+  Analytics, Pipeline, Operations, Audit with server-side redaction (no raw
+  contact PII rendered), merchant read-only control plane (7 live merchants,
+  none mutated), linkage negative path (invalid shop id → 404, no side
+  effect), activation display. Logout verified: stale session 401 and stale
+  refresh rejected.
+- `OWNER_REVOCATION_LIVE_PROOF`: disposable subordinate `MVP1 Proof Agent`
+  (`GROWTH_USER`) created via the Growth control plane, assigned the fixture
+  prospect, then permanently revoked with typed confirmation. After revocation
+  the owner picker excluded the revoked user (ineligible for new assignments),
+  historical assignment remained attributable in the timeline, the prospect
+  stayed discoverable, and `SUPER_ADMIN` reassignment succeeded with a reason —
+  matching the eligibility contract without touching the bootstrap identity.
+- `PLATFORM_ADMIN_GRANT`: `grant-platform-admin.yml` (now using the proven
+  direct docker-exec pattern, PR #177) run `36222365407` succeeded; the
+  operator also holds the canonical platform `SUPER_ADMIN` role required by
+  `/api/admin/*`. The admin API host is deliberately outside the Growth proxy
+  boundary, so those routes require an operator-authenticated merchant-app
+  session — by repository design.
+- `SENTRY_BOUNDARY`: backend Sentry remains configured and health-verified.
+  The controlled `POST /api/admin/ops/test-alert` invocation was NOT executed
+  by automation because that route requires a human-held operator session on
+  the API host and the repository's lockout-prevention guard correctly refused
+  automation re-issuance of the sole Super Admin credential. No provider auth
+  token exists in any authorized source for machine-readable event-receipt
+  verification. Browser Sentry stays disabled by design until a canonical
+  public DSN is provisioned: `VITE_SENTRY_DSN` is absent from repository
+  secrets/variables, git history, the deployed frontend bundle, and all
+  authorized discovery sources; it must never be inferred from the backend
+  DSN. `USER_CONFIGURATION_REQUIRED`: provision a canonical browser DSN in
+  the Sentry project, then set the `VITE_SENTRY_DSN` repository variable and
+  rebuild through the canonical pipeline.
+- `ROLLBACK_STATUS`: `MECHANISM_VERIFIED` — the canonical pipeline executed
+  the disposable rollback rehearsal during deployment validation; no live
+  rollback was needed.
+- `MOBILE_ISOLATION`: re-verified at completion — mobile worktrees, the
+  `v1.0.2-rc3` release worktree and its dirty files, mobile branches, mobile
+  CI, and mobile source were never reset, rebased, stashed, cleaned, deleted,
+  committed into, or otherwise modified by this task.

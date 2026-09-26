@@ -286,7 +286,7 @@ path are explicit in `.github/workflows/ci-cd.yml:668-669`, `:870-883`.
 
 #### P0-3 Bootstrap the first Super Admin through the protected workflow
 
-**Status: `OPEN`.**
+**Status: `CLOSED 2026-09-26` — see live receipt in `EXECUTION_STATE.md`.**
 
 Implementation closure added on 2026-09-26 (live proof remains open): the
 supported path now starts with the protected
@@ -298,6 +298,18 @@ finish password rotation and real MFA enrollment, then clears the marker in the
 same transaction as the role grant, audit row, and session invalidation.
 The prior existing-user requirement below describes the pre-seed deadlock and
 must not be used as an alternative account-promotion path.
+
+Closure executed 2026-09-26 (same day, live production): the seed workflow ran
+(`36218828021`), the temporary credential was rotated and the old one verified
+rejected, MFA was enrolled through the genuine production flow and enforced at
+login, `GROWTH_BOOTSTRAP_ACTOR_EMAIL` was configured, and the canonical
+`grant-growth-role.yml` run `36220618508` created the first `SUPER_ADMIN`
+(user `a5004286-2908-4841-a09f-1a907127c642`) with audit receipt, marker
+clear, and session invalidation all confirmed through a fresh authenticated
+SUPER_ADMIN session. `GROWTH_BOOTSTRAP_STATUS=CLOSED`. The Sentry browser-DSN
+and admin test-event provider-receipt items remain a separate documented
+configuration boundary; see the 2026-09-26 live receipt in
+`EXECUTION_STATE.md`.
 
 Files and surfaces:
 
