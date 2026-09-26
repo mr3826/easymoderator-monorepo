@@ -39,8 +39,13 @@ Amends ADR M-009 (mobile CI isolation). Implements plan items M-5/M-6 (release b
 
 `.github/workflows/mobile-release.yml` runs for pushes to `main` that change `EasyMod-mobile/`:
 
-1. It builds the `preview` APK and AAB for all four ABIs with R8, **without** any secret in the
-   environment.
+1. It builds the APK and AAB for all four ABIs with R8, **without** any secret in the environment.
+   Each run builds both variants of the same source as two matrix jobs:
+   - `preview` (`tech.easymod.merchant.preview`), the internal QA sideload build;
+   - `production` (`tech.easymod.merchant`), the build a Play upload would use.
+
+   Only `APP_VARIANT` differs between them, and with it the application id, name and deep-link scheme
+   (`app.config.ts`).
 2. Only the step named "Sign with the upload key" receives the two secrets.
    `scripts/sign-android-release.sh` re-signs the APK with `apksigner` (v2 + v3, one signer, zip
    alignment preserved). It strips Gradle's debug JAR signature from the AAB and signs it once with
@@ -51,9 +56,14 @@ Amends ADR M-009 (mobile CI isolation). Implements plan items M-5/M-6 (release b
    - the manifest flags;
    - blocked permissions;
    - 16 KB page alignment;
-   - that the R8 mapping exists.
+   - that the R8 mapping exists;
+   - that the AAB's own manifest has the expected package and the APK's version;
+   - that the app config embedded in both artifacts names this variant, its package, an HTTPS API
+     and the source SHA (`--variant`, `--source-sha`). A preview build cannot pass as production;
+     `mobile-ci.yml` proves that refusal on every mobile PR.
 4. The signed APK is installed and cold-launched on an API 24 emulator.
-5. Only then is `mobile-release-<sha>` uploaded: APK, AAB, manifest, mapping and `SHA256SUMS`.
+5. Only then is the artifact uploaded: APK, AAB, manifest, mapping and `SHA256SUMS`. It is named
+   `mobile-release-<sha>` for preview and `mobile-release-production-<sha>` for production.
 
 The version code is `git rev-list --count HEAD`, which is monotonic on `main` and reproducible per SHA.
 The version name is `EasyMod-mobile/package.json`'s `version`.
@@ -102,8 +112,12 @@ runs, so every device flow exercises minified code. No project keep rules were a
 ### Distribution
 
 No automated distribution. The established channel is internal QA sideloading of the signed `preview`
-APK (plan §12) from the `mobile-release-<sha>` artifact. Google Play or EAS submission needs its own
-owner decision and credentials, and is deliberately outside `mobile-release.yml`.
+APK (plan §12) from the `mobile-release-<sha>` artifact.
+
+The signed `production` AAB in `mobile-release-production-<sha>` is the only build that may be
+uploaded to Google Play. Never upload a preview build: a Play package name is permanent. Uploading
+it stays a manual owner act (Play Console, internal testing first) and is deliberately outside
+`mobile-release.yml`, like any EAS submission.
 
 ## Rotation, recovery and compromise response
 

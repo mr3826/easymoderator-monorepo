@@ -6,18 +6,22 @@
  *
  *   node scripts/verify-android-artifact.js --apk <apk> [--aab <aab>] --package <id> \
  *     --abis armeabi-v7a,arm64-v8a,x86,x86_64 --out <dir> \
- *     [--mapping <R8 mapping.txt>] [--expect-signer <release certificate SHA-256>]
+ *     [--mapping <R8 mapping.txt>] [--expect-signer <release certificate SHA-256>] \
+ *     [--variant <preview|production>] [--source-sha <full commit SHA>]
  *
  * Fails (exit 1) unless every requested ABI ships the React Native/Hermes native
- * libraries in the APK (and AAB), the package id matches, the manifest is not
+ * libraries in the APK (and AAB), the package id matches in the APK and the AAB (whose
+ * version must equal the APK's), the manifest is not
  * debuggable, does not allow cleartext traffic and disables backup, no blocked
  * permission is requested, native libraries are 16 KB page-aligned, and the APK (and
  * AAB) verify with exactly one signer. `--mapping` requires a non-empty R8 mapping file
  * (the build was minified). An artifact is DISTRIBUTABLE only when `--expect-signer` is
  * given and both the APK and the AAB are signed by that certificate; with
  * `--expect-signer`, any other signer (the debug certificate included) fails the run.
- * Without it the artifact is recorded as NOT_DISTRIBUTABLE. Dependency-free: unzip, the
- * JDK and Android build-tools.
+ * Without it the artifact is recorded as NOT_DISTRIBUTABLE. `--variant` and `--source-sha`
+ * read the app config embedded in each artifact and require the named build variant (with
+ * its package id and an HTTPS API) and source commit, so a preview build cannot pass as the
+ * production one. Dependency-free: unzip, the JDK and Android build-tools.
  */
 
 const crypto = require('crypto');
@@ -91,6 +95,88 @@ function readBundleSigners(aab) {
   return { verified, signers };
 }
 
+const unzipEntry = (archive, entry) => execFileSync('unzip', ['-p', archive, entry], { maxBuffer: 64 * 1024 * 1024 });
+
+function readVarint(bytes, start) {
+  let value = 0;
+  let offset = start;
+  for (let shift = 0; ; shift += 7) {
+    if (offset >= bytes.length || shift > 49) throw new Error('malformed protobuf varint');
+    const byte = bytes[offset];
+    offset += 1;
+    value += (byte & 0x7f) * 2 ** shift;
+    if ((byte & 0x80) === 0) return [value, offset];
+  }
+}
+
+/** The length-delimited fields of one protobuf message, as [field number, bytes] pairs. */
+function protoFields(bytes) {
+  const fields = [];
+  let offset = 0;
+  while (offset < bytes.length) {
+    let key;
+    let length;
+    [key, offset] = readVarint(bytes, offset);
+    const wireType = key % 8;
+    if (wireType === 0) [, offset] = readVarint(bytes, offset);
+    else if (wireType === 1) offset += 8;
+    else if (wireType === 5) offset += 4;
+    else if (wireType === 2) {
+      [length, offset] = readVarint(bytes, offset);
+      fields.push([Math.floor(key / 8), bytes.subarray(offset, offset + length)]);
+      offset += length;
+    } else throw new Error(`unsupported protobuf wire type ${wireType}`);
+  }
+  return fields;
+}
+
+/**
+ * The package and version of the AAB's base module. A bundle stores its manifest as aapt2's
+ * protobuf XmlNode (Resources.proto), which `aapt2 dump badging` cannot read, so the root
+ * element's attributes are decoded directly: XmlNode.element = 1; XmlElement.name = 3,
+ * .attribute = 4; XmlAttribute.namespace_uri = 1, .name = 2, .value = 3 (the source string).
+ */
+function readBundleManifest(aab) {
+  const element = protoFields(unzipEntry(aab, 'base/manifest/AndroidManifest.xml')).find(([field]) => field === 1);
+  if (!element) throw new Error('AAB base manifest has no root element');
+  const fields = protoFields(element[1]);
+  const text = (message, number) => message.find(([field]) => field === number)?.[1].toString('utf8') ?? '';
+  if (text(fields, 3) !== 'manifest') throw new Error('AAB base manifest root is not <manifest>');
+  const attributes = {};
+  for (const [field, bytes] of fields) {
+    if (field !== 4) continue;
+    const attribute = protoFields(bytes);
+    const prefix = text(attribute, 1) === 'http://schemas.android.com/apk/res/android' ? 'android:' : '';
+    attributes[`${prefix}${text(attribute, 2)}`] = text(attribute, 3);
+  }
+  return {
+    package: attributes.package || null,
+    versionCode: attributes['android:versionCode'] || null,
+    versionName: attributes['android:versionName'] ?? null,
+  };
+}
+
+/**
+ * The public Expo config that expo-constants embeds in the build (`assets/app.config`): the
+ * variant, application id, API base URL and source SHA that app.config.ts resolved when this
+ * exact artifact was built, read back from the artifact rather than from the build environment.
+ */
+function readEmbeddedConfig(archive, entry) {
+  try {
+    const config = JSON.parse(unzipEntry(archive, entry).toString('utf8'));
+    return {
+      appVariant: config.extra?.appVariant ?? null,
+      package: config.android?.package ?? null,
+      scheme: config.scheme ?? null,
+      name: config.name ?? null,
+      apiBaseUrl: config.extra?.apiBaseUrl ?? null,
+      gitSha: config.extra?.gitSha ?? null,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const abis = options.abis.split(',').map((abi) => abi.trim()).filter(Boolean);
@@ -130,6 +216,45 @@ function main() {
   const nativeCode = field(/native-code: (.+)/);
   check(packageName === options.package, `package is ${packageName}, expected ${options.package}`);
   check(!/application-debuggable/.test(badging), 'APK is debuggable');
+
+  // The AAB is what Play receives, so its own manifest must carry the same identity.
+  let bundleManifest = null;
+  if (options.aab) {
+    try {
+      bundleManifest = readBundleManifest(options.aab);
+    } catch (error) {
+      failures.push(`AAB manifest could not be read: ${error.message.split('\n')[0]}`);
+    }
+    if (bundleManifest) {
+      check(bundleManifest.package === options.package,
+        `AAB package is ${bundleManifest.package}, expected ${options.package}`);
+      check(bundleManifest.versionCode === versionCode,
+        `AAB versionCode ${bundleManifest.versionCode} differs from the APK's ${versionCode}`);
+      check(bundleManifest.versionName === versionName,
+        `AAB versionName ${bundleManifest.versionName} differs from the APK's ${versionName}`);
+    }
+  }
+
+  // --variant / --source-sha: the build profile and source the artifacts were actually built from.
+  const embedded = {
+    apk: readEmbeddedConfig(options.apk, 'assets/app.config'),
+    aab: options.aab ? readEmbeddedConfig(options.aab, 'base/assets/app.config') : null,
+  };
+  for (const [label, config] of [['APK', embedded.apk], ['AAB', options.aab ? embedded.aab : undefined]]) {
+    if (config === undefined || (!options.variant && !options['source-sha'])) continue;
+    check(config !== null, `${label} has no readable embedded app config (assets/app.config)`);
+    if (!config) continue;
+    if (options.variant) {
+      check(config.appVariant === options.variant,
+        `${label} was built as the "${config.appVariant}" variant, expected "${options.variant}"`);
+      check(config.package === options.package, `${label} embeds package ${config.package}, expected ${options.package}`);
+      check(/^https:\/\//.test(config.apiBaseUrl || ''), `${label} API base URL ${config.apiBaseUrl} is not HTTPS`);
+    }
+    if (options['source-sha']) {
+      check(config.gitSha === options['source-sha'],
+        `${label} was built from ${config.gitSha}, expected ${options['source-sha']}`);
+    }
+  }
   const permissions = [...badging.matchAll(/uses-permission: name='([^']+)'/g)].map((match) => match[1]).sort();
   for (const permission of FORBIDDEN_PERMISSIONS) {
     check(!permissions.includes(permission), `APK requests ${permission} (blocked in app.config.ts)`);
@@ -223,8 +348,11 @@ function main() {
         : null;
 
   const manifest = {
-    sourceSha: process.env.GIT_SHA || process.env.GITHUB_SHA || 'unknown',
-    buildProfile: process.env.APP_VARIANT || 'unknown',
+    sourceSha: options['source-sha'] || process.env.GIT_SHA || process.env.GITHUB_SHA || 'unknown',
+    buildProfile: options.variant || process.env.APP_VARIANT || 'unknown',
+    buildRun: process.env.GITHUB_RUN_ID
+      ? { repository: process.env.GITHUB_REPOSITORY || null, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT || null }
+      : null,
     package: packageName,
     versionName,
     versionCode,
@@ -235,8 +363,17 @@ function main() {
     requestedAbis: abis,
     apk: { file: path.basename(options.apk), size: fs.statSync(options.apk).size, sha256: sha256(options.apk), abis: apkAbis },
     aab: options.aab
-      ? { file: path.basename(options.aab), size: fs.statSync(options.aab).size, sha256: sha256(options.aab), abis: aabAbis }
+      ? {
+        file: path.basename(options.aab),
+        size: fs.statSync(options.aab).size,
+        sha256: sha256(options.aab),
+        abis: aabAbis,
+        package: bundleManifest?.package ?? null,
+        versionName: bundleManifest?.versionName ?? null,
+        versionCode: bundleManifest?.versionCode ?? null,
+      }
       : null,
+    embeddedConfig: embedded,
     manifestFlags: { debuggable, usesCleartextTraffic: cleartext, allowBackup },
     pageAligned16k,
     r8Mapping: mapping,
@@ -262,12 +399,18 @@ function main() {
   fs.mkdirSync(options.out, { recursive: true });
   fs.writeFileSync(path.join(options.out, 'android-artifact-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   const lines = [
-    `SOURCE_SHA=${manifest.sourceSha}`,
+    `SOURCE_SHA=${manifest.sourceSha}${manifest.buildRun ? ` BUILD_RUN=${manifest.buildRun.runId}` : ''}`,
     `BUILD_PROFILE=${manifest.buildProfile} PACKAGE=${packageName} VERSION=${versionName} (${versionCode}) MIN_SDK=${minSdk} TARGET_SDK=${targetSdk}`,
     `ABIS=${apkAbis.join(',')} NATIVE_CODE=${nativeCode}`,
     `PERMISSIONS=${permissions.join(',')}`,
     `APK=${manifest.apk.file} SIZE=${manifest.apk.size} SHA256=${manifest.apk.sha256}`,
-    manifest.aab ? `AAB=${manifest.aab.file} SIZE=${manifest.aab.size} SHA256=${manifest.aab.sha256} ABIS=${aabAbis.join(',')}` : 'AAB=none',
+    manifest.aab
+      ? `AAB=${manifest.aab.file} SIZE=${manifest.aab.size} SHA256=${manifest.aab.sha256} ABIS=${aabAbis.join(',')}`
+        + ` PACKAGE=${manifest.aab.package} VERSION=${manifest.aab.versionName} (${manifest.aab.versionCode})`
+      : 'AAB=none',
+    `EMBEDDED_CONFIG=${['apk', 'aab'].filter((key) => embedded[key])
+      .map((key) => `${key}:${embedded[key].appVariant}/${embedded[key].package}/${embedded[key].scheme}/${embedded[key].gitSha}`)
+      .join(' ') || 'none'}`,
     `DEBUGGABLE=${debuggable} CLEARTEXT=${cleartext} ALLOW_BACKUP=${allowBackup} PAGE_ALIGNED_16K=${pageAligned16k}`,
     `R8_MAPPING=${mapping ? `${mapping.file} SIZE=${mapping.size}` : 'not checked'}`,
     `SIGNER=${signerDn} SHA256=${signerDigest} SIGNERS=${signerCount} SCHEMES=${signatureSchemes.join(',')}`
