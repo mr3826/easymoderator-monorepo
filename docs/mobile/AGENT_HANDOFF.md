@@ -1,15 +1,17 @@
 # EasyModerator Mobile Agent Handoff
 
-Last updated: 2026-09-26 (PR #172, mobile integrated into `main`).
+Last updated: 2026-09-26 (PRs #180–#182, mobile API activated in production).
 
 ## Repository State
 
 - **Mobile lives on `main`.** PR #172 merged the Wave 2.5 program (`feature/mobile-app@e4bd2702`)
   into `main` with the release hardening.
 - `feature/mobile-app` is retired. Branch mobile work from `main`, and open PRs into `main`.
-- The mobile backend is additive and flag-gated. All `MOBILE_*` flags default to false, so production
-  behaviour is unchanged until the owner turns `MOBILE_API_ENABLED` on. That is a deploy-time decision,
-  not a code change.
+- The mobile backend is additive and flag-gated (ADR M-010). **`MOBILE_API_ENABLED` is on in production**
+  since 2026-09-26, by owner instruction. It comes from the `MOBILE_API_ENABLED` repository variable
+  through `render-production-env.js` (PR #180). Activation, proof and rollback are in
+  [`MOBILE_API_ACTIVATION_RUNBOOK.md`](../deployment/MOBILE_API_ACTIVATION_RUNBOOK.md). The four Wave 3
+  `MOBILE_*` flags are never rendered to production.
 - The old `D:/easymod/mob` worktree is preserved byte-for-byte on the branch
   `archive/mob-wave2-snapshot-2026-09-25`. It is evidence only; do not rebuild from it.
 - Mobile CI (`.github/workflows/mobile-ci.yml`) is the authority for mobile JS, Android builds and
@@ -109,8 +111,17 @@ Last updated: 2026-09-26 (PR #172, mobile integrated into `main`).
 - Signed builds come from `mobile-release.yml` as the `mobile-release-<sha>` workflow artifact, signed
   with the pinned upload key. That artifact is the only distribution channel: internal QA sideload,
   kept 90 days. The app is not on Play or EAS.
-- Production answers 404 on the mobile routes until the owner sets `MOBILE_API_ENABLED` at deploy time,
-  so the signed `preview` build currently proves install and launch only.
+- **Production serves the mobile API** (backend `65e67c55`). `mobile-production-proof.yml` run
+  36237374273 proved it end to end with the designated test merchant:
+  - API: 49/50 checks passed. The one skip is an order detail read, because that merchant's Home shows no
+    order.
+  - The signed `preview` APK (`5196ad7e`, pinned signer) on an emulator against production passed
+    sign-in, Home, tabs, refresh, restart, warm and cold conversation deep links, a refused foreign
+    entity, and logout/re-login.
+  - 0 mobile 5xx.
+  - See `MOBILE_EXECUTION_STATE.md`, "Production activation".
+- Production 2FA: the verify route is live, fails closed and is rate-limited. No production test
+  identity has 2FA on, so the success path is proven on the physical phone (run 3), not in production.
 - Wave 3 (Shared Inbox / Needs Me) stays locked until the owner opens it.
 
 ## Verification Commands
@@ -172,7 +183,10 @@ emulator job and the arm64 phone APK build. Signed release retrieval and the USB
 
 - Store distribution needs an owner decision and a Play Console (or EAS) account. When that happens,
   register the existing upload key (ADR M-013) as the Play upload key. Never generate a new one.
-- Turning mobile on in production is a deploy-time owner decision (`MOBILE_API_ENABLED`). After that,
-  sign in with a real merchant account on the signed `preview` build on a phone.
+- After any change to mobile, native auth or the shared auth middleware reaches production, re-run
+  `mobile-production-proof.yml`. Roll back with the runbook: set the variable to `false` and redeploy.
+- `/api/auth/*` is limited to 10 requests per minute per IP, shared by web and mobile (`app.js`). One
+  device needs a sign-in plus a refresh about every 15 minutes, and a 429 on refresh keeps the session.
+  Revisit the limit before many merchants share one carrier-NAT address.
 - Wave 3 planning only after the owner unlocks it. Keep native mutation capabilities disabled until each
   write operation has an explicit server flag and policy review.

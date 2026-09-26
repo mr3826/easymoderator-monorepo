@@ -3,7 +3,42 @@
 This is the living ledger and phase-receipt log for the mobile program. Every phase appends a
 receipt in the format below (master brief §25) and updates the flag/file ledger.
 
-## Current checkpoint - Wave 2.5 release closure (2026-09-26, PR #172 into `main`)
+## Current checkpoint - Production activation (2026-09-26, PRs #180–#182)
+
+The owner instructed the activation. It was done through the canonical deploy path, with no
+store distribution and with Wave 3 still locked.
+
+- **Why code was needed.** `render-production-env.js` is a strict allowlist and never rendered
+  `MOBILE_API_ENABLED`, and production still ran `5d1929db`, which predates #172.
+- **PR #180.**
+  - Renders the switch from the repository variable, accepting exactly `true` or `false`.
+  - The validator refuses any other value, and any `MOBILE_E2E_FIXTURES_*`.
+  - Native tokens get 401 `NATIVE_API_DISABLED` while the switch is off, so rollback is immediate.
+  - The response log carries `durationMs` and `client`.
+  - Adds the production proof workflow and the runbook.
+- **PR #181** logs the full request path. **PR #182** paces the proof under the `/api/auth` limiter.
+- **Rollout.**
+  - Stage 1 deployed `c1d9c0d0` dark; the proof in `disabled` mode (run 36235619299) passed 10/10.
+  - Stage 2 deployed `65e67c55` with the switch on; the proof in `enabled` mode (run 36237374273)
+    passed.
+  - Web and Growth OS returned 200 throughout.
+
+```text
+PRODUCTION_SHA=65e67c55e0338cefa2c05e801d2931dd69af4625 (deploy run 36236137743; stage 1 c1d9c0d0 run 36234901611)
+MOBILE_API_ENABLED=true (repository variable; PRODUCTION_DEPLOY_ENABLED returned to false after each deploy)
+ROLLBACK_STATE_PROOF=disabled mode on c1d9c0d0: every native/mobile route 404, web + Growth healthy (run 36235619299)
+API_PROOF=49/50 PASS, 1 SKIP (order detail: the test merchant's Home has no order entity) — run 36237374273
+API_PROOF_COVERS=forged/malformed/missing tokens, wrong/unknown credentials, cookie-borne CSRF bypass, 2FA unknown challenge + limit, fixture route absent, Home contracts, real conversation read, out-of-shop 404s, NATIVE_READ_ONLY writes, NATIVE_ROUTE_NOT_ALLOWED (admin, Growth, dashboard, web me, order list), switch-shop refusal, refresh rotation, replay revoking the session, remote revocation, logout, re-login
+SUPER_ADMIN=native token refused on the admin API, cannot write, reads only its own shop; real two-shop read refused (404)
+SIGNED_ARTIFACT=mobile-release-5196ad7e (run 36228688663): SHA256SUMS OK, SIGNING=DISTRIBUTABLE (pinned 9d8e323c…046a382b), no EasyMod-mobile change since
+DEVICE_PROOF=API 34 x86_64 emulator, signed preview 1.0.0 (984): journey PASS, conversation deep link warm PASS, cold PASS, logout/relaunch/re-login PASS, order deep link SKIP (no order on Home), 0 crashes
+OBSERVABILITY=0 mobile 5xx; per-route p50/p95 (mobile/today p50 148 ms, mobile/attention p50 149 ms); audit NATIVE_TOKEN_REFRESH x6 + NATIVE_REFRESH_TOKEN_REUSE_DETECTED x1 (source MOBILE); 7 sessions created, 7 ended
+TWO_FA_PRODUCTION=verify route live, fail-closed, rate-limited; success path not exercised in production (no 2FA-enabled test identity), proven on the physical phone (run 3)
+DISTRIBUTION=unchanged: mobile-release-<sha> internal QA artifact; no Play/EAS credentials exist
+WAVE_3_STATUS=LOCKED_NOT_STARTED
+```
+
+## Previous checkpoint - Wave 2.5 release closure (2026-09-26, PR #172 into `main`)
 
 - **Mobile is on `main`.** PR #172 merged `feature/mobile-app` and `main` line by line, keeping both
   sides' `auth.middleware.js` checks, and added the release work:
@@ -59,14 +94,15 @@ receipt in the format below (master brief §25) and updates the flag/file ledger
 
 | Flag | Default | Current production state | Gates |
 |---|---|---|---|
-| `MOBILE_API_ENABLED` | `false` | `false` (not provisioned) | all `/api/auth/native/*`, `/api/mobile/*` |
+| `MOBILE_API_ENABLED` | `false` | **`true`** since 2026-09-26 (repository variable, rendered since PR #180) | all `/api/auth/native/*`, `/api/mobile/*`, and every native (sid) token |
 | `MOBILE_PUSH_ENABLED` | `false` | `false` (not provisioned) | native FCM registration/send for mobile subscriptions |
 | `MOBILE_ORDER_MUTATIONS_ENABLED` | `false` | `false` (not provisioned) | mobile-invoked order create/confirm/cancel |
 | `MOBILE_COURIER_ACTIONS_ENABLED` | `false` | `false` (not provisioned) | mobile-invoked courier book/retry |
 | `MOBILE_AI_DRAFTS_ENABLED` | `false` | `false` (not provisioned) | conversation → order-draft flow |
 
-None of these flags exist in the production environment allowlist yet — adding them there, for
-any reason, is a human decision (`CURRENT_STATE.md` §11), never performed by an agent.
+Only `MOBILE_API_ENABLED` is in the production environment allowlist. PR #180 added it on the
+owner's explicit instruction. The other four are deliberately not rendered (a test pins this), and
+adding any of them remains an owner decision (`CURRENT_STATE.md` §11).
 
 ## Additive backend delta ledger
 
