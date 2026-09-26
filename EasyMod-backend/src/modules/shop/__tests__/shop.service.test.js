@@ -222,6 +222,20 @@ describe('Shop Service', () => {
             });
         expect(Shop.create).not.toHaveBeenCalled();
     });
+
+    it('createShop — rejects the pending initial Growth OS admin before creating a merchant shop', async () => {
+        User.findByPk.mockResolvedValue({
+            id: 'user-1',
+            settings: { internal_growth_bootstrap: true },
+        });
+
+        await expect(shopService.createShop('user-1', { shop_name: 'Blocked Shop' }))
+            .rejects.toMatchObject({
+                status: 409,
+                code: 'GROWTH_OS_BOOTSTRAP_MERCHANT_CONFLICT',
+            });
+        expect(Shop.create).not.toHaveBeenCalled();
+    });
     });
 
     // ── addUserToShop ──────────────────────────────────────────────────────────
@@ -251,6 +265,26 @@ describe('Shop Service', () => {
                 transaction: mockTransaction,
             }));
             expect(mockTransaction.commit).toHaveBeenCalled();
+        });
+
+        it('rejects adding the pending initial Growth OS admin to a merchant shop', async () => {
+            UserShop.findOne.mockResolvedValueOnce({ ...mockUserShop, role: 'admin' });
+            User.findOne.mockResolvedValueOnce({
+                id: 'user-2',
+                email: 'invitee@example.com',
+                settings: { internal_growth_bootstrap: true },
+            });
+
+            await expect(shopService.addUserToShop(
+                'shop-1',
+                'user-1',
+                'invitee@example.com',
+                'staff',
+            )).rejects.toMatchObject({
+                status: 409,
+                code: 'GROWTH_OS_BOOTSTRAP_MERCHANT_CONFLICT',
+            });
+            expect(UserShop.create).not.toHaveBeenCalled();
         });
 
         it('rolls back the new membership when owner validation fails', async () => {

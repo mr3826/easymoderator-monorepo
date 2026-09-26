@@ -58,6 +58,16 @@ const assertNoActiveGrowthOsRole = async (userId, transaction) => {
     }
 };
 
+const assertNotPendingGrowthBootstrap = (user) => {
+    if (user?.settings?.internal_growth_bootstrap === true) {
+        throw new AppError(
+            'The initial Growth OS administrator cannot receive merchant access before role bootstrap.',
+            409,
+            'GROWTH_OS_BOOTSTRAP_MERCHANT_CONFLICT',
+        );
+    }
+};
+
 const assertSingleOwner = async (shopId, transaction) => {
     const owners = await UserShop.count({
         where: { shop_id: shopId, role: 'owner', is_active: true },
@@ -129,11 +139,12 @@ const createShop = async (userId, shopData) => {
 
     try {
         const account = await User.findByPk(userId, {
-            attributes: ['id'],
+            attributes: ['id', 'settings'],
             transaction,
             lock: transaction.LOCK?.UPDATE,
         });
         if (!account) throw new AppError('User not found', 404);
+        assertNotPendingGrowthBootstrap(account);
 
         // Repeat the one-shop check after locking the account row. The initial
         // read is only a fast rejection; this locked check closes the race
@@ -324,6 +335,7 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
         if (!user) {
             throw new AppError('User not found with this email', 404);
         }
+        assertNotPendingGrowthBootstrap(user);
 
         await assertNoActiveGrowthOsRole(user.id, transaction);
 

@@ -1,6 +1,6 @@
 # Growth OS Execution State
 
-Updated: 2026-09-23
+Updated: 2026-09-26
 
 ## Current execution
 
@@ -12,6 +12,24 @@ Updated: 2026-09-23
 - `STATUS`: CI, migration, schema, backend version, and public smoke receipts pass; post-release main changes are docs/tests only, while live Growth digest and operator bootstrap remain unverified
 - `RELEASE_STATUS`: CONDITIONAL — merchant production is running the verified main SHA; Growth operator gates remain open
 - `PRODUCTION_CHANGED`: YES — bounded workflow dispatch `35812554066`
+
+## 2026-09-26 first-operator bootstrap implementation receipt
+
+This is an implementation receipt only; no production credential, MFA secret,
+role grant, Sentry event, or live authenticated walkthrough is claimed here.
+
+- `SEED_WORKFLOW`: `.github/workflows/seed-initial-growth-admin.yml`
+- `SEED_IDENTITY`: dedicated shop-less internal user; no merchant membership or
+  Growth role is created by the seed.
+- `SEED_SECRET_HANDLING`: protected production secret, existing password hash
+  utility, forced rotation, transaction/advisory lock, non-secret audit fields,
+  stdin transfer to the container, and no password process argument.
+- `ROLE_WORKFLOW`: existing `grant-growth-role.yml`; first `SUPER_ADMIN` grant
+  requires the seed marker, completed password rotation, and real MFA, then
+  clears the marker and invalidates sessions transactionally.
+- `BOOTSTRAP_LIVE_PROOF`: `NOT_RUN`
+- `SENTRY_BROWSER_PROOF`: `BLOCKED_CANONICAL_DSN_NOT_DISCOVERABLE`
+- `MOBILE_WORK`: `PROTECTED_AND_UNMODIFIED`
 
 ## Phase 1 base proof
 

@@ -739,7 +739,7 @@ Backend:
 
 ## 2026-05-17 — Sign-in Infinite Loader Root Cause Fix
 
-**Task:** End-to-end investigation of sign-in infinite spinner at `easymod.tech/signin` with `admin@test.prod / Admin@12345!`. Previous partial fixes (isRefreshEndpoint guard, error message fix, seed-admin deploy) did not resolve it.
+**Task:** End-to-end investigation of sign-in infinite spinner at `easymod.tech/signin` with the historical bootstrap credential (redacted). Previous partial fixes (isRefreshEndpoint guard, error message fix, seed-admin deploy) did not resolve it.
 
 **Outcome:** Success — all four root causes identified and deployed.
 

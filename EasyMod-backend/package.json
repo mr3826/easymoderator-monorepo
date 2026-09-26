@@ -21,6 +21,7 @@
     "seed": "node src/database/seed.js",
     "seed:meta-bootstrap": "node src/database/seed-meta-bootstrap.js",
     "seed:admin": "node src/scripts/seed-admin.js",
+    "seed:initial-growth-admin": "node src/scripts/seed-initial-growth-admin.js",
     "seed:meta-review-merchant": "node src/scripts/seed-meta-review-merchant.js",
     "seed:conversations": "node src/scripts/seed-conversations.js",
     "reindex:qdrant": "node src/scripts/reindex-qdrant.js",

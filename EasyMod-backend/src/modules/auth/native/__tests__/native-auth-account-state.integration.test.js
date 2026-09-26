@@ -9,14 +9,15 @@ const {
     issueChallenge,
     cleanupFixtures,
 } = require('./native-2fa.integration.helpers');
-const { User, Session, GrowthOsUserRole } = require('../../../entities');
+const { User, UserShop, Session, GrowthOsUserRole } = require('../../../entities');
 const { invalidateUserSessions } = require('../../session-invalidation.service');
 
 // main and feature/mobile-app both changed sign-in. main added temporary
 // (invite/reset) passwords that must be changed before a session can do
 // anything else, token-generation-bound 2FA challenges, and shop-less sessions
-// for Growth OS staff. Native sign-in reuses the same resolver, so each of
-// those rules has to hold on the native path too.
+// for Growth OS staff and the initial Growth OS bootstrap account. Native
+// sign-in reuses the same resolver, so each of those rules has to hold on the
+// native path too.
 
 const nativeSignin = (email) => request(app)
     .post('/api/auth/native/signin')
@@ -126,5 +127,33 @@ describe('native sign-in honours main account state', () => {
         expect(await Session.count({ where: { user_id: userIds } })).toBe(0);
         const reloaded = await User.findByPk(plain.fixture.user.id);
         expect(reloaded.refresh_token).toBeNull();
+    });
+
+    // main's initial Growth OS bootstrap account signs in on the web with no shop
+    // and no role yet. The shared resolver lets it through for that reason; the
+    // native path must still refuse it, because native sessions are merchant sessions.
+    test('the initial Growth OS bootstrap account gets no native session, on either sign-in step', async () => {
+        const plain = await issueChallenge('bootstrap-plain');
+        await withoutTwoFactor(plain.fixture.user);
+        const twoFactor = await issueChallenge('bootstrap-2fa');
+        for (const { fixture } of [plain, twoFactor]) {
+            const current = await User.findByPk(fixture.user.id);
+            await User.update(
+                { settings: { ...(current.settings || {}), internal_growth_bootstrap: true } },
+                { where: { id: fixture.user.id } },
+            );
+            await UserShop.update({ is_active: false }, { where: { user_id: fixture.user.id } });
+        }
+
+        const signin = await nativeSignin(plain.fixture.user.email);
+        expect(signin.status).toBe(403);
+        expect(signin.body.data?.accessToken).toBeUndefined();
+
+        const verify = await nativeVerify(twoFactor.tempToken, currentCode(twoFactor.secret));
+        expect(verify.status).toBe(401);
+        expect(verify.body.data?.accessToken).toBeUndefined();
+
+        const userIds = [plain.fixture.user.id, twoFactor.fixture.user.id];
+        expect(await Session.count({ where: { user_id: userIds } })).toBe(0);
     });
 });

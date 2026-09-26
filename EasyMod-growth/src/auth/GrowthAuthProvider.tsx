@@ -8,6 +8,8 @@ type AuthStatus =
   | 'two-factor'
   | 'password-change-required'
   | 'mfa-required'
+  | 'bootstrap-mfa-required'
+  | 'bootstrap-pending'
   | 'access-denied'
   | 'session-expired'
   | 'unavailable'
@@ -16,6 +18,9 @@ type AuthStatus =
 const MFA_REQUIRED_CODE = 'GROWTH_OS_MFA_REQUIRED';
 const PASSWORD_CHANGE_REQUIRED_CODE = 'AUTH_PASSWORD_CHANGE_REQUIRED';
 const TEMPORARY_PASSWORD_EXPIRED_CODE = 'AUTH_TEMPORARY_PASSWORD_EXPIRED';
+const BOOTSTRAP_MFA_REQUIRED_CODE = 'GROWTH_OS_BOOTSTRAP_MFA_REQUIRED';
+const BOOTSTRAP_PENDING_CODE = 'GROWTH_OS_BOOTSTRAP_PENDING';
+const BOOTSTRAP_PASSWORD_CHANGE_REQUIRED_CODE = 'GROWTH_OS_BOOTSTRAP_PASSWORD_CHANGE_REQUIRED';
 
 interface GrowthAuthState {
   status: AuthStatus;
@@ -41,6 +46,11 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
   const [temporaryPasswordExpiresAt, setTemporaryPasswordExpiresAt] = useState<string | null>(null);
 
   const resolveForbidden = useCallback((err: ApiError) => {
+    if (err.code === BOOTSTRAP_MFA_REQUIRED_CODE) return 'bootstrap-mfa-required' as const;
+    if (err.code === BOOTSTRAP_PENDING_CODE) return 'bootstrap-pending' as const;
+    if (err.code === BOOTSTRAP_PASSWORD_CHANGE_REQUIRED_CODE) {
+      return 'password-change-required' as const;
+    }
     if (err.code === MFA_REQUIRED_CODE) return 'mfa-required' as const;
     if (err.code === PASSWORD_CHANGE_REQUIRED_CODE) return 'password-change-required' as const;
     return 'access-denied' as const;
@@ -172,11 +182,15 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
       setSession(nextSession);
       setStatus('authenticated');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setStatus(resolveForbidden(err));
+        return;
+      }
       setStatus('two-factor');
       setError(err instanceof Error ? err.message : 'Verification failed.');
       throw err;
     }
-  }, [tempToken]);
+  }, [tempToken, resolveForbidden]);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     setStatus('loading');
