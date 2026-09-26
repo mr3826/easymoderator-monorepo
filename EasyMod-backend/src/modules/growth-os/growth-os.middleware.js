@@ -88,15 +88,9 @@ function buildAccess(rawRole) {
   };
 }
 
-async function getInitialBootstrapState(userId) {
-  const { User } = require('../entities');
-  const user = await User.findByPk(userId, {
-    attributes: ['must_change_password', 'settings'],
-  });
-  const settings = user?.settings && typeof user.settings === 'object' ? user.settings : {};
-  if (settings.internal_growth_bootstrap !== true) return null;
-  if (user.must_change_password === true) return 'password-change-required';
-  return settings.totp_enabled === true ? 'pending' : 'mfa-required';
+function getInitialBootstrapState(user) {
+  if (user?.bootstrapOperator !== true) return null;
+  return user.mfaVerified === true ? 'pending' : 'mfa-required';
 }
 
 function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
@@ -119,7 +113,7 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
           .some((permission) => hasPermission(permissionRole, permission));
       if (!access || !hasRequiredPermission) {
         if (!access) {
-          const bootstrapState = await getInitialBootstrapState(userId);
+          const bootstrapState = getInitialBootstrapState(req.user);
           if (bootstrapState === 'password-change-required') {
             throw new AppError(
               'The initial Growth OS administrator must complete password rotation first.',

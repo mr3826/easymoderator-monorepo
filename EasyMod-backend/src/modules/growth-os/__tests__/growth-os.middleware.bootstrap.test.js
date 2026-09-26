@@ -1,7 +1,6 @@
 'use strict';
 
 const mockRoleCache = new Map();
-const mockUserFindByPk = jest.fn();
 
 jest.mock('../../../config/config', () => ({
     env: 'test',
@@ -23,10 +22,6 @@ jest.mock('../growth-os.repository', () => ({
     findActiveRoleForUser: jest.fn(async () => null),
 }));
 
-jest.mock('../../entities', () => ({
-    User: { findByPk: mockUserFindByPk },
-}));
-
 const { requireGrowthOsAccess } = require('../growth-os.middleware');
 
 function runGuard(user) {
@@ -38,16 +33,10 @@ function runGuard(user) {
 describe('Growth OS initial-admin authorization boundary', () => {
     beforeEach(() => {
         mockRoleCache.clear();
-        mockUserFindByPk.mockReset();
     });
 
     test('returns the MFA enrollment boundary without granting Growth access', async () => {
-        mockUserFindByPk.mockResolvedValue({
-            must_change_password: false,
-            settings: { internal_growth_bootstrap: true, totp_enabled: false },
-        });
-
-        const { req, next } = await runGuard({ userId: 'bootstrap-user' });
+        const { req, next } = await runGuard({ userId: 'bootstrap-user', bootstrapOperator: true });
 
         expect(next).toHaveBeenCalledWith(expect.objectContaining({
             status: 403,
@@ -57,12 +46,11 @@ describe('Growth OS initial-admin authorization boundary', () => {
     });
 
     test('returns the pending grant boundary after MFA and still denies the workspace', async () => {
-        mockUserFindByPk.mockResolvedValue({
-            must_change_password: false,
-            settings: { internal_growth_bootstrap: true, totp_enabled: true },
+        const { req, next } = await runGuard({
+            userId: 'bootstrap-user',
+            bootstrapOperator: true,
+            mfaVerified: true,
         });
-
-        const { req, next } = await runGuard({ userId: 'bootstrap-user', mfaVerified: true });
 
         expect(next).toHaveBeenCalledWith(expect.objectContaining({
             status: 403,
@@ -72,8 +60,6 @@ describe('Growth OS initial-admin authorization boundary', () => {
     });
 
     test('keeps ordinary shop-less users on the existing generic denial', async () => {
-        mockUserFindByPk.mockResolvedValue({ must_change_password: false, settings: {} });
-
         const { next } = await runGuard({ userId: 'ordinary-user' });
 
         expect(next).toHaveBeenCalledWith(expect.objectContaining({

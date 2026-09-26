@@ -305,8 +305,7 @@ const createUserWithShop = async (userData) => {
  * Used solely to allow shop-less sign-in/refresh for internal staff accounts.
  * This is NOT an authorization decision: Growth API requests are still
  * authorized per-request by the strict Growth OS middleware. Failing any
- * lookup here returns false (deny), which only affects users who would
- * otherwise receive the existing "no associated shops" 403.
+ * lookup returns an unavailable state and never grants a session.
  */
 const getActiveGrowthOsRole = async (userId) => {
     if (!userId) return false;
@@ -425,6 +424,7 @@ const authenticateUser = async (email, password) => {
         shopId: loggedShopId,
         tokenVersion: user.token_version,
         mfaVerified: false,
+        bootstrapOperator: isInitialGrowthBootstrapUser(user),
         ...(temporaryPasswordAuthData
             ? {
                 passwordChangeRequired: true,
@@ -436,6 +436,7 @@ const authenticateUser = async (email, password) => {
         userId: user.id,
         tokenVersion: user.token_version,
         mfaVerified: false,
+        bootstrapOperator: isInitialGrowthBootstrapUser(user),
         ...(temporaryPasswordAuthData
             ? {
                 passwordChangeRequired: true,
@@ -725,6 +726,7 @@ const validateRefreshToken = async (refreshToken) => {
             shopId: selectedShopId,
             tokenVersion: user.token_version,
             mfaVerified: decoded.mfaVerified === true,
+            bootstrapOperator: isInitialGrowthBootstrapUser(user),
         });
 
         return { accessToken, userId: user.id, shopId: selectedShopId };

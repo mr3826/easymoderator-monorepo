@@ -114,6 +114,7 @@ const verify = async (req, res, next) => {
             shopId,
             tokenVersion: user.token_version,
             mfaVerified: true,
+            bootstrapOperator: isInitialBootstrapUser,
             ...(temporaryPasswordAuthData
                 ? {
                     passwordChangeRequired: true,
@@ -125,6 +126,7 @@ const verify = async (req, res, next) => {
             userId: user.id,
             tokenVersion: user.token_version,
             mfaVerified: true,
+            bootstrapOperator: isInitialBootstrapUser,
             ...(temporaryPasswordAuthData
                 ? {
                     passwordChangeRequired: true,
