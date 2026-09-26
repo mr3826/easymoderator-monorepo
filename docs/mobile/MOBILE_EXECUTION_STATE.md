@@ -566,3 +566,54 @@ BILLING_IMPACT=NONE
 EXTERNAL_BLOCKERS=release keystore / EAS credentials; physical-device pass
 WAVE_3_STATUS=LOCKED
 ```
+
+### Wave 2.5 - Release closure (2026-09-26, PR #172)
+
+This receipt draws on four sources:
+- Mobile CI run 36209099028 (#46) on PR head `542bf795d42b53eb9bef8d184bc5485cd65a526e`, for the Android
+  build and emulator E2E.
+- The USB phone runs.
+- The backend suites, re-run after `main@bc781d45` was merged in (`2e678c99`).
+- PR #172, which links the CI run on the final head and the signed-release run on the merge commit.
+
+```text
+PHASE=WAVE_2_5_RELEASE_CLOSURE
+STATUS=PASS
+BRANCH=release/mobile-wave2-final -> main (PR #172)
+MOBILE_SOURCE=feature/mobile-app@e4bd2702 (PR #165) + release hardening
+MAIN_MERGED_IN=aea32ddd (auth conflicts resolved line by line), 3cdeff45 (docs), bc781d45 (Growth OS bootstrap; native still refuses the bootstrap account)
+
+RELEASE_SIGNING=upload key (RSA-4096, alias easymod-upload) held only in GitHub environment mobile-release (main only)
+RELEASE_CERT_SHA256=9d8e323ca0fd9a2bc174b957e631e492c1919443c251872df587b11f046a382b (pinned in EasyMod-mobile/release-signing.json)
+RELEASE_PIPELINE=mobile-release.yml: build without secrets -> sign (apksigner v2+v3; jarsigner AAB) -> verify pinned signer -> API 24 install/launch -> upload mobile-release-<sha>
+DEBUG_SIGN_FALLBACK=NONE (verifier refuses the debug certificate; missing key material stops the run)
+R8=ON (minify + resource shrink in every release build; mapping required)
+
+ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64 (APK and AAB)
+ANDROID_PACKAGE=tech.easymod.merchant.preview 1.0.0 (46) MIN_SDK=24 TARGET_SDK=36
+ANDROID_MANIFEST=debuggable unset, usesCleartextTraffic=false, allowBackup=false, 16 KB page-aligned
+CI_SIGNING_PROOF=debug-signed build refused (RESULT=FAIL, intended); throwaway-key path SCHEMES=v2,v3 SIGNING=DISTRIBUTABLE
+INSTALL_LAUNCH=PASS on API 24 x86 emulator (cold 910 ms, relaunch 726 ms, login visible, 0 crashes)
+
+EMULATOR_E2E=PASS 15/15 on API 34 x86_64; R8 release-mode tech.easymod.merchant.dev 1.0.0 (46) SHA-256 96063579b9f3378823ed68ea1554fa9084b893d6e33878f9ebaefeee56dfa4ad
+
+PHYSICAL_DEVICE=OnePlus DN2101, Android 13 (SDK 33), arm64-v8a, USB; adb reverse to a disposable local backend
+PHYSICAL_APK=tech.easymod.merchant.dev 1.0.0 (44), R8, arm64-v8a, SHA-256 ab90cd7a20179fc4a0c3b802aadbf8bc9f80d226d8b14ee9821320a7080ffc94 (built from 80ef0f1f; app source identical to the final head)
+PHYSICAL_RUN_1=14/15 PASS; two-factor FAIL (keyboard covered the submit button; flow fixed with hideKeyboard + scroll)
+PHYSICAL_RUN_2=two-factor FAIL (the per-IP window expired on the slower phone; flow redesigned to exhaust the sliding per-account budget)
+PHYSICAL_RUN_3=two-factor PASS (596 s) with the final flow, including the 429 lockout after five invalid codes
+PHYSICAL_RUN_4=10 PASS (state-preflight to session-revocation); logout FAIL (a tap on the More tab did not register); stopped when Maestro hung starting the two-factor session
+PHYSICAL_RUN_5=state-preflight PASS, logout PASS; stopped at two-factor by owner decision (already proven in run 3)
+PHYSICAL_RESULT=PASS (each of the 15 flows passed on the phone at least once; no app crash; every failure was a flow or Maestro issue)
+DEVICE_HYGIENE=only the test app and disposable seed accounts; test app and Maestro driver apps uninstalled; airplane mode and stay-awake restored
+
+MOBILE_CHECKS=PASS (typecheck, lint, Jest 24 suites / 251 tests, npm audit)
+BACKEND_CI_542bf795=unit 242/3107, security 53/652, disposable integration 24/144, test discovery 269/269 homed
+BACKEND_AFTER_MAIN_MERGE=unit 244/3127, security 53/655 (Node 20); disposable integration 24/145 (adds the bootstrap-account test)
+GITLEAKS=PASS (full history)
+
+DISTRIBUTION=mobile-release-<sha> workflow artifact only (internal QA sideload, 90-day retention); no Play or EAS
+PRODUCTION_IMPACT=NONE until the owner sets MOBILE_API_ENABLED (all MOBILE_* flags default false)
+DB_CHANGES=NONE in this PR
+WAVE_3_STATUS=LOCKED_NOT_STARTED
+```
