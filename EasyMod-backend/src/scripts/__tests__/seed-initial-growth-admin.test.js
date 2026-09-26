@@ -97,6 +97,7 @@ describe('seed-initial-growth-admin', () => {
                 transaction,
             }),
         );
+        expect(sequelize.query.mock.calls[1][0]).toContain('CAST(settings AS jsonb)');
         expect(User.create).toHaveBeenCalledWith(expect.objectContaining({
             email: DEFAULT_EMAIL,
             password: 'bcrypt-hash-only',
