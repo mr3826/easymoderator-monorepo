@@ -203,6 +203,7 @@ const authenticateRequest = async (req, res, next, { allowPasswordChange = false
             // token without it is intentionally not sufficient for privileged
             // Growth roles.
             mfaVerified: decoded.mfaVerified === true,
+            bootstrapOperator: decoded.bootstrapOperator === true,
             passwordChangeRequired,
             temporaryPasswordExpiresAt: decoded.temporaryPasswordExpiresAt || null,
             // ADR M-004: present only for native-issued tokens; undefined for

@@ -92,6 +92,7 @@ describe('access-token revocation state', () => {
             email: 'operator@example.test',
             tokenVersion: 0,
             mfaVerified: true,
+            bootstrapOperator: true,
             exp: 123,
         });
         mockUserFindByPk.mockResolvedValue({ token_version: 0 });
@@ -100,6 +101,7 @@ describe('access-token revocation state', () => {
 
         expect(error).toBeUndefined();
         expect(req.user.mfaVerified).toBe(true);
+        expect(req.user.bootstrapOperator).toBe(true);
     });
 
     test('returns a temporary authentication failure when the revocation store is unavailable', async () => {

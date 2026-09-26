@@ -78,6 +78,8 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
             shopId: 'shop-1',
             exp: expect.any(Number),
             mfaVerified: false,
+            // main (#176) attaches the Growth OS bootstrap claim to every web request.
+            bootstrapOperator: false,
             passwordChangeRequired: false,
             temporaryPasswordExpiresAt: null,
             sid: undefined,
@@ -91,6 +93,9 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
         expect(mockSessionFindByPk).toHaveBeenCalledWith('sid-1', expect.any(Object));
         expect(err).toBeUndefined();
         expect(req.user.sid).toBe('sid-1');
+        // Native tokens are merchant sessions and are never signed with the
+        // Growth OS bootstrap claim.
+        expect(req.user.bootstrapOperator).toBe(false);
     });
 
     test('a token with a sid claim for a revoked (is_active: false) session is rejected with 401', async () => {
