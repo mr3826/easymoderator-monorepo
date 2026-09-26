@@ -558,3 +558,40 @@ describe('mobile production proof workflow', () => {
         expect(code).toContain("if: ${{ !cancelled() && steps.scan.outcome == 'success' }}");
     });
 });
+
+describe('merchant edge isolation and privileged command coverage', () => {
+    test('the TLS edge no longer cold-depends on the internal Growth SPA', () => {
+        const caddyBlock = compose.match(/\r?\n {2}caddy:\r?\n([\s\S]*?)\r?\n {2}# ── Backend/)?.[1];
+        const dependsBlock = caddyBlock?.match(/\r?\n {4}depends_on:\r?\n([\s\S]*)$/)?.[1];
+        expect(caddyBlock).toContain('depends_on:');
+        expect(dependsBlock).toContain('backend:');
+        expect(dependsBlock).toContain('condition: service_healthy');
+        expect(dependsBlock).toContain('frontend:');
+        expect(dependsBlock).not.toContain('growth-frontend');
+        // The Growth SPA service itself remains defined and routed.
+        expect(compose).toContain('  growth-frontend:');
+        const caddyfile = fs.readFileSync(path.resolve(__dirname, '../../../../Caddyfile'), 'utf8');
+        expect(caddyfile).toContain('growth.easymod.tech');
+        expect(caddyfile).toContain('reverse_proxy growth-frontend:8080');
+    });
+
+    test('backups tolerate a stopped internal Growth SPA via the deployment-record reference', () => {
+        const backupWorkflow = fs.readFileSync(
+            path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
+            'utf8',
+        );
+        expect(backupWorkflow).toContain('BACKUP_GROWTH_IMAGE_SOURCE=deployment-record');
+        expect(backupWorkflow).not.toContain('growth-frontend-is-not-running"');
+        // The digest-pinned contract itself must stay enforced.
+        expect(backupWorkflow).toContain('image-is-not-digest-pinned');
+    });
+
+    test('every privileged SSH workflow caps remote commands explicitly', () => {
+        const directory = path.resolve(__dirname, '../../../../.github/workflows');
+        const offenders = fs.readdirSync(directory).filter((file) => {
+            const text = fs.readFileSync(path.join(directory, file), 'utf8');
+            return text.includes('appleboy/ssh-action') && !text.includes('command_timeout:');
+        });
+        expect(offenders).toEqual([]);
+    });
+});

@@ -107,6 +107,7 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 300s
+          command_timeout: 15m
           # Forwarded as named env vars so the email is never interpolated into
           # the remote shell (same reasoning as grant-platform-admin.yml).
           envs: TARGET_EMAIL,TARGET_MODE

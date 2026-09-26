@@ -120,6 +120,7 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 300s
+          command_timeout: 15m
           envs: META_REVIEW_MERCHANT_PASSWORD,EXPECTED_SHA
           script: |
             set -euo pipefail
