@@ -108,11 +108,16 @@ Last updated: 2026-09-26 (PRs #180–#182, mobile API activated in production).
   - install and launch on API 24;
   - every one of the 15 flows passed on a physical arm64 phone (Android 13) against the R8 build.
     The passes were spread over several USB runs; see `MOBILE_EXECUTION_STATE.md`, "Release closure".
-- Signed builds come from `mobile-release.yml` as the `mobile-release-<sha>` workflow artifact, signed
-  with the pinned upload key. That artifact is the only distribution channel: internal QA sideload,
-  kept 90 days. The app is not on Play or EAS.
-- **Production serves the mobile API** (backend `65e67c55`). `mobile-production-proof.yml` run
-  36237374273 proved it end to end with the designated test merchant:
+- Signed builds come from `mobile-release.yml`, signed with the pinned upload key and kept 90 days:
+  - `mobile-release-<sha>`: the preview build, for internal QA sideloading.
+  - `mobile-release-production-<sha>`: the production build (`tech.easymod.merchant`), the only build that
+    may go to Play. The current one is `c7764c6f`, 1.0.0 (1021), release run 36248795877. It is proven
+    against production (proof run 36250258585) but not yet uploaded: the app is not on Play or EAS.
+    Play Console setup and the internal-testing upload are owner actions.
+- **Production serves the mobile API.** It was activated on backend `65e67c55`. After the Growth
+  deploy of `bdafc560`, which changed the shared login path, it was re-proven (runs 36245829245 preview
+  and 36250258585 production). The first end-to-end proof was `mobile-production-proof.yml` run
+  36237374273, with the designated test merchant:
   - API: 49/50 checks passed. The one skip is an order detail read, because that merchant's Home shows no
     order.
   - The signed `preview` APK (`5196ad7e`, pinned signer) on an emulator against production passed

@@ -3,7 +3,42 @@
 This is the living ledger and phase-receipt log for the mobile program. Every phase appends a
 receipt in the format below (master brief §25) and updates the flag/file ledger.
 
-## Current checkpoint - Production activation (2026-09-26, PRs #180–#182)
+## Current checkpoint - Play build and post-Growth re-proof (2026-09-26, PRs #191–#192)
+
+This closes the release-pipeline side of Wave 2.5. Store upload is not done, and Wave 3 stays locked.
+
+- **Post-Growth re-proof.** Growth deployed `bdafc560`, which moves the no-shop 403 ahead of the 2FA
+  challenge in the login path web and native share. The unchanged preview proof passed against it
+  (run 36245829245). That was the gate for the pipeline work below.
+- **Why the pipeline changed.** `mobile-release.yml` built only the preview variant
+  (`tech.easymod.merchant.preview`), which can never be the Play build. Nothing checked the AAB's own
+  package.
+- **PR #191.**
+  - `mobile-release.yml` signs both variants of the same source with the same upload key.
+  - The verifier decodes the AAB manifest and reads the app config embedded in both artifacts, so it
+    requires the variant, the package, an HTTPS API and the source SHA.
+  - `mobile-ci` refuses a preview build that is presented as production (negative control).
+  - `app-config.test.ts` fixes each variant's store identity in a test.
+- **PR #192.** `mobile-production-proof.yml` takes `variant=preview|production` and verifies the chosen
+  build's APK and AAB identity before any device run.
+
+```text
+PRODUCTION_SHA=bdafc560e3e3f528d2af331428b4b8883742fdc3 (Growth deploy; MOBILE_API_ENABLED=true unchanged)
+POST_GROWTH_PROOF=run 36245829245 (preview 5196ad7e): API 49/50 PASS, 1 SKIP; device journey, conversation warm+cold, logout/re-login PASS; 0 crashes; 0 mobile 5xx
+PLAY_BUILD=mobile-release-production-c7764c6fe2df6f6550283effcd03c9f5170e5ff9 (release run 36248795877)
+PLAY_BUILD_IDENTITY=tech.easymod.merchant 1.0.0 (1021), variant production, scheme easymodmerchant, API https://api.easymod.tech, minSdk 24, targetSdk 36
+PLAY_BUILD_AAB_SHA256=8fd0220fcebd0662649c04768bbb7d2736d01759b2d36fa7d8a7a3cfbac7ef2a
+PLAY_BUILD_APK_SHA256=00ec250dd1fde11233380aa50cc908e257f90d64d9a76136965af84efebf904a
+PLAY_BUILD_SIGNING=DISTRIBUTABLE, APK+AAB signed by upload key 9d8e323ca0fd9a2bc174b957e631e492c1919443c251872df587b11f046a382b
+PLAY_BUILD_LAUNCH=API 24: install, cold launch, relaunch PASS, login screen visible, 0 crashes
+PLAY_BUILD_PRODUCTION_PROOF=run 36250258585 (variant=production): API 49/50 PASS, 1 SKIP; device app-id tech.easymod.merchant: journey, conversation warm+cold, logout/re-login PASS; order deep link SKIP (no order on Home); 0 crashes; 0 mobile 5xx; More tab shows 1.0.0 (1021) | production | c7764c6f
+PREVIEW_BUILD=mobile-release-c7764c6f… (same run), unchanged internal QA channel
+PLAY_UPLOAD=NOT_STARTED (owner: Play Console account, listing, Data safety, internal testing; upload only the production AAB; Play App Signing re-signs, so store installs will not show the upload-key signer)
+TWO_FA_PRODUCTION=unchanged: success path not exercised in production (no 2FA-enabled test identity)
+WAVE_3_STATUS=LOCKED_NOT_STARTED
+```
+
+## Previous checkpoint - Production activation (2026-09-26, PRs #180–#182)
 
 The owner instructed the activation. It was done through the canonical deploy path, with no
 store distribution and with Wave 3 still locked.
