@@ -5,8 +5,9 @@ tags:
   - wave25
   - two-factor
 ---
-# The native 2FA limiter allows five verification attempts per five minutes per
-# IP; `prepare-2fa` resets the fixture (including that budget) first.
+# Native 2FA has two budgets: five attempts per five minutes per IP, and five
+# failed codes per account (sliding five-minute window). `prepare-2fa` resets the
+# fixture, both budgets included, here and again before section 4.
 - runScript:
     file: ../scripts/fixture-control.js
     env:
@@ -37,6 +38,12 @@ tags:
 - tapOn:
     id: login-2fa-input
 - inputText: ${output.fixture.invalidCode}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-2fa-submit-control
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: login-2fa-submit-control
 - extendedWaitUntil:
@@ -80,6 +87,12 @@ tags:
 - tapOn:
     id: login-2fa-input
 - inputText: ${output.fixture.code}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-2fa-submit-control
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: login-2fa-submit-control
 - extendedWaitUntil:
@@ -116,6 +129,12 @@ tags:
 - tapOn:
     id: login-2fa-input
 - inputText: ${output.fixture.code}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-2fa-submit-control
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: login-2fa-submit-control
 - extendedWaitUntil:
@@ -128,9 +147,20 @@ tags:
 - tapOn:
     id: logout-button
 
-# 4. Attempts 4 and 5 are invalid; attempt 6 is rate limited.
+# 4. Rate limit. Start this phase from a full budget: `prepare-2fa` resets the
+# per-IP limiter and the per-account failure count and enables a new secret.
+# Five invalid codes then exhaust both. The per-account count is a sliding
+# window (each failure extends it by five minutes), so the lock holds however
+# slowly the device runs. A sixth attempt with a freshly generated correct code
+# must be refused with 429 and must not reach Home.
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: prepare-2fa
 - repeat:
-    times: 2
+    times: 5
     commands:
       - runFlow:
           file: ../support/sign-in.yaml
@@ -141,9 +171,22 @@ tags:
           visible:
             id: login-2fa-input
           timeout: 60000
+      # An invalid code for the new secret, outside the accepted ±1 step window.
+      - runScript:
+          file: ../scripts/fixture-control.js
+          env:
+            apiBaseUrl: ${E2E_API_BASE_URL}
+            controlToken: ${E2E_CONTROL_TOKEN}
+            action: current-2fa-code
       - tapOn:
           id: login-2fa-input
       - inputText: ${output.fixture.invalidCode}
+      - hideKeyboard
+      - scrollUntilVisible:
+          element:
+            id: login-2fa-submit-control
+          direction: DOWN
+          timeout: 15000
       - tapOn:
           id: login-2fa-submit-control
       - extendedWaitUntil:
@@ -169,9 +212,21 @@ tags:
     visible:
       id: login-2fa-input
     timeout: 60000
+- runScript:
+    file: ../scripts/fixture-control.js
+    env:
+      apiBaseUrl: ${E2E_API_BASE_URL}
+      controlToken: ${E2E_CONTROL_TOKEN}
+      action: current-2fa-code
 - tapOn:
     id: login-2fa-input
 - inputText: ${output.fixture.code}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login-2fa-submit-control
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: login-2fa-submit-control
 - extendedWaitUntil:
