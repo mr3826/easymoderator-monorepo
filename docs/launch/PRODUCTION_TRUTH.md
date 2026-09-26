@@ -146,6 +146,40 @@ arguments, logs, source, or audit payloads.
 - `VITE_SENTRY_DSN`: `NOT_DISCOVERABLE_FROM_AUTHORIZED_SOURCES`
 - `MOBILE_WORK`: `PROTECTED_AND_UNMODIFIED`
 
+## 2026-09-26 (evening) Growth bootstrap live completion receipt
+
+The pending state above was superseded the same day. No secret, DSN, MFA
+seed, password, or session value is recorded here.
+
+- Production runtime: `5d1929dbc1d247de010e4724d649740d9e5b35c0`; deploy gate
+  restored and verified `false`.
+- Seed: `seed-initial-growth-admin.yml` run `36218828021` created the shop-less
+  operator identity with forced rotation and the one-time marker only. Two
+  fail-closed production-drift repairs preceded it (missing `users.role`
+  column; `settings` stored as `json`), each merged through protected CI and
+  each leaving no partial production write.
+- Password rotation completed through the normal forced flow; the bootstrap
+  temporary credential is verified rejected.
+- MFA enrolled through the genuine production setup/verify/enable flow and
+  enforced at login (control plane shows `MFA: Yes`).
+- `GROWTH_BOOTSTRAP_ACTOR_EMAIL` configured in the protected production
+  environment.
+- `SUPER_ADMIN` granted via the canonical audited `grant-growth-role.yml` run
+  `36220618508`; pre-grant sessions invalidated (401), audit receipt present,
+  marker cleared in the same transaction, fresh MFA-authenticated `SUPER_ADMIN`
+  session verified.
+- Authenticated production walkthrough and the disposable owner-revocation
+  proof both passed; no live merchant data mutated.
+- Platform `SUPER_ADMIN` granted via `grant-platform-admin.yml` run
+  `36222365407`, enabling admin-API authorization for the operator.
+- Sentry residual boundary: backend Sentry configured/healthy; the controlled
+  `/api/admin/ops/test-alert` emission requires a human operator login on the
+  API host (by design) and provider-side receipt proof requires a Sentry auth
+  token that exists in no authorized source. `VITE_SENTRY_DSN` remains
+  undiscoverable from all authorized sources; browser error tracking stays
+  disabled by design until the provider provisions a canonical public DSN.
+
+
 ## Commercial model rollout status
 
 The rollback-safe runtime and current Growth control-plane migrations are deployed
