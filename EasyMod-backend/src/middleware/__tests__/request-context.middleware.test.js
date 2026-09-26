@@ -79,6 +79,19 @@ describe('request context logging', () => {
         expect(meta.client.startsWith('android/1.0.0')).toBe(true);
     });
 
+    it('logs the full request path even after a mounted router rewrote req.path', () => {
+        const req = { headers: {}, user: null, method: 'GET', path: '/api/mobile/today', query: {}, ip: '127.0.0.1' };
+        const res = { set: jest.fn(), send: jest.fn(), statusCode: 200 };
+        requestContextMiddleware(req, res, jest.fn());
+
+        // What Express does inside app.use('/api', …) and router.use('/mobile', …).
+        req.path = '/today';
+        res.send('{}');
+
+        const [, meta] = mockLogger.info.mock.calls.find(([message]) => message === 'Response sent');
+        expect(meta.path).toBe('/api/mobile/today');
+    });
+
     it('logs a null client for web requests', () => {
         const req = { headers: {}, user: null, method: 'GET', path: '/api/dashboard', query: {}, ip: '127.0.0.1' };
         const res = { set: jest.fn(), send: jest.fn(), statusCode: 200 };
