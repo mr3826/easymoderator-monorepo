@@ -110,7 +110,14 @@ The proof never opens more than two sessions at a time and signs out every sessi
 source is checked first:
 
 - its SHA-256 matches the release run's `SHA256SUMS`;
-- its signer is the pinned upload key.
+- its signer is the pinned upload key;
+- the APK, and the AAB beside it, are the chosen build variant, with that variant's package and the
+  release's source SHA.
+
+`-f variant=` picks the build:
+- `preview` (the default) is `tech.easymod.merchant.preview`, the internal QA sideload build.
+- `production` is `tech.easymod.merchant`, the Play build from the `mobile-release-production-<sha>`
+  artifact. Prove it before its AAB is uploaded to Play.
 
 It then runs on an API 34 emulator against production:
 
