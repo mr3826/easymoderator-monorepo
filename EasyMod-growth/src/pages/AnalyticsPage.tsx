@@ -70,9 +70,31 @@ export function AnalyticsPage() {
     );
   }
 
+  // Defensive normalization for SPA/backend version skew (for example a
+  // backend rollback while this image still runs): a missing section renders
+  // neutral values instead of crashing the whole app at the route boundary.
+  const EMPTY_DISCIPLINE: GrowthAnalyticsResponse['followupDiscipline'] = {
+    total: 0, open: 0, completed: 0, cancelled: 0,
+    completedOnTime: 0, completedLate: 0, overdueOpen: 0, onTimeRatePct: null,
+  };
+  const cohort = (data.cohort ?? {}) as Partial<GrowthAnalyticsResponse['cohort']>;
+  const discipline = data.followupDiscipline ?? EMPTY_DISCIPLINE;
+  const ownerRows = data.byOwner ?? [];
+  const unassigned = data.unassigned ?? { openCount: 0, oldestSourceRecordedAt: null, oldestAgeDays: null };
+  const funnel = data.funnel ?? {
+    created: 0, contactedOrBeyond: 0, qualified: 0, onboarding: 0, activated: 0, lost: 0,
+  };
+  const conversion = data.conversion ?? { createdToActivated: null };
+  const timing = data.timing ?? {
+    medianHoursToFirstContact: null,
+    medianHoursToQualification: null,
+    medianHoursToFirstFollowup: null,
+    medianHoursCreatedToActivated: null,
+  };
+
   const cohortQuery = new URLSearchParams();
-  if (data.cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', data.cohort.sourceRecordedFrom);
-  if (data.cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', data.cohort.sourceRecordedTo);
+  if (cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', cohort.sourceRecordedFrom);
+  if (cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', cohort.sourceRecordedTo);
   const cohortBase = cohortQuery.toString();
   const cohortSuffix = cohortBase ? `&${cohortBase}` : '';
 
@@ -80,11 +102,11 @@ export function AnalyticsPage() {
   // population its number was counted from; `activated=true` is the canonical
   // activation predicate shared with Home and Sources.
   const funnelSteps: Array<{ label: string; value: number; drill?: string }> = [
-    { label: 'Created', value: data.funnel.created, drill: cohortBase ? `/prospects?${cohortBase}` : '/prospects' },
-    { label: 'Contacted or beyond', value: data.funnel.contactedOrBeyond },
-    { label: 'Qualified or beyond', value: data.funnel.qualified, drill: `/prospects?stage=qualified${cohortSuffix}` },
-    { label: 'Onboarding', value: data.funnel.onboarding, drill: `/prospects?status=onboarding${cohortSuffix}` },
-    { label: 'Growth activated', value: data.funnel.activated, drill: `/prospects?activated=true${cohortSuffix}` },
+    { label: 'Created', value: funnel.created, drill: cohortBase ? `/prospects?${cohortBase}` : '/prospects' },
+    { label: 'Contacted or beyond', value: funnel.contactedOrBeyond },
+    { label: 'Qualified or beyond', value: funnel.qualified, drill: `/prospects?stage=qualified${cohortSuffix}` },
+    { label: 'Onboarding', value: funnel.onboarding, drill: `/prospects?status=onboarding${cohortSuffix}` },
+    { label: 'Growth activated', value: funnel.activated, drill: `/prospects?activated=true${cohortSuffix}` },
   ];
   const funnelMax = Math.max(1, ...funnelSteps.map((step) => step.value));
   const statusRows = Object.entries(data.byStatus ?? {})
@@ -142,19 +164,19 @@ export function AnalyticsPage() {
 
       <div className="attention-grid">
         <div className="content-card attention-card">
-          <span className={data.funnel.lost > 0 ? 'metric warn' : 'metric'}>{data.funnel.lost.toLocaleString()}</span>
+          <span className={funnel.lost > 0 ? 'metric warn' : 'metric'}>{funnel.lost.toLocaleString()}</span>
           <strong>Lost in window</strong>
         </div>
         <div className="content-card attention-card">
-          <span className="metric">{data.conversion.createdToActivated === null ? '—' : `${data.conversion.createdToActivated}%`}</span>
+          <span className="metric">{conversion.createdToActivated === null ? '—' : `${conversion.createdToActivated}%`}</span>
           <strong>Lead to Growth activation</strong>
         </div>
         <div className="content-card attention-card">
-          <span className="metric">{hoursLabel(data.timing.medianHoursToFirstContact)}</span>
+          <span className="metric">{hoursLabel(timing.medianHoursToFirstContact)}</span>
           <strong>Median hours to first contact</strong>
         </div>
         <div className="content-card attention-card">
-            <span className="metric">{hoursLabel(data.timing.medianHoursCreatedToActivated)}</span>
+            <span className="metric">{hoursLabel(timing.medianHoursCreatedToActivated)}</span>
             <strong>Median hours to Growth activation</strong>
         </div>
       </div>
@@ -168,19 +190,19 @@ export function AnalyticsPage() {
         </div>
         <div className="attention-grid">
           <div className="content-card attention-card">
-            <span className={data.followupDiscipline.onTimeRatePct !== null && data.followupDiscipline.onTimeRatePct < 80 ? 'metric warn' : 'metric'}>{rateLabel(data.followupDiscipline.onTimeRatePct)}</span>
+            <span className={discipline.onTimeRatePct !== null && discipline.onTimeRatePct < 80 ? 'metric warn' : 'metric'}>{rateLabel(discipline.onTimeRatePct)}</span>
             <strong>Completed on time</strong>
           </div>
           <div className="content-card attention-card">
-            <span className="metric">{data.followupDiscipline.completedLate.toLocaleString()}</span>
+            <span className="metric">{discipline.completedLate.toLocaleString()}</span>
             <strong>Completed late</strong>
           </div>
           <div className="content-card attention-card">
-            <span className={data.followupDiscipline.overdueOpen > 0 ? 'metric warn' : 'metric'}>{data.followupDiscipline.overdueOpen.toLocaleString()}</span>
+            <span className={discipline.overdueOpen > 0 ? 'metric warn' : 'metric'}>{discipline.overdueOpen.toLocaleString()}</span>
             <strong>Open overdue</strong>
           </div>
           <div className="content-card attention-card">
-            <span className="metric">{data.followupDiscipline.cancelled.toLocaleString()}</span>
+            <span className="metric">{discipline.cancelled.toLocaleString()}</span>
             <strong>Cancelled</strong>
           </div>
         </div>
@@ -193,9 +215,9 @@ export function AnalyticsPage() {
             <h3 id="owner-performance-title">Owner performance</h3>
           </div>
           <p className="state-copy">
-            {data.unassigned.openCount.toLocaleString()} unassigned live prospect{data.unassigned.openCount === 1 ? '' : 's'}
-            {data.unassigned.oldestAgeDays !== null
-              ? ` · oldest ${data.unassigned.oldestAgeDays.toLocaleString()} day${data.unassigned.oldestAgeDays === 1 ? '' : 's'}`
+            {unassigned.openCount.toLocaleString()} unassigned live prospect{unassigned.openCount === 1 ? '' : 's'}
+            {unassigned.oldestAgeDays !== null
+              ? ` · oldest ${unassigned.oldestAgeDays.toLocaleString()} day${unassigned.oldestAgeDays === 1 ? '' : 's'}`
               : ''}
           </p>
         </div>
@@ -205,20 +227,24 @@ export function AnalyticsPage() {
             <thead>
               <tr>
                 <th scope="col">Owner</th>
-                <th scope="col">Created+</th>                <th scope="col">Qualified+</th>                <th scope="col">Converted+</th>
+                <th scope="col">Created+</th>
+                <th scope="col">Qualified+</th>
+                <th scope="col">Converted+</th>
                 <th scope="col">Qualification rate</th>
                 <th scope="col">Activation rate</th>
               </tr>
             </thead>
             <tbody>
-              {data.byOwner.length === 0 ? (
+              {ownerRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="table-subtext">No owner-attributed prospects were captured in this cohort.</td>
                 </tr>
-              ) : data.byOwner.map((row) => (
-                <tr key={row.ownerUserId}>
+              ) : ownerRows.map((row, ownerIndex) => (
+                <tr key={row.ownerUserId ?? `owner-row-${ownerIndex}`}>
                   <th scope="row">
-                    <Link className="table-link" to={`/prospects?owner=${encodeURIComponent(row.ownerUserId)}`}>{row.displayName}</Link>
+                    {row.ownerUserId
+                      ? <Link className="table-link" to={`/prospects?owner=${encodeURIComponent(row.ownerUserId)}`}>{row.displayName}</Link>
+                      : <span>{row.displayName}</span>}
                   </th>
                   <td>{row.created.toLocaleString()}</td>
                   <td>{row.qualified.toLocaleString()}</td>

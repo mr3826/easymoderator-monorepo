@@ -139,16 +139,27 @@ jobs:
                     | tee /root/growth-os-receipts/${run_id}-apply.stdout.json || apply_rc=${PIPESTATUS[0]}
                   docker cp "$backend_container:/tmp/growth-os-receipts/apply.json" "/root/growth-os-receipts/${run_id}-apply.receipt.json"
                   docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/apply.json\"); for (const row of r.rows) console.log(\"IMPORT_ROW \" + JSON.stringify(row)); console.log(\"IMPORT_SUMMARY \" + JSON.stringify(r.summary));"
-                  echo "APPLY_DONE run_id=$run_id apply_rc=$apply_rc"
+                  apply_probe=$(docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/apply.json\"); let failed=0; for (const row of r.rows) { if (row.outcome === \"failed\") failed += 1; } console.log(\"PROBE_TOTAL \" + r.rows.length); console.log(\"PROBE_FAILED \" + failed);") || apply_probe=""
+                  apply_total=$(printf "%s\n" "$apply_probe" | awk "/^PROBE_TOTAL / {print \$2}")
+                  apply_failed=$(printf "%s\n" "$apply_probe" | awk "/^PROBE_FAILED / {print \$2}")
+                  echo "APPLY_DONE run_id=$run_id apply_rc=$apply_rc apply_total=$apply_total apply_failed=$apply_failed"
                   # Idempotency gate: the same ledger must now report zero new
                   # writes. Any would-create row after a completed apply fails
-                  # this job loudly instead of hiding drift.
+                  # this job loudly instead of hiding drift. A non-zero verify
+                  # pass is only meaningful if the scan COMPLETED; a crashed
+                  # partial scan could print wouldCreate:0 for its prefix and
+                  # must never masquerade as an idempotency proof.
                   verify_rc=0
                   second=$(docker exec \
                     "$backend_container" sh -c "mkdir -p /tmp/growth-os-receipts && node scripts/import-growth-prospects.js --batch-size $IMPORT_BATCH_SIZE --run-id ${run_id}-verify --receipt /tmp/growth-os-receipts/verify.json" \
                     | tee /root/growth-os-receipts/${run_id}-verify.stdout.json) || verify_rc=${PIPESTATUS[0]}
                   echo "VERIFY_PASS_RC=$verify_rc"
                   docker cp "$backend_container:/tmp/growth-os-receipts/verify.json" "/root/growth-os-receipts/${run_id}-verify.receipt.json"
+                  verify_probe=$(docker exec "$backend_container" node -e "const r=require(\"/tmp/growth-os-receipts/verify.json\"); let failed=0; let readFailure=false; for (const row of r.rows) { console.error(\"VERIFY_ROW \" + JSON.stringify(row)); if (row.outcome === \"failed\") failed += 1; if (row.error === \"SOURCE_READ_FAILED\") readFailure = true; } console.log(\"PROBE_ROWS \" + r.rows.length); console.log(\"PROBE_FAILED \" + failed); console.log(\"PROBE_READ_FAILURE \" + readFailure);") || verify_probe=""
+                  verify_rows=$(printf "%s\n" "$verify_probe" | awk "/^PROBE_ROWS / {print \$2}")
+                  verify_failed=$(printf "%s\n" "$verify_probe" | awk "/^PROBE_FAILED / {print \$2}")
+                  verify_read_failure=$(printf "%s\n" "$verify_probe" | awk "/^PROBE_READ_FAILURE / {print \$2}")
+                  echo "VERIFY_ROWS=$verify_rows VERIFY_FAILED=$verify_failed VERIFY_READ_FAILURE=$verify_read_failure"
                   # Extract counts.wouldCreate from the JSON emitted by the
                   # verification pass, with portable awk only: no single
                   # quotes are allowed in this program, and the host may lack node.
@@ -161,6 +172,30 @@ jobs:
                   if [ "$would_create" != "0" ]; then
                     echo "::error::post-apply verification dry-run reports $would_create would-create rows; idempotency is broken"
                     exit 1
+                  fi
+                  # Completeness proof for the idempotency gate: a crashed or
+                  # partially-scanned verification pass can never be honored,
+                  # and the row COUNT alone cannot distinguish a completed scan
+                  # from a mid-scan read failure (the importer appends a
+                  # sentinel row that preserves the count). Require: no source
+                  # read failure, every source row accounted for, and the
+                  # verification rejecting exactly the same rows apply did
+                  # (a different rejection set means the verify pass itself is
+                  # unreliable, not that the ledger is non-idempotent).
+                  if [ "$verify_read_failure" = "true" ]; then
+                    echo "::error::verification pass hit a source read failure; idempotency proof refused"
+                    exit 1
+                  fi
+                  if [ -z "$verify_rows" ] || [ -z "$apply_total" ] || [ "$verify_rows" != "$apply_total" ]; then
+                    echo "::error::verification pass incomplete (rows=$verify_rows expected=$apply_total rc=$verify_rc); idempotency proof refused"
+                    exit 1
+                  fi
+                  if [ -z "$verify_failed" ] || [ "$verify_failed" != "$apply_failed" ]; then
+                    echo "::error::verification rejected a different row set (verify_failed=$verify_failed apply_failed=$apply_failed); idempotency proof refused"
+                    exit 1
+                  fi
+                  if [ "$verify_rc" -ne 0 ]; then
+                    echo "VERIFY_COMPLETED_WITH_KNOWN_ROW_REJECTIONS rows=$verify_rows failed=$verify_failed rc=$verify_rc"
                   fi
                   # Surface per-row failures (exit 1 from the apply pass) after
                   # the idempotency gate has run, so a rejected row is visible

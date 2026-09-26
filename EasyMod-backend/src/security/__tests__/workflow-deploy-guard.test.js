@@ -638,6 +638,22 @@ describe('protected growth importer execution', () => {
         expect(growthImporterWorkflow).toContain('if [ "$would_create" != "0" ]; then');
     });
 
+    test('refuses the idempotency proof unless the verification scan demonstrably completed', () => {
+        // The importer exits 1 on per-row rejections while completing the scan,
+        // and appends a sentinel row on a mid-scan read failure — so row-count
+        // equality alone cannot prove completeness. The gate must capture the
+        // apply status through the pipe, reject source-read failures, require
+        // every source row accounted for, and require the same rejected set.
+        expect(growthImporterWorkflow).toContain('apply_rc=${PIPESTATUS[0]}');
+        expect(growthImporterWorkflow).toContain('verify_rc=${PIPESTATUS[0]}');
+        expect(growthImporterWorkflow).toContain('PROBE_READ_FAILURE');
+        expect(growthImporterWorkflow).toContain('if [ "$verify_read_failure" = "true" ]; then');
+        expect(growthImporterWorkflow).toContain('verification pass incomplete');
+        expect(growthImporterWorkflow).toContain('if [ -z "$verify_failed" ] || [ "$verify_failed" != "$apply_failed" ]; then');
+        expect(growthImporterWorkflow).toContain('VERIFY_COMPLETED_WITH_KNOWN_ROW_REJECTIONS');
+        expect(growthImporterWorkflow).toContain('exit "$apply_rc"');
+    });
+
     test('runs the canonical script in the live backend container and persists receipts on the host', () => {
         expect(growthImporterWorkflow).toContain('scripts/import-growth-prospects.js');
         expect(growthImporterWorkflow).toContain('com.docker.compose.service=backend');

@@ -83,9 +83,12 @@ export function SourcesPage() {
   }
 
   const rows = buildRows(data);
+  // Same version-skew normalization as AnalyticsPage: a missing cohort
+  // section renders neutral drill links instead of crashing the app.
+  const cohort = (data.cohort ?? {}) as Partial<GrowthAnalyticsResponse['cohort']>;
   const cohortQuery = new URLSearchParams();
-  if (data.cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', data.cohort.sourceRecordedFrom);
-  if (data.cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', data.cohort.sourceRecordedTo);
+  if (cohort.sourceRecordedFrom) cohortQuery.set('sourceRecordedAfter', cohort.sourceRecordedFrom);
+  if (cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', cohort.sourceRecordedTo);
   const cohortSuffix = cohortQuery.toString() ? `&${cohortQuery.toString()}` : '';
 
   return (
