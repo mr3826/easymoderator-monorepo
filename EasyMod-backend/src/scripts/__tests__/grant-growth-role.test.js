@@ -15,10 +15,14 @@ jest.mock('../../modules/growth-os/growth-os.roles.service', () => ({
     bootstrapRole: jest.fn(),
     revokeRole: jest.fn(),
 }));
+jest.mock('../../config/redis', () => ({
+    closeAllRedis: jest.fn(),
+}));
 
 const { sequelize } = require('../../utils/database/database-setup');
 const User = require('../../modules/user/user.entity');
 const roleService = require('../../modules/growth-os/growth-os.roles.service');
+const { closeAllRedis } = require('../../config/redis');
 const {
     BOOTSTRAP_REASON,
     run,
@@ -30,6 +34,7 @@ describe('grant-growth-role CLI', () => {
         jest.clearAllMocks();
         sequelize.authenticate.mockResolvedValue();
         sequelize.close.mockResolvedValue();
+        closeAllRedis.mockResolvedValue();
         roleService.bootstrapRole.mockResolvedValue({ id: 'role-1' });
         delete process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL;
         delete process.env.GITHUB_ACTOR;
@@ -78,5 +83,31 @@ describe('grant-growth-role CLI', () => {
             role: 'SUPER_ADMIN',
             reason: `${BOOTSTRAP_REASON} (GitHub actor: release-operator)`,
         });
+    });
+
+    test('closes Redis handles so a completed grant lets the process exit', async () => {
+        process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL = 'operator@example.com';
+        User.findOne
+            .mockResolvedValueOnce({ id: 'user-1' })
+            .mockResolvedValueOnce({ id: 'operator-1' });
+
+        await run(['founder@example.com', 'SUPER_ADMIN']);
+
+        // bootstrapRole invalidates live sessions through Redis; leaving those
+        // handles ref'd keeps the privileged SSH channel open after the grant
+        // committed (the red-X-after-OK hang).
+        expect(sequelize.close).toHaveBeenCalledTimes(1);
+        expect(closeAllRedis).toHaveBeenCalledTimes(1);
+    });
+
+    test('still closes Redis handles when the bootstrap grant fails', async () => {
+        process.env.GROWTH_BOOTSTRAP_ACTOR_EMAIL = 'operator@example.com';
+        User.findOne
+            .mockResolvedValueOnce({ id: 'user-1' })
+            .mockResolvedValueOnce({ id: 'operator-1' });
+        roleService.bootstrapRole.mockRejectedValueOnce(new Error('bootstrap closed'));
+
+        await expect(run(['founder@example.com', 'SUPER_ADMIN'])).rejects.toThrow('bootstrap closed');
+        expect(closeAllRedis).toHaveBeenCalledTimes(1);
     });
 });

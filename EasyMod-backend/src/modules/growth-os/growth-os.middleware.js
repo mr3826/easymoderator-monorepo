@@ -113,14 +113,11 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
           .some((permission) => hasPermission(permissionRole, permission));
       if (!access || !hasRequiredPermission) {
         if (!access) {
+          // Rotation is enforced one layer below: the temporary session can
+          // reach nothing but /auth/change-password, and bootstrapRole
+          // refuses un-rotated targets. Only the MFA enrollment state is
+          // observable at this layer.
           const bootstrapState = getInitialBootstrapState(req.user);
-          if (bootstrapState === 'password-change-required') {
-            throw new AppError(
-              'The initial Growth OS administrator must complete password rotation first.',
-              403,
-              'GROWTH_OS_BOOTSTRAP_PASSWORD_CHANGE_REQUIRED',
-            );
-          }
           if (bootstrapState === 'mfa-required') {
             throw new AppError(
               'The initial Growth OS administrator must enroll MFA first.',

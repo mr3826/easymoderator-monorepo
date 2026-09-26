@@ -277,6 +277,43 @@ describe('Growth OS prospect lifecycle', () => {
     expect(result).toMatchObject({ page: 1, pageSize: 100, total: 201, totalPages: 3 });
   });
 
+  it('discloses a race-conflict id only when the conflict is inside the caller scope', async () => {
+    const row = makeProspect();
+    const uniqueError = new Error('identity unique violation');
+    uniqueError.name = 'SequelizeUniqueConstraintError';
+    mockRepository.findProspectById.mockResolvedValue(row);
+
+    row.update.mockRejectedValueOnce(uniqueError);
+    mockRepository.findConflict
+      .mockResolvedValueOnce({ id: 'foreign-prospect-id' })
+      .mockResolvedValueOnce(null);
+    await expect(prospectService.update({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      prospectId: row.id,
+      data: { contactEmail: 'someone-else@example.test' },
+    })).rejects.toMatchObject({
+      status: 409,
+      code: 'GROWTH_OS_PROSPECT_DUPLICATE',
+      conflictingProspectId: null,
+    });
+
+    row.update.mockRejectedValueOnce(uniqueError);
+    mockRepository.findConflict
+      .mockResolvedValueOnce({ id: 'visible-prospect-id' })
+      .mockResolvedValueOnce({ id: 'visible-prospect-id' });
+    await expect(prospectService.update({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      prospectId: row.id,
+      data: { contactEmail: 'another@example.test' },
+    })).rejects.toMatchObject({
+      status: 409,
+      code: 'GROWTH_OS_PROSPECT_DUPLICATE',
+      conflictingProspectId: 'visible-prospect-id',
+    });
+  });
+
   it('sanitizes a failed post-conflict lookup instead of returning an id-less duplicate', async () => {
     const row = makeProspect();
     const uniqueError = new Error('source reference unique violation');

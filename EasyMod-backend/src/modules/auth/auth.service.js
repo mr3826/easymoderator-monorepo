@@ -384,6 +384,20 @@ const resolveAuthenticatedUser = async (email, password) => {
     const isGrowthOsUser = Boolean(activeGrowthOsRole);
     const temporaryPasswordAuthData = getTemporaryPasswordAuthData(user);
 
+    // Determine which shop to log into. Users with no active shop membership
+    // may only obtain a session when they hold an active Growth OS internal
+    // role; the token then carries a null shopId, which every shop-scoped
+    // merchant route rejects on scope. Everyone else keeps the historical
+    // 403 behaviour unchanged.
+    // This boundary runs BEFORE the 2FA challenge: an account that can never
+    // obtain a session (e.g. a suspended operator whose role was revoked)
+    // must not receive a fresh temp token merely for knowing the password.
+    if (!isGrowthOsUser
+        && !isInitialGrowthBootstrapUser(user)
+        && (!user.shops || user.shops.length === 0)) {
+        throw new AppError('User has no associated shops', 403);
+    }
+
     // 2FA check — if enabled, return a short-lived temp token instead of full JWT
     if (user.settings?.totp_enabled) {
         const { saveTempToken } = require('./totp.service');
@@ -394,17 +408,6 @@ const resolveAuthenticatedUser = async (email, password) => {
             tempToken,
             ...(temporaryPasswordAuthData || {}),
         };
-    }
-
-    // Determine which shop to log into. Users with no active shop membership
-    // may only obtain a session when they hold an active Growth OS internal
-    // role; the token then carries a null shopId, which every shop-scoped
-    // merchant route rejects on scope. Everyone else keeps the historical
-    // 403 behaviour unchanged.
-    if (!isGrowthOsUser
-        && !isInitialGrowthBootstrapUser(user)
-        && (!user.shops || user.shops.length === 0)) {
-        throw new AppError('User has no associated shops', 403);
     }
 
     // If user has last_logged_shop_id and it's still accessible, use it

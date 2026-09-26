@@ -46,7 +46,9 @@ jobs:
   grant:
     name: Set platform_role on production
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # Parity with the Growth privileged workflows: bind dispatch authority to
+    # the reviewed production operator identity, not environment approval alone.
+    if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'
     environment: production
     steps:
       - name: Derive pinned SSH host fingerprint
@@ -80,6 +82,9 @@ jobs:
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 120s
+          # `timeout` covers the SSH connection only; cap the remote command
+          # explicitly instead of inheriting appleboy's 10-minute default.
+          command_timeout: 15m
           # Forward inputs as named env vars so they are NOT string-interpolated
           # into the remote shell (avoids command injection via the email field).
           # Use the already-running Compose backend container directly:
@@ -87,7 +92,7 @@ jobs:
           # before it can exec, but .env.prod intentionally contains runtime
           # secrets/config only; the running container is the authoritative
           # production code target.
-          envs: TARGET_EMAIL,TARGET_ROLE
+          envs: TARGET_EMAIL,TARGET_ROLE,GITHUB_ACTOR
           script: |
             set -euo pipefail
             cd /opt/easymod

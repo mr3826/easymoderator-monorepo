@@ -122,7 +122,7 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
     };
     superAdmin = await mk('super', 'SUPER_ADMIN');
     secondSuper = await mk('super2', 'SUPER_ADMIN');
-    growthUser = await mk('growth', 'GROWTH_USER', { mfa: false });
+    growthUser = await mk('growth', 'GROWTH_USER');
   });
 
   afterAll(async () => {
@@ -227,6 +227,16 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
         .set('Authorization', tokenFor(superAdmin, { mfa: false }));
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
+    });
+
+    test('GROWTH_USER without the MFA claim is denied at every Growth route', async () => {
+      for (const path of ['/session', '/home', '/prospects']) {
+        const res = await request(app)
+          .get(`${API}${path}`)
+          .set('Authorization', tokenFor(growthUser, { mfa: false }));
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
+      }
     });
 
     test('GROWTH_USER reaches the workspace but every admin surface is denied server-side', async () => {

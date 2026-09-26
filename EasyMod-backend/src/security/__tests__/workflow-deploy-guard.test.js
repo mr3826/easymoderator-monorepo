@@ -160,6 +160,14 @@ describe('production workflow branch safety', () => {
         expect(grantGrowthRoleWorkflow).not.toContain('environment: growth-bootstrap');
     });
 
+    test('caps privileged remote commands with explicit command timeouts, not transport defaults', () => {
+        // appleboy `timeout:` is connection-only; the remote command must have
+        // its own cap so a committed privileged mutation is never reaped by a
+        // hidden default (grant hang) and a long deploy is never cut off.
+        expect(grantGrowthRoleWorkflow).toContain('command_timeout: 15m');
+        expect(workflow).toContain('command_timeout: 30m');
+    });
+
     test('runs the bootstrap script in the running backend without Compose interpolation', () => {
         expect(grantGrowthRoleWorkflow).toContain("--filter 'label=com.docker.compose.service=backend'");
         expect(grantGrowthRoleWorkflow).toContain('docker exec \\');
@@ -195,9 +203,13 @@ describe('production workflow branch safety', () => {
             path.resolve(__dirname, '../../../../.github/workflows/grant-platform-admin.yml'),
             'utf8',
         );
-        expect(platformAdminWorkflow).toContain("if: github.ref == 'refs/heads/main'");
+        expect(platformAdminWorkflow).toContain(
+            "if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'",
+        );
         expect(platformAdminWorkflow).toContain('environment: production');
         expect(platformAdminWorkflow).toContain('group: grant-platform-admin');
+        expect(platformAdminWorkflow).toContain('command_timeout: 15m');
+        expect(platformAdminWorkflow).toContain('envs: TARGET_EMAIL,TARGET_ROLE,GITHUB_ACTOR');
         expect(platformAdminWorkflow).toContain("--filter 'label=com.docker.compose.service=backend'");
         expect(platformAdminWorkflow).toContain('docker exec \\');
         expect(platformAdminWorkflow).toContain('node src/scripts/grant-platform-admin.js');
