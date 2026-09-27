@@ -92,8 +92,9 @@ describe('the webhook boundary itself', () => {
             page_id: IDS.pageA,
             meta_channel_id: IDS.channelA,
             status: 'QUEUED',
-            payload_encrypted: null,
         });
+        expect(receipt.payload_encrypted).toMatch(/^v1:/);
+        expect(receipt.queue_job_id).toBeTruthy();
 
         // And the worker really consumes it.
         const [result] = await harness.drainQueue();
