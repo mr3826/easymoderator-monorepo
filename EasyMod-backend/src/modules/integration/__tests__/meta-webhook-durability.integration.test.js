@@ -110,7 +110,9 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
         expect(recoveredReceipt.status).toBe('QUEUED');
         expect(recoveredReceipt.payload_encrypted).toMatch(/^v1:/);
         expect(recoveredReceipt.queue_job_id).toBeTruthy();
-        expect(recoveredReceipt.queue_job_id).not.toBe(originalJobId);
+        // The burst job ID is deterministic for the conversation/message. Redis
+        // loss removes the old job, then recovery recreates the same identity.
+        expect(recoveredReceipt.queue_job_id).toBe(originalJobId);
 
         const storedMessages = await Message.count({ where: { external_id: EVENT_ID } });
         expect(storedMessages).toBe(1);
