@@ -3071,7 +3071,9 @@ async function processMessageJob(job) {
                 await cacheRedis.del(dedupKey).catch(() => {});
             }
             await job.moveToDelayed(Date.now() + err.retryAfterMs, job.token);
-            return { delayed: true, reason: 'meta_rate_limit', retryAfterMs: err.retryAfterMs };
+            // The completed listener settles durable inbound receipts. Signal a
+            // BullMQ state transition instead of successful processing.
+            throw new DelayedError();
         }
         if (err.code === 'META_AUTHORIZATION_REQUIRED') {
             lifecycleLogger.info('ai_provider_send_failure', {
@@ -3223,7 +3225,12 @@ async function settleInboundReceipts(job, { failed = false, errorCode = null } =
     for (const receiptId of receiptIds) {
         try {
             const receipt = await MetaWebhookReceipt.findOne({
-                where: { id: receiptId, shop_id: shopId, meta_channel_id: metaChannelId },
+                where: {
+                    id: receiptId,
+                    shop_id: shopId,
+                    meta_channel_id: metaChannelId,
+                    queue_job_id: String(job.id),
+                },
             });
             if (!receipt || receipt.status !== 'QUEUED') continue;
             if (failed) {

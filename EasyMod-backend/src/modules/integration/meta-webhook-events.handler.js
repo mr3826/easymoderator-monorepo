@@ -1455,7 +1455,7 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         });
         // Durable, retryable, and alerted. Previously this branch swallowed the
         // failure and the message was gone.
-        if (err instanceof QueueDispatchError) {
+        if (err instanceof QueueDispatchError || err?.code === 'BURST_CANCELLATION_FAILED') {
             await receiptService.markQueueFailure(
                 receipt,
                 toReceiptFailure(err, 'MESSAGE_QUEUE_UNAVAILABLE'),

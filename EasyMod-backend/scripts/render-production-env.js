@@ -151,6 +151,9 @@ function buildRenderedEnv(source = process.env) {
         REDX_WEBHOOK_SECRET: required('REDX_WEBHOOK_SECRET'),
         REDX_REQUEST_TIMEOUT_MS: source.REDX_REQUEST_TIMEOUT_MS || '10000',
         CHANNEL_ENCRYPTION_KEY: required('CHANNEL_ENCRYPTION_KEY'),
+        ...(source.CHANNEL_ENCRYPTION_KEY_PREVIOUS
+            ? { CHANNEL_ENCRYPTION_KEY_PREVIOUS: source.CHANNEL_ENCRYPTION_KEY_PREVIOUS }
+            : {}),
         PAYMENT_CALLBACK_HMAC_SECRET: required('PAYMENT_CALLBACK_HMAC_SECRET'),
         AI_ACTION_GATE_SECRET: required('AI_ACTION_GATE_SECRET'),
         MARKETING_URL: marketingUrl,

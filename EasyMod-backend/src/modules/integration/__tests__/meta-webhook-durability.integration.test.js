@@ -12,6 +12,10 @@
 process.env.META_APP_SECRET = 'integration-meta-app-secret';
 process.env.META_WEBHOOK_APP_SECRET = 'integration-meta-app-secret';
 
+// The integration worker must use the production coalescer, not the narrow
+// unit-test mock used by handler tests in the same Jest invocation.
+jest.unmock('src/jobs/burst-coalescer');
+
 const crypto = require('crypto');
 const request = require('supertest');
 const express = require('express');

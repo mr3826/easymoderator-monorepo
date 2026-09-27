@@ -347,6 +347,8 @@ async function rebindQueuedReceipts(receiptIds, {
         {
             where: {
                 id: { [Op.in]: ids },
+                shop_id: shopId,
+                meta_channel_id: metaChannelId,
                 status: { [Op.in]: ['PROCESSING', 'QUEUED'] },
                 payload_encrypted: { [Op.ne]: null },
             },
