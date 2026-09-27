@@ -696,6 +696,7 @@ const bookCourier = async (req, res, next) => {
             shopId,
             provider: provider || null,
             requireAiDefault: !provider,
+            trigger: 'MANUAL',
             overrides: {
                 // These fields remain accepted for the legacy endpoint, but the
                 // canonical helper prefers persisted order values over them.
@@ -718,6 +719,24 @@ const bookCourier = async (req, res, next) => {
                     message: 'Courier setup is required before booking this order',
                     missing: result.missing || [],
                     provider: result.provider || provider || null,
+                },
+            });
+        }
+
+        // RTO Shield v2: the order must be verified (or approved by an
+        // owner/admin) before a parcel is booked. Enforced server-side in
+        // bookForOrder; this only reports it.
+        if (result?.blocked && result.status === 'confidence_hold') {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: result.engine_failure ? 'ORDER_CONFIDENCE_UNAVAILABLE' : 'ORDER_CONFIDENCE_HOLD',
+                    message: result.engine_failure
+                        ? 'Order checks are temporarily unavailable. Try again shortly.'
+                        : 'This order needs verification before a courier can be booked',
+                    decision: result.decision,
+                    reasons: result.reasons || [],
+                    decision_version: result.decision_version,
                 },
             });
         }

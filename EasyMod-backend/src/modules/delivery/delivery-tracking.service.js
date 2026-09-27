@@ -196,6 +196,13 @@ class DeliveryTrackingService {
                 await tracking.order.update(orderUpdates);
             }
 
+            if (terminalOutcome) {
+                // RTO Shield v2 ground truth: first terminal outcome wins
+                // (conditional on outcome IS NULL), so a replayed or late
+                // webhook cannot rewrite it. Never throws.
+                await require('../order-confidence/order-confidence.service').recordOutcome(tracking.order);
+            }
+
             if (terminalOutcome === 'delivered') {
                 await this.handleSuccessfulDelivery(tracking);
                 RtoShieldService.trackDeliveryOutcome(

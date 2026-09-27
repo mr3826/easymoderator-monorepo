@@ -23,6 +23,7 @@ const JOB_MAP = {
     'failed_payment_reconciler': jobs.FailedPaymentReconciler,
     'courier_reconciliation': jobs.CourierReconciliationJob,  // Schedule: cron '0 3 * * 0' (Sunday 03:00 UTC)
     'inbox_delivery_reconciler': jobs.InboxDeliveryReconcilerJob,
+    'opportunity_detector': jobs.OpportunityDetectorJob,
 };
 
 async function runJob() {

@@ -25,6 +25,8 @@ const COD_PAYMENT_STATUSES = ['unpaid', 'pending', null, undefined];
 
 const COURIER_SETUP_REQUIRED_STATUS = 'courier_setup_required';
 const DISPATCH_INDETERMINATE_STATUS = 'dispatch_indeterminate';
+// RTO Shield v2: courier booking paused until the order is verified/approved.
+const CONFIDENCE_HOLD_STATUS = 'confidence_hold';
 const DISPATCH_NOTIFICATION_TTL_SECONDS = 24 * 60 * 60;
 
 /**
@@ -411,6 +413,11 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
                 })
                 .catch(() => {});
         } catch (_) { /* funnel logging must never affect committed orders */ }
+
+        // Pilot intelligence: convert this customer's open Sales Opportunity now
+        // rather than at the next sweep. Returns 0 for shops without the pilot
+        // flag and never throws — a failure is counted and the sweep converts it.
+        await require('../customer-intelligence/opportunity.service').convertForOrder(order);
 
         // 9. Enforce state consistency
         await enforceStateConsistency(order);
@@ -1263,6 +1270,72 @@ const markCourierSetupRequired = async (order, shopId, resolution = {}) => {
     };
 };
 
+// Lazy: order-confidence reads order.service's own dependencies (entities).
+const orderConfidenceService = () => require('../order-confidence/order-confidence.service');
+
+const findCommittedDispatch = async (order, shopId) => {
+    try {
+        const model = getCourierDispatchModel();
+        if (!model || typeof model.findOne !== 'function') return null;
+        const record = await model.findOne({ where: { shop_id: shopId, order_id: order.id } });
+        return String(record?.status || '').toUpperCase() === 'COMMITTED' ? record : null;
+    } catch (_) {
+        return null;
+    }
+};
+
+/**
+ * Pause courier booking for an order that Order Confidence did not clear.
+ * Operational marker only — order_status and fulfillment_status are never
+ * changed, and the merchant is told what to do next.
+ */
+const markConfidenceHold = async (order, shopId, gate = {}) => {
+    // Actionable reasons only; INFO context (e.g. delivery history) is not why it is held.
+    const reasonCodes = (gate.reasons || [])
+        .filter(reason => reason && reason.severity !== 'INFO')
+        .map(reason => reason.code)
+        .filter(Boolean)
+        .slice(0, 12);
+    if (order?.id && typeof Order?.update === 'function') {
+        try {
+            await Order.update(
+                { delivery_status: CONFIDENCE_HOLD_STATUS },
+                {
+                    where: {
+                        id: order.id,
+                        shop_id: shopId,
+                        delivery_consignment_id: null,
+                        delivery_tracking_code: null,
+                    },
+                },
+            );
+        } catch (_) {
+            // Best-effort marker; the hold itself is enforced by the gate.
+        }
+    }
+    await notifyCourierEvent(
+        shopId,
+        'ORDER_REVIEW_REQUIRED',
+        {
+            orderId: order?.id || null,
+            orderNumber: order?.order_number || null,
+            decision: gate.decision || null,
+            reasonCodes,
+            status: CONFIDENCE_HOLD_STATUS,
+        },
+        `${order?.id || order?.order_number || 'order'}:${CONFIDENCE_HOLD_STATUS}`
+    );
+    return {
+        blocked: true,
+        status: CONFIDENCE_HOLD_STATUS,
+        decision: gate.decision || null,
+        reasons: reasonCodes,
+        decision_version: gate.decisionVersion ?? null,
+        engine_failure: gate.engineFailure === true,
+        mode: gate.mode || null,
+    };
+};
+
 const transitionCourierDispatchRecord = async (record, values, options = {}) => courierDispatchClaims.transitionCourierDispatch(
     record,
     values,
@@ -1493,6 +1566,21 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
             authorizationError.code = 'BOOK_COURIER_UNAUTHORIZED';
             throw authorizationError;
         }
+    }
+
+    // RTO Shield v2 / Order Confidence (ADR-0007). Runs before the durable
+    // claim so a held order never creates a PENDING dispatch row and never
+    // reaches the provider. It does not replace the claim: idempotency and
+    // provider-timeout handling below are unchanged. An order that already
+    // has a COMMITTED claim is always allowed through so reconciliation of a
+    // parcel that was really booked cannot be blocked by a later decision.
+    const confidenceGate = await orderConfidenceService().checkBookingGate(order, shopId, {
+        trigger: options.trigger || 'AUTO',
+    });
+    if (!confidenceGate.allowed) {
+        const committedDispatch = await findCommittedDispatch(order, shopId);
+        if (!committedDispatch) return markConfidenceHold(order, shopId, confidenceGate);
+        require('../pilot-features/pilot-metrics').increment('order_confidence.committed_reconcile_allowed');
     }
 
     let dispatchRecord = null;
