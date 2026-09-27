@@ -286,18 +286,17 @@ async function markQueuedReceipt(receipt, channel, queueJob) {
         if (!queueJob?.id) {
             throw new QueueDispatchError('Queue did not return a durable job identity', null, 'QUEUE_JOB_ID_MISSING');
         }
+        await receiptService.markQueued(receipt, {
+            shopId: channel.shop_id,
+            metaChannelId: channel.id,
+            queueJobId: queueJob.id,
+        });
         const receiptIds = queueJob.data?.receiptIds;
-        if (Array.isArray(receiptIds) && receiptIds.length > 0) {
-            await receiptService.rebindQueuedReceipts(receiptIds, {
-                shopId: channel.shop_id,
-                metaChannelId: channel.id,
-                queueJobId: queueJob.id,
-            });
-            if (typeof receipt?.set === 'function') {
-                receipt.set({ status: 'QUEUED', queue_job_id: String(queueJob.id), processing_token: null });
-            }
-        } else {
-            await receiptService.markQueued(receipt, {
+        const previousReceiptIds = Array.isArray(receiptIds)
+            ? receiptIds.filter((receiptId) => String(receiptId) !== String(receipt.id))
+            : [];
+        if (previousReceiptIds.length > 0) {
+            await receiptService.rebindQueuedReceipts(previousReceiptIds, {
                 shopId: channel.shop_id,
                 metaChannelId: channel.id,
                 queueJobId: queueJob.id,
@@ -314,13 +313,9 @@ async function markQueuedReceipt(receipt, channel, queueJob) {
     // Verify the in-memory/Sequelize instance as well, so an enqueue followed by
     // a weakly consistent update remains retryable instead of being reported as
     // a terminal handoff.
-    if (receipt?.status && receipt.status !== 'QUEUED') {
-        throw new QueueDispatchError(
-            'Queued receipt update did not take effect',
-            null,
-            'QUEUE_RECEIPT_UPDATE_FAILED',
-        );
-    }
+    // `updateOrThrow` deliberately treats a lost processing fence as success:
+    // another concurrent delivery owns the receipt and will settle it. Do not
+    // inspect the stale in-memory instance and turn that safe race into a 503.
 }
 
 function getMessageQueue() {
