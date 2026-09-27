@@ -112,7 +112,13 @@ const pendingJobs = async () => {
 /** The durable receipt for one Meta message id. */
 const receiptForEvent = async (eventId) => {
     const MetaWebhookReceipt = require('../../src/modules/integration/meta-webhook-receipt.entity');
-    return MetaWebhookReceipt.findOne({ where: { event_id: eventId } });
+    const deadline = Date.now() + 2000;
+    do {
+        const receipt = await MetaWebhookReceipt.findOne({ where: { event_id: eventId } });
+        if (receipt) return receipt;
+        await sleep(25);
+    } while (Date.now() < deadline);
+    return null;
 };
 
 /** All durable receipts in a state, for DLQ and dedup assertions. */
