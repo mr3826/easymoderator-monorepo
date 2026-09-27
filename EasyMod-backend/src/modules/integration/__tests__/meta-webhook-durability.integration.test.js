@@ -20,7 +20,7 @@ const crypto = require('crypto');
 const request = require('supertest');
 const express = require('express');
 const Redis = require('ioredis');
-const { Worker } = require('bullmq');
+const { Worker, Queue } = require('bullmq');
 
 const {
     IDS,
@@ -67,6 +67,7 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
     let app;
     let queueRedis;
     let testWorker;
+    let settlementQueue;
 
     beforeAll(async () => {
         await syncSchema();
@@ -86,6 +87,7 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
             await queueRedis.quit().catch(() => {});
         }
         await testWorker?.close().catch(() => {});
+        await settlementQueue?.close().catch(() => {});
         await messageQueue.close().catch(() => {});
         if (app) await truncateAll().catch(() => {});
         await sequelize.close().catch(() => {});
@@ -124,11 +126,19 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
         const recoveredJob = await messageQueue.getJob(recoveredReceipt.queue_job_id);
         expect(recoveredJob.data.receiptIds).toContain(firstReceipt.id);
 
+        await recoveredJob.remove();
         let completion;
         const completed = new Promise((resolve, reject) => {
             completion = { resolve, reject };
         });
-        testWorker = new Worker('message-processing', async () => ({ recovered: true }), {
+        settlementQueue = new Queue('durability-settlement-test', { connection: { ...connection } });
+        const settlementJob = await settlementQueue.add('settle-receipt', {
+            ...recoveredJob.data,
+            receiptIds: [firstReceipt.id],
+        }, { jobId: recoveredJob.id });
+        expect(settlementJob.id).toBe(recoveredJob.id);
+
+        testWorker = new Worker('durability-settlement-test', async () => ({ recovered: true }), {
             connection: { ...connection },
         });
         testWorker.on('completed', async (job) => {
@@ -140,7 +150,6 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
             }
         });
         testWorker.on('failed', (_job, error) => completion.reject(error));
-        await recoveredJob.changeDelay(0);
         await completion;
 
         const settledReceipt = await MetaWebhookReceipt.findByPk(firstReceipt.id);
