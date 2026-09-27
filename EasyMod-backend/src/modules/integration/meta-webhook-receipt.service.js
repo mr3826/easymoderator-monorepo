@@ -92,7 +92,13 @@ function classifyEvent(messaging = {}, pageId = null) {
  *
  * @throws {WebhookReceiptPersistenceError} when the row cannot be written.
  */
-async function recordReceipt({ pageId, objectType = 'page', messaging }) {
+async function recordReceipt({
+    pageId,
+    objectType = 'page',
+    messaging,
+    shopId = null,
+    metaChannelId = null,
+}) {
     const { eventType, eventId, senderRef } = classifyEvent(messaging, pageId);
     const payloadHash = sha256(JSON.stringify(messaging ?? null));
     const dedupeKey = scopedDedupeKey(pageId, eventId, payloadHash);
@@ -110,7 +116,7 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
         try {
             payloadEncrypted = encryptPayload(messaging);
         } catch (cipherErr) {
-            logger.error('Webhook replay payload could not be encrypted — receipt stored without it', {
+            logger.error('Webhook replay payload could not be encrypted — provider retry required', {
                 pageId: String(pageId),
                 errorCode: cipherErr?.message === 'CHANNEL_ENCRYPTION_KEY is not set'
                     ? 'CHANNEL_ENCRYPTION_KEY_MISSING'
@@ -141,6 +147,8 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
             provider: 'meta',
             object_type: objectType,
             page_id: String(pageId),
+            shop_id: shopId,
+            meta_channel_id: metaChannelId,
             event_id: eventId,
             dedupe_key: dedupeKey,
             event_type: eventType,
@@ -177,7 +185,7 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
     }
 }
 
-async function safeUpdate(receipt, fields) {
+async function safeUpdate(receipt, fields, { expectedQueueJobId } = {}) {
     if (!receipt) return false;
     try {
         const expectedStatus = receipt.status;
@@ -185,13 +193,15 @@ async function safeUpdate(receipt, fields) {
         const isEntityInstance = typeof MetaWebhookReceipt === 'function'
             && receipt instanceof MetaWebhookReceipt;
         if (isEntityInstance && receipt.id && typeof MetaWebhookReceipt.update === 'function') {
-            const [updatedCount] = await MetaWebhookReceipt.update(fields, {
-                where: {
+            const where = {
                     id: receipt.id,
                     status: expectedStatus,
                     processing_token: expectedToken,
-                },
-            });
+            };
+            if (expectedQueueJobId !== undefined) {
+                where.queue_job_id = String(expectedQueueJobId);
+            }
+            const [updatedCount] = await MetaWebhookReceipt.update(fields, { where });
             if (updatedCount !== 1) {
                 const claimLost = Object.assign(
                     new Error('Webhook receipt update lost its processing fence'),
@@ -221,11 +231,11 @@ async function safeUpdate(receipt, fields) {
     }
 }
 
-async function updateOrThrow(receipt, fields) {
+async function updateOrThrow(receipt, fields, options = {}) {
     // A missing receipt can only occur in a mocked/incomplete caller; the
     // create path already throws when persistence returns no row.
     if (!receipt) return;
-    const result = await safeUpdate(receipt, fields);
+    const result = await safeUpdate(receipt, fields, options);
     if (result === true || result?.ok === true) return;
     // A stale live request must not turn a successful reconciler claim into a
     // 503 or overwrite the newer owner's state. The warning above records the
@@ -248,6 +258,27 @@ async function markSkipped(receipt, reasonCode) {
 
 async function markProcessing(receipt) {
     await updateOrThrow(receipt, { status: 'PROCESSING' });
+}
+
+/** Bind the first resolved tenant/channel without overwriting an older owner. */
+async function bindReceiptTenant(receipt, { shopId, metaChannelId } = {}) {
+    if (!receipt || !shopId || !metaChannelId) return false;
+    const { Op } = require('sequelize');
+    const [updatedCount] = await MetaWebhookReceipt.update(
+        { shop_id: shopId, meta_channel_id: metaChannelId },
+        {
+            where: {
+                id: receipt.id,
+                shop_id: null,
+                meta_channel_id: null,
+                status: { [Op.in]: ['RECEIVED', 'PROCESSING'] },
+            },
+        },
+    );
+    if (updatedCount === 1 && typeof receipt.set === 'function') {
+        receipt.set({ shop_id: shopId, meta_channel_id: metaChannelId });
+    }
+    return updatedCount === 1;
 }
 
 /**
@@ -276,7 +307,11 @@ async function claimProcessing(receipt) {
     return true;
 }
 
-async function markProcessed(receipt, { shopId = null, metaChannelId = null } = {}) {
+async function markProcessed(
+    receipt,
+    { shopId = null, metaChannelId = null } = {},
+    { expectedQueueJobId } = {},
+) {
     await updateOrThrow(receipt, {
         status: 'PROCESSED',
         shop_id: shopId,
@@ -326,6 +361,7 @@ async function rebindQueuedReceipts(receiptIds, {
     shopId,
     metaChannelId,
     queueJobId,
+    expectedQueueJobId,
 } = {}) {
     const ids = [...new Set((Array.isArray(receiptIds) ? receiptIds : []).filter(Boolean).map(String))];
     if (ids.length === 0 || !queueJobId || !shopId || !metaChannelId) {
@@ -333,6 +369,14 @@ async function rebindQueuedReceipts(receiptIds, {
     }
 
     const { Op } = require('sequelize');
+    const where = {
+        id: { [Op.in]: ids },
+        shop_id: shopId,
+        meta_channel_id: metaChannelId,
+        status: { [Op.in]: ['PROCESSING', 'QUEUED'] },
+        payload_encrypted: { [Op.ne]: null },
+    };
+    if (expectedQueueJobId !== undefined) where.queue_job_id = String(expectedQueueJobId);
     const [updatedCount] = await MetaWebhookReceipt.update(
         {
             status: 'QUEUED',
@@ -345,13 +389,7 @@ async function rebindQueuedReceipts(receiptIds, {
             processed_at: null,
         },
         {
-            where: {
-                id: { [Op.in]: ids },
-                shop_id: shopId,
-                meta_channel_id: metaChannelId,
-                status: { [Op.in]: ['PROCESSING', 'QUEUED'] },
-                payload_encrypted: { [Op.ne]: null },
-            },
+            where,
         },
     );
     // A resident/completed burst job may carry receipt IDs that have already
@@ -460,7 +498,7 @@ async function markQueueFailure(receipt, err, { pageId } = {}) {
 }
 
 /** Terminal failure sink — queryable DLQ surfaced by /health/detailed. */
-async function deadLetter(receipt, errorCode) {
+async function deadLetter(receipt, errorCode, { expectedQueueJobId } = {}) {
     await updateOrThrow(receipt, {
         status: 'DEAD_LETTERED',
         last_error_code: String(errorCode || 'UNKNOWN').slice(0, 64),
@@ -468,7 +506,7 @@ async function deadLetter(receipt, errorCode) {
         processing_token: null,
         queue_job_id: null,
         processed_at: new Date(),
-    });
+    }, { expectedQueueJobId });
     recordInboundEventMetric('inbound_dead_letter');
 
     opsAlert('Meta webhook — inbound message DEAD-LETTERED', {
@@ -597,6 +635,7 @@ module.exports = {
     recordReceipt,
     markSkipped,
     markProcessing,
+    bindReceiptTenant,
     claimProcessing,
     markProcessed,
     markQueued,

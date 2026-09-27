@@ -456,6 +456,7 @@ jobs:
           REDX_WEBHOOK_SECRET: ${{ secrets.REDX_WEBHOOK_SECRET }}
           CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
           CHANNEL_ENCRYPTION_KEY_PREVIOUS: ${{ secrets.CHANNEL_ENCRYPTION_KEY_PREVIOUS }}
+          REDIS_QUEUE_DB: ${{ secrets.REDIS_QUEUE_DB }}
           PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
           AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}
           MARKETING_URL: ${{ vars.MARKETING_URL || 'https://easymod.tech' }}

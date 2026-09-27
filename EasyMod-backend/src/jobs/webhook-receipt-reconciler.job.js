@@ -19,7 +19,10 @@
  */
 
 const receiptService = require('../modules/integration/meta-webhook-receipt.service');
-const { resolveConnectedChannel } = require('../modules/integration/meta-channel-resolver');
+const {
+    resolveConnectedChannel,
+    resolveConnectedChannelForReceipt,
+} = require('../modules/integration/meta-channel-resolver');
 const { processMessagingEvent } = require('../modules/integration/meta-webhook-events.handler');
 const { recordInboundEventMetric } = require('../modules/integration/meta-webhook-metrics');
 const { createLogger } = require('../utils/structured-logger');
@@ -82,7 +85,7 @@ class WebhookReceiptReconcilerJob {
                     await receiptService.markProcessed(receipt, {
                         shopId: receipt.shop_id,
                         metaChannelId: receipt.meta_channel_id,
-                    });
+                    }, { expectedQueueJobId: receipt.queue_job_id });
                     results.processed += 1;
                     recordInboundEventMetric('inbound_recovery_success');
                     continue;
@@ -94,7 +97,14 @@ class WebhookReceiptReconcilerJob {
             const pageId = receipt.page_id;
             let channel = null;
             try {
-                channel = await resolveConnectedChannel(pageId, 'facebook');
+                channel = receipt.shop_id && receipt.meta_channel_id
+                    ? await resolveConnectedChannelForReceipt({
+                        channelId: receipt.meta_channel_id,
+                        shopId: receipt.shop_id,
+                        assetId: pageId,
+                        platform: 'facebook',
+                    })
+                    : await resolveConnectedChannel(pageId, 'facebook');
             } catch (err) {
                 logger.error('Channel resolution failed during reconcile', {
                     receiptId: receipt.id, errorCode: err?.name || 'UnknownError',

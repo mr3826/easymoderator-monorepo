@@ -169,6 +169,7 @@ async function scheduleBurstFlush(payload) {
             payload.within_allowance = previousJob.data.within_allowance;
         }
         mergeReceiptIds(payload, previousJob?.data?.receiptIds);
+        payload.replacedQueueJobId = previousJob?.id ? String(previousJob.id) : null;
     } catch (_) { /* best-effort */ }
 
     // A redelivery can arrive after BullMQ accepted the job but before the

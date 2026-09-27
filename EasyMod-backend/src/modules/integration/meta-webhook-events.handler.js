@@ -301,6 +301,7 @@ async function markQueuedReceipt(receipt, channel, queueJob) {
                     shopId: channel.shop_id,
                     metaChannelId: channel.id,
                     queueJobId: queueJob.id,
+                    expectedQueueJobId: queueJob.data?.replacedQueueJobId,
                 });
             } catch (rebindError) {
                 // The current receipt is already durable and bound to this job.
@@ -1491,7 +1492,10 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
         // work. Nothing below this point can lose an event.
         const recorded = [];
         for (const messaging of events) {
-            const { receipt, duplicate } = await receiptService.recordReceipt({ pageId, messaging });
+            const { receipt, duplicate } = await receiptService.recordReceipt({
+                pageId,
+                messaging,
+            });
             recorded.push({ messaging, receipt, duplicate });
         }
 
@@ -1559,7 +1563,32 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
                 logger.debug(`Duplicate webhook event skipped (receipt ${receipt.id} is ${receipt.status})`);
                 continue;
             }
-            await processMessagingEvent({ messaging, channel, receipt, pageId, metaAssetId: pageId });
+            let eventChannel = channel;
+            const wasBound = Boolean(receipt?.shop_id && receipt?.meta_channel_id);
+            if (!wasBound && channel?.shop_id && channel?.id) {
+                await receiptService.bindReceiptTenant(receipt, {
+                    shopId: channel.shop_id,
+                    metaChannelId: channel.id,
+                });
+            }
+            if (wasBound) {
+                const { resolveConnectedChannelForReceipt } = require('./meta-channel-resolver');
+                eventChannel = await resolveConnectedChannelForReceipt({
+                    channelId: receipt.meta_channel_id,
+                    shopId: receipt.shop_id,
+                    assetId: pageId,
+                    platform: 'facebook',
+                });
+                if (!eventChannel) {
+                    if (['message', 'optin', 'echo'].includes(receipt.event_type)) {
+                        await receiptService.markIdentityNotResolved(receipt, { pageId });
+                    } else {
+                        await receiptService.markSkipped(receipt, 'BOUND_CHANNEL_UNAVAILABLE');
+                    }
+                    continue;
+                }
+            }
+            await processMessagingEvent({ messaging, channel: eventChannel, receipt, pageId, metaAssetId: pageId });
         }
     }
 }
