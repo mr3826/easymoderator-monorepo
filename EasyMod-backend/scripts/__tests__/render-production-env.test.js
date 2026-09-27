@@ -106,6 +106,18 @@ describe('PAYMENT_ENCRYPTION_KEY normalization (F-01)', () => {
 });
 
 describe('Docker production env-file serialization', () => {
+    test('passes an optional previous channel-encryption key for rotation', () => {
+        const rendered = buildRenderedEnv(validSource({
+            CHANNEL_ENCRYPTION_KEY_PREVIOUS: hex64('4'),
+        }));
+        expect(rendered.CHANNEL_ENCRYPTION_KEY_PREVIOUS).toBe(hex64('4'));
+    });
+
+    test('passes the optional dedicated Redis queue database', () => {
+        const rendered = buildRenderedEnv(validSource({ REDIS_QUEUE_DB: '13' }));
+        expect(rendered.REDIS_QUEUE_DB).toBe('13');
+    });
+
     test('writes raw KEY=value lines instead of literal JSON quote delimiters', async () => {
         const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'easymod-env-'));
         const outputPath = path.join(tempDir, '.env.prod');
