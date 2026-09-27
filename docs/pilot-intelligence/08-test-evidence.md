@@ -163,3 +163,40 @@ pull request description and in the final execution report:
 - the Gitleaks git-history scan, exactly as CI runs it;
 - `pr-docs-check`;
 - the commit list.
+
+## Recovery verification (2026-09-28)
+
+The interrupted session's committed implementation was re-verified from the
+recovered worktree. No application code, dependency, migration, or generated
+fixture changes were needed.
+
+| Gate | Command | Recovery result |
+| --- | --- | --- |
+| Changed JavaScript syntax | `node --check` on every changed backend `.js` file | **PASS** |
+| Backend pilot unit focus | Jest pilot/customer/order-confidence/courier suites | **PASS**: 11 suites, 117 tests |
+| Backend integration | `npm run test:backend:integration:docker` | **PASS**: 26 suites, 188 tests |
+| Backend security | `npm run test:security` | **PASS**: the recovered security selection completed without failures |
+| Backend unit (full) | Jest, coverage disabled | **PRE-EXISTING**: same grounding-boundary timeout; 254 suites and 3,307 tests passed |
+| Signed Meta E2E | Meta E2E Jest selection on the recovered disposable PG/Redis stack | **PASS**: 2 suites, 45 tests |
+| Frontend typecheck | `npx tsc -p tsconfig.json --noEmit` | **PASS** |
+| Frontend unit | `npm run test:unit -- --coverage=false` | **PASS**: 603 tests |
+| Frontend production build | `npm run build` | **PASS** |
+| Pilot Playwright journeys | `npx playwright test tests/e2e/customer-intelligence.spec.ts --workers=1` | **PASS**: 7 journeys |
+| Production dependency audit | `npm audit --workspaces --include-workspace-root --omit=dev --audit-level=high` | **PASS**: 0 vulnerabilities |
+| Docs contract | `node scripts/pr-docs-check.js` | **PASS**: 154 files checked |
+| Diff whitespace | `git diff --check origin/main...HEAD` | **PASS** |
+
+The first parallel Playwright run failed during a cold Vite start because
+multiple workers requested lazy chunks before the dev server had compiled
+them. The same seven journeys pass serially against the warm server; this is
+an environment/startup limitation, not a product assertion failure.
+
+The repository-wide Redocly lint remains **PRE-EXISTING**: the monolithic
+`EasyMod-backend/openapi.yaml` reports six errors and 250 warnings under the
+repository's existing rules. The six errors are in legacy operations; this
+branch appends the pilot paths without changing those legacy operations. Pilot
+API behavior is documented and tested in [04-api.md](04-api.md).
+
+The abandoned `pilotint` PostgreSQL/Redis containers left by the interrupted
+session were used only as disposable test services for the signed Meta E2E
+rerun and removed afterward. No production service or data was touched.
