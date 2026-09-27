@@ -296,11 +296,21 @@ async function markQueuedReceipt(receipt, channel, queueJob) {
             ? receiptIds.filter((receiptId) => String(receiptId) !== String(receipt.id))
             : [];
         if (previousReceiptIds.length > 0) {
-            await receiptService.rebindQueuedReceipts(previousReceiptIds, {
-                shopId: channel.shop_id,
-                metaChannelId: channel.id,
-                queueJobId: queueJob.id,
-            });
+            try {
+                await receiptService.rebindQueuedReceipts(previousReceiptIds, {
+                    shopId: channel.shop_id,
+                    metaChannelId: channel.id,
+                    queueJobId: queueJob.id,
+                });
+            } catch (rebindError) {
+                // The current receipt is already durable and bound to this job.
+                // Older coalesced receipts retain their own replay path if a
+                // best-effort bulk rebind cannot complete.
+                logger.warn('Could not rebind an older burst receipt', {
+                    queueJobId: String(queueJob.id),
+                    error: rebindError.message,
+                });
+            }
         }
     } catch (err) {
         throw new QueueDispatchError(
@@ -310,9 +320,6 @@ async function markQueuedReceipt(receipt, channel, queueJob) {
         );
     }
 
-    // Verify the in-memory/Sequelize instance as well, so an enqueue followed by
-    // a weakly consistent update remains retryable instead of being reported as
-    // a terminal handoff.
     // `updateOrThrow` deliberately treats a lost processing fence as success:
     // another concurrent delivery owns the receipt and will settle it. Do not
     // inspect the stale in-memory instance and turn that safe race into a 503.
