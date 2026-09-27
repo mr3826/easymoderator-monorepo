@@ -20,7 +20,7 @@
  *   RUN_WORKER=true node src/jobs/message-worker.js
  */
 
-const { Worker, Queue, UnrecoverableError } = require('bullmq');
+const { Worker, Queue, UnrecoverableError, DelayedError } = require('bullmq');
 const { connection } = require('./message-queue');
 const { cacheRedis } = require('../config/redis');
 const { opsAlert } = require('../utils/ops-alert');
@@ -2810,7 +2810,10 @@ async function processMessageJob(job) {
         // RATE_LIMIT: defer the job until the bucket clears.
         if (decision?.reason === 'RATE_LIMIT' && decision.retryAfterMs) {
             await job.moveToDelayed(Date.now() + decision.retryAfterMs, job.token);
-            return { delayed: true, reason: 'policy_rate_limit', retryAfterMs: decision.retryAfterMs };
+            // BullMQ must not emit `completed` after the job was moved back to
+            // delayed. The completion listener settles durable webhook receipts;
+            // DelayedError tells BullMQ this is a state transition, not success.
+            throw new DelayedError();
         }
         // DRAFT / SUGGEST_ONLY / MANUAL / OPTED_OUT / NO_CONSENT / OUTSIDE_24H:
         // Store the raw AI response as a held suggestion. Do not include the
@@ -3211,17 +3214,25 @@ async function settleInboundReceipts(job, { failed = false, errorCode = null } =
     const receiptService = require('../modules/integration/meta-webhook-receipt.service');
     const MetaWebhookReceipt = require('../modules/integration/meta-webhook-receipt.entity');
     const { recordInboundEventMetric } = require('../modules/integration/meta-webhook-metrics');
+    const shopId = job.data?.shopId || null;
+    const metaChannelId = job.data?.metaChannelId || null;
+    if (!shopId || !metaChannelId) {
+        console.error('[worker] Refusing to settle inbound receipts without tenant scope', { jobId: job.id });
+        return;
+    }
     for (const receiptId of receiptIds) {
         try {
-            const receipt = await MetaWebhookReceipt.findByPk(receiptId);
+            const receipt = await MetaWebhookReceipt.findOne({
+                where: { id: receiptId, shop_id: shopId, meta_channel_id: metaChannelId },
+            });
             if (!receipt || receipt.status !== 'QUEUED') continue;
             if (failed) {
                 await receiptService.deadLetter(receipt, errorCode || 'MESSAGE_PROCESSING_FAILED');
                 recordInboundEventMetric('inbound_processing_failure');
             } else {
                 await receiptService.markProcessed(receipt, {
-                    shopId: job.data?.shopId || receipt.shop_id,
-                    metaChannelId: job.data?.metaChannelId || receipt.meta_channel_id,
+                    shopId,
+                    metaChannelId,
                 });
                 recordInboundEventMetric('inbound_processing_success');
             }

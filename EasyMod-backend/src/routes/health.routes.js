@@ -201,16 +201,20 @@ router.get('/detailed', authenticate, async (req, res) => {
     // after every retry. Non-zero means real customer messages are lost.
     try {
         const receiptService = require('../modules/integration/meta-webhook-receipt.service');
-        const [deadLettered, held] = await Promise.all([
+        const [deadLettered, held, oldestHeldAt] = await Promise.all([
             receiptService.countDeadLettered(),
             receiptService.countUnresolved(),
+            typeof receiptService.oldestUnresolvedAt === 'function'
+                ? receiptService.oldestUnresolvedAt()
+                : null,
         ]);
         checks.webhookReceipts = {
             deadLettered: Number.isInteger(deadLettered) ? deadLettered : null,
             held: Number.isInteger(held) ? held : null,
+            oldestHeldAt: oldestHeldAt instanceof Date ? oldestHeldAt.toISOString() : null,
         };
     } catch (_) {
-        checks.webhookReceipts = { deadLettered: null, held: null };
+        checks.webhookReceipts = { deadLettered: null, held: null, oldestHeldAt: null };
     }
 
     try {

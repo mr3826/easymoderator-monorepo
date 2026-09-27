@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const request = require('supertest');
 const express = require('express');
 const Redis = require('ioredis');
+const { Worker } = require('bullmq');
 
 const {
     IDS,
@@ -28,7 +29,7 @@ const { Message } = require('../../conversation/conversation.entity');
 const MetaWebhookReceipt = require('../meta-webhook-receipt.entity');
 const receiptService = require('../meta-webhook-receipt.service');
 const WebhookReceiptReconcilerJob = require('../../../jobs/webhook-receipt-reconciler.job');
-const { messageQueue } = require('../../../jobs/message-queue');
+const { messageQueue, connection } = require('../../../jobs/message-queue');
 const { _private: workerPrivate } = require('../../../jobs/message-worker');
 
 const APP_SECRET = 'integration-meta-app-secret';
@@ -61,6 +62,7 @@ const signedPost = (app, payload) => {
 describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
     let app;
     let queueRedis;
+    let testWorker;
 
     beforeAll(async () => {
         await syncSchema();
@@ -70,10 +72,7 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
         app = express();
         app.use('/webhooks/meta', router);
 
-        queueRedis = new Redis(process.env.REDIS_URL, {
-            db: Number(process.env.REDIS_QUEUE_DB || 13),
-            maxRetriesPerRequest: null,
-        });
+        queueRedis = new Redis({ ...connection });
         await queueRedis.flushdb();
     });
 
@@ -82,6 +81,7 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
             await queueRedis.flushdb().catch(() => {});
             await queueRedis.quit().catch(() => {});
         }
+        await testWorker?.close().catch(() => {});
         await messageQueue.close().catch(() => {});
         if (app) await truncateAll().catch(() => {});
         await sequelize.close().catch(() => {});
@@ -118,10 +118,24 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
         const recoveredJob = await messageQueue.getJob(recoveredReceipt.queue_job_id);
         expect(recoveredJob.data.receiptIds).toContain(firstReceipt.id);
 
-        await workerPrivate.settleInboundReceipts({
-            id: recoveredJob.id,
-            data: recoveredJob.data,
+        let completion;
+        const completed = new Promise((resolve, reject) => {
+            completion = { resolve, reject };
         });
+        testWorker = new Worker('message-processing', async () => ({ recovered: true }), {
+            connection: { ...connection },
+        });
+        testWorker.on('completed', async (job) => {
+            try {
+                await workerPrivate.settleInboundReceipts(job);
+                completion.resolve();
+            } catch (error) {
+                completion.reject(error);
+            }
+        });
+        testWorker.on('failed', (_job, error) => completion.reject(error));
+        await recoveredJob.changeDelay(0);
+        await completion;
 
         const settledReceipt = await MetaWebhookReceipt.findByPk(firstReceipt.id);
         expect(settledReceipt.status).toBe('PROCESSED');

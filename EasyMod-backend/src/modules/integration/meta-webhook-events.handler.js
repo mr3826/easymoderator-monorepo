@@ -283,27 +283,43 @@ function toReceiptFailure(error, fallbackCode) {
 
 async function markQueuedReceipt(receipt, channel, queueJob) {
     try {
-        await receiptService.markQueued(receipt, {
-            shopId: channel.shop_id,
-            metaChannelId: channel.id,
-            queueJobId: queueJob?.id || null,
-        });
+        if (!queueJob?.id) {
+            throw new QueueDispatchError('Queue did not return a durable job identity', null, 'QUEUE_JOB_ID_MISSING');
+        }
+        const receiptIds = queueJob.data?.receiptIds;
+        if (Array.isArray(receiptIds) && receiptIds.length > 0) {
+            await receiptService.rebindQueuedReceipts(receiptIds, {
+                shopId: channel.shop_id,
+                metaChannelId: channel.id,
+                queueJobId: queueJob.id,
+            });
+            if (typeof receipt?.set === 'function') {
+                receipt.set({ status: 'QUEUED', queue_job_id: String(queueJob.id), processing_token: null });
+            }
+        } else {
+            await receiptService.markQueued(receipt, {
+                shopId: channel.shop_id,
+                metaChannelId: channel.id,
+                queueJobId: queueJob.id,
+            });
+        }
     } catch (err) {
-        const error = new Error('Queued receipt update did not take effect');
-        error.code = 'QUEUE_RECEIPT_UPDATE_FAILED';
-        error.retryable = true;
-        error.cause = err;
-        throw error;
+        throw new QueueDispatchError(
+            'Queued receipt update did not take effect',
+            err,
+            'QUEUE_RECEIPT_UPDATE_FAILED',
+        );
     }
 
     // Verify the in-memory/Sequelize instance as well, so an enqueue followed by
     // a weakly consistent update remains retryable instead of being reported as
     // a terminal handoff.
     if (receipt?.status && receipt.status !== 'QUEUED') {
-        const error = new Error('Queued receipt update did not take effect');
-        error.code = 'QUEUE_RECEIPT_UPDATE_FAILED';
-        error.retryable = true;
-        throw error;
+        throw new QueueDispatchError(
+            'Queued receipt update did not take effect',
+            null,
+            'QUEUE_RECEIPT_UPDATE_FAILED',
+        );
     }
 }
 
@@ -1439,11 +1455,19 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         });
         // Durable, retryable, and alerted. Previously this branch swallowed the
         // failure and the message was gone.
-        await receiptService.markStoreFailure(
-            receipt,
-            toReceiptFailure(err, 'MESSAGE_STORE_FAILED'),
-            { pageId: metaAssetId || pageId },
-        );
+        if (err instanceof QueueDispatchError) {
+            await receiptService.markQueueFailure(
+                receipt,
+                toReceiptFailure(err, 'MESSAGE_QUEUE_UNAVAILABLE'),
+                { pageId: metaAssetId || pageId },
+            );
+        } else {
+            await receiptService.markStoreFailure(
+                receipt,
+                toReceiptFailure(err, 'MESSAGE_STORE_FAILED'),
+                { pageId: metaAssetId || pageId },
+            );
+        }
         return 'failed';
     }
 }

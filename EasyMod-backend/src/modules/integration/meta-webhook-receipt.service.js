@@ -13,7 +13,7 @@
  */
 
 const crypto = require('crypto');
-const { literal } = require('sequelize');
+const { literal, Op } = require('sequelize');
 const MetaWebhookReceipt = require('./meta-webhook-receipt.entity');
 const { encryptPayload, decryptPayload } = require('../../utils/webhook-payload-cipher');
 const { createLogger } = require('../../utils/structured-logger');
@@ -31,7 +31,9 @@ const STORE_RETRY_BACKOFF_MINUTES = [1, 5, 15, 60, 240];
 const IDENTITY_RETRY_BACKOFF_MINUTES = [5, 15, 60, 240, 720, 1440, 1440];
 const MAX_STORE_RETRIES = STORE_RETRY_BACKOFF_MINUTES.length;
 const MAX_IDENTITY_RETRIES = IDENTITY_RETRY_BACKOFF_MINUTES.length;
+const QUEUE_RECOVERY_DELAY_MS = 5 * 60 * 1000;
 const QUEUED_RECOVERY_DELAY_MS = 15 * 60 * 1000;
+const QUEUED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A claim older than this is assumed abandoned (crashed runner) and reclaimed. */
 const STALE_CLAIM_MS = 15 * 60 * 1000;
@@ -100,10 +102,9 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
     // to the already-persisted outbound row.
     const replayable = eventType === 'message' || eventType === 'optin' || eventType === 'echo';
 
-    // A cipher failure must degrade, not reject: recording the event without a
-    // replay body still preserves it as evidence, whereas throwing here would
-    // 5xx every inbound webhook. Such a receipt dead-letters (PAYLOAD_MISSING)
-    // if it ever needs replaying, so the loss is visible rather than silent.
+    // A replayable event cannot be acknowledged without a durable recovery
+    // body. Reject before inserting a receipt when encryption is unavailable or
+    // key rotation makes the cipher unusable; Meta can safely redeliver it.
     let payloadEncrypted = null;
     if (replayable) {
         try {
@@ -116,11 +117,12 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
                     : 'CIPHER_ERROR',
             });
             opsAlert('Meta webhook — replay payload encryption unavailable', {
-                detail: 'Inbound events are being recorded without a replay body, so a storage '
-                    + 'failure cannot be retried automatically. Check CHANNEL_ENCRYPTION_KEY.',
+                detail: 'Inbound event was rejected before durable acceptance so the provider can retry. '
+                    + 'Check CHANNEL_ENCRYPTION_KEY.',
                 level: 'error',
                 context: { pageId: String(pageId) },
             }).catch(() => {});
+            throw new WebhookReceiptPersistenceError(cipherErr);
         }
     }
 
@@ -319,6 +321,42 @@ async function deferQueued(receipt) {
     });
 }
 
+/** Rebind every receipt in a coalesced burst to the replacement BullMQ job. */
+async function rebindQueuedReceipts(receiptIds, {
+    shopId,
+    metaChannelId,
+    queueJobId,
+} = {}) {
+    const ids = [...new Set((Array.isArray(receiptIds) ? receiptIds : []).filter(Boolean).map(String))];
+    if (ids.length === 0 || !queueJobId || !shopId || !metaChannelId) {
+        throw new Error('QUEUE_RECEIPT_REBIND_INVALID');
+    }
+
+    const { Op } = require('sequelize');
+    const [updatedCount] = await MetaWebhookReceipt.update(
+        {
+            status: 'QUEUED',
+            shop_id: shopId,
+            meta_channel_id: metaChannelId,
+            queue_job_id: String(queueJobId),
+            processing_token: null,
+            last_error_code: null,
+            next_retry_at: new Date(Date.now() + QUEUED_RECOVERY_DELAY_MS),
+            processed_at: null,
+        },
+        {
+            where: {
+                id: { [Op.in]: ids },
+                status: { [Op.in]: ['PROCESSING', 'QUEUED'] },
+                payload_encrypted: { [Op.ne]: null },
+            },
+        },
+    );
+    if (updatedCount < ids.length) {
+        throw new Error('QUEUE_RECEIPT_REBIND_INCOMPLETE');
+    }
+}
+
 function nextRetryAt(ladder, retryCount) {
     const minutes = ladder[Math.min(retryCount, ladder.length - 1)];
     return new Date(Date.now() + minutes * 60 * 1000);
@@ -391,6 +429,32 @@ async function markStoreFailure(receipt, err, { pageId } = {}) {
     }).catch(() => {});
 }
 
+/**
+ * Queue/Redis outages are not message-store failures. The message is already
+ * durable, so do not consume the finite storage retry ladder or dead-letter it
+ * merely because transport is unavailable.
+ */
+async function markQueueFailure(receipt, err, { pageId } = {}) {
+    if (!receipt) return;
+    const errorCode = String(err?.name || err?.code || 'MESSAGE_QUEUE_UNAVAILABLE').slice(0, 64);
+
+    await updateOrThrow(receipt, {
+        status: 'QUEUED',
+        last_error_code: errorCode,
+        processing_token: null,
+        queue_job_id: null,
+        next_retry_at: new Date(Date.now() + QUEUE_RECOVERY_DELAY_MS),
+        processed_at: null,
+    });
+
+    opsAlert('Meta webhook — queue unavailable, durable receipt held', {
+        detail: `page_id=${pageId || receipt.page_id} receipt=${receipt.id} code=${errorCode}. `
+            + 'The persisted inbound message will be replayed when Redis/BullMQ recovers.',
+        level: 'error',
+        context: { pageId: String(pageId || receipt.page_id), receiptId: receipt.id, errorCode },
+    }).catch(() => {});
+}
+
 /** Terminal failure sink — queryable DLQ surfaced by /health/detailed. */
 async function deadLetter(receipt, errorCode) {
     await updateOrThrow(receipt, {
@@ -448,6 +512,12 @@ async function claimDueReceipts(limit = 25) {
     const claimed = [];
     for (const receipt of due) {
         const priorStatus = receipt.status;
+        if (priorStatus === 'QUEUED'
+            && receipt.created_at
+            && new Date(receipt.created_at).getTime() < Date.now() - QUEUED_MAX_AGE_MS) {
+            await deadLetter(receipt, 'QUEUE_RECOVERY_EXHAUSTED');
+            continue;
+        }
         const token = crypto.randomBytes(16).toString('hex');
         const [updatedCount] = await MetaWebhookReceipt.update(
             { status: 'PROCESSING', processing_token: token },
@@ -488,6 +558,15 @@ async function countUnresolved() {
     });
 }
 
+async function oldestUnresolvedAt() {
+    const oldest = await MetaWebhookReceipt.findOne({
+        where: { status: { [Op.in]: RECOVERABLE_STATUSES } },
+        attributes: ['received_at'],
+        order: [['received_at', 'ASC']],
+    });
+    return oldest?.received_at || null;
+}
+
 /** Retention sweep — receipts are evidence with an expiry, not an archive. */
 async function purgeExpiredReceipts(now = new Date()) {
     const { Op } = require('sequelize');
@@ -518,12 +597,15 @@ module.exports = {
     markProcessed,
     markQueued,
     deferQueued,
+    rebindQueuedReceipts,
     markIdentityNotResolved,
     markStoreFailure,
+    markQueueFailure,
     deadLetter,
     claimDueReceipts,
     countDeadLettered,
     countUnresolved,
+    oldestUnresolvedAt,
     purgeExpiredReceipts,
     MAX_STORE_RETRIES,
     MAX_IDENTITY_RETRIES,
@@ -533,4 +615,6 @@ module.exports = {
     RETRYABLE_STATUSES,
     RECOVERABLE_STATUSES,
     QUEUED_RECOVERY_DELAY_MS,
+    QUEUE_RECOVERY_DELAY_MS,
+    QUEUED_MAX_AGE_MS,
 };
