@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { adminApi } from '@/api/domains/admin';
+import { adminApi, type AdminPilotFeatures } from '@/api/domains/admin';
 import { useIsPlatformAdmin } from '@/shared/lib/auth/useIsPlatformAdmin';
 
 const TABS = ['Overview', 'Channels', 'Billing', 'AI & Inbox', 'Orders & Courier'] as const;
@@ -25,11 +25,13 @@ export default function AdminShopDetail() {
   const [channels, setChannels] = useState<any[]>([]);
   const [billing, setBilling] = useState<any>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [pilot, setPilot] = useState<AdminPilotFeatures | null>(null);
 
   const reload = () => {
     adminApi.getShop(shopId).then(setOverview).catch(() => {});
     adminApi.getShopChannels(shopId).then(setChannels).catch(() => {});
     adminApi.getShopBilling(shopId).then(setBilling).catch(() => {});
+    adminApi.getPilotFeatures(shopId).then(setPilot).catch(() => {});
   };
   useEffect(reload, [shopId]);
 
@@ -171,8 +173,50 @@ export default function AdminShopDetail() {
         </div>
       )}
 
-      {(tab === 'AI & Inbox' || tab === 'Orders & Courier') && (
+      {tab === 'AI & Inbox' && (
         <div className="rounded border border-dashed p-6 text-center text-gray-400">{t('admin.shopDetail.phase2')}</div>
+      )}
+
+      {tab === 'Orders & Courier' && (
+        <div className="space-y-3 text-sm" data-testid="admin-pilot-features">
+          <h3 className="font-medium text-gray-800">{t('admin.shopDetail.pilot.title')}</h3>
+          <p className="text-xs text-gray-500">{t('admin.shopDetail.pilot.help')}</p>
+          {pilot ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={pilot.customer_intelligence}
+                  disabled={!canMutate}
+                  onChange={(e) => act(
+                    () => adminApi.setPilotFeatures(shopId, { customer_intelligence: e.target.checked }).then(setPilot),
+                    t('admin.shopDetail.pilot.customerIntelligence'),
+                  )}
+                />
+                {t('admin.shopDetail.pilot.customerIntelligence')}
+              </label>
+              <label className="inline-flex items-center gap-2">
+                {t('admin.shopDetail.pilot.orderConfidence')}
+                <select
+                  value={pilot.order_confidence_mode}
+                  disabled={!canMutate}
+                  onChange={(e) => act(
+                    () => adminApi.setPilotFeatures(shopId, {
+                      order_confidence_mode: e.target.value as 'off' | 'shadow' | 'enforce',
+                    }).then(setPilot),
+                    t('admin.shopDetail.pilot.orderConfidence'),
+                  )}
+                  className="rounded border px-2 py-1"
+                >
+                  {(['off', 'shadow', 'enforce'] as const).map((mode) => (
+                    <option key={mode} value={mode}>{t(`admin.shopDetail.pilot.modes.${mode}`)}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : <p className="text-xs text-gray-400">…</p>}
+          {!canMutate && <p className="text-xs text-gray-500">{t('admin.shopDetail.superAdminRequired')}</p>}
+        </div>
       )}
     </div>
   );

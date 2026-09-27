@@ -60,4 +60,18 @@ export const adminApi = {
     patch<any>(`/api/admin/shops/${id}/channels/${channelId}/reconnect`, {}),
   emergencyAiOff: (id: string) =>
     post<any>(`/api/admin/shops/${id}/ai/emergency-off`, {}),
+
+  // Pilot intelligence rollout (Customer 360 / Order Confidence). SUPER_ADMIN writes.
+  getPilotFeatures: (id: string) => get<AdminPilotFeatures>(`/api/admin/shops/${id}/pilot-features`),
+  setPilotFeatures: (id: string, body: Partial<Pick<AdminPilotFeatures, 'customer_intelligence' | 'order_confidence_mode'>>) =>
+    patch<AdminPilotFeatures>(`/api/admin/shops/${id}/pilot-features`, body),
+};
+
+export type AdminPilotFeatures = {
+  shop_id: string;
+  customer_intelligence: boolean;
+  order_confidence_mode: 'off' | 'shadow' | 'enforce';
+  order_confidence_config: { high_value_cod_threshold: number; address_min_length: number };
+  updated_by: string | null;
+  updated_at: string | null;
 };

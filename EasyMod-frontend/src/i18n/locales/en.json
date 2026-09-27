@@ -1234,6 +1234,231 @@
       "blacklistFailed": "Failed to update blacklist status"
     }
   },
+  "customer360": {
+    "title": "Customers",
+    "subtitle": "Who your buyers are, what they ordered, and who is ready to buy",
+    "tabs": {
+      "all": "All customers",
+      "opportunities": "Sales opportunities"
+    },
+    "searchPlaceholder": "Search by name or phone",
+    "loading": "Loading customers…",
+    "loadFailed": "Could not load customers. Try again.",
+    "retry": "Retry",
+    "empty": "No customers yet. People who message your Page or order from you will appear here.",
+    "emptySearch": "No customers match your search.",
+    "emptyOpportunities": "No open sales opportunities right now. Conversations where a customer showed buying interest but did not order will appear here.",
+    "pagination": "{{start}}–{{end}} of {{total}}",
+    "previous": "Previous",
+    "next": "Next",
+    "unknownName": "Unnamed customer",
+    "columns": {
+      "customer": "Customer",
+      "state": "Status",
+      "orders": "Orders",
+      "deliveredValue": "Delivered value",
+      "lastActivity": "Last activity",
+      "opportunity": "Opportunity"
+    },
+    "ordersCount": "{{delivered}} delivered of {{total}}",
+    "never": "—",
+    "open": "Open",
+    "states": {
+      "NEW": "New",
+      "INTERESTED": "Interested",
+      "BUYER": "Buyer",
+      "REPEAT_BUYER": "Repeat buyer",
+      "AT_RISK": "Return history",
+      "INACTIVE": "Inactive"
+    },
+    "stateReasons": {
+      "RETURNS_NOT_LESS_THAN_DELIVERIES": "{{returned}} returned vs {{delivered}} delivered",
+      "NO_ACTIVITY": "No activity for {{days}} days",
+      "MULTIPLE_DELIVERIES": "{{delivered}} successful deliveries",
+      "HAS_ORDER": "{{orders}} order(s) placed",
+      "OPEN_OPPORTUNITY": "Showed buying interest",
+      "NO_ORDERS_YET": "No orders yet"
+    },
+    "strength": {
+      "HIGH": "Strong interest",
+      "MEDIUM": "Interested"
+    },
+    "reasons": {
+      "PURCHASE_INTENT": "Said they want to order",
+      "CHECKOUT_CONFIRM_ATTEMPT": "Tried to confirm an order",
+      "CART_ACTIVITY": "Changed their cart",
+      "CHECKOUT_STARTED": "Started checkout but did not finish",
+      "ASKED_AVAILABILITY": "Asked if it is available",
+      "ASKED_VARIANT": "Asked about size, colour or variant",
+      "ASKED_DELIVERY_CHARGE": "Asked about delivery charge",
+      "ASKED_DELIVERY": "Asked about delivery",
+      "ASKED_PAYMENT_METHOD": "Asked about payment / COD",
+      "PRODUCT_QUESTION": "Asked about a product",
+      "SENT_PRODUCT_PHOTO": "Sent a product photo"
+    },
+    "opportunityStatus": {
+      "OPEN": "Open",
+      "ACTIONED": "Contacted",
+      "CONVERTED": "Ordered",
+      "DISMISSED": "Dismissed",
+      "EXPIRED": "Expired"
+    },
+    "actions": {
+      "openConversation": "Open conversation",
+      "markContacted": "Mark contacted",
+      "dismiss": "Dismiss",
+      "viewCustomer": "View customer",
+      "back": "Back to customers"
+    },
+    "recommended": {
+      "REPLY_IN_INBOX": "Reply in the Inbox before {{time}}",
+      "WAIT_FOR_CUSTOMER_MESSAGE": "Meta's 24-hour reply window has closed. You can reply after the customer messages again.",
+      "DO_NOT_CONTACT": "This customer asked not to be messaged.",
+      "CONTACT_BY_PHONE": "Not a Messenger customer — follow up by phone."
+    },
+    "dismissReasons": {
+      "NOT_INTERESTED": "Not interested",
+      "ALREADY_HANDLED": "Already handled",
+      "NOT_A_REAL_REQUEST": "Not a real request",
+      "OTHER": "Other"
+    },
+    "dismissTitle": "Dismiss this opportunity?",
+    "contacted": "Marked as contacted",
+    "dismissed": "Opportunity dismissed",
+    "actionFailed": "Could not update the opportunity. Refresh and try again.",
+    "detectedAt": "Detected {{time}}",
+    "products": "Products",
+    "detail": {
+      "loadFailed": "Could not load this customer.",
+      "notFound": "Customer not found.",
+      "firstSeen": "Customer since",
+      "lastSeen": "Last activity",
+      "channel": "Channel",
+      "page": "Page",
+      "phone": "Phone",
+      "email": "Email",
+      "notProvided": "Not provided",
+      "commerce": "Commerce summary",
+      "totalOrders": "Orders",
+      "delivered": "Delivered",
+      "returned": "Returned",
+      "cancelled": "Cancelled",
+      "inProgress": "In progress",
+      "orderedValue": "Ordered value",
+      "deliveredValue": "Delivered value",
+      "lastOrder": "Last order",
+      "lastDelivery": "Last delivery",
+      "valueNote": "Values are the recorded order totals.",
+      "orders": "Orders",
+      "noOrders": "No orders yet.",
+      "matchedByPhone": "Matched by phone",
+      "matchedByPhoneHelp": "This order is not linked to the customer record; it uses the same phone number.",
+      "timeline": "Relationship history",
+      "noTimeline": "Nothing recorded yet.",
+      "opportunities": "Sales opportunities",
+      "noOpportunities": "No sales opportunities recorded.",
+      "rto": "Delivery risk signal (RTO Shield)",
+      "rtoUnavailable": "No valid phone number to check.",
+      "rtoTier": {
+        "clear": "No return-risk signal",
+        "verify": "Verify before shipping",
+        "block": "Review before shipping"
+      },
+      "rtoNetwork": "Reported by {{shops}} shop(s) across {{attempts}} deliveries",
+      "replyWindowOpen": "Reply window open until {{time}}",
+      "replyWindowClosed": "Reply window closed",
+      "optedOut": "Opted out of messages",
+      "outcome": {
+        "DELIVERED": "Delivered",
+        "RETURNED": "Returned",
+        "CANCELLED": "Cancelled",
+        "IN_PROGRESS": "In progress"
+      }
+    },
+    "timeline": {
+      "CUSTOMER_FIRST_SEEN": "First contact",
+      "CONVERSATION": "Conversation ({{count}} messages)",
+      "ORDER_PLACED": "Order #{{number}} placed",
+      "COURIER_BOOKED": "Courier booked for #{{number}}",
+      "ORDER_DELIVERED": "Order #{{number}} delivered",
+      "ORDER_RETURNED": "Order #{{number}} returned",
+      "ORDER_CANCELLED": "Order #{{number}} cancelled",
+      "OPPORTUNITY_DETECTED": "Buying interest detected",
+      "OPPORTUNITY_CONVERTED": "Opportunity turned into an order",
+      "OPPORTUNITY_DISMISSED": "Opportunity dismissed",
+      "OPPORTUNITY_EXPIRED": "Opportunity expired",
+      "approximate": "approximate time"
+    }
+  },
+  "orderConfidence": {
+    "title": "Order check (RTO Shield)",
+    "loading": "Checking order…",
+    "loadFailed": "Could not check this order.",
+    "shadowNote": "Trial mode: this check is recorded but does not stop courier booking.",
+    "decisions": {
+      "READY": "Ready to ship",
+      "VERIFY": "Needs verification",
+      "MANUAL_REVIEW": "Needs owner review"
+    },
+    "resolvedReady": "Cleared for booking",
+    "notBookable": "This order cannot be booked.",
+    "held": "Courier booking is paused until this order is checked.",
+    "reasons": {
+      "ORDER_CANCELLED": "The order is cancelled",
+      "RTO_SHIELD_BLOCK": "This number is on a return-risk list",
+      "RTO_SHIELD_VERIFY": "This number has a return-risk signal",
+      "REPEATED_RETURNS": "{{returned}} returned vs {{delivered}} delivered before",
+      "PRIOR_RETURN": "{{returned}} earlier return(s)",
+      "POSSIBLE_DUPLICATE_ORDER": "Another open order for this number in the last 24 hours",
+      "PHONE_INVALID": "Phone number is missing or invalid",
+      "ADDRESS_TOO_SHORT": "Address looks incomplete ({{length}} characters)",
+      "ORDER_NOT_CONFIRMED": "The order is not confirmed yet",
+      "HIGH_VALUE_FIRST_COD": "First cash-on-delivery order of ৳{{total}}",
+      "INPUT_UNAVAILABLE": "Some checks could not run",
+      "ENGINE_UNAVAILABLE": "Order checks are temporarily unavailable",
+      "DELIVERY_HISTORY": "{{delivered}} delivered, {{returned}} returned before",
+      "PREPAID": "Paid in advance",
+      "NEW_CUSTOMER": "First order from this number"
+    },
+    "context": "Context",
+    "verifyTitle": "Confirm with the customer",
+    "verifyHelp": "Call or message the customer to confirm the order and address, then record it here.",
+    "method": "How did you confirm?",
+    "methods": {
+      "PHONE_CALL": "Phone call",
+      "CHAT": "Chat message",
+      "IN_PERSON": "In person",
+      "OTHER": "Other"
+    },
+    "note": "Note (optional)",
+    "approveNote": "Why is it safe to ship? (required)",
+    "verifyButton": "Mark verified",
+    "approveButton": "Approve for booking",
+    "approveHelp": "Only the shop owner or an admin can approve this order.",
+    "verified": "Order verified — you can book the courier now",
+    "approved": "Order approved — you can book the courier now",
+    "changed": "The order changed since you opened it. Review the updated check.",
+    "actionFailed": "Could not save. Try again.",
+    "staleResolution": "The order was edited after it was cleared, so it needs checking again.",
+    "resolvedBy": "{{type}} {{time}}",
+    "resolutionTypes": {
+      "VERIFIED": "Verified",
+      "APPROVED": "Approved"
+    },
+    "history": "History",
+    "events": {
+      "EVALUATED": "Checked",
+      "CHANGED": "Check updated",
+      "RESOLUTION_STALE": "Order changed after it was cleared",
+      "HELD": "Courier booking paused",
+      "RELEASED": "Courier booking allowed",
+      "SHADOW_WOULD_HOLD": "Would have been paused (trial)",
+      "VERIFIED": "Verified",
+      "APPROVED": "Approved"
+    },
+    "outcome": "Delivery outcome: {{outcome}}",
+    "bookingHeld": "This order needs checking before a courier can be booked."
+  },
   "channels": {
     "title": "Channels",
     "subtitle": "Manage your communication channels",
@@ -2238,6 +2463,17 @@
       "actionFailed": "{{label}} failed: {{error}}",
       "superAdminRequired": "SUPER_ADMIN required",
       "phase2": "Phase 2",
+      "pilot": {
+        "title": "Pilot features",
+        "help": "Per-shop rollout of Customer 360, Sales Opportunities and Order Confidence (RTO Shield v2). Start Order Confidence in trial mode before enforcing it.",
+        "customerIntelligence": "Customer 360 & Sales Opportunities",
+        "orderConfidence": "Order Confidence",
+        "modes": {
+          "off": "Off",
+          "shadow": "Trial (record only)",
+          "enforce": "Enforce (pause booking)"
+        }
+      },
       "tabs": {
         "overview": "Overview",
         "channels": "Channels",

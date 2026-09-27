@@ -418,6 +418,30 @@ export default function UnifiedInbox() {
     if (params.get("tab") === "needs_review") setFilterTab("needs_review");
   }, [location.search]);
 
+  // Deep link (/inbox?conversation=<id>) from a Sales Opportunity: open that
+  // thread once the list has loaded. A thread older than the first page is
+  // fetched on its own; the server scopes it to this shop.
+  const deepLinkedConversationId = new URLSearchParams(location.search).get("conversation");
+  const deepLinkHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deepLinkedConversationId || loadingConversations) return;
+    if (deepLinkHandledRef.current === deepLinkedConversationId) return;
+    deepLinkHandledRef.current = deepLinkedConversationId;
+    const inList = conversations.find((conversation) => conversation.id === deepLinkedConversationId);
+    if (inList) {
+      setSelectedConversation(inList);
+      setMobilePanelOpen(true);
+      return;
+    }
+    Promise.resolve(apiClient.getConversation?.(deepLinkedConversationId))
+      .then((conversation) => {
+        if (!conversation?.id) return;
+        setSelectedConversation(conversation);
+        setMobilePanelOpen(true);
+      })
+      .catch(() => { /* not found or not this shop's: keep the default selection */ });
+  }, [deepLinkedConversationId, loadingConversations, conversations]);
+
   useEffect(() => {
     if (selectedConversation) {
       loadMessagesAbortRef.current?.abort();

@@ -17,6 +17,7 @@ const AuditLogs = lazy(() => import("./components/AuditLogs"));
 const AddProduct = lazy(() => import("./components/AddProduct"));
 const ProductDetails = lazy(() => import("./components/ProductDetails"));
 const Customers = lazy(() => import("./components/Customers"));
+const CustomerDetailPage = lazy(() => import("./components/customers/CustomerDetailPage"));
 const Categories = lazy(() => import("./components/Categories"));
 const CategoryDetails = lazy(() => import("./components/CategoryDetails"));
 const SubcategoryDetails = lazy(() => import("./components/SubcategoryDetails"));
@@ -193,6 +194,7 @@ export const router = createBrowserRouter([
 			{ path: "/categories/:categoryId/:subcategoryId", Component: withSuspense(SubcategoryDetails) },
 			{ path: "/orders", Component: withSuspense(Orders) },
 			{ path: "/customers", Component: withSuspense(Customers) },
+			{ path: "/customers/:customerId", Component: withSuspense(CustomerDetailPage) },
 			{ path: "/knowledge", loader: () => redirect("/manage-shop/faqs") },
 			{ path: "/reports", Component: withSuspense(Reports) },
 			{ path: "/audit-logs", Component: withSuspense(AuditLogs) },
