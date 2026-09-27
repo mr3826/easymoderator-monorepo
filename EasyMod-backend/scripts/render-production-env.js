@@ -137,6 +137,7 @@ function buildRenderedEnv(source = process.env) {
         POSTGRES_PASSWORD: required('DB_PASSWORD'),
         POSTGRES_DB: required('DB_NAME'),
         REDIS_URL: source.REDIS_URL || 'redis://redis:6379',
+        ...(source.REDIS_QUEUE_DB ? { REDIS_QUEUE_DB: source.REDIS_QUEUE_DB } : {}),
         REDIS_HOST: 'redis',
         REDIS_PORT: '6379',
         DB_SSL: source.DB_SSL || 'false',

@@ -45,6 +45,11 @@ jest.mock('src/config/config', () => ({
 const mockMetaChannelService = { findByMetaAssetId: jest.fn() };
 jest.mock('src/modules/channel-providers/meta-channel.service', () => mockMetaChannelService);
 jest.mock('src/modules/channel-providers/meta-channel.entity', () => ({ findOne: jest.fn() }));
+const mockChannelResolver = {
+    resolveConnectedChannel: jest.fn(),
+    resolveConnectedChannelForReceipt: jest.fn(),
+};
+jest.mock('src/modules/integration/meta-channel-resolver', () => mockChannelResolver);
 
 const mockCustomer = { findOrCreate: jest.fn() };
 const mockConversation = { findOne: jest.fn(), create: jest.fn() };
@@ -256,6 +261,16 @@ beforeEach(() => {
     });
 
     mockMetaChannelService.findByMetaAssetId.mockResolvedValue(connectedChannel());
+    mockChannelResolver.resolveConnectedChannel.mockImplementation(
+        (...args) => mockMetaChannelService.findByMetaAssetId(...args).then((channel) => (
+            channel?.status === 'CONNECTED' ? channel : null
+        )),
+    );
+    mockChannelResolver.resolveConnectedChannelForReceipt.mockImplementation(
+        () => mockMetaChannelService.findByMetaAssetId(PAGE_ID, 'facebook').then((channel) => (
+            channel?.status === 'CONNECTED' ? channel : null
+        )),
+    );
     mockConsentService.isStopKeyword.mockReturnValue(false);
     mockConsentService.recordInbound.mockResolvedValue({ id: 'cust-1' });
     mockConsentService.recordOptOut.mockResolvedValue({ id: 'cust-1' });

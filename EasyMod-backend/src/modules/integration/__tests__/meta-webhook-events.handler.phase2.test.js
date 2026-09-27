@@ -59,6 +59,7 @@ jest.mock('src/utils/structured-logger', () => ({
 
 const mockReceiptService = {
     markProcessing: jest.fn(),
+    bindReceiptTenant: jest.fn().mockResolvedValue(true),
     claimProcessing: jest.fn(),
     markProcessed: jest.fn(),
     markQueued: jest.fn(),

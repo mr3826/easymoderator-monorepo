@@ -3234,12 +3234,16 @@ async function settleInboundReceipts(job, { failed = false, errorCode = null } =
             });
             if (!receipt || receipt.status !== 'QUEUED') continue;
             if (failed) {
-                await receiptService.deadLetter(receipt, errorCode || 'MESSAGE_PROCESSING_FAILED');
+                await receiptService.deadLetter(receipt, errorCode || 'MESSAGE_PROCESSING_FAILED', {
+                    expectedQueueJobId: job.id,
+                });
                 recordInboundEventMetric('inbound_processing_failure');
             } else {
                 await receiptService.markProcessed(receipt, {
                     shopId,
                     metaChannelId,
+                }, {
+                    expectedQueueJobId: job.id,
                 });
                 recordInboundEventMetric('inbound_processing_success');
             }
