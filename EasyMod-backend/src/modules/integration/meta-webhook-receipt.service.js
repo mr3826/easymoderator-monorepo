@@ -354,9 +354,11 @@ async function rebindQueuedReceipts(receiptIds, {
             },
         },
     );
-    if (updatedCount < ids.length) {
-        throw new Error('QUEUE_RECEIPT_REBIND_INCOMPLETE');
-    }
+    // A resident/completed burst job may carry receipt IDs that have already
+    // settled. Already-terminal IDs are intentionally ignored; the current
+    // receipt is settled separately by markQueued before this best-effort
+    // historical rebinding.
+    return updatedCount;
 }
 
 function nextRetryAt(ladder, retryCount) {

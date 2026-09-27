@@ -346,20 +346,12 @@ describe('shared inbound consent and dispatch boundary', () => {
         );
     });
 
-    test('does not report QUEUED when the receipt update did not take effect', async () => {
+    test('does not report a queue failure when the receipt fence was lost', async () => {
         mockReceiptService.markQueued.mockImplementationOnce(async () => {});
 
-        await expect(runProcess()).resolves.toBe('failed');
+        await expect(runProcess()).resolves.toBe('processed');
 
-        expect(mockReceiptService.markQueueFailure).toHaveBeenCalledWith(
-            receipt,
-            expect.objectContaining({
-                name: 'QUEUE_RECEIPT_UPDATE_FAILED',
-                code: 'QUEUE_RECEIPT_UPDATE_FAILED',
-                retryable: true,
-            }),
-            expect.objectContaining({ pageId: PAGE_ID }),
-        );
+        expect(mockReceiptService.markQueueFailure).not.toHaveBeenCalled();
     });
 
     test('waits for STOP burst cancellation before marking the receipt successful', async () => {
