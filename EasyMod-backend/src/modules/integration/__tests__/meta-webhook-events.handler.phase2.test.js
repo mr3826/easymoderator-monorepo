@@ -393,7 +393,7 @@ describe('shared inbound consent and dispatch boundary', () => {
 
         expect(mockReceiptService.markProcessed).not.toHaveBeenCalled();
         expect(mockReceiptService.markQueued).not.toHaveBeenCalled();
-        expect(mockReceiptService.markStoreFailure).toHaveBeenCalledWith(
+        expect(mockReceiptService.markQueueFailure).toHaveBeenCalledWith(
             receipt,
             expect.objectContaining({
                 name: 'BURST_CANCELLATION_FAILED',
