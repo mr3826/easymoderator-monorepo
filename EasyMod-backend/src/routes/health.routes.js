@@ -10,7 +10,10 @@ const router = express.Router();
 const { sequelize } = require('../utils/database/database-setup');
 const { checkRedisAvailability } = require('../config/redis');
 const { authenticate } = require('../middleware/auth.middleware');
-const { getMalformedWebhookMetrics } = require('../modules/integration/meta-webhook-metrics');
+const {
+    getMalformedWebhookMetrics,
+    getInboundEventMetrics,
+} = require('../modules/integration/meta-webhook-metrics');
 
 /**
  * Liveness probe - Is the service responding?
@@ -114,6 +117,7 @@ router.get('/detailed', authenticate, async (req, res) => {
         autoReplyDlq: null,
         queues: null,
         webhookMalformed: { count: null, lastAt: null },
+        inboundEvents: {},
     };
 
     try {
@@ -225,6 +229,14 @@ router.get('/detailed', authenticate, async (req, res) => {
         checks.pilotIntelligence = require('../modules/pilot-features/pilot-metrics').snapshot();
     } catch (_) {
         checks.pilotIntelligence = null;
+    }
+
+    try {
+        checks.inboundEvents = typeof getInboundEventMetrics === 'function'
+            ? getInboundEventMetrics()
+            : {};
+    } catch (_) {
+        checks.inboundEvents = {};
     }
 
     // Auto-reply canary freshness — proves the message-processing worker is alive

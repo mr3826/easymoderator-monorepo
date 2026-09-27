@@ -3204,6 +3204,37 @@ async function processMessageJob(job) {
 
 let worker = null;
 
+async function settleInboundReceipts(job, { failed = false, errorCode = null } = {}) {
+    const receiptIds = Array.isArray(job?.data?.receiptIds) ? job.data.receiptIds.filter(Boolean) : [];
+    if (receiptIds.length === 0) return;
+
+    const receiptService = require('../modules/integration/meta-webhook-receipt.service');
+    const MetaWebhookReceipt = require('../modules/integration/meta-webhook-receipt.entity');
+    const { recordInboundEventMetric } = require('../modules/integration/meta-webhook-metrics');
+    for (const receiptId of receiptIds) {
+        try {
+            const receipt = await MetaWebhookReceipt.findByPk(receiptId);
+            if (!receipt || receipt.status !== 'QUEUED') continue;
+            if (failed) {
+                await receiptService.deadLetter(receipt, errorCode || 'MESSAGE_PROCESSING_FAILED');
+                recordInboundEventMetric('inbound_processing_failure');
+            } else {
+                await receiptService.markProcessed(receipt, {
+                    shopId: job.data?.shopId || receipt.shop_id,
+                    metaChannelId: job.data?.metaChannelId || receipt.meta_channel_id,
+                });
+                recordInboundEventMetric('inbound_processing_success');
+            }
+        } catch (err) {
+            console.error('[worker] Failed to settle inbound webhook receipt', {
+                receiptId,
+                jobId: job.id,
+                error: err.message,
+            });
+        }
+    }
+}
+
 function startWorker() {
     worker = new Worker('message-processing', processMessageJob, {
         connection,
@@ -3212,6 +3243,9 @@ function startWorker() {
     });
 
     worker.on('completed', (job) => {
+        settleInboundReceipts(job).catch((err) => {
+            console.error('[worker] Inbound receipt settlement failed', { jobId: job.id, error: err.message });
+        });
         const r = job.returnvalue;
         if (r?.skipped) console.log(`[worker] Job ${job.id} skipped: ${r.reason}`);
         else if (r?.delayed) console.log(`[worker] Job ${job.id} delayed: ${r.reason} (${r.retryAfterMs}ms)`);
@@ -3221,6 +3255,7 @@ function startWorker() {
     worker.on('failed', async (job, err) => {
         console.error('[worker] Job failed', { jobId: job?.id, shopId: job?.data?.shopId, attempt: job?.attemptsMade, error: err.message });
         if (job && job.attemptsMade >= (job.opts.attempts || 3)) {
+            await settleInboundReceipts(job, { failed: true, errorCode: 'MESSAGE_PROCESSING_FAILED' });
             try {
                 const dlqQueue = new Queue('message-dlq', { connection });
                 await dlqQueue.add('failed-job', {
@@ -3267,6 +3302,7 @@ module.exports = {
     _private: {
         loadConversationHistory,
         isFirstCustomerTurn,
+        settleInboundReceipts,
         shouldApplyAiDisclosureGreeting,
         hasPriorCustomerVisibleAiDisclosure,
         hasAiDisclosure,

@@ -89,6 +89,26 @@ const isResidentJob = async (job) => {
     }
 };
 
+async function attachReceiptIds(job, payload) {
+    const incoming = Array.isArray(payload.receiptIds) ? payload.receiptIds.filter(Boolean) : [];
+    if (!job || incoming.length === 0 || typeof job.updateData !== 'function') return job;
+
+    const existing = Array.isArray(job.data?.receiptIds) ? job.data.receiptIds : [];
+    const receiptIds = [...new Set([...existing, ...incoming].map(String))];
+    if (receiptIds.length === existing.length && receiptIds.every((id, index) => id === existing[index])) {
+        return job;
+    }
+
+    await job.updateData({ ...job.data, receiptIds });
+    return job;
+}
+
+function mergeReceiptIds(payload, receiptIds) {
+    const existing = Array.isArray(payload.receiptIds) ? payload.receiptIds : [];
+    const incoming = Array.isArray(receiptIds) ? receiptIds : [];
+    payload.receiptIds = [...new Set([...incoming, ...existing].filter(Boolean).map(String))];
+}
+
 const jobIdPart = (value) => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
 
 const buildFlushJobId = (payload) => {
@@ -148,13 +168,14 @@ async function scheduleBurstFlush(payload) {
         if (payload.within_allowance === undefined && previousJob?.data?.within_allowance !== undefined) {
             payload.within_allowance = previousJob.data.within_allowance;
         }
+        mergeReceiptIds(payload, previousJob?.data?.receiptIds);
     } catch (_) { /* best-effort */ }
 
     // A redelivery can arrive after BullMQ accepted the job but before the
     // receipt was updated. Reuse the existing message-identified job instead of
     // creating a second logical enqueue.
     if (isSameMessageJob(previousJob, payload.messageId) && await isResidentJob(previousJob)) {
-        return previousJob;
+        return attachReceiptIds(previousJob, payload);
     }
 
     let existingJob = null;
@@ -163,7 +184,7 @@ async function scheduleBurstFlush(payload) {
             existingJob = await messageQueue.getJob(flushJobId);
         } catch (_) { /* enqueue below remains the source of truth */ }
         if (isSameMessageJob(existingJob, payload.messageId) && await isResidentJob(existingJob)) {
-            return existingJob;
+            return attachReceiptIds(existingJob, payload);
         }
         // BullMQ deduplicates by jobId even when the retained job is failed.
         // Remove that stale failure before add() so the retry creates work that

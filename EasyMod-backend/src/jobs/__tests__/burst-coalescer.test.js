@@ -58,7 +58,14 @@ jest.mock('src/config/config', () => ({
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
 function makeDelayedJob(id, data = {}) {
-    return { id, data, getState: jest.fn().mockResolvedValue('delayed'), remove: jest.fn().mockResolvedValue(undefined) };
+    const job = {
+        id,
+        data,
+        getState: jest.fn().mockResolvedValue('delayed'),
+        remove: jest.fn().mockResolvedValue(undefined),
+    };
+    job.updateData = jest.fn(async (nextData) => { job.data = nextData; });
+    return job;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -249,6 +256,26 @@ describe('burst-coalescer', () => {
             expect(mockAdd).toHaveBeenCalledTimes(2);
             // pending id was replaced with the new flush job id
             expect(mockStore.get('burst:pending:conv-1')).not.toBe(firstJobId);
+        });
+
+        it('carries receipt identities when replacing a coalesced job', async () => {
+            await coalescer.scheduleBurstFlush({ ...payload, receiptIds: ['receipt-1'] });
+            const firstJobId = mockStore.get('burst:pending:conv-1');
+            const previous = makeDelayedJob(firstJobId, {
+                ...payload,
+                messageId: 'message-1',
+                receiptIds: ['receipt-1'],
+            });
+            mockGetJob.mockResolvedValueOnce(previous);
+
+            await coalescer.scheduleBurstFlush({
+                ...payload,
+                messageId: 'message-2',
+                receiptIds: ['receipt-2'],
+            });
+
+            const [, nextJobData] = mockAdd.mock.calls[1];
+            expect(nextJobData.receiptIds).toEqual(['receipt-1', 'receipt-2']);
         });
 
         it('clamps the delay by the hard cap so a non-stop typer cannot postpone forever', async () => {

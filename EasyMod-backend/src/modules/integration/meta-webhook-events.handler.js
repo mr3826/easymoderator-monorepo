@@ -27,7 +27,7 @@ const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
-const { recordReceiptClaimConflict } = require('./meta-webhook-metrics');
+const { recordReceiptClaimConflict, recordInboundEventMetric } = require('./meta-webhook-metrics');
 const { cacheRedis } = require('../../config/redis');
 const receiptService = require('./meta-webhook-receipt.service');
 
@@ -281,11 +281,12 @@ function toReceiptFailure(error, fallbackCode) {
     return failure;
 }
 
-async function markQueuedReceipt(receipt, channel) {
+async function markQueuedReceipt(receipt, channel, queueJob) {
     try {
         await receiptService.markQueued(receipt, {
             shopId: channel.shop_id,
             metaChannelId: channel.id,
+            queueJobId: queueJob?.id || null,
         });
     } catch (err) {
         const error = new Error('Queued receipt update did not take effect');
@@ -325,9 +326,10 @@ function getMessageQueue() {
  * ONE AI turn and ONE reply (see burst-coalescer.js). The exact Page asset is
  * retained in the job payload so the worker cannot substitute another Page.
  */
-async function dispatchMessageJob(storeResult, event) {
+async function dispatchMessageJob(storeResult, event, receipt = null) {
     const queue = getMessageQueue();
     if (!queue || typeof queue.add !== 'function') {
+        recordInboundEventMetric('inbound_enqueue_failure');
         // No Error object here (queue is simply null), so pass null as the 2nd
         // arg and put context in meta — otherwise the logger reads .message off
         // this object (undefined) and the shop/platform context is dropped.
@@ -367,6 +369,7 @@ async function dispatchMessageJob(storeResult, event) {
             senderInfo: { customer_id },
             messageId: storeResult.message_id || storeResult.id,
             replyContext: storeResult.message?.metadata?.reply_to || null,
+            receiptIds: receipt?.id ? [receipt.id] : [],
         };
         if (storeResult.within_allowance !== undefined) {
             burstPayload.within_allowance = storeResult.within_allowance;
@@ -374,6 +377,7 @@ async function dispatchMessageJob(storeResult, event) {
         const queueResult = await scheduleBurstFlush(burstPayload);
         return queueResult;
     } catch (err) {
+        recordInboundEventMetric('inbound_enqueue_failure');
         logger.error('Failed to schedule burst flush — message stored but auto-reply skipped', err, {
             shop_id,
             conversationId: conversation_id,
@@ -1420,8 +1424,8 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         }
         const consentResult = await processInboundConsent({ storeResult, normalizedEvent, channel });
         if (consentResult?.shouldDispatch === true) {
-            await dispatchMessageJob(storeResult, normalizedEvent);
-            await markQueuedReceipt(receipt, channel);
+            const queueJob = await dispatchMessageJob(storeResult, normalizedEvent, receipt);
+            await markQueuedReceipt(receipt, channel, queueJob);
         } else {
             await cancelPendingDispatch(storeResult.conversation_id);
             await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });

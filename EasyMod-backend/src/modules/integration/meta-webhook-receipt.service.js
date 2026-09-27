@@ -18,6 +18,7 @@ const MetaWebhookReceipt = require('./meta-webhook-receipt.entity');
 const { encryptPayload, decryptPayload } = require('../../utils/webhook-payload-cipher');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
+const { recordInboundEventMetric } = require('./meta-webhook-metrics');
 
 const logger = createLogger('MetaWebhookReceipt');
 
@@ -30,6 +31,7 @@ const STORE_RETRY_BACKOFF_MINUTES = [1, 5, 15, 60, 240];
 const IDENTITY_RETRY_BACKOFF_MINUTES = [5, 15, 60, 240, 720, 1440, 1440];
 const MAX_STORE_RETRIES = STORE_RETRY_BACKOFF_MINUTES.length;
 const MAX_IDENTITY_RETRIES = IDENTITY_RETRY_BACKOFF_MINUTES.length;
+const QUEUED_RECOVERY_DELAY_MS = 15 * 60 * 1000;
 
 /** A claim older than this is assumed abandoned (crashed runner) and reclaimed. */
 const STALE_CLAIM_MS = 15 * 60 * 1000;
@@ -41,7 +43,8 @@ const TERMINAL_RETENTION_DAYS = 7;
 const DEAD_LETTER_RETENTION_DAYS = 30;
 
 const RETRYABLE_STATUSES = ['RETRY_PENDING', 'MESSAGE_STORE_FAILED', 'IDENTITY_NOT_RESOLVED'];
-const TERMINAL_STATUSES = ['PROCESSED', 'QUEUED', 'SKIPPED', 'DEAD_LETTERED'];
+const RECOVERABLE_STATUSES = [...RETRYABLE_STATUSES, 'QUEUED'];
+const TERMINAL_STATUSES = ['PROCESSED', 'SKIPPED', 'DEAD_LETTERED'];
 
 /** Thrown when the durable receipt itself cannot be written. */
 class WebhookReceiptPersistenceError extends Error {
@@ -127,7 +130,10 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
                 ? { page_id: String(pageId), event_id: eventId }
                 : { page_id: String(pageId), dedupe_key: dedupeKey },
         });
-        if (existing) return { receipt: existing, duplicate: true };
+        if (existing) {
+            recordInboundEventMetric('inbound_events_duplicate');
+            return { receipt: existing, duplicate: true };
+        }
 
         const receipt = await MetaWebhookReceipt.create({
             provider: 'meta',
@@ -142,6 +148,8 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
             status: 'RECEIVED',
             received_at: new Date(),
         });
+        recordInboundEventMetric('inbound_events_received');
+        recordInboundEventMetric('inbound_events_durable_accepted');
         return { receipt, duplicate: false };
     } catch (err) {
         // A concurrent delivery of the same event lost the unique-index race.
@@ -153,7 +161,10 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
                     : { page_id: String(pageId), dedupe_key: dedupeKey },
             })
                 .catch(() => null);
-            if (existing) return { receipt: existing, duplicate: true };
+            if (existing) {
+                recordInboundEventMetric('inbound_events_duplicate');
+                return { receipt: existing, duplicate: true };
+            }
         }
         logger.error('Durable webhook receipt write failed — returning retryable error to Meta', {
             pageId: String(pageId),
@@ -227,6 +238,7 @@ async function markSkipped(receipt, reasonCode) {
         status: 'SKIPPED',
         last_error_code: reasonCode || null,
         payload_encrypted: null,
+        queue_job_id: null,
         processed_at: new Date(),
         next_retry_at: null,
     });
@@ -269,6 +281,7 @@ async function markProcessed(receipt, { shopId = null, metaChannelId = null } = 
         meta_channel_id: metaChannelId,
         payload_encrypted: null,
         processing_token: null,
+        queue_job_id: null,
         last_error_code: null,
         next_retry_at: null,
         processed_at: new Date(),
@@ -276,19 +289,33 @@ async function markProcessed(receipt, { shopId = null, metaChannelId = null } = 
 }
 
 /**
- * Durable queue handoff completed. `processed_at` is the existing terminal
- * timestamp column and records when the event became durably owned by BullMQ.
+ * Durable queue handoff completed. The replay body and queue identity remain
+ * until the worker confirms completion. Redis is transport, not the receipt's
+ * durability boundary.
  */
-async function markQueued(receipt, { shopId = null, metaChannelId = null } = {}) {
+async function markQueued(receipt, {
+    shopId = null,
+    metaChannelId = null,
+    queueJobId = null,
+} = {}) {
     await updateOrThrow(receipt, {
         status: 'QUEUED',
         shop_id: shopId,
         meta_channel_id: metaChannelId,
-        payload_encrypted: null,
         processing_token: null,
+        queue_job_id: queueJobId == null ? null : String(queueJobId),
         last_error_code: null,
-        next_retry_at: null,
-        processed_at: new Date(),
+        next_retry_at: new Date(Date.now() + QUEUED_RECOVERY_DELAY_MS),
+        processed_at: null,
+    });
+}
+
+/** Defer inspection of a still-live BullMQ job without releasing durability. */
+async function deferQueued(receipt) {
+    await updateOrThrow(receipt, {
+        status: 'QUEUED',
+        processing_token: null,
+        next_retry_at: new Date(Date.now() + QUEUED_RECOVERY_DELAY_MS),
     });
 }
 
@@ -318,6 +345,7 @@ async function markIdentityNotResolved(receipt, { pageId, alert = true, incremen
         retry_count: retryCount,
         last_error_code: 'PAGE_NOT_CONNECTED',
         processing_token: null,
+        queue_job_id: null,
         next_retry_at: nextRetryAt(IDENTITY_RETRY_BACKOFF_MINUTES, retryCount),
     });
 
@@ -351,6 +379,7 @@ async function markStoreFailure(receipt, err, { pageId } = {}) {
         retry_count: retryCount,
         last_error_code: errorCode,
         processing_token: null,
+        queue_job_id: null,
         next_retry_at: nextRetryAt(STORE_RETRY_BACKOFF_MINUTES, retryCount),
     });
 
@@ -369,8 +398,10 @@ async function deadLetter(receipt, errorCode) {
         last_error_code: String(errorCode || 'UNKNOWN').slice(0, 64),
         next_retry_at: null,
         processing_token: null,
+        queue_job_id: null,
         processed_at: new Date(),
     });
+    recordInboundEventMetric('inbound_dead_letter');
 
     opsAlert('Meta webhook — inbound message DEAD-LETTERED', {
         detail: `page_id=${receipt.page_id} receipt=${receipt.id} code=${errorCode}. `
@@ -393,7 +424,7 @@ async function claimDueReceipts(limit = 25) {
         where: {
             [Op.or]: [
                 {
-                    status: { [Op.in]: RETRYABLE_STATUSES },
+                    status: { [Op.in]: RECOVERABLE_STATUSES },
                     next_retry_at: { [Op.lte]: now },
                 },
                 // Reclaim a claim abandoned by a crashed runner.
@@ -416,6 +447,7 @@ async function claimDueReceipts(limit = 25) {
 
     const claimed = [];
     for (const receipt of due) {
+        const priorStatus = receipt.status;
         const token = crypto.randomBytes(16).toString('hex');
         const [updatedCount] = await MetaWebhookReceipt.update(
             { status: 'PROCESSING', processing_token: token },
@@ -438,7 +470,7 @@ async function claimDueReceipts(limit = 25) {
             continue;
         }
 
-        claimed.push({ receipt, payload });
+        claimed.push({ receipt, payload, priorStatus });
     }
     return claimed;
 }
@@ -452,7 +484,7 @@ async function countDeadLettered() {
 async function countUnresolved() {
     const { Op } = require('sequelize');
     return MetaWebhookReceipt.count({
-        where: { status: { [Op.in]: ['IDENTITY_NOT_RESOLVED', 'RETRY_PENDING', 'MESSAGE_STORE_FAILED'] } },
+        where: { status: { [Op.in]: RECOVERABLE_STATUSES } },
     });
 }
 
@@ -465,7 +497,10 @@ async function purgeExpiredReceipts(now = new Date()) {
     const removed = await MetaWebhookReceipt.destroy({
         where: {
             [Op.or]: [
-                { status: { [Op.in]: ['PROCESSED', 'QUEUED', 'SKIPPED'] }, created_at: { [Op.lt]: terminalCutoff } },
+                { status: { [Op.in]: ['PROCESSED', 'SKIPPED'] }, created_at: { [Op.lt]: terminalCutoff } },
+                // Legacy QUEUED rows predate durable queue identity and have no
+                // replay body. New QUEUED rows always retain payload_encrypted.
+                { status: 'QUEUED', payload_encrypted: null, created_at: { [Op.lt]: terminalCutoff } },
                 { status: 'DEAD_LETTERED', created_at: { [Op.lt]: deadCutoff } },
             ],
         },
@@ -482,6 +517,7 @@ module.exports = {
     claimProcessing,
     markProcessed,
     markQueued,
+    deferQueued,
     markIdentityNotResolved,
     markStoreFailure,
     deadLetter,
@@ -495,4 +531,6 @@ module.exports = {
     IDENTITY_RETRY_BACKOFF_MINUTES,
     TERMINAL_STATUSES,
     RETRYABLE_STATUSES,
+    RECOVERABLE_STATUSES,
+    QUEUED_RECOVERY_DELAY_MS,
 };
