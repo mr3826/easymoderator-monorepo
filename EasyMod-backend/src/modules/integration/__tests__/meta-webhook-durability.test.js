@@ -77,9 +77,11 @@ jest.mock('src/modules/customer/customer-profile.service', () => ({
     isPlaceholderName: jest.fn(() => false),
 }));
 jest.mock('src/utils/sse-manager', () => ({ emit: jest.fn() }));
-jest.mock('src/jobs/message-queue', () => ({
-    messageQueue: { add: jest.fn().mockResolvedValue(undefined) },
-}));
+const mockMessageQueue = {
+    add: jest.fn().mockResolvedValue(undefined),
+    getJob: jest.fn().mockResolvedValue(null),
+};
+jest.mock('src/jobs/message-queue', () => ({ messageQueue: mockMessageQueue }));
 const mockScheduleBurstFlush = jest.fn().mockResolvedValue(undefined);
 jest.mock('src/jobs/burst-coalescer', () => ({
     scheduleBurstFlush: (...args) => mockScheduleBurstFlush(...args),
@@ -128,6 +130,7 @@ const makeRow = (fields) => {
         status: 'RECEIVED',
         retry_count: 0,
         processing_token: null,
+        queue_job_id: null,
         next_retry_at: null,
         received_at: new Date(),
         updated_at: new Date(),
@@ -246,6 +249,7 @@ beforeEach(() => {
     alertCalls.length = 0;
     failCreate = null;
     failClaimOnce = false;
+    mockMessageQueue.getJob.mockResolvedValue(null);
 
     mockMetaChannelService.findByMetaAssetId.mockResolvedValue(connectedChannel());
     mockConsentService.isStopKeyword.mockReturnValue(false);
@@ -381,7 +385,7 @@ describe('durable receipt precedes acknowledgement', () => {
         expect(receipts()[0].status).toBe('RECEIVED');
     });
 
-    test('marks a successful queue handoff as terminal and clears replay state', async () => {
+    test('retains replay state and queue identity after a successful queue handoff', async () => {
         const receipt = makeRow({
             status: 'PROCESSING',
             payload_encrypted: 'v1:encrypted-replay-body',
@@ -394,30 +398,34 @@ describe('durable receipt precedes acknowledgement', () => {
         await receiptService.markQueued(receipt, {
             shopId: SHOP_ID,
             metaChannelId: 'mc-durability-1',
+            queueJobId: 'burst-job-1',
         });
 
         expect(receipt.status).toBe('QUEUED');
         expect(receipt.shop_id).toBe(SHOP_ID);
         expect(receipt.meta_channel_id).toBe('mc-durability-1');
         expect(receipt.processing_token).toBeNull();
-        expect(receipt.payload_encrypted).toBeNull();
+        expect(receipt.queue_job_id).toBe('burst-job-1');
+        expect(receipt.payload_encrypted).toBe('v1:encrypted-replay-body');
         expect(receipt.last_error_code).toBeNull();
-        expect(receipt.next_retry_at).toBeNull();
-        expect(receipt.processed_at).toBeInstanceOf(Date);
-        expect(receipt.processed_at.getTime()).toBeGreaterThanOrEqual(before);
+        expect(receipt.next_retry_at).toBeInstanceOf(Date);
+        expect(receipt.next_retry_at.getTime()).toBeGreaterThanOrEqual(before + 15 * 60 * 1000 - 100);
+        expect(receipt.processed_at).toBeNull();
     });
 
-    test('treats QUEUED as terminal while preserving PROCESSED for non-queue events', async () => {
+    test('treats QUEUED as recoverable while preserving PROCESSED for non-queue events', async () => {
         expect(receiptService.TERMINAL_STATUSES).toEqual(
-            expect.arrayContaining(['QUEUED', 'PROCESSED', 'SKIPPED', 'DEAD_LETTERED']),
+            expect.arrayContaining(['PROCESSED', 'SKIPPED', 'DEAD_LETTERED']),
         );
+        expect(receiptService.TERMINAL_STATUSES).not.toContain('QUEUED');
+        expect(receiptService.RECOVERABLE_STATUSES).toContain('QUEUED');
 
         const receipt = makeRow({ status: 'PROCESSING' });
         await receiptService.markProcessed(receipt, { shopId: SHOP_ID, metaChannelId: 'mc-durability-1' });
         expect(receipt.status).toBe('PROCESSED');
     });
 
-    test('includes QUEUED in terminal receipt retention', async () => {
+    test('does not purge queued receipts before worker settlement', async () => {
         const now = new Date('2026-09-01T12:00:00.000Z');
         await receiptService.purgeExpiredReceipts(now);
 
@@ -427,8 +435,9 @@ describe('durable receipt precedes acknowledgement', () => {
         const inKey = Reflect.ownKeys(terminalClause.status)[0];
 
         expect(terminalClause.status[inKey]).toEqual(
-            expect.arrayContaining(['PROCESSED', 'SKIPPED', 'QUEUED']),
+            expect.arrayContaining(['PROCESSED', 'SKIPPED']),
         );
+        expect(terminalClause.status[inKey]).not.toContain('QUEUED');
     });
 
     test('carries the webhook Page asset through the normalized burst job payload', async () => {
@@ -464,7 +473,7 @@ describe('durable receipt precedes acknowledgement', () => {
         expect(mockScheduleBurstFlush).not.toHaveBeenCalled();
     });
 
-    test('reconciles a queue failure into exactly one QUEUED terminal handoff', async () => {
+    test('reconciles a queue failure into a recoverable QUEUED handoff', async () => {
         mockScheduleBurstFlush.mockRejectedValueOnce(new Error('queue unavailable'));
 
         await post(buildPayload()).expect(200);
@@ -475,7 +484,7 @@ describe('durable receipt precedes acknowledgement', () => {
 
         expect(result.processed).toBe(1);
         expect(receipts()[0].status).toBe('QUEUED');
-        expect(receipts()[0].payload_encrypted).toBeNull();
+        expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
         expect(receipts()[0].last_error_code).toBeNull();
         expect(mockScheduleBurstFlush).toHaveBeenCalledTimes(2);
     });
@@ -498,6 +507,88 @@ describe('durable receipt precedes acknowledgement', () => {
         expect(receipts()[0].last_error_code).toBe('QUEUE_RECEIPT_UPDATE_FAILED');
         expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
         expect(receipts()[0].status).not.toBe('QUEUED');
+    });
+
+    test('replays a QUEUED receipt when Redis lost its BullMQ job', async () => {
+        const messaging = buildPayload().entry[0].messaging[0];
+        const receipt = makeRow({
+            page_id: PAGE_ID,
+            event_id: messaging.message.mid,
+            dedupe_key: 'lost-queue-dedupe',
+            event_type: 'message',
+            payload_encrypted: encryptPayload(messaging),
+            status: 'QUEUED',
+            queue_job_id: 'lost-bullmq-job',
+            next_retry_at: new Date(Date.now() - 1000),
+            shop_id: SHOP_ID,
+            meta_channel_id: 'mc-durability-1',
+        });
+        store.set(receipt.id, receipt);
+        mockMessageQueue.getJob.mockResolvedValue(null);
+
+        const result = await new WebhookReceiptReconcilerJob().execute();
+
+        expect(result.processed).toBe(1);
+        expect(mockScheduleBurstFlush).toHaveBeenCalledTimes(1);
+        expect(receipt.status).toBe('QUEUED');
+        expect(receipt.payload_encrypted).toMatch(/^v1:/);
+        expect(receipt.next_retry_at).toBeInstanceOf(Date);
+    });
+
+    test('defers a QUEUED receipt while its BullMQ job is still live', async () => {
+        const messaging = buildPayload().entry[0].messaging[0];
+        const receipt = makeRow({
+            page_id: PAGE_ID,
+            event_id: messaging.message.mid,
+            dedupe_key: 'live-queue-dedupe',
+            event_type: 'message',
+            payload_encrypted: encryptPayload(messaging),
+            status: 'QUEUED',
+            queue_job_id: 'live-bullmq-job',
+            next_retry_at: new Date(Date.now() - 1000),
+            shop_id: SHOP_ID,
+            meta_channel_id: 'mc-durability-1',
+        });
+        store.set(receipt.id, receipt);
+        mockMessageQueue.getJob.mockResolvedValue({
+            getState: jest.fn().mockResolvedValue('active'),
+        });
+
+        const result = await new WebhookReceiptReconcilerJob().execute();
+
+        expect(result.deferred).toBe(1);
+        expect(mockScheduleBurstFlush).not.toHaveBeenCalled();
+        expect(receipt.status).toBe('QUEUED');
+        expect(receipt.payload_encrypted).toMatch(/^v1:/);
+        expect(receipt.next_retry_at).toBeInstanceOf(Date);
+    });
+
+    test('settles a QUEUED receipt when BullMQ reports completion', async () => {
+        const messaging = buildPayload().entry[0].messaging[0];
+        const receipt = makeRow({
+            page_id: PAGE_ID,
+            event_id: messaging.message.mid,
+            dedupe_key: 'completed-queue-dedupe',
+            event_type: 'message',
+            payload_encrypted: encryptPayload(messaging),
+            status: 'QUEUED',
+            queue_job_id: 'completed-bullmq-job',
+            next_retry_at: new Date(Date.now() - 1000),
+            shop_id: SHOP_ID,
+            meta_channel_id: 'mc-durability-1',
+        });
+        store.set(receipt.id, receipt);
+        mockMessageQueue.getJob.mockResolvedValue({
+            getState: jest.fn().mockResolvedValue('completed'),
+        });
+
+        const result = await new WebhookReceiptReconcilerJob().execute();
+
+        expect(result.processed).toBe(1);
+        expect(mockScheduleBurstFlush).not.toHaveBeenCalled();
+        expect(receipt.status).toBe('PROCESSED');
+        expect(receipt.payload_encrypted).toBeNull();
+        expect(receipt.queue_job_id).toBeNull();
     });
 
     test('the receipt is written before channel resolution is attempted', async () => {

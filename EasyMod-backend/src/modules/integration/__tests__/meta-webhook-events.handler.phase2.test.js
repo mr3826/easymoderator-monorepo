@@ -233,6 +233,7 @@ describe('shared inbound consent and dispatch boundary', () => {
         expect(mockReceiptService.markQueued).toHaveBeenCalledWith(receipt, {
             shopId: SHOP_ID,
             metaChannelId: CHANNEL_ID,
+            queueJobId: null,
         });
     });
 
@@ -407,6 +408,7 @@ describe('shared inbound consent and dispatch boundary', () => {
         expect(mockReceiptService.markQueued).toHaveBeenCalledWith(receipt, {
             shopId: SHOP_ID,
             metaChannelId: CHANNEL_ID,
+            queueJobId: null,
         });
         expect(mockReceiptService.markProcessed).not.toHaveBeenCalled();
     });
