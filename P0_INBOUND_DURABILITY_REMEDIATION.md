@@ -7,7 +7,7 @@ is ready. The other four P0 blockers remain open.
 ```text
 BASE_SHA=e876644b8cdc1a6704defbe0b331d3757a33ce29
 REMEDIATION_BRANCH=remediation/p0-inbound-durability
-REMEDIATION_HEAD=015a355c
+REMEDIATION_HEAD=172f398f
 PR_NUMBER=195
 PR_URL=https://github.com/mr3826/easymoderator-monorepo/pull/195
 ```
