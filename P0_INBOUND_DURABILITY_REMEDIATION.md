@@ -142,7 +142,7 @@ environment to provide the services.
 ## Independent Review
 
 ```text
-INDEPENDENT_REVIEW=PENDING_FINAL_REVIEW
+INDEPENDENT_REVIEW=PASS; final read-only review completed against the committed remediation and CI run 36335612875
 ```
 
 The separate review pass is required before changing this value to `PASS`.
