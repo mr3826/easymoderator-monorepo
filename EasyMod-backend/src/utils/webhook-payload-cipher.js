@@ -25,18 +25,27 @@ const VERSION = 'v1';
 const ALGORITHM = 'aes-256-gcm';
 const AAD = Buffer.from('meta-webhook-payload');
 
-let _cachedKey = null;
+let _cachedKeys = null;
 let _cachedKeyEnv = null;
 
-function getKey() {
-    const raw = process.env.CHANNEL_ENCRYPTION_KEY;
-    if (!raw) throw new Error('CHANNEL_ENCRYPTION_KEY is not set');
-    if (_cachedKey && raw === _cachedKeyEnv) return _cachedKey;
-    _cachedKey = /^[a-f0-9]{64}$/i.test(raw)
+function deriveKey(raw) {
+    return /^[a-f0-9]{64}$/i.test(raw)
         ? Buffer.from(raw, 'hex')
         : crypto.createHash('sha256').update(raw).digest();
-    _cachedKeyEnv = raw;
-    return _cachedKey;
+}
+
+function getKeys() {
+    const primary = process.env.CHANNEL_ENCRYPTION_KEY;
+    if (!primary) throw new Error('CHANNEL_ENCRYPTION_KEY is not set');
+    const previous = String(process.env.CHANNEL_ENCRYPTION_KEY_PREVIOUS || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+    const envValue = [primary, ...previous].join(',');
+    if (_cachedKeys && envValue === _cachedKeyEnv) return _cachedKeys;
+    _cachedKeys = [...new Set([primary, ...previous])].map(deriveKey);
+    _cachedKeyEnv = envValue;
+    return _cachedKeys;
 }
 
 /**
@@ -46,7 +55,7 @@ function getKey() {
 function encryptPayload(value) {
     const plaintext = JSON.stringify(value ?? null);
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
+    const cipher = crypto.createCipheriv(ALGORITHM, getKeys()[0], iv);
     cipher.setAAD(AAD);
     let encrypted = cipher.update(plaintext, 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -67,12 +76,20 @@ function decryptPayload(ciphertext) {
         throw new Error('webhook-payload-cipher: unrecognised ciphertext format');
     }
     const [, ivHex, authTagHex, encryptedHex] = parts;
-    const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), Buffer.from(ivHex, 'hex'));
-    decipher.setAAD(AAD);
-    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
-    let plaintext = decipher.update(encryptedHex, 'hex', 'utf8');
-    plaintext += decipher.final('utf8');
-    return JSON.parse(plaintext);
+    let lastError = null;
+    for (const key of getKeys()) {
+        try {
+            const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
+            decipher.setAAD(AAD);
+            decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+            let plaintext = decipher.update(encryptedHex, 'hex', 'utf8');
+            plaintext += decipher.final('utf8');
+            return JSON.parse(plaintext);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error('webhook-payload-cipher: unable to decrypt payload');
 }
 
 module.exports = { encryptPayload, decryptPayload, VERSION };

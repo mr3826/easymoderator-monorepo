@@ -62,7 +62,9 @@ const mockReceiptService = {
     claimProcessing: jest.fn(),
     markProcessed: jest.fn(),
     markQueued: jest.fn(),
+    rebindQueuedReceipts: jest.fn(),
     markStoreFailure: jest.fn(),
+    markQueueFailure: jest.fn(),
     markIdentityNotResolved: jest.fn(),
 };
 jest.mock('src/modules/integration/meta-webhook-receipt.service', () => mockReceiptService);
@@ -96,7 +98,10 @@ const receipt = { id: 'receipt-1', status: 'RECEIVED' };
 beforeEach(() => {
     jest.clearAllMocks();
     receipt.status = 'RECEIVED';
-    mockScheduleBurstFlush.mockReset().mockResolvedValue(undefined);
+    mockScheduleBurstFlush.mockReset().mockResolvedValue({
+        id: 'queue-job-1',
+        data: {},
+    });
     mockCancelBurstFlush.mockReset().mockResolvedValue(undefined);
     mockIsStopKeyword.mockReturnValue(false);
     mockRecordInbound.mockResolvedValue({ id: CUSTOMER_ID });
@@ -108,7 +113,9 @@ beforeEach(() => {
     mockReceiptService.markQueued.mockImplementation(async (row) => {
         row.status = 'QUEUED';
     });
+    mockReceiptService.rebindQueuedReceipts.mockResolvedValue(undefined);
     mockReceiptService.markStoreFailure.mockResolvedValue(undefined);
+    mockReceiptService.markQueueFailure.mockResolvedValue(undefined);
     mockMessage.findOne.mockResolvedValue(null);
     mockCustomer.findOrCreate.mockResolvedValue([{
         id: CUSTOMER_ID,
@@ -233,7 +240,7 @@ describe('shared inbound consent and dispatch boundary', () => {
         expect(mockReceiptService.markQueued).toHaveBeenCalledWith(receipt, {
             shopId: SHOP_ID,
             metaChannelId: CHANNEL_ID,
-            queueJobId: null,
+            queueJobId: 'queue-job-1',
         });
     });
 
@@ -305,7 +312,7 @@ describe('shared inbound consent and dispatch boundary', () => {
 
         expect(mockReceiptService.markProcessed).not.toHaveBeenCalled();
         expect(mockReceiptService.markQueued).not.toHaveBeenCalled();
-        expect(mockReceiptService.markStoreFailure).toHaveBeenCalledWith(
+        expect(mockReceiptService.markQueueFailure).toHaveBeenCalledWith(
             receipt,
             expect.objectContaining({
                 name: 'QUEUE_DISPATCH_FAILED',
@@ -327,7 +334,7 @@ describe('shared inbound consent and dispatch boundary', () => {
         await expect(runProcess()).resolves.toBe('failed');
 
         expect(mockReceiptService.markQueued).not.toHaveBeenCalled();
-        expect(mockReceiptService.markStoreFailure).toHaveBeenCalledWith(
+        expect(mockReceiptService.markQueueFailure).toHaveBeenCalledWith(
             receipt,
             expect.objectContaining({
                 name: 'QUEUE_DISPATCH_FAILED',
@@ -344,7 +351,7 @@ describe('shared inbound consent and dispatch boundary', () => {
 
         await expect(runProcess()).resolves.toBe('failed');
 
-        expect(mockReceiptService.markStoreFailure).toHaveBeenCalledWith(
+        expect(mockReceiptService.markQueueFailure).toHaveBeenCalledWith(
             receipt,
             expect.objectContaining({
                 name: 'QUEUE_RECEIPT_UPDATE_FAILED',
@@ -408,7 +415,7 @@ describe('shared inbound consent and dispatch boundary', () => {
         expect(mockReceiptService.markQueued).toHaveBeenCalledWith(receipt, {
             shopId: SHOP_ID,
             metaChannelId: CHANNEL_ID,
-            queueJobId: null,
+            queueJobId: 'queue-job-1',
         });
         expect(mockReceiptService.markProcessed).not.toHaveBeenCalled();
     });

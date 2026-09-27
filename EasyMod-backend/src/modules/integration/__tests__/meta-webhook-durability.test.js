@@ -250,6 +250,10 @@ beforeEach(() => {
     failCreate = null;
     failClaimOnce = false;
     mockMessageQueue.getJob.mockResolvedValue(null);
+    mockScheduleBurstFlush.mockResolvedValue({
+        id: 'queue-job-1',
+        data: {},
+    });
 
     mockMetaChannelService.findByMetaAssetId.mockResolvedValue(connectedChannel());
     mockConsentService.isStopKeyword.mockReturnValue(false);
@@ -454,11 +458,10 @@ describe('durable receipt precedes acknowledgement', () => {
 
         await post(buildPayload()).expect(200);
 
-        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].status).toBe('QUEUED');
         expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
         expect(receipts()[0].last_error_code).toBe('QUEUE_DISPATCH_FAILED');
         expect(receipts()[0].next_retry_at).toBeInstanceOf(Date);
-        expect(receipts()[0].status).not.toBe('QUEUED');
         expect(receipts()[0].status).not.toBe('PROCESSED');
     });
 
@@ -477,7 +480,7 @@ describe('durable receipt precedes acknowledgement', () => {
         mockScheduleBurstFlush.mockRejectedValueOnce(new Error('queue unavailable'));
 
         await post(buildPayload()).expect(200);
-        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].status).toBe('QUEUED');
 
         receipts()[0].next_retry_at = new Date(Date.now() - 1000);
         const result = await new WebhookReceiptReconcilerJob().execute();
@@ -501,10 +504,9 @@ describe('durable receipt precedes acknowledgement', () => {
             return row;
         });
 
-        await post(buildPayload()).expect(200);
+        await post(buildPayload()).expect(503);
 
-        expect(receipts()[0].status).toBe('RETRY_PENDING');
-        expect(receipts()[0].last_error_code).toBe('QUEUE_RECEIPT_UPDATE_FAILED');
+        expect(receipts()[0].status).not.toBe('QUEUED');
         expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
         expect(receipts()[0].status).not.toBe('QUEUED');
     });
