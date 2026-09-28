@@ -52,7 +52,7 @@ const nameInitial = (name: string | null | undefined) =>
  * `number` / `channel`, so phone showed "—" and channel badges fell back.
  * Normalise at the boundary so the legacy page renders real values.
  */
-const normalizeLegacyCustomer = (customer: Customer): Customer => {
+export const normalizeLegacyCustomer = (customer: Customer): Customer => {
   const raw = customer as Customer & { phone?: string | null; channel_type?: ApiChannelType };
   return {
     ...customer,

@@ -2122,6 +2122,7 @@
     "conversationsPerMonth": "প্রতি মাসে {{count}}টি কনভারসেশন",
     "includedConversations": "Included allowance: {{count}}",
     "topupBalance": "Top-up balance: {{count}}",
+    "topupBalanceLabel": "টপ-আপ ব্যালেন্স",
     "aiPausedForUsage": "এই allowance শেষ হওয়ায় AI reply pause আছে; manual reply চালু আছে।",
     "statusNeedsAttention": "মনোযোগ প্রয়োজন",
     "period": "বর্তমান period",

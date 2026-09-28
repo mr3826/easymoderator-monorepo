@@ -2122,6 +2122,7 @@
     "conversationsPerMonth": "{{count}} conversations each month",
     "includedConversations": "Included allowance: {{count}}",
     "topupBalance": "Top-up balance: {{count}}",
+    "topupBalanceLabel": "Top-up balance",
     "aiPausedForUsage": "AI replies are paused for this allowance; manual replies remain available.",
     "statusNeedsAttention": "Needs attention",
     "period": "Current period",
