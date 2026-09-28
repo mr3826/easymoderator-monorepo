@@ -637,7 +637,7 @@ export default function Subscription() {
         <CardHeader><CardTitle>{t("subscription.billingTitle")}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between"><span className="text-gray-600">{t("subscription.basePlan")}</span><span className="font-semibold text-gray-900">৳{currentPlan.price.toLocaleString()}</span></div>
-          <div className="flex items-center justify-between"><span className="text-gray-600">{t("subscription.topupBalance")}</span><span className="font-semibold text-gray-900">{topupBalance.toLocaleString()}</span></div>
+          <div className="flex items-center justify-between"><span className="text-gray-600">{t("subscription.topupBalanceLabel")}</span><span className="font-semibold text-gray-900">{topupBalance.toLocaleString()}</span></div>
           <div className="border-t border-gray-100 pt-3 text-sm text-gray-500">{t("subscription.invoiceDisclaimer")}</div>
         </CardContent>
       </Card>
