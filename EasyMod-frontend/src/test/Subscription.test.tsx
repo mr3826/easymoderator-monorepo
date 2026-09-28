@@ -107,7 +107,7 @@ describe('Subscription', () => {
     expect(screen.getAllByTestId('progress')).toHaveLength(3);
     expect(screen.getByText(/Included allowance: 100/)).toBeInTheDocument();
     expect(screen.getByText('Top-up balance: 0')).toBeInTheDocument();
-    expect(screen.queryByText('Top-up balance: {{count}}')).not.toBeInTheDocument();
+    expect(screen.queryByText(/\{\{count\}\}/)).not.toBeInTheDocument();
   });
 
   it('displays invoice history without exposing a payment button when bKash is disabled', async () => {
