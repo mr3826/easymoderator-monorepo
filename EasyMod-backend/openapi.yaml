@@ -27,6 +27,9 @@ tags:
   - name: Subscription
   - name: Partner
   - name: Webhooks
+  - name: CustomerIntelligence
+  - name: OrderConfidence
+  - name: Admin
 paths:
   /category/:
     parameters:
@@ -1706,6 +1709,206 @@ paths:
         '200': { description: Received }
         '403': { description: Invalid signature }
         '500': { description: Processing error }
+
+  # ── Pilot intelligence (docs/pilot-intelligence/04-api.md) ────────────────
+  # Tenant is always the JWT shopId; every route requires an active shop
+  # membership. Customer routes answer 409 FEATURE_DISABLED unless the shop
+  # has the customer_intelligence pilot flag.
+  /customer-intelligence/status:
+    get:
+      tags: [CustomerIntelligence]
+      summary: Pilot feature state for the current shop (always answers)
+      responses:
+        '200':
+          description: Flags
+          content:
+            application/json:
+              example: { success: true, data: { customer_intelligence: true, order_confidence_mode: shadow } }
+  /customer-intelligence/customers:
+    get:
+      tags: [CustomerIntelligence]
+      summary: Customer 360 list (computed state, order counts, delivered value, open opportunity)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 }, description: Name or phone }
+        - { name: view, in: query, schema: { type: string, enum: [all, opportunities], default: all } }
+      responses:
+        '200': { description: 'Flat body { success, data[], total, page, pageSize }' }
+        '409': { description: FEATURE_DISABLED }
+  /customer-intelligence/customers/{customerId}:
+    get:
+      tags: [CustomerIntelligence]
+      summary: Customer 360 detail (identity, summary, state, orders, timeline, opportunities, RTO signal)
+      parameters:
+        - { name: customerId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Detail }
+        '400': { description: VALIDATION_ERROR }
+        '404': { description: Not found in this shop }
+  /customer-intelligence/opportunities:
+    get:
+      tags: [CustomerIntelligence]
+      summary: Sales opportunities
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [LIVE, OPEN, ACTIONED, CONVERTED, DISMISSED, EXPIRED], default: LIVE } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        '200': { description: 'Flat body { success, data[], total, page, pageSize }' }
+  /customer-intelligence/opportunities/summary:
+    get:
+      tags: [CustomerIntelligence]
+      summary: Detected / converted / dismissed / expired counts and median times
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 180, default: 30 } }
+      responses:
+        '200': { description: Summary }
+  /customer-intelligence/opportunities/{opportunityId}/contacted:
+    post:
+      tags: [CustomerIntelligence]
+      summary: Mark an OPEN opportunity as contacted (audited)
+      parameters:
+        - { name: opportunityId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false } } } }
+      responses:
+        '200': { description: Opportunity (status ACTIONED) }
+        '404': { description: Not found in this shop }
+        '409': { description: OPPORTUNITY_STATE_CONFLICT }
+  /customer-intelligence/opportunities/{opportunityId}/dismiss:
+    post:
+      tags: [CustomerIntelligence]
+      summary: Dismiss a live opportunity with a reason (audited)
+      parameters:
+        - { name: opportunityId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [NOT_INTERESTED, ALREADY_HANDLED, NOT_A_REAL_REQUEST, OTHER] }
+      responses:
+        '200': { description: Opportunity (status DISMISSED) }
+        '404': { description: Not found in this shop }
+        '409': { description: OPPORTUNITY_STATE_CONFLICT }
+  /order-confidence/orders/{orderId}:
+    get:
+      tags: [OrderConfidence]
+      summary: Current RTO Shield v2 decision for an order (re-evaluated from current facts)
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: 'Decision, or { mode: off, decision: null } when the shop has no pilot' }
+        '404': { description: Not found in this shop }
+  /order-confidence/orders/{orderId}/verify:
+    post:
+      tags: [OrderConfidence]
+      summary: Record that a VERIFY order was confirmed with the customer (any shop role; audited)
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision_version, method]
+              properties:
+                decision_version: { type: integer, minimum: 1 }
+                method: { type: string, enum: [PHONE_CALL, CHAT, IN_PERSON, OTHER] }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Updated decision }
+        '409': { description: 'DECISION_CHANGED | APPROVAL_REQUIRED | NO_RESOLUTION_REQUIRED | ORDER_NOT_BOOKABLE | FEATURE_DISABLED; error.details.decision carries the current decision' }
+  /order-confidence/orders/{orderId}/approve:
+    post:
+      tags: [OrderConfidence]
+      summary: Owner/admin approval of a MANUAL_REVIEW order (audited override)
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision_version, note]
+              properties:
+                decision_version: { type: integer, minimum: 1 }
+                note: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200': { description: Updated decision }
+        '403': { description: Not an owner or admin }
+        '409': { description: 'DECISION_CHANGED | NO_RESOLUTION_REQUIRED | ORDER_NOT_BOOKABLE | FEATURE_DISABLED' }
+  /order-confidence/summary:
+    get:
+      tags: [OrderConfidence]
+      summary: Decisions and delivery outcomes by released decision (owner/admin)
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 180, default: 30 } }
+      responses:
+        '200': { description: Summary }
+        '403': { description: Not an owner or admin }
+  /order/{orderId}/book-courier:
+    post:
+      tags: [Order]
+      summary: Book a courier for an order (canonical booking boundary)
+      description: >-
+        For shops with order_confidence_mode=enforce, answers 409
+        ORDER_CONFIDENCE_HOLD (or ORDER_CONFIDENCE_UNAVAILABLE) with
+        { decision, reasons, decision_version } until the order is verified or
+        approved. No courier claim is created and the provider is not called.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Booked }
+        '409': { description: 'COURIER_SETUP_REQUIRED | COURIER_DISPATCH_INDETERMINATE | ORDER_CONFIDENCE_HOLD | ORDER_CONFIDENCE_UNAVAILABLE' }
+        '502': { description: COURIER_BOOKING_FAILED }
+  /admin/shops/{shopId}/pilot-features:
+    get:
+      tags: [Admin]
+      summary: Read a shop's pilot flags (platform admin)
+      parameters:
+        - { name: shopId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Flags }
+    patch:
+      tags: [Admin]
+      summary: Set a shop's pilot flags (SUPER_ADMIN; audited)
+      parameters:
+        - { name: shopId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                customer_intelligence: { type: boolean }
+                order_confidence_mode: { type: string, enum: ['off', shadow, enforce] }
+                order_confidence_config:
+                  type: object
+                  properties:
+                    high_value_cod_threshold: { type: integer, minimum: 0, maximum: 1000000 }
+                    address_min_length: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        '200': { description: Flags }
+        '403': { description: Not SUPER_ADMIN }
+  /admin/pilot-features/disable-all:
+    post:
+      tags: [Admin]
+      summary: Global kill switch — every shop back to pre-pilot behaviour (SUPER_ADMIN; audited)
+      responses:
+        '200': { description: '{ affected }' }
+        '403': { description: Not SUPER_ADMIN }
 
 components:
   securitySchemes:

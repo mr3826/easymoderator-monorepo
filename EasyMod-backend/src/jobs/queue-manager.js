@@ -14,6 +14,7 @@ const {
     PipelineCanaryJob,
     WebhookReceiptReconcilerJob,
     InboxDeliveryReconcilerJob,
+    OpportunityDetectorJob,
 } = require('./index');
 
 class QueueManager {
@@ -50,6 +51,8 @@ class QueueManager {
             // Reliability — replay inbound Meta events held as durable receipts
             ['webhook-receipt-reconciler', 'webhookReceiptReconciler', WebhookReceiptReconcilerJob],
             ['inbox-delivery-reconciler', 'inboxDeliveryReconciler', InboxDeliveryReconcilerJob],
+            // Pilot intelligence — Sales Opportunities sweep; a no-op for shops without the flag
+            ['opportunity-detector', 'opportunityDetector', OpportunityDetectorJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -195,6 +198,15 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        // Pilot intelligence — detect/convert/expire Sales Opportunities. Each
+        // shop is processed under a Postgres advisory lock, so an overlapping
+        // run on another instance skips instead of racing.
+        await this.queues.opportunityDetector.upsertJobScheduler(
+            'opportunity-detector',
+            { pattern: '*/10 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         console.log('✅ Scheduled jobs configured');
     }
 
@@ -209,6 +221,7 @@ class QueueManager {
             'pipeline_canary': 'pipelineCanary',
             'webhook_receipt_reconciler': 'webhookReceiptReconciler',
             'inbox_delivery_reconciler': 'inboxDeliveryReconciler',
+            'opportunity_detector': 'opportunityDetector',
         };
 
         const queueKey = queueMap[jobName];

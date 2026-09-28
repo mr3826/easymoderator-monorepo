@@ -135,6 +135,24 @@ function formatTelegramAlert(eventType, payload = {}) {
                 deepLink: deepLink('/manage-shop/delivery-settings')
             };
         }
+        case NOTIFICATION_EVENTS.ORDER_REVIEW_REQUIRED: {
+            const safeOrderNumber = safeAlertText(orderNumber);
+            const safeDecision = safeAlertText(payload.decision);
+            const safeReasons = safeMissingFields(payload.reasonCodes ?? payload.reason_codes);
+            return {
+                title: 'Order needs review before courier booking',
+                body: compactLines([
+                    'Order needs review / অর্ডার যাচাই প্রয়োজন',
+                    safeOrderNumber ? `Order: #${safeOrderNumber}` : null,
+                    safeDecision ? `Decision: ${safeDecision}` : null,
+                    safeReasons ? `Reasons: ${safeReasons}` : null,
+                    'Automatic courier booking is paused until the order is verified.'
+                ]),
+                deepLink: payload.orderId
+                    ? deepLink(`/orders?orderId=${encodeURIComponent(payload.orderId)}`)
+                    : deepLink('/orders')
+            };
+        }
         case NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE: {
             return {
                 title: 'Payment or subscription issue',

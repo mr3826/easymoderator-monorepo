@@ -145,6 +145,68 @@ exports.emergencyDisableAi = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+// ── Pilot features (Customer 360 / Sales Opportunities / Order Confidence) ──
+// Platform-controlled per-shop flags (ADR-0009). Never writable by merchants.
+const Joi = require('joi');
+const pilotFeatures = require('../pilot-features/pilot-features.service');
+
+const shopIdSchema = Joi.string().guid({ version: ['uuidv4', 'uuidv5', 'uuidv1'] }).required();
+const pilotPatchSchema = Joi.object({
+  customer_intelligence: Joi.boolean(),
+  order_confidence_mode: Joi.string().valid(...pilotFeatures.ORDER_CONFIDENCE_MODES),
+  order_confidence_config: Joi.object({
+    high_value_cod_threshold: Joi.number().integer().min(0).max(1000000),
+    address_min_length: Joi.number().integer().min(0).max(100),
+  }),
+}).min(1);
+
+const validShopId = (value) => {
+  const { error } = shopIdSchema.validate(value);
+  if (error) throw new AppError('Invalid shop id', 400, 'VALIDATION_ERROR');
+  return value;
+};
+
+exports.getPilotFeatures = async (req, res, next) => {
+  try { ok(res, await pilotFeatures.getForAdmin(validShopId(req.params.shopId))); } catch (e) { next(e); }
+};
+
+exports.setPilotFeatures = async (req, res, next) => {
+  try {
+    const shopId = validShopId(req.params.shopId);
+    const { error, value } = pilotPatchSchema.validate(req.body || {});
+    if (error) throw new AppError(error.message, 400, 'VALIDATION_ERROR');
+    const { sequelize } = require('../../utils/database/database-setup');
+    const current = await sequelize.transaction(async (transaction) => {
+      const { previous, current: next } = await pilotFeatures.setPilotFeatures(
+        shopId, value, req.user.userId, { transaction },
+      );
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId, action: 'admin:pilot_features_update',
+        resourceType: 'SHOP', resourceId: shopId,
+        oldValues: previous, newValues: next, ...auditCtx(req),
+      }, { transaction, required: true });
+      return next;
+    });
+    ok(res, current);
+  } catch (e) { next(e); }
+};
+
+exports.disableAllPilotFeatures = async (req, res, next) => {
+  try {
+    const { sequelize } = require('../../utils/database/database-setup');
+    const result = await sequelize.transaction(async (transaction) => {
+      const outcome = await pilotFeatures.disableAll(req.user.userId, { transaction });
+      await AuditService.logOperation({
+        userId: req.user.userId, shopId: null, action: 'admin:pilot_features_disable_all',
+        resourceType: 'OPS', resourceId: 'pilot_features',
+        oldValues: null, newValues: outcome, ...auditCtx(req),
+      }, { transaction, required: true });
+      return outcome;
+    });
+    ok(res, result);
+  } catch (e) { next(e); }
+};
+
 // ── Ops alerting self-test (finding F-06) ────────────────────────────────────
 // Fires a deliberate, PII-free alert so an operator can confirm a real human
 // receives it. Reports which sinks are configured and whether each accepted the

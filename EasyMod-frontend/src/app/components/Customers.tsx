@@ -22,6 +22,8 @@ import type { ChannelType as ApiChannelType, Customer, CustomerFilters } from "@
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import RtoNetworkSettings from './RtoNetworkSettings';
 import { getErrorMessage } from "@shared/lib/http/errors";
+import { getPilotStatus } from "@/api/domains/customer-intelligence";
+import Customer360Page from "./customers/Customer360Page";
 
 type CustomerChannelFilter = ApiChannelType | 'all';
 
@@ -45,7 +47,21 @@ const PAGE_SIZE = 10;
 const nameInitial = (name: string | null | undefined) =>
   (name ?? '?').charAt(0).toUpperCase();
 
-export default function Customers() {
+/**
+ * The API returns `phone` / `channel_type`; this page was written against
+ * `number` / `channel`, so phone showed "—" and channel badges fell back.
+ * Normalise at the boundary so the legacy page renders real values.
+ */
+export const normalizeLegacyCustomer = (customer: Customer): Customer => {
+  const raw = customer as Customer & { phone?: string | null; channel_type?: ApiChannelType };
+  return {
+    ...customer,
+    number: customer.number ?? raw.phone ?? '',
+    channel: customer.channel ?? raw.channel_type ?? 'manual',
+  };
+};
+
+function LegacyCustomers() {
   const { t } = useTranslation();
 
   // Shop-wide stats (fetched once on mount, independent of filters)
@@ -116,7 +132,7 @@ export default function Customers() {
       const result = await apiClient.getCustomers(filters);
       // Guard against a malformed/empty payload so a shape drift degrades to an
       // empty table rather than crashing the page on `customers.length`.
-      setCustomers(result?.data ?? []);
+      setCustomers((result?.data ?? []).map(normalizeLegacyCustomer));
       setTableTotal(result?.total ?? 0);
     } catch (err: any) {
       setError(err.message || t('customers.errors.fetchFailed'));
@@ -755,4 +771,30 @@ export default function Customers() {
       )}
     </div>
   );
+}
+
+/**
+ * Customer 360 Lite is a per-shop pilot (docs/pilot-intelligence). The flag is
+ * server-side; the status call only chooses which page to render, and every
+ * pilot API re-checks it. Any failure falls back to the existing page.
+ */
+export default function Customers() {
+  const [mode, setMode] = useState<'loading' | 'pilot' | 'legacy'>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    getPilotStatus()
+      .then((status) => { if (!cancelled) setMode(status?.customer_intelligence ? 'pilot' : 'legacy'); })
+      .catch(() => { if (!cancelled) setMode('legacy'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (mode === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center" role="status">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+  return mode === 'pilot' ? <Customer360Page /> : <LegacyCustomers />;
 }

@@ -219,6 +219,14 @@ router.get('/detailed', authenticate, async (req, res) => {
         checks.webhookMalformed = { count: null, lastAt: null };
     }
 
+    // Pilot intelligence counters (Sales Opportunities / Order Confidence).
+    // Counts and timestamps only — no shop, customer or phone identifiers.
+    try {
+        checks.pilotIntelligence = require('../modules/pilot-features/pilot-metrics').snapshot();
+    } catch (_) {
+        checks.pilotIntelligence = null;
+    }
+
     // Auto-reply canary freshness — proves the message-processing worker is alive
     // and consuming the queue (the launch-readiness check reads this).
     try {

@@ -47,6 +47,10 @@ const CustomerDeliveryStats = require('./rto-shield/customer-delivery-stats.enti
 const CourierCodCollection = require('./reconciliation/courier-collection.entity');
 const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.entity');
 const GrowthOsUserRole = require('./growth-os/growth-os-user-role.entity');
+// Pilot intelligence — Customer 360 Lite, Sales Opportunities, Order Confidence
+const ShopPilotFeatures = require('./pilot-features/shop-pilot-features.entity');
+const CustomerOpportunity = require('./customer-intelligence/customer-opportunity.entity');
+const OrderConfidence = require('./order-confidence/order-confidence.entity');
 
 let growthOsProspect;
 let growthOsProspectEvent;
@@ -464,6 +468,14 @@ CourierDispatch.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 Shop.hasMany(CourierDispatch, { foreignKey: 'shop_id', as: 'courier_dispatches' });
 Order.hasMany(CourierDispatch, { foreignKey: 'order_id', as: 'courier_dispatches' });
 
+// Pilot intelligence relationships
+Shop.hasOne(ShopPilotFeatures, { foreignKey: 'shop_id', as: 'pilot_features' });
+ShopPilotFeatures.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+CustomerOpportunity.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+Customer.hasMany(CustomerOpportunity, { foreignKey: 'customer_id', as: 'opportunities' });
+OrderConfidence.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Order.hasOne(OrderConfidence, { foreignKey: 'order_id', as: 'confidence' });
+
 // Push Subscription relationships
 PushSubscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(PushSubscription, { foreignKey: 'shop_id', as: 'push_subscriptions' });
@@ -609,6 +621,9 @@ module.exports = {
     CourierCodCollection,
     ReconciliationDispute,
     GrowthOsUserRole,
+    ShopPilotFeatures,
+    CustomerOpportunity,
+    OrderConfidence,
     // Phase 1 — Meta Integration Redesign
     MetaChannel,
     MetaChannelSettings,

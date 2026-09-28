@@ -567,7 +567,7 @@ export default function Subscription() {
                 {key === "conversations" && (
                   <div className="mt-3 space-y-1 text-xs text-gray-500">
                     <p>{t("subscription.includedConversations", { count: usage.conversations.included_limit ?? effectiveLimit })}</p>
-                    <p>{t("subscription.topupBalance", { count: topupBalance })}</p>
+                    <p>{t("subscription.topupBalanceLabel")}: {formatNumber(topupBalance)}</p>
                     {quotaExhausted && <p className="font-semibold text-red-600">{t("subscription.aiPausedForUsage")}</p>}
                     {forecastDays !== null && forecastDays <= 7 && !quotaExhausted && (
                       <p className="flex items-center gap-1 font-medium text-amber-700"><TrendingUp className="h-3.5 w-3.5" />{t("subscription.forecastDays", { count: forecastDays })}</p>

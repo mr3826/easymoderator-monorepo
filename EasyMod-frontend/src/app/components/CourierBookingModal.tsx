@@ -6,14 +6,17 @@ import type { Order, CourierBookingPayload } from "@/api/types/order";
 import { useTranslation } from "react-i18next";
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import { getErrorMessage } from "@shared/lib/http/errors";
+import { isConfidenceHold } from "@/api/domains/order-confidence";
 
 interface Props {
   order: Order;
   onClose: () => void;
   onBooked: (trackingId: string, provider: string) => void;
+  /** RTO Shield v2 paused this booking; the order detail shows what to do. */
+  onHeld?: () => void;
 }
 
-export default function CourierBookingModal({ order, onClose, onBooked }: Props) {
+export default function CourierBookingModal({ order, onClose, onBooked, onHeld }: Props) {
   const { t } = useTranslation();
   const [provider, setProvider] = useState<'pathao' | 'steadfast' | 'redx'>('steadfast');
   const [recipientName, setRecipientName] = useState(order.customerName);
@@ -45,6 +48,12 @@ export default function CourierBookingModal({ order, onClose, onBooked }: Props)
       onBooked(result.tracking_id, result.provider);
       onClose();
     } catch (err: any) {
+      if (isConfidenceHold(err)) {
+        toast.warning(t('orderConfidence.bookingHeld'));
+        onHeld?.();
+        onClose();
+        return;
+      }
       toast.error(getErrorMessage(err, t('courier.errors.bookingFailed')));
     } finally {
       setBooking(false);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from "motion/react";
 import { CheckCircle, Clock, Loader2, Package as PackageIcon, XCircle, Plus, Search, Download, ChevronDown, X, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import bdGeography from '../../data/bd-geography.json';
 import CourierBookingModal from './CourierBookingModal';
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import { OrderRow } from './orders/OrderRow';
+import OrderConfidencePanel from './orders/OrderConfidencePanel';
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
 const statusColors = {
@@ -78,6 +79,27 @@ export default function Orders() {
   // Bug #14: inline product search — no separate modal needed
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [showCourierModal, setShowCourierModal] = useState(false);
+  // Bumped after a courier attempt so the Order Confidence panel re-reads its decision.
+  const [confidenceRefresh, setConfidenceRefresh] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep link (/orders?orderId=…) from notifications and Customer 360: open that order.
+  useEffect(() => {
+    const orderId = searchParams.get('orderId');
+    if (!orderId) return;
+    let cancelled = false;
+    apiClient.getOrder(orderId)
+      .then((order) => { if (!cancelled && order?.id) setSelectedOrder(order); })
+      .catch(() => { /* not found or not this shop's order: stay on the list */ })
+      .finally(() => {
+        if (cancelled) return;
+        const next = new URLSearchParams(searchParams);
+        next.delete('orderId');
+        setSearchParams(next, { replace: true });
+      });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get('orderId')]);
 
   const currencyFormatter = useMemo(
     () =>
@@ -1152,6 +1174,9 @@ export default function Orders() {
               </div>
             </div>
 
+            {/* RTO Shield v2 — renders nothing unless this shop has the pilot */}
+            <OrderConfidencePanel orderId={selectedOrder.id} refreshKey={confidenceRefresh} />
+
             {/* Order Status */}
             <div className="mb-6">
               <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.updateStatus')}</h3>
@@ -1233,6 +1258,7 @@ export default function Orders() {
         <CourierBookingModal
           order={selectedOrder}
           onClose={() => setShowCourierModal(false)}
+          onHeld={() => setConfidenceRefresh((n) => n + 1)}
           onBooked={(trackingId, provider) => {
             const updated = { ...selectedOrder, delivery_tracking_code: trackingId, delivery_provider: provider };
             setSelectedOrder(updated);

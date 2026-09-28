@@ -18,6 +18,8 @@ const PipelineCanaryJob = require('./pipeline-canary.job');
 // Reliability — replay inbound Meta events held as durable webhook receipts
 const WebhookReceiptReconcilerJob = require('./webhook-receipt-reconciler.job');
 const InboxDeliveryReconcilerJob = require('./inbox-delivery-reconciler.job');
+// Pilot intelligence — Sales Opportunities sweep (ADR-0006)
+const OpportunityDetectorJob = require('./opportunity-detector.job');
 
 module.exports = {
     MonthlyUsageReset,
@@ -30,4 +32,5 @@ module.exports = {
     PipelineCanaryJob,
     WebhookReceiptReconcilerJob,
     InboxDeliveryReconcilerJob,
+    OpportunityDetectorJob,
 };

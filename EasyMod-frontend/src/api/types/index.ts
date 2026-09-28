@@ -14,3 +14,4 @@ export * from './audit';
 export * from './subscription';
 export * from './notification';
 export * from './setup';
+export * from './customer-intelligence';

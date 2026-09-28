@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   markReconnect: vi.fn(),
   addCredits: vi.fn(),
   setStatus: vi.fn(),
+  getPilotFeatures: vi.fn(),
+  setPilotFeatures: vi.fn(),
   useIsPlatformAdmin: vi.fn(),
 }));
 
@@ -22,8 +24,20 @@ vi.mock('@/api/domains/admin', () => ({
     markReconnect: mocks.markReconnect,
     addCredits: mocks.addCredits,
     setStatus: mocks.setStatus,
+    getPilotFeatures: mocks.getPilotFeatures,
+    setPilotFeatures: mocks.setPilotFeatures,
   },
 }));
+
+const pilotFlags = (overrides = {}) => ({
+  shop_id: 'shop-1',
+  customer_intelligence: false,
+  order_confidence_mode: 'off',
+  order_confidence_config: { high_value_cod_threshold: 10000, address_min_length: 15 },
+  updated_by: null,
+  updated_at: null,
+  ...overrides,
+});
 
 vi.mock('@/shared/lib/auth/useIsPlatformAdmin', () => ({
   useIsPlatformAdmin: mocks.useIsPlatformAdmin,
@@ -59,6 +73,27 @@ describe('AdminShopDetail', () => {
     mocks.markReconnect.mockResolvedValue({});
     mocks.addCredits.mockResolvedValue({});
     mocks.setStatus.mockResolvedValue({});
+    mocks.getPilotFeatures.mockResolvedValue(pilotFlags());
+    mocks.setPilotFeatures.mockImplementation(async (_id: string, body: Record<string, unknown>) => pilotFlags(body));
+  });
+
+  it('shows pilot controls read-only to SUPPORT_ADMIN', async () => {
+    mocks.useIsPlatformAdmin.mockReturnValue({ loading: false, role: 'SUPPORT_ADMIN' });
+    render(<AdminShopDetail />);
+    fireEvent.click(screen.getByRole('button', { name: 'Orders & Courier' }));
+    const section = await screen.findByTestId('admin-pilot-features');
+    await waitFor(() => expect(section.querySelector('select')).toBeDisabled());
+    expect(section.querySelector('input[type="checkbox"]')).toBeDisabled();
+  });
+
+  it('lets SUPER_ADMIN move Order Confidence to trial mode', async () => {
+    mocks.useIsPlatformAdmin.mockReturnValue({ loading: false, role: 'SUPER_ADMIN' });
+    render(<AdminShopDetail />);
+    fireEvent.click(screen.getByRole('button', { name: 'Orders & Courier' }));
+    const section = await screen.findByTestId('admin-pilot-features');
+    await waitFor(() => expect(section.querySelector('select')).toBeEnabled());
+    fireEvent.change(section.querySelector('select')!, { target: { value: 'shadow' } });
+    await waitFor(() => expect(mocks.setPilotFeatures).toHaveBeenCalledWith('shop-1', { order_confidence_mode: 'shadow' }));
   });
 
   it('disables mutation controls for SUPPORT_ADMIN users', async () => {
