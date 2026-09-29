@@ -10,10 +10,9 @@ import { DeepLinkEntityScreen } from '@/components/DeepLinkEntityScreen';
  * signed-in-only group in `src/app/_layout.tsx`, so a signed-out deep link lands on login first,
  * never here.
  *
- * Placeholder screen: Phase 3 (Inbox) fills in the real conversation content. This lane delivers
- * the routing (this file resolves `id` from the URL) and the security/idempotency state machine in
- * `@/components/DeepLinkEntityScreen` + `@/lib/deeplink-entity`, both covered by
- * `src/app/__tests__/deeplink-routes.test.tsx`.
+ * This route remains the safe deep-link resolver. The in-app Inbox uses the separate transcript
+ * route so the existing cold/warm link security state machine remains unchanged while Phase 3
+ * read details are rolled out.
  */
 export default function ConversationDeepLinkScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();

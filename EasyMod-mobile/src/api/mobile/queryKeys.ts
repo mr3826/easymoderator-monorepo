@@ -5,6 +5,12 @@
 export const mobileQueryKeys = {
   attention: (shopId: string | null | undefined) => ['mobile', 'attention', shopId] as const,
   today: (shopId: string | null | undefined) => ['mobile', 'today', shopId] as const,
+  inbox: (shopId: string | null | undefined, status = '') =>
+    ['mobile', 'inbox', shopId, status] as const,
+  conversation: (shopId: string | null | undefined, conversationId: string) =>
+    ['mobile', 'conversation', shopId, conversationId] as const,
+  conversationMessages: (shopId: string | null | undefined, conversationId: string, page = 1) =>
+    ['mobile', 'conversation-messages', shopId, conversationId, page] as const,
 };
 
 /**

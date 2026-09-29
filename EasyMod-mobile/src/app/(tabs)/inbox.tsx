@@ -1,8 +1,5 @@
-import { useTranslation } from 'react-i18next';
+import { InboxScreen } from '@/components/inbox/InboxScreen';
 
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
-
-export default function InboxScreen() {
-  const { t } = useTranslation();
-  return <PlaceholderScreen label={t('mobile.placeholder.phase2', { screen: t('mobile.tabs.inbox') })} />;
+export default function InboxTab() {
+  return <InboxScreen />;
 }

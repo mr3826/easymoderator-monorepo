@@ -43,11 +43,9 @@ describe('tab shell', () => {
     }
   });
 
-  it('renders the Inbox placeholder after navigating to the Inbox tab', async () => {
+  it('renders the no-shop state after navigating to the Inbox tab without a merchant context', async () => {
     renderRouter(path.resolve(__dirname, '..'), { initialUrl: '/inbox', wrapper: Wrapper });
 
-    expect(
-      await screen.findByText(i18n.t('mobile.placeholder.phase2', { screen: i18n.t('mobile.tabs.inbox') })),
-    ).toBeTruthy();
+    expect(await screen.findByText(i18n.t('mobile.home.noShop.title'))).toBeTruthy();
   });
 });

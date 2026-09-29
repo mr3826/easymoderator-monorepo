@@ -21,6 +21,7 @@ const { AppError } = require('../../utils/AppError');
 const { authenticate } = require('../../middleware/auth.middleware');
 const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 const mobileController = require('./mobile.controller');
+const mobileInboxController = require('./mobile-inbox.controller');
 const { isMobileE2eFixturesEnabled } = require('./mobile-e2e-fixtures');
 
 const router = express.Router();
@@ -47,5 +48,10 @@ router.use(verifyShopAccess);
 
 router.get('/attention', mobileController.getAttention);
 router.get('/today', mobileController.getToday);
+// Phase 3 read surface. Native write access remains deliberately denied until a
+// separate mobile capability flag, idempotency contract, and device proof exist.
+router.get('/inbox/conversations', mobileInboxController.getConversations);
+router.get('/inbox/conversations/:conversationId/messages', mobileInboxController.getMessages);
+router.get('/inbox/conversations/:conversationId', mobileInboxController.getConversation);
 
 module.exports = router;
