@@ -148,3 +148,36 @@ export const conversationMessagesResponseSchema = z.object({
   }),
 });
 export type ConversationMessagesResponse = z.infer<typeof conversationMessagesResponseSchema>;
+
+export const orderSummarySchema = z
+  .object({
+    id: z.string(),
+    order_number: z.string().nullable().optional(),
+    order_status: z.string().nullable().optional(),
+    payment_status: z.string().nullable().optional(),
+    fulfillment_status: z.string().nullable().optional(),
+    total: z.union([z.number(), z.string()]).nullable().optional(),
+    currency: z.string().nullable().optional(),
+    customer_id: z.string().nullable().optional(),
+    customer_name: z.string().nullable().optional(),
+    customer_phone: z.string().nullable().optional(),
+    customer: z.record(z.string(), z.unknown()).nullable().optional(),
+    order_items: z.array(z.record(z.string(), z.unknown())).optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type OrderSummary = z.infer<typeof orderSummarySchema>;
+
+export const orderListResponseSchema = z.object({
+  orders: z.array(orderSummarySchema),
+  pagination: z.object({
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    hasNextPage: z.boolean(),
+  }),
+});
+export type OrderListResponse = z.infer<typeof orderListResponseSchema>;
+
+export const orderDetailSchema = orderSummarySchema.passthrough();
+export type OrderDetail = z.infer<typeof orderDetailSchema>;

@@ -11,6 +11,10 @@ export const mobileQueryKeys = {
     ['mobile', 'conversation', shopId, conversationId] as const,
   conversationMessages: (shopId: string | null | undefined, conversationId: string, page = 1) =>
     ['mobile', 'conversation-messages', shopId, conversationId, page] as const,
+  orders: (shopId: string | null | undefined, status = '') =>
+    ['mobile', 'orders', shopId, status] as const,
+  order: (shopId: string | null | undefined, orderId: string) =>
+    ['mobile', 'order', shopId, orderId] as const,
 };
 
 /**

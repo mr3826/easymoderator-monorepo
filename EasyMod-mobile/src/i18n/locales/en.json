@@ -130,6 +130,43 @@
         }
       }
     },
+    "orders": {
+      "title": "Orders",
+      "searchPlaceholder": "Search order number or customer",
+      "filters": {
+        "all": "All",
+        "draft": "Draft",
+        "confirmed": "Confirmed",
+        "finalized": "Finalized",
+        "cancelled": "Cancelled"
+      },
+      "unknownNumber": "Order",
+      "unknownStatus": "Unknown status",
+      "unknownCustomer": "Unknown customer",
+      "paymentUnknown": "Payment unknown",
+      "fulfillmentUnknown": "Fulfillment unknown",
+      "empty": {
+        "title": "No orders",
+        "message": "Orders for this shop will appear here.",
+        "searchMessage": "No orders match this search."
+      },
+      "offline": {
+        "title": "Orders unavailable offline",
+        "message": "Reconnect to load orders."
+      },
+      "error": {
+        "title": "Couldn't load orders"
+      },
+      "detail": {
+        "items": "Items",
+        "noItems": "No line items are available.",
+        "unknownItem": "Item",
+        "readOnly": "Order changes and courier actions are available in Web while mobile writes are being rolled out.",
+        "error": {
+          "title": "Couldn't load order"
+        }
+      }
+    },
     "deeplink": {
       "loading": "Opening…",
       "unavailable": {

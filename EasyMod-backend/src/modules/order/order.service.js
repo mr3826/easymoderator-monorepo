@@ -625,6 +625,9 @@ const listOrders = async (userId, shopId, filters = {}) => {
     if (filters.fulfillment_status) {
         whereClause.fulfillment_status = filters.fulfillment_status;
     }
+    if (filters.order_status) {
+        whereClause.order_status = filters.order_status;
+    }
 
     // Search Filter (Order Number OR Customer Name OR Customer Phone)
     const includeOptions = [
