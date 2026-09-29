@@ -91,6 +91,45 @@
       "server": "Something went wrong on our end. Please try again shortly.",
       "unknown": "Something unexpected happened. Please try again."
     },
+    "inbox": {
+      "title": "Inbox",
+      "searchPlaceholder": "Search this page",
+      "filters": {
+        "all": "All",
+        "needs": "Needs Me",
+        "unread": "Unread"
+      },
+      "needsReply": "Needs your reply",
+      "humanActive": "Human active",
+      "unknownCustomer": "Unknown customer",
+      "noMessages": "No message preview",
+      "refreshFailed": "Some saved data is shown. Refresh to try again.",
+      "empty": {
+        "title": "No conversations",
+        "message": "New customer messages will appear here.",
+        "searchMessage": "No conversations match this search."
+      },
+      "offline": {
+        "title": "Inbox unavailable offline",
+        "message": "Reconnect to load customer conversations.",
+        "cached": "You're offline. Inbox is not cached on this device yet."
+      },
+      "error": {
+        "title": "Couldn't load Inbox"
+      },
+      "detail": {
+        "needsReply": "This customer needs a reply.",
+        "readOnly": "Replies and AI actions are available in Web while mobile write access is being rolled out.",
+        "empty": {
+          "title": "No messages",
+          "message": "This conversation has no transcript messages yet."
+        },
+        "error": {
+          "title": "Couldn't load conversation",
+          "message": "Something went wrong while loading this conversation."
+        }
+      }
+    },
     "deeplink": {
       "loading": "Opening…",
       "unavailable": {

@@ -60,3 +60,91 @@ export const todayResponseSchema = z.object({
   generated_at: z.string(),
 });
 export type TodayResponse = z.infer<typeof todayResponseSchema>;
+
+const inboxCustomerSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(),
+    channel_user_id: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const conversationSchema = z
+  .object({
+    id: z.string(),
+    customer_id: z.string().nullable().optional(),
+    customer: inboxCustomerSchema.nullable().optional(),
+    channel: z.string(),
+    meta_channel_id: z.string().nullable().optional(),
+    metaChannel: z
+      .object({
+        id: z.string(),
+        displayName: z.string().nullable().optional(),
+        platform: z.string().nullable().optional(),
+        purposeLabel: z.string().nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+    title: z.string().nullable().optional(),
+    status: z.string(),
+    hitl: z.boolean(),
+    lastMessage: z.string().nullable().optional(),
+    unreadCount: z.number().int().min(0),
+    lastReadMessageId: z.string().nullable().optional(),
+    lastReadMessageAt: z.string().nullable().optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+    suggestionCount: z.number().int().min(0).optional(),
+    hasAiSuggestion: z.boolean().optional(),
+    needs_merchant_reply: z.boolean().optional(),
+    needs_merchant_reply_reason: z.string().nullable().optional(),
+    ai_is_replying: z.boolean().optional(),
+  })
+  .passthrough();
+export type Conversation = z.infer<typeof conversationSchema>;
+
+export const conversationListResponseSchema = z.object({
+  conversations: z.array(conversationSchema),
+  ai_reply_mode: z.string().optional(),
+  pagination: z.object({
+    total: z.number().int().min(0),
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    totalPages: z.number().int().min(0),
+  }),
+});
+export type ConversationListResponse = z.infer<typeof conversationListResponseSchema>;
+
+export const messageSchema = z
+  .object({
+    id: z.string(),
+    conversation_id: z.string(),
+    content: z.string().nullable().optional(),
+    sender: z.string(),
+    message_type: z.string().optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    ai_suggestion: z.string().nullable().optional(),
+    ai_confidence: z.number().nullable().optional(),
+    delivery_state: z.string().nullable().optional(),
+    provider_message_id: z.string().nullable().optional(),
+    delivery_source: z.string().nullable().optional(),
+    created_at: z.string(),
+    updated_at: z.string().optional(),
+    is_transcript_message: z.boolean().optional(),
+    reply_to: z.record(z.string(), z.unknown()).nullable().optional(),
+  })
+  .passthrough();
+export type ConversationMessage = z.infer<typeof messageSchema>;
+
+export const conversationMessagesResponseSchema = z.object({
+  messages: z.array(messageSchema),
+  suggestions: z.array(messageSchema),
+  pagination: z.object({
+    total: z.number().int().min(0),
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    totalPages: z.number().int().min(0),
+  }),
+});
+export type ConversationMessagesResponse = z.infer<typeof conversationMessagesResponseSchema>;

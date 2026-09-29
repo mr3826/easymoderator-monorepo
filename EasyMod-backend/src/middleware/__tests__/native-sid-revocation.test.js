@@ -164,6 +164,9 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
         test.each([
             ['/api/mobile/today'],
             ['/api/mobile/attention?limit=20'],
+            ['/api/mobile/inbox/conversations?limit=25'],
+            [`/api/mobile/inbox/conversations/${ENTITY_ID}`],
+            [`/api/mobile/inbox/conversations/${ENTITY_ID}/messages`],
             [`/api/order/${ENTITY_ID}`],
             [`/api/conversation/${ENTITY_ID}`],
         ])('allows a native GET of the mobile read surface %s', async (originalUrl) => {
