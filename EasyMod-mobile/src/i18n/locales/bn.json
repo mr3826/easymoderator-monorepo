@@ -130,6 +130,43 @@
         }
       }
     },
+    "orders": {
+      "title": "অর্ডার",
+      "searchPlaceholder": "অর্ডার নম্বর বা গ্রাহক খুঁজুন",
+      "filters": {
+        "all": "সব",
+        "draft": "খসড়া",
+        "confirmed": "নিশ্চিত",
+        "finalized": "চূড়ান্ত",
+        "cancelled": "বাতিল"
+      },
+      "unknownNumber": "অর্ডার",
+      "unknownStatus": "অজানা অবস্থা",
+      "unknownCustomer": "অজানা গ্রাহক",
+      "paymentUnknown": "পেমেন্ট অজানা",
+      "fulfillmentUnknown": "ডেলিভারি অজানা",
+      "empty": {
+        "title": "কোনো অর্ডার নেই",
+        "message": "এই দোকানের অর্ডার এখানে দেখা যাবে।",
+        "searchMessage": "এই খোঁজের সাথে কোনো অর্ডার মেলেনি।"
+      },
+      "offline": {
+        "title": "অফলাইনে অর্ডার পাওয়া যাচ্ছে না",
+        "message": "অর্ডার লোড করতে আবার সংযোগ করুন।"
+      },
+      "error": {
+        "title": "অর্ডার লোড করা যায়নি"
+      },
+      "detail": {
+        "items": "পণ্য",
+        "noItems": "কোনো পণ্যের তথ্য নেই।",
+        "unknownItem": "পণ্য",
+        "readOnly": "মোবাইল লেখার সুবিধা চালু হওয়া পর্যন্ত অর্ডার পরিবর্তন এবং কুরিয়ার অ্যাকশন ওয়েবে করা যাবে।",
+        "error": {
+          "title": "অর্ডার লোড করা যায়নি"
+        }
+      }
+    },
     "deeplink": {
       "loading": "খোলা হচ্ছে...",
       "unavailable": {

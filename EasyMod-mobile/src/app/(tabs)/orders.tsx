@@ -1,8 +1,5 @@
-import { useTranslation } from 'react-i18next';
+import { OrdersScreen } from '@/components/orders/OrdersScreen';
 
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
-
-export default function OrdersScreen() {
-  const { t } = useTranslation();
-  return <PlaceholderScreen label={t('mobile.placeholder.phase2', { screen: t('mobile.tabs.orders') })} />;
+export default function OrdersTab() {
+  return <OrdersScreen />;
 }
