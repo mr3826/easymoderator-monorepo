@@ -56,6 +56,7 @@ function RootNavigator() {
               app so a deep link opened while signed out lands on login first, never here. */}
           <Stack.Screen name="order/[id]" />
           <Stack.Screen name="order-detail/[id]" />
+          <Stack.Screen name="customer-detail/[id]" />
           <Stack.Screen name="conversation/[id]" />
           <Stack.Screen name="conversation-detail/[id]" />
         </Stack.Protected>

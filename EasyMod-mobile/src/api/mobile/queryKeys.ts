@@ -15,6 +15,8 @@ export const mobileQueryKeys = {
     ['mobile', 'orders', shopId, status] as const,
   order: (shopId: string | null | undefined, orderId: string) =>
     ['mobile', 'order', shopId, orderId] as const,
+  customer: (shopId: string | null | undefined, customerId: string) =>
+    ['mobile', 'customer', shopId, customerId] as const,
 };
 
 /**

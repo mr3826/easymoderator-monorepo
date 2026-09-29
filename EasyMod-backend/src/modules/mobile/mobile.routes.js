@@ -23,6 +23,7 @@ const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 const mobileController = require('./mobile.controller');
 const mobileInboxController = require('./mobile-inbox.controller');
 const mobileOrderController = require('./mobile-order.controller');
+const mobileCustomerController = require('./mobile-customer.controller');
 const { isMobileE2eFixturesEnabled } = require('./mobile-e2e-fixtures');
 
 const router = express.Router();
@@ -56,5 +57,6 @@ router.get('/inbox/conversations/:conversationId/messages', mobileInboxControlle
 router.get('/inbox/conversations/:conversationId', mobileInboxController.getConversation);
 router.get('/orders', mobileOrderController.getOrders);
 router.get('/orders/:orderId', mobileOrderController.getOrder);
+router.get('/customers/:customerId', mobileCustomerController.getCustomerQuickView);
 
 module.exports = router;
