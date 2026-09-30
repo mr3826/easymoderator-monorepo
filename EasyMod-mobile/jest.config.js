@@ -35,4 +35,9 @@ module.exports = {
     '^@react-native-async-storage/async-storage$':
       '<rootDir>/node_modules/@react-native-async-storage/async-storage/jest/async-storage-mock.js',
   },
+  // The secure decode-uri-component release is ESM-only. Keep Jest's Expo/RN transform allowlist
+  // intact while compiling that dependency for the CommonJS Jest runtime.
+  transformIgnorePatterns: [
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|decode-uri-component|standard-navigation))',
+  ],
 };
