@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
@@ -19,7 +19,7 @@ export function CustomerQuickViewScreen({ id }: { id: string | undefined }) {
   const orders = query.data.orders;
   const name = String(customer.name ?? customer.phone ?? t('mobile.customers.unknown'));
   return (
-    <View style={styles.container} testID="mobile-customer-quick-view">
+    <SafeAreaView style={styles.container} testID="mobile-customer-quick-view">
       <View style={styles.header}><Pressable onPress={() => router.back()} testID="mobile-customer-back" accessibilityRole="button" style={styles.back}><Text style={styles.backText}>‹</Text></Pressable><Text style={styles.title}>{t('mobile.customers.title')}</Text></View>
       <FlatList
         data={orders}
@@ -30,7 +30,7 @@ export function CustomerQuickViewScreen({ id }: { id: string | undefined }) {
         renderItem={({ item }) => <View style={styles.order}><Text style={styles.orderNumber}>{item.order_number || t('mobile.orders.unknownNumber')}</Text><Text style={styles.meta}>{item.order_status} · {item.total ?? '--'} {item.currency || ''}</Text></View>}
       />
       <View style={styles.readOnly}><Text style={styles.readOnlyText}>{t('mobile.customers.readOnly')}</Text></View>
-    </View>
+    </SafeAreaView>
   );
 }
 
