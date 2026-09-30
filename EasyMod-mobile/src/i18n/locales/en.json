@@ -167,6 +167,16 @@
         }
       }
     },
+    "customers": {
+      "title": "Customer",
+      "unknown": "Unknown customer",
+      "orders": "Recent orders",
+      "noOrders": "No recent orders",
+      "readOnly": "Customer changes and notes are available in Web while mobile writes are being rolled out.",
+      "error": {
+        "title": "Couldn't load customer"
+      }
+    },
     "deeplink": {
       "loading": "Opening…",
       "unavailable": {

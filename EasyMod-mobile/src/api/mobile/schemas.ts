@@ -181,3 +181,9 @@ export type OrderListResponse = z.infer<typeof orderListResponseSchema>;
 
 export const orderDetailSchema = orderSummarySchema.passthrough();
 export type OrderDetail = z.infer<typeof orderDetailSchema>;
+
+export const customerQuickViewSchema = z.object({
+  customer: z.record(z.string(), z.unknown()),
+  orders: z.array(orderSummarySchema),
+});
+export type CustomerQuickView = z.infer<typeof customerQuickViewSchema>;

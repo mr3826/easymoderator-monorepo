@@ -44,7 +44,11 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
           <Text style={styles.backText}>‹</Text>
         </Pressable>
         <View style={styles.headerCopy}>
-          <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
+          {conversation?.customer_id ? (
+            <Pressable onPress={() => router.push({ pathname: '/customer-detail/[id]', params: { id: conversation.customer_id! } })} accessibilityRole="button">
+              <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
+            </Pressable>
+          ) : <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>}
           <Text style={styles.headerMeta}>{conversation?.channel} · {conversation?.status}</Text>
         </View>
       </View>
