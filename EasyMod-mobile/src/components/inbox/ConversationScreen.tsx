@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
@@ -38,7 +38,7 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
   const customerName = conversation?.customer?.name || conversation?.title || t('mobile.inbox.unknownCustomer');
 
   return (
-    <View style={styles.container} testID="mobile-conversation-detail">
+    <SafeAreaView style={styles.container} testID="mobile-conversation-detail">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} accessibilityRole="button" testID="mobile-conversation-back" style={styles.backButton}>
           <Text style={styles.backText}>‹</Text>
@@ -68,7 +68,7 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
       <View style={styles.readOnlyNotice}>
         <Text style={styles.readOnlyText}>{t('mobile.inbox.detail.readOnly')}</Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

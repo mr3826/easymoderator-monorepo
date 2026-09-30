@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
@@ -18,7 +18,7 @@ export function OrderDetailScreen({ id }: { id: string | undefined }) {
   const order = query.data;
   const items = order.order_items ?? [];
   return (
-    <View style={styles.container} testID="mobile-order-detail">
+    <SafeAreaView style={styles.container} testID="mobile-order-detail">
       <View style={styles.header}><Pressable onPress={() => router.back()} testID="mobile-order-back" accessibilityRole="button" style={styles.back}><Text style={styles.backText}>‹</Text></Pressable><View><Text style={styles.title}>{order.order_number || t('mobile.orders.unknownNumber')}</Text><Text style={styles.meta}>{order.order_status} · {order.payment_status}</Text></View></View>
       <FlatList
         data={items}
@@ -29,7 +29,7 @@ export function OrderDetailScreen({ id }: { id: string | undefined }) {
         renderItem={({ item }) => <View style={styles.item}><Text style={styles.itemName}>{String(item.name ?? item.product_name ?? t('mobile.orders.detail.unknownItem'))}</Text><Text style={styles.meta}>{String(item.quantity ?? 1)} × {String(item.total ?? item.price ?? '--')}</Text></View>}
       />
       <View style={styles.readOnly}><Text style={styles.readOnlyText}>{t('mobile.orders.detail.readOnly')}</Text></View>
-    </View>
+    </SafeAreaView>
   );
 }
 
