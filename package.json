@@ -26,6 +26,10 @@
     "build:all": "npm run build:backend && npm run build:frontend && npm run build:growthos",
     "recovery:gate": "node scripts/recovery-gate/index.js"
   },
+  "overrides": {
+    "moment": "2.31.0",
+    "undici": "6.29.0"
+  },
   "engines": {
     "node": "20.x"
   }
