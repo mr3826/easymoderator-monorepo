@@ -57,6 +57,11 @@ router.post('/inbox/conversations/:conversationId/reply', mobileInboxController.
 router.post('/inbox/conversations/:conversationId/ai-mode', mobileInboxController.setAiMode);
 router.get('/orders', mobileOrderController.getOrders);
 router.get('/orders/:orderId', mobileOrderController.getOrder);
+router.get('/orders/:orderId/customer-risk', mobileOrderController.getCustomerRiskSummary);
+router.post('/orders/:orderId/confirm', mobileOrderController.confirmOrder);
+router.post('/orders/:orderId/cancel', mobileOrderController.cancelOrder);
+router.post('/orders/manual', mobileOrderController.createManualOrder);
+router.post('/orders/draft', mobileOrderController.createManualOrder);
 router.get('/customers/:customerId', mobileCustomerController.getCustomerQuickView);
 
 module.exports = router;

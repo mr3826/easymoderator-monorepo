@@ -38,7 +38,7 @@ module.exports = {
     // four are defined now so later phases don't need another config.js edit.
     mobileApiEnabled: process.env.MOBILE_API_ENABLED === 'true',
     mobilePushEnabled: process.env.MOBILE_PUSH_ENABLED === 'true',
-    mobileOrderMutationsEnabled: process.env.MOBILE_ORDER_MUTATIONS_ENABLED === 'true',
+    mobileOrderMutationsEnabled: process.env.MOBILE_ORDER_MUTATIONS_ENABLED === 'true' || process.env.NODE_ENV === 'test',
     mobileCourierActionsEnabled: process.env.MOBILE_COURIER_ACTIONS_ENABLED === 'true',
     mobileAiDraftsEnabled: process.env.MOBILE_AI_DRAFTS_ENABLED === 'true',
     mobileInboxWritesEnabled: process.env.MOBILE_INBOX_WRITES_ENABLED === 'true' || process.env.NODE_ENV === 'test',
