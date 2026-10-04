@@ -14,6 +14,7 @@ import {
 import type { ErrorKind } from '@/api/errors';
 import { queryClient } from '@/lib/queryClient';
 import { purgePersistedQueries, startQueryPersistence } from '@/lib/queryPersistence';
+import { unregisterPushNotifications } from '@/notifications/push-notifications';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
 
@@ -224,6 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const doLogout = useCallback(async () => {
     sessionCheckEpoch.current += 1;
+    void unregisterPushNotifications();
     if (!(await logoutRequest())) return;
     setSessionCheckPending(false);
     setOfflineSession(false);

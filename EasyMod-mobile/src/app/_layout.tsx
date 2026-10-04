@@ -18,6 +18,10 @@ import {
   takePendingDeepLink,
 } from '@/lib/pending-deeplink';
 import { queryClient } from '@/lib/queryClient';
+import {
+  registerPushNotifications,
+  setupNotificationResponseListener,
+} from '@/notifications/push-notifications';
 import { fontsToLoad } from '@/theme/fonts';
 import { brandColors } from '@/theme/tokens';
 
@@ -41,6 +45,19 @@ function RootNavigator() {
     }, 0);
     return () => clearTimeout(timer);
   }, [status, pendingDeepLinkVersion]);
+
+  // Set up inbound notification response listener (ADR M-007)
+  useEffect(() => {
+    const cleanup = setupNotificationResponseListener(() => status === 'signedIn');
+    return cleanup;
+  }, [status]);
+
+  // Register native FCM device token upon entering signed-in state (ADR M-007)
+  useEffect(() => {
+    if (status === 'signedIn') {
+      void registerPushNotifications();
+    }
+  }, [status]);
 
   // While bootstrapping (attempting a silent refresh from a stored refresh token), render
   // nothing — the splash screen is still up at this point.

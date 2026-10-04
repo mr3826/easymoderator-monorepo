@@ -31,6 +31,11 @@ const isNativeAuthRoute = (req) => {
     return path === NATIVE_AUTH_PATH || path.startsWith(`${NATIVE_AUTH_PATH}/`);
 };
 
+const isNativePushRoute = (req) => {
+    const path = requestPath(req);
+    return path === '/api/notifications/subscriptions' || path.startsWith('/api/notifications/subscriptions/');
+};
+
 const isNativeReadRoute = (req) => {
     const path = requestPath(req);
     return NATIVE_READ_ROUTES.some((route) => route.test(path));
@@ -137,7 +142,7 @@ const authenticateRequest = async (
             // Native tokens are read-only everywhere except their dedicated
             // auth/session routes. Web tokens have no sid and retain all
             // existing mutation privileges.
-            if (!isNativeAuthRoute(req)) {
+            if (!isNativeAuthRoute(req) && !isNativePushRoute(req)) {
                 if (!SAFE_METHODS.has(req.method || 'GET')) {
                     throw new AppError('Native API access is read-only during the mobile pilot.', 403, 'NATIVE_READ_ONLY');
                 }
