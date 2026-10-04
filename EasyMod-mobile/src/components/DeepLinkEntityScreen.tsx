@@ -1,4 +1,5 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -20,6 +21,7 @@ import { brandColors, radius, spacing } from '@/theme/tokens';
  * - transientError: a real network/server hiccup — offers Retry, never claims the item is gone.
  */
 export function DeepLinkEntityScreen({ kind, id }: { kind: DeepLinkEntityKind; id: string | undefined }) {
+  const router = useRouter();
   const { t } = useTranslation();
   const { data, isPending, isError, refetch } = useDeepLinkEntity(kind, id ?? '');
 
@@ -65,6 +67,23 @@ export function DeepLinkEntityScreen({ kind, id }: { kind: DeepLinkEntityKind; i
     <View style={styles.container} testID="deeplink-found">
       <Text style={styles.title}>{t(`mobile.deeplink.${kind}.foundTitle`)}</Text>
       <Text style={styles.body}>{t(`mobile.deeplink.${kind}.foundBody`, { id: data?.id ?? id })}</Text>
+      <Pressable
+        style={styles.button}
+        onPress={() => {
+          const targetId = data?.id ?? id;
+          if (kind === 'conversation') {
+            router.push({ pathname: '/conversation-detail/[id]', params: { id: targetId } });
+          } else {
+            router.push({ pathname: '/order-detail/[id]', params: { id: targetId } });
+          }
+        }}
+        accessibilityRole="button"
+        testID="deeplink-view-detail"
+      >
+        <Text style={styles.buttonText}>
+          {kind === 'conversation' ? t('mobile.inbox.detail.openConversation', 'কথোপকথন খুলুন') : t('mobile.orders.detail.openOrder', 'অর্ডার বিস্তারিত দেখুন')}
+        </Text>
+      </Pressable>
     </View>
   );
 }

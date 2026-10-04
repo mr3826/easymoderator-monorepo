@@ -197,6 +197,11 @@ function formatTelegramAlert(eventType, payload = {}) {
 
 function toPushPayload(eventType, payload = {}) {
     const alert = formatTelegramAlert(eventType, payload);
+    const conversationId = payload.conversationId || payload.data?.conversationId;
+    const orderId = payload.orderId || payload.data?.orderId;
+    const entity = conversationId ? 'conversation' : orderId ? 'order' : undefined;
+    const entityId = conversationId || orderId || payload.id || payload.data?.id;
+
     return {
         title: alert.title,
         body: alert.body.split('\n')[0],
@@ -204,9 +209,14 @@ function toPushPayload(eventType, payload = {}) {
         data: {
             ...(payload.data || {}),
             eventType,
-            deepLink: alert.deepLink
+            deepLink: alert.deepLink,
+            ...(conversationId ? { conversationId: String(conversationId) } : {}),
+            ...(orderId ? { orderId: String(orderId) } : {}),
+            ...(entity ? { entity } : {}),
+            ...(entityId ? { id: String(entityId) } : {})
         }
     };
 }
+
 
 module.exports = { formatTelegramAlert, toPushPayload };

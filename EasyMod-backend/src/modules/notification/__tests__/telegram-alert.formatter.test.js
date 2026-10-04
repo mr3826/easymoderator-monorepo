@@ -93,5 +93,13 @@ describe('telegram-alert.formatter', () => {
         expect(payload.title).toBe('AI needs human help');
         expect(payload.icon).toBe('/icon-512.png');
         expect(payload.data.deepLink).toContain('/inbox?conversationId=conv-1');
+        expect(payload.data.conversationId).toBe('conv-1');
+        expect(payload.data.entity).toBe('conversation');
+        expect(payload.data.id).toBe('conv-1');
+
+        const orderPayload = toPushPayload(NOTIFICATION_EVENTS.NEW_ORDER, { orderId: 'ord-123', orderNumber: 'EM-100' });
+        expect(orderPayload.data.orderId).toBe('ord-123');
+        expect(orderPayload.data.entity).toBe('order');
+        expect(orderPayload.data.id).toBe('ord-123');
     });
 });

@@ -190,6 +190,26 @@ describe('push-notifications', () => {
       expect(deeplink.openDeepLink).toHaveBeenCalledWith('conversation', 'conv-fallback');
     });
 
+    it('extracts entity and id from deepLink web URL fallback', () => {
+      const handledWebInbox = handleNotificationPayload({
+        deepLink: 'https://app.easymod.tech/inbox?conversationId=conv-url-123',
+      }, true);
+      expect(handledWebInbox).toBe(true);
+      expect(deeplink.openDeepLink).toHaveBeenCalledWith('conversation', 'conv-url-123');
+
+      const handledWebOrder = handleNotificationPayload({
+        deepLink: 'https://app.easymod.tech/orders?orderId=ord-url-456',
+      }, true);
+      expect(handledWebOrder).toBe(true);
+      expect(deeplink.openDeepLink).toHaveBeenCalledWith('order', 'ord-url-456');
+
+      const handledPathOrder = handleNotificationPayload({
+        deepLink: 'easymodmerchant://order/ord-path-789',
+      }, true);
+      expect(handledPathOrder).toBe(true);
+      expect(deeplink.openDeepLink).toHaveBeenCalledWith('order', 'ord-path-789');
+    });
+
     it('ignores empty or unknown entity types', () => {
       expect(handleNotificationPayload(undefined, true)).toBe(false);
       expect(handleNotificationPayload({}, true)).toBe(false);
