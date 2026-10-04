@@ -50,11 +50,11 @@ router.use(verifyShopAccess);
 
 router.get('/attention', mobileController.getAttention);
 router.get('/today', mobileController.getToday);
-// Phase 3 read surface. Native write access remains deliberately denied until a
-// separate mobile capability flag, idempotency contract, and device proof exist.
 router.get('/inbox/conversations', mobileInboxController.getConversations);
 router.get('/inbox/conversations/:conversationId/messages', mobileInboxController.getMessages);
 router.get('/inbox/conversations/:conversationId', mobileInboxController.getConversation);
+router.post('/inbox/conversations/:conversationId/reply', mobileInboxController.replyConversation);
+router.post('/inbox/conversations/:conversationId/ai-mode', mobileInboxController.setAiMode);
 router.get('/orders', mobileOrderController.getOrders);
 router.get('/orders/:orderId', mobileOrderController.getOrder);
 router.get('/customers/:customerId', mobileCustomerController.getCustomerQuickView);

@@ -187,3 +187,16 @@ export const customerQuickViewSchema = z.object({
   orders: z.array(orderSummarySchema),
 });
 export type CustomerQuickView = z.infer<typeof customerQuickViewSchema>;
+
+export const replyResponseSchema = z.object({
+  message: messageSchema,
+});
+export type ReplyResponse = z.infer<typeof replyResponseSchema>;
+
+export const aiModeResponseSchema = z.object({
+  success: z.boolean(),
+  ai_mode: z.string(),
+  conversation_id: z.string(),
+});
+export type AiModeResponse = z.infer<typeof aiModeResponseSchema>;
+

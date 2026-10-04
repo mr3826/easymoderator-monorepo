@@ -1,17 +1,39 @@
-import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import type { ConversationMessage } from '@/api/mobile/schemas';
 import { apiErrorMessageKey } from '@/lib/api-error-i18n';
-import { useConversation, useConversationMessages } from '@/hooks/useInbox';
+import {
+  useConversation,
+  useConversationMessages,
+  useSendConversationReply,
+  useSetConversationAiMode,
+} from '@/hooks/useInbox';
 import { brandColors, fontFamily, neutral, radius, spacing } from '@/theme/tokens';
 
 export function ConversationScreen({ id }: { id: string | undefined }) {
   const { t } = useTranslation();
   const router = useRouter();
+  const [replyText, setReplyText] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const conversationQuery = useConversation(id ?? '');
   const messagesQuery = useConversationMessages(id ?? '');
+  const sendReplyMutation = useSendConversationReply();
+  const setAiModeMutation = useSetConversationAiMode();
 
   if (!id) return <ConversationState title={t('mobile.deeplink.unavailable.title')} message={t('mobile.deeplink.unavailable.message')} />;
   if (conversationQuery.isPending || messagesQuery.isPending) return <ConversationLoading />;
@@ -36,38 +58,136 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
   const conversation = conversationQuery.data;
   const messages = messagesQuery.data?.messages ?? [];
   const customerName = conversation?.customer?.name || conversation?.title || t('mobile.inbox.unknownCustomer');
+  const isAiPaused = conversation?.status === 'paused' || conversation?.hitl === true;
+
+  const handleSend = async () => {
+    const trimmed = replyText.trim();
+    if (!trimmed || !id || sendReplyMutation.isPending) return;
+
+    setErrorMessage(null);
+    const idempotencyKey = `idemp-mob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    try {
+      await sendReplyMutation.mutateAsync({
+        conversationId: id,
+        message: trimmed,
+        idempotencyKey,
+      });
+      setReplyText('');
+    } catch (err: unknown) {
+      const errorObj = err as { code?: string; kind?: string; message?: string };
+      if (errorObj?.code === 'OUTSIDE_24H_WINDOW') {
+        setErrorMessage(t('mobile.inbox.detail.outside24h'));
+      } else {
+        setErrorMessage(errorObj?.message || t('mobile.inbox.detail.error.message'));
+      }
+    }
+  };
+
+  const handleToggleAi = async () => {
+    if (!id || setAiModeMutation.isPending) return;
+    try {
+      await setAiModeMutation.mutateAsync({
+        conversationId: id,
+        mode: isAiPaused ? 'resume' : 'pause',
+      });
+    } catch (err: unknown) {
+      const errorObj = err as { message?: string };
+      setErrorMessage(errorObj?.message || t('mobile.inbox.detail.error.message'));
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} testID="mobile-conversation-detail">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" testID="mobile-conversation-back" style={styles.backButton}>
-          <Text style={styles.backText}>‹</Text>
-        </Pressable>
-        <View style={styles.headerCopy}>
-          {conversation?.customer_id ? (
-            <Pressable onPress={() => router.push({ pathname: '/customer-detail/[id]', params: { id: conversation.customer_id! } })} accessibilityRole="button">
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} accessibilityRole="button" testID="mobile-conversation-back" style={styles.backButton}>
+            <Text style={styles.backText}>‹</Text>
+          </Pressable>
+          <View style={styles.headerCopy}>
+            {conversation?.customer_id ? (
+              <Pressable onPress={() => router.push({ pathname: '/customer-detail/[id]', params: { id: conversation.customer_id! } })} accessibilityRole="button">
+                <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
+              </Pressable>
+            ) : (
               <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
+            )}
+            <Text style={styles.headerMeta}>{conversation?.channel} · {conversation?.status}</Text>
+          </View>
+          <Pressable
+            testID="mobile-conversation-ai-toggle"
+            onPress={handleToggleAi}
+            disabled={setAiModeMutation.isPending}
+            style={[styles.aiPill, isAiPaused ? styles.aiPillPaused : styles.aiPillActive]}
+            accessibilityRole="button"
+          >
+            {setAiModeMutation.isPending ? (
+              <ActivityIndicator size="small" color={isAiPaused ? '#D97706' : brandColors.primary} />
+            ) : (
+              <Text style={[styles.aiPillText, isAiPaused ? styles.aiPillTextPaused : styles.aiPillTextActive]}>
+                {isAiPaused ? t('mobile.inbox.detail.resumeAi') : t('mobile.inbox.detail.pauseAi')}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+
+        {conversation?.needs_merchant_reply ? (
+          <View style={styles.needsNotice} accessibilityRole="alert">
+            <Text style={styles.needsNoticeText}>{t('mobile.inbox.detail.needsReply')}</Text>
+          </View>
+        ) : null}
+
+        {errorMessage ? (
+          <View style={styles.errorBanner} accessibilityRole="alert">
+            <Text style={styles.errorBannerText}>{errorMessage}</Text>
+            <Pressable onPress={() => setErrorMessage(null)} accessibilityRole="button">
+              <Text style={styles.errorDismissText}>✕</Text>
             </Pressable>
-          ) : <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>}
-          <Text style={styles.headerMeta}>{conversation?.channel} · {conversation?.status}</Text>
+          </View>
+        ) : null}
+
+        <FlatList
+          testID="mobile-conversation-messages"
+          data={messages}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messages}
+          ListEmptyComponent={<ConversationState title={t('mobile.inbox.detail.empty.title')} message={t('mobile.inbox.detail.empty.message')} />}
+          renderItem={({ item }) => <MessageBubble message={item} />}
+        />
+
+        <View style={styles.replyBar}>
+          <TextInput
+            testID="mobile-conversation-reply-input"
+            style={styles.replyInput}
+            value={replyText}
+            onChangeText={setReplyText}
+            placeholder={t('mobile.inbox.detail.replyPlaceholder')}
+            placeholderTextColor={neutral.muted}
+            multiline
+            maxLength={2000}
+            editable={!sendReplyMutation.isPending}
+          />
+          <Pressable
+            testID="mobile-conversation-send-btn"
+            style={[
+              styles.sendButton,
+              (!replyText.trim() || sendReplyMutation.isPending) && styles.sendButtonDisabled,
+            ]}
+            disabled={!replyText.trim() || sendReplyMutation.isPending}
+            onPress={handleSend}
+            accessibilityRole="button"
+          >
+            {sendReplyMutation.isPending ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.sendButtonText}>{t('mobile.inbox.detail.send')}</Text>
+            )}
+          </Pressable>
         </View>
-      </View>
-      {conversation?.needs_merchant_reply ? (
-        <View style={styles.needsNotice} accessibilityRole="alert">
-          <Text style={styles.needsNoticeText}>{t('mobile.inbox.detail.needsReply')}</Text>
-        </View>
-      ) : null}
-      <FlatList
-        testID="mobile-conversation-messages"
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messages}
-        ListEmptyComponent={<ConversationState title={t('mobile.inbox.detail.empty.title')} message={t('mobile.inbox.detail.empty.message')} />}
-        renderItem={({ item }) => <MessageBubble message={item} />}
-      />
-      <View style={styles.readOnlyNotice}>
-        <Text style={styles.readOnlyText}>{t('mobile.inbox.detail.readOnly')}</Text>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -114,14 +234,63 @@ function ConversationState({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: brandColors.background },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.two, paddingVertical: spacing.two, borderBottomWidth: 1, borderBottomColor: neutral.border, backgroundColor: neutral.surface },
+  keyboardContainer: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.two,
+    paddingVertical: spacing.two,
+    borderBottomWidth: 1,
+    borderBottomColor: neutral.border,
+    backgroundColor: neutral.surface,
+  },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   backText: { fontSize: 36, color: brandColors.primaryDark, lineHeight: 38 },
   headerCopy: { flex: 1, gap: spacing.half },
   customerName: { color: brandColors.text, fontFamily: fontFamily.semiBold, fontSize: 17 },
   headerMeta: { color: neutral.muted, fontFamily: fontFamily.regular, fontSize: 12, textTransform: 'capitalize' },
+  aiPill: {
+    paddingHorizontal: spacing.two,
+    paddingVertical: spacing.one,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiPillActive: {
+    backgroundColor: 'rgba(0, 166, 81, 0.08)',
+    borderColor: brandColors.primary,
+  },
+  aiPillPaused: {
+    backgroundColor: 'rgba(217, 119, 6, 0.1)',
+    borderColor: '#D97706',
+  },
+  aiPillText: {
+    fontFamily: fontFamily.medium,
+    fontSize: 12,
+  },
+  aiPillTextActive: {
+    color: brandColors.primaryDark,
+  },
+  aiPillTextPaused: {
+    color: '#B45309',
+  },
   needsNotice: { margin: spacing.two, padding: spacing.two, borderRadius: radius.default, backgroundColor: 'rgba(0, 166, 81, 0.12)' },
   needsNoticeText: { color: brandColors.primaryDark, fontFamily: fontFamily.medium, fontSize: 13 },
+  errorBanner: {
+    marginHorizontal: spacing.two,
+    marginTop: spacing.one,
+    padding: spacing.two,
+    borderRadius: radius.default,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#F87171',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorBannerText: { color: '#B91C1C', fontFamily: fontFamily.regular, fontSize: 13, flex: 1 },
+  errorDismissText: { color: '#B91C1C', fontFamily: fontFamily.semiBold, fontSize: 14, marginLeft: spacing.two },
   messages: { padding: spacing.three, gap: spacing.two, flexGrow: 1 },
   messageRow: { flexDirection: 'row', marginBottom: spacing.two },
   customerRow: { justifyContent: 'flex-start' },
@@ -133,8 +302,47 @@ const styles = StyleSheet.create({
   merchantMessageText: { color: '#FFFFFF' },
   timestamp: { color: neutral.muted, fontFamily: fontFamily.regular, fontSize: 10 },
   merchantTimestamp: { color: 'rgba(255,255,255,0.75)' },
-  readOnlyNotice: { borderTopWidth: 1, borderTopColor: neutral.border, padding: spacing.two, backgroundColor: neutral.surface },
-  readOnlyText: { color: neutral.muted, fontFamily: fontFamily.regular, fontSize: 12, textAlign: 'center' },
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    borderTopWidth: 1,
+    borderTopColor: neutral.border,
+    paddingHorizontal: spacing.two,
+    paddingVertical: spacing.two,
+    backgroundColor: neutral.surface,
+    gap: spacing.two,
+  },
+  replyInput: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 100,
+    borderRadius: radius.default,
+    borderWidth: 1,
+    borderColor: neutral.border,
+    paddingHorizontal: spacing.two,
+    paddingVertical: spacing.one,
+    fontFamily: fontFamily.regular,
+    fontSize: 15,
+    color: brandColors.text,
+    backgroundColor: brandColors.background,
+  },
+  sendButton: {
+    backgroundColor: brandColors.primary,
+    borderRadius: radius.default,
+    paddingHorizontal: spacing.three,
+    paddingVertical: spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  sendButtonDisabled: {
+    backgroundColor: neutral.border,
+  },
+  sendButtonText: {
+    color: '#FFFFFF',
+    fontFamily: fontFamily.semiBold,
+    fontSize: 14,
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.four, gap: spacing.two, backgroundColor: brandColors.background },
   stateTitle: { color: brandColors.text, fontFamily: fontFamily.semiBold, fontSize: 18, textAlign: 'center' },
   stateMessage: { color: neutral.muted, fontFamily: fontFamily.regular, fontSize: 14, textAlign: 'center' },

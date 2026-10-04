@@ -41,6 +41,16 @@ const isNativeReadRoute = (req) => {
     return NATIVE_READ_ROUTES.some((route) => route.test(path));
 };
 
+const NATIVE_INBOX_WRITE_ROUTES = [
+    new RegExp(`^/api/mobile/inbox/conversations/[^/]+/reply$`, 'i'),
+    new RegExp(`^/api/mobile/inbox/conversations/[^/]+/ai-mode$`, 'i'),
+];
+
+const isNativeInboxWriteRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_INBOX_WRITE_ROUTES.some((route) => route.test(path));
+};
+
 const hasUnexpiredSession = (session) => {
     const expiresAt = new Date(session?.expires_at).getTime();
     return Boolean(session?.is_active) && Number.isFinite(expiresAt) && expiresAt > Date.now();
@@ -140,9 +150,13 @@ const authenticateRequest = async (
             }
 
             // Native tokens are read-only everywhere except their dedicated
-            // auth/session routes. Web tokens have no sid and retain all
-            // existing mutation privileges.
-            if (!isNativeAuthRoute(req) && !isNativePushRoute(req)) {
+            // auth/session routes and permitted mobile write routes when enabled.
+            // Web tokens have no sid and retain all existing mutation privileges.
+            const isPermittedInboxWrite = Boolean(config.mobileInboxWritesEnabled)
+                && req.method === 'POST'
+                && isNativeInboxWriteRoute(req);
+
+            if (!isNativeAuthRoute(req) && !isNativePushRoute(req) && !isPermittedInboxWrite) {
                 if (!SAFE_METHODS.has(req.method || 'GET')) {
                     throw new AppError('Native API access is read-only during the mobile pilot.', 403, 'NATIVE_READ_ONLY');
                 }

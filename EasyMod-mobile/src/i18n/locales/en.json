@@ -120,6 +120,15 @@
       "detail": {
         "needsReply": "This customer needs a reply.",
         "readOnly": "Replies and AI actions are available in Web while mobile write access is being rolled out.",
+        "replyPlaceholder": "Type a message...",
+        "send": "Send",
+        "sending": "Sending...",
+        "aiActive": "AI Active",
+        "aiPaused": "AI Paused",
+        "pauseAi": "Pause AI",
+        "resumeAi": "Resume AI",
+        "replySent": "Message sent successfully",
+        "outside24h": "Per Meta policy, messages outside the 24-hour window cannot be sent until the customer messages again.",
         "empty": {
           "title": "No messages",
           "message": "This conversation has no transcript messages yet."
