@@ -161,9 +161,33 @@ export function handleNotificationPayload(
 ): boolean {
   if (!data) return false;
 
-  const entity = (data.entity as DeepLinkEntityKind) ||
+  let entity = (data.entity as DeepLinkEntityKind) ||
     (data.orderId ? 'order' : data.conversationId ? 'conversation' : null);
-  const id = (data.id as string) || (data.orderId as string) || (data.conversationId as string) || null;
+  let id = (data.id as string) || (data.orderId as string) || (data.conversationId as string) || null;
+
+  // Fallback: parse deepLink URL if entity or id are missing
+  if ((!entity || !id) && typeof data.deepLink === 'string') {
+    try {
+      const match = data.deepLink.match(/(?:conversationId|orderId)=([^&#]+)/);
+      if (match) {
+        if (data.deepLink.includes('conversationId')) {
+          entity = 'conversation';
+          id = decodeURIComponent(match[1]);
+        } else if (data.deepLink.includes('orderId')) {
+          entity = 'order';
+          id = decodeURIComponent(match[1]);
+        }
+      } else {
+        const pathMatch = data.deepLink.match(/\/(order|conversation)\/([^/?#]+)/);
+        if (pathMatch) {
+          entity = pathMatch[1] as DeepLinkEntityKind;
+          id = decodeURIComponent(pathMatch[2]);
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
 
   if (!entity || !id || (entity !== 'order' && entity !== 'conversation')) {
     return false;
