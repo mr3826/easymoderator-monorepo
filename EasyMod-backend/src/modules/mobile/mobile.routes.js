@@ -23,6 +23,7 @@ const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 const mobileController = require('./mobile.controller');
 const mobileInboxController = require('./mobile-inbox.controller');
 const mobileOrderController = require('./mobile-order.controller');
+const mobileCourierController = require('./mobile-courier.controller');
 const mobileCustomerController = require('./mobile-customer.controller');
 const { isMobileE2eFixturesEnabled } = require('./mobile-e2e-fixtures');
 
@@ -62,6 +63,9 @@ router.post('/orders/:orderId/confirm', mobileOrderController.confirmOrder);
 router.post('/orders/:orderId/cancel', mobileOrderController.cancelOrder);
 router.post('/orders/manual', mobileOrderController.createManualOrder);
 router.post('/orders/draft', mobileOrderController.createManualOrder);
+router.post('/orders/:orderId/book-courier', mobileCourierController.bookCourier);
+router.get('/courier/problems', mobileCourierController.getProblemParcels);
+router.get('/orders/:orderId/tracking', mobileCourierController.getDeliveryTracking);
 router.get('/customers/:customerId', mobileCustomerController.getCustomerQuickView);
 
 module.exports = router;

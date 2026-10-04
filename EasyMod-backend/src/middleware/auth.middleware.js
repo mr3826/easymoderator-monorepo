@@ -63,6 +63,15 @@ const isNativeOrderWriteRoute = (req) => {
     return NATIVE_ORDER_WRITE_ROUTES.some((route) => route.test(path));
 };
 
+const NATIVE_COURIER_WRITE_ROUTES = [
+    new RegExp(`^/api/mobile/orders/[^/]+/book-courier$`, 'i'),
+];
+
+const isNativeCourierWriteRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_COURIER_WRITE_ROUTES.some((route) => route.test(path));
+};
+
 const hasUnexpiredSession = (session) => {
     const expiresAt = new Date(session?.expires_at).getTime();
     return Boolean(session?.is_active) && Number.isFinite(expiresAt) && expiresAt > Date.now();
@@ -170,8 +179,11 @@ const authenticateRequest = async (
             const isPermittedOrderWrite = Boolean(config.mobileOrderMutationsEnabled)
                 && req.method === 'POST'
                 && isNativeOrderWriteRoute(req);
+            const isPermittedCourierWrite = Boolean(config.mobileCourierActionsEnabled)
+                && req.method === 'POST'
+                && isNativeCourierWriteRoute(req);
 
-            if (!isNativeAuthRoute(req) && !isNativePushRoute(req) && !isPermittedInboxWrite && !isPermittedOrderWrite) {
+            if (!isNativeAuthRoute(req) && !isNativePushRoute(req) && !isPermittedInboxWrite && !isPermittedOrderWrite && !isPermittedCourierWrite) {
                 if (!SAFE_METHODS.has(req.method || 'GET')) {
                     throw new AppError('Native API access is read-only during the mobile pilot.', 403, 'NATIVE_READ_ONLY');
                 }

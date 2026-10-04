@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/auth/AuthProvider';
 import { env, getAppVersion } from '@/config/env';
@@ -12,6 +13,7 @@ import { brandColors, radius, spacing } from '@/theme/tokens';
  */
 export default function MoreScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { user, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -36,6 +38,15 @@ export default function MoreScreen() {
           gitSha: env.gitSha,
         })}
       </Text>
+      <Pressable
+        style={styles.courierBtn}
+        onPress={() => router.push('/courier-problems')}
+        testID="more-courier-problems-button"
+        accessibilityRole="button"
+      >
+        <Text style={styles.courierBtnText}>🚚 {t('mobile.courier.problemCenter.title', 'Courier Problem Center')}</Text>
+      </Pressable>
+
       <Pressable
         style={[styles.button, loggingOut && styles.buttonDisabled]}
         onPress={handleLogout}
@@ -93,5 +104,21 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  courierBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: radius.default,
+    paddingHorizontal: spacing.four,
+    paddingVertical: spacing.two,
+    minWidth: 200,
+    alignItems: 'center',
+    marginVertical: spacing.two,
+  },
+  courierBtnText: {
+    color: '#1D4ED8',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });

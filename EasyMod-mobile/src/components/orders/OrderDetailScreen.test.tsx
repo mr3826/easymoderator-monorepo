@@ -29,6 +29,17 @@ jest.mock('@/hooks/useOrders', () => ({
   }),
 }));
 
+jest.mock('@/hooks/useCourier', () => ({
+  useBookCourier: () => ({
+    mutate: jest.fn(),
+    isPending: false,
+  }),
+  useDeliveryTracking: () => ({
+    data: null,
+    isPending: false,
+  }),
+}));
+
 const mockOrder = {
   id: 'ord-101',
   order_number: 'ORD-101',
