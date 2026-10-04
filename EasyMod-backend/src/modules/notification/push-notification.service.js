@@ -101,7 +101,7 @@ async function sendFCM(deviceToken, payload) {
       data: Object.fromEntries(
         Object.entries(payload.data || {}).map(([k, v]) => [k, String(v)])
       ),
-      android: { priority: 'high' },
+      android: { priority: 'high', notification: { channelId: 'default', sound: 'default' } },
       apns: { payload: { aps: { sound: 'default' } } }
     });
     return { sent: true, messageId };

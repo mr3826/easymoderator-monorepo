@@ -55,6 +55,7 @@
     "@sentry/node": "^10.51.0",
     "@sentry/profiling-node": "^10.51.0",
     "axios": "^1.13.2",
+    "base64-js": "^1.5.1",
     "bcryptjs": "^3.0.3",
     "body-parser": "1.20.8",
     "bullmq": "^5.76.1",
