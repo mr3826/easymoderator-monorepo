@@ -28,6 +28,13 @@ jest.mock('@/hooks/useInbox', () => ({
   }),
 }));
 
+jest.mock('@/hooks/useOrders', () => ({
+  useCreateManualOrder: () => ({
+    mutate: jest.fn(),
+    isPending: false,
+  }),
+}));
+
 const mockConversation = {
   id: 'conv-1',
   customer_id: 'cust-1',

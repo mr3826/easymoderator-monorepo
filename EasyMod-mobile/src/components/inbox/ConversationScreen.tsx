@@ -22,6 +22,7 @@ import {
   useSendConversationReply,
   useSetConversationAiMode,
 } from '@/hooks/useInbox';
+import { OrderDraftModal } from '@/components/orders/OrderDraftModal';
 import { brandColors, fontFamily, neutral, radius, spacing } from '@/theme/tokens';
 
 export function ConversationScreen({ id }: { id: string | undefined }) {
@@ -29,6 +30,7 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
   const router = useRouter();
   const [replyText, setReplyText] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [draftModalVisible, setDraftModalVisible] = useState(false);
 
   const conversationQuery = useConversation(id ?? '');
   const messagesQuery = useConversationMessages(id ?? '');
@@ -117,21 +119,31 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
             )}
             <Text style={styles.headerMeta}>{conversation?.channel} · {conversation?.status}</Text>
           </View>
-          <Pressable
-            testID="mobile-conversation-ai-toggle"
-            onPress={handleToggleAi}
-            disabled={setAiModeMutation.isPending}
-            style={[styles.aiPill, isAiPaused ? styles.aiPillPaused : styles.aiPillActive]}
-            accessibilityRole="button"
-          >
-            {setAiModeMutation.isPending ? (
-              <ActivityIndicator size="small" color={isAiPaused ? '#D97706' : brandColors.primary} />
-            ) : (
-              <Text style={[styles.aiPillText, isAiPaused ? styles.aiPillTextPaused : styles.aiPillTextActive]}>
-                {isAiPaused ? t('mobile.inbox.detail.resumeAi') : t('mobile.inbox.detail.pauseAi')}
-              </Text>
-            )}
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              testID="mobile-conversation-create-draft"
+              onPress={() => setDraftModalVisible(true)}
+              style={styles.draftPill}
+              accessibilityRole="button"
+            >
+              <Text style={styles.draftPillText}>+ Order</Text>
+            </Pressable>
+            <Pressable
+              testID="mobile-conversation-ai-toggle"
+              onPress={handleToggleAi}
+              disabled={setAiModeMutation.isPending}
+              style={[styles.aiPill, isAiPaused ? styles.aiPillPaused : styles.aiPillActive]}
+              accessibilityRole="button"
+            >
+              {setAiModeMutation.isPending ? (
+                <ActivityIndicator size="small" color={isAiPaused ? '#D97706' : brandColors.primary} />
+              ) : (
+                <Text style={[styles.aiPillText, isAiPaused ? styles.aiPillTextPaused : styles.aiPillTextActive]}>
+                  {isAiPaused ? t('mobile.inbox.detail.resumeAi') : t('mobile.inbox.detail.pauseAi')}
+                </Text>
+              )}
+            </Pressable>
+          </View>
         </View>
 
         {conversation?.needs_merchant_reply ? (
@@ -188,6 +200,15 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+      <OrderDraftModal
+        visible={draftModalVisible}
+        onClose={() => setDraftModalVisible(false)}
+        initialCustomerName={customerName}
+        initialCustomerPhone={(conversation as unknown as { customer_phone?: string })?.customer_phone || ''}
+        onOrderCreated={(orderId) => {
+          router.push({ pathname: '/order/[id]', params: { id: orderId } });
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -247,6 +268,22 @@ const styles = StyleSheet.create({
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   backText: { fontSize: 36, color: brandColors.primaryDark, lineHeight: 38 },
   headerCopy: { flex: 1, gap: spacing.half },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.one },
+  draftPill: {
+    paddingHorizontal: spacing.two,
+    paddingVertical: spacing.one,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: brandColors.primary,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  draftPillText: {
+    color: brandColors.primaryDark,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 12,
+  },
   customerName: { color: brandColors.text, fontFamily: fontFamily.semiBold, fontSize: 17 },
   headerMeta: { color: neutral.muted, fontFamily: fontFamily.regular, fontSize: 12, textTransform: 'capitalize' },
   aiPill: {

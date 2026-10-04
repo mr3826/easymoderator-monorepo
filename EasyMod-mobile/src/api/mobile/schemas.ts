@@ -200,3 +200,26 @@ export const aiModeResponseSchema = z.object({
 });
 export type AiModeResponse = z.infer<typeof aiModeResponseSchema>;
 
+export const customerRiskSummarySchema = z.object({
+  delivered_count: z.number().int().nonnegative(),
+  rto_count: z.number().int().nonnegative(),
+  cancelled_count: z.number().int().nonnegative(),
+  total_orders: z.number().int().nonnegative(),
+  has_duplicate_recent_order: z.boolean(),
+  recent_order_id: z.string().nullable().optional(),
+  risk_level: z.enum(['low', 'medium', 'high']),
+});
+export type CustomerRiskSummary = z.infer<typeof customerRiskSummarySchema>;
+
+export const customerRiskResponseSchema = z.object({
+  risk: customerRiskSummarySchema,
+});
+export type CustomerRiskResponse = z.infer<typeof customerRiskResponseSchema>;
+
+export const orderActionResponseSchema = z.object({
+  success: z.boolean(),
+  order: orderSummarySchema.passthrough(),
+  idempotencyReplay: z.boolean().optional(),
+});
+export type OrderActionResponse = z.infer<typeof orderActionResponseSchema>;
+
