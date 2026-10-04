@@ -223,3 +223,73 @@ export const orderActionResponseSchema = z.object({
 });
 export type OrderActionResponse = z.infer<typeof orderActionResponseSchema>;
 
+export const courierBookingResponseSchema = z.object({
+  success: z.boolean().optional(),
+  tracking_id: z.string().nullable().optional(),
+  consignment_id: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  booked_at: z.string().optional(),
+  status: z.string().optional(),
+  idempotencyReplay: z.boolean().optional(),
+});
+export type CourierBookingResponse = z.infer<typeof courierBookingResponseSchema>;
+
+export const problemParcelSchema = z.object({
+  order_id: z.string(),
+  order_number: z.string().nullable().optional(),
+  customer_name: z.string().nullable().optional(),
+  customer_phone: z.string().nullable().optional(),
+  total_amount: z.number().nonnegative(),
+  cod_amount: z.number().nonnegative(),
+  delivery_provider: z.string().nullable().optional(),
+  consignment_id: z.string().nullable().optional(),
+  tracking_code: z.string().nullable().optional(),
+  delivery_status: z.string().nullable().optional(),
+  order_status: z.string().nullable().optional(),
+  delivery_address: z.string().nullable().optional(),
+  problem_reason: z.string().nullable().optional(),
+  updated_at: z.string().optional(),
+});
+export type ProblemParcel = z.infer<typeof problemParcelSchema>;
+
+export const problemParcelsResponseSchema = z.object({
+  parcels: z.array(problemParcelSchema),
+  pagination: z.object({
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    total: z.number().int().min(0),
+    hasNextPage: z.boolean(),
+  }),
+});
+export type ProblemParcelsResponse = z.infer<typeof problemParcelsResponseSchema>;
+
+export const trackingHistoryItemSchema = z.object({
+  status: z.string(),
+  timestamp: z.string().optional(),
+  location: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+export type TrackingHistoryItem = z.infer<typeof trackingHistoryItemSchema>;
+
+export const deliveryTrackingResponseSchema = z.object({
+  order_id: z.string(),
+  order_number: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  tracking_number: z.string().nullable().optional(),
+  consignment_id: z.string().nullable().optional(),
+  current_status: z.string().nullable().optional(),
+  estimated_delivery: z.string().nullable().optional(),
+  actual_delivery: z.string().nullable().optional(),
+  location_info: z.record(z.string(), z.unknown()).nullable().optional(),
+  delivery_agent_info: z.record(z.string(), z.unknown()).nullable().optional(),
+  status_history: z.array(trackingHistoryItemSchema).optional(),
+  customer_name: z.string().nullable().optional(),
+  customer_phone: z.string().nullable().optional(),
+  delivery_address: z.string().nullable().optional(),
+  total_amount: z.number().nonnegative().optional(),
+  cod_amount: z.number().nonnegative().optional(),
+  cod_derived_note: z.string().optional(),
+});
+export type DeliveryTrackingResponse = z.infer<typeof deliveryTrackingResponseSchema>;
+
+

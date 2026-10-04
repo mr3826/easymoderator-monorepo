@@ -194,6 +194,22 @@
           "riskMedium": "Medium Risk",
           "riskHigh": "High Risk"
         },
+        "courier": {
+          "title": "Delivery & Courier",
+          "provider": "Provider",
+          "status": "Delivery Status",
+          "consignmentId": "Consignment ID",
+          "trackingNumber": "Tracking #",
+          "bookCourier": "Book Courier",
+          "booking": "Booking Courier...",
+          "trackParcel": "Track Parcel",
+          "selectProvider": "Select Courier Provider",
+          "autoDefault": "System Default / Auto",
+          "codLabel": "Expected COD",
+          "codDerivedNotice": "Order-derived expectation",
+          "bookSuccess": "Courier successfully booked!",
+          "confirmBookingPrompt": "Dispatch this order to courier for delivery?"
+        },
         "error": {
           "title": "Couldn't load order"
         }
@@ -213,6 +229,38 @@
         "creating": "Creating Order...",
         "success": "Order created successfully",
         "error": "Failed to create order. Please check required fields."
+      },
+      "courier": {
+        "problemCenter": {
+          "title": "Courier Problem Center",
+          "subtitle": "Parcels requiring merchant intervention or customer contact",
+          "empty": "No problem parcels! All shipments are progressing normally.",
+          "filterAll": "All Problems",
+          "filterFailed": "Failed",
+          "filterReturned": "Returned",
+          "filterHold": "On Hold",
+          "filterCancelled": "Cancelled",
+          "callCustomer": "Call Customer",
+          "viewTracking": "Track Timeline",
+          "retryBooking": "Retry Booking",
+          "retryPrompt": "Re-dispatch parcel with courier",
+          "selectProvider": "Select Courier Provider",
+          "confirmRetry": "Book Courier",
+          "booking": "Booking...",
+          "bookSuccess": "Courier booked successfully",
+          "bookError": "Failed to book courier"
+        },
+        "tracking": {
+          "title": "Delivery Timeline",
+          "status": "Current Status",
+          "provider": "Provider",
+          "consignmentId": "Consignment ID",
+          "trackingNumber": "Tracking #",
+          "history": "Tracking History",
+          "noHistory": "No tracking events recorded yet.",
+          "codExpectation": "COD Expected",
+          "codNotice": "Order-derived expectation. Reconciled cash requires provider settlement."
+        }
       }
     },
     "customers": {
