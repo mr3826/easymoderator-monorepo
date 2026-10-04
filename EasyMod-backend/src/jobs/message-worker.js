@@ -2004,8 +2004,28 @@ async function processMessageJob(job) {
     const aiSettings = buildWorkerAiSettings(shopAISettings, channelAISettings, businessMode);
     recoveryControl?.setPolicySettings(aiSettings);
     if (businessMode === AI_REPLY_MODES.MANUAL) {
+        try {
+            const merchantNotificationService = require('../modules/notification/merchant-notification.service');
+            const { NOTIFICATION_EVENTS } = require('../modules/notification/notification-events');
+            await merchantNotificationService.notifyShop(
+                shopId,
+                NOTIFICATION_EVENTS.AI_HITL,
+                {
+                    reason: 'manual_mode_inbound_message',
+                    conversationId,
+                    lastMessage: effMessage ? String(effMessage).slice(0, 180) : undefined,
+                },
+                {
+                    dedupeKey: `manual_mode:${conversationId}`,
+                    dedupeTtlSeconds: 120,
+                }
+            ).catch(() => {});
+        } catch {
+            // notification failure must not fail the job
+        }
         return { skipped: true, reason: 'manual_mode', scope: 'shop' };
     }
+
 
     // Replays and prospective mode changes must reuse the candidate already
     // associated with this turn. In particular, a DRAFT candidate must not be
