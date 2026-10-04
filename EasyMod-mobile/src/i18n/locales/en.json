@@ -171,9 +171,48 @@
         "noItems": "No line items are available.",
         "unknownItem": "Item",
         "readOnly": "Order changes and courier actions are available in Web while mobile writes are being rolled out.",
+        "actions": {
+          "confirm": "Confirm Order",
+          "confirming": "Confirming...",
+          "confirmTitle": "Confirm Order",
+          "confirmPrompt": "Are you sure you want to confirm this order?",
+          "cancel": "Cancel Order",
+          "cancelling": "Cancelling...",
+          "cancelTitle": "Cancel Order",
+          "cancelPrompt": "Are you sure you want to cancel this order? Tracked inventory stock will be restored.",
+          "callCustomer": "Call Customer",
+          "openConversation": "Open Chat",
+          "createDraft": "Create Order Draft"
+        },
+        "risk": {
+          "title": "Verification & Risk",
+          "delivered": "Delivered",
+          "rto": "RTO",
+          "cancelled": "Cancelled",
+          "duplicateWarning": "Warning: A duplicate order was placed within 30 minutes!",
+          "riskLow": "Low Risk",
+          "riskMedium": "Medium Risk",
+          "riskHigh": "High Risk"
+        },
         "error": {
           "title": "Couldn't load order"
         }
+      },
+      "manualOrder": {
+        "title": "Quick Manual Order",
+        "customerName": "Customer Name",
+        "customerPhone": "Customer Phone",
+        "deliveryAddress": "Delivery Address",
+        "selectProduct": "Product Name",
+        "quantity": "Quantity",
+        "price": "Price (BDT)",
+        "deliveryFee": "Delivery Fee",
+        "discount": "Discount",
+        "total": "Total Amount",
+        "submit": "Create Order",
+        "creating": "Creating Order...",
+        "success": "Order created successfully",
+        "error": "Failed to create order. Please check required fields."
       }
     },
     "customers": {
