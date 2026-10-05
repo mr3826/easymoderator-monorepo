@@ -27,6 +27,8 @@
     "recovery:gate": "node scripts/recovery-gate/index.js"
   },
   "overrides": {
+    "@fastify/busboy": "3.2.2",
+    "@grpc/grpc-js": "1.14.5",
     "moment": "2.31.0",
     "undici": "6.29.0"
   },
