@@ -379,6 +379,101 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
+    describe('buildAuthUrl() dialog contract (Facebook Login for Business)', () => {
+        const config = require('../../../config/config');
+        const APP_ID = '2040799330176198';
+        const REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+        const CONFIG_ID = '1685388446490514';
+        const STATE = 'facebook:shop-1:user-1:nonce-fixture';
+        let saved;
+
+        beforeEach(() => {
+            saved = {
+                id: config.metaAppId,
+                redirect: config.metaOAuthRedirectUri,
+                configId: config.metaLoginConfigId,
+            };
+            config.metaAppId = APP_ID;
+            config.metaOAuthRedirectUri = REDIRECT;
+            config.metaLoginConfigId = CONFIG_ID;
+        });
+
+        afterEach(() => {
+            config.metaAppId = saved.id;
+            config.metaOAuthRedirectUri = saved.redirect;
+            config.metaLoginConfigId = saved.configId;
+        });
+
+        const build = (args = {}) => provider.buildAuthUrl({ state: STATE, scopes: [], ...args });
+
+        test('targets the Facebook dialog host on the shared Graph version', async () => {
+            const url = new URL(await build());
+            const version = process.env.META_GRAPH_API_VERSION || 'v22.0';
+            expect(url.origin).toBe('https://www.facebook.com');
+            expect(url.pathname).toBe(`/${version}/dialog/oauth`);
+        });
+
+        test('emits exactly client_id, redirect_uri, config_id, response_type and state', async () => {
+            const url = new URL(await build());
+            expect([...url.searchParams.keys()].sort()).toEqual([
+                'client_id',
+                'config_id',
+                'redirect_uri',
+                'response_type',
+                'state',
+            ]);
+            expect(url.searchParams.get('client_id')).toBe(APP_ID);
+            expect(url.searchParams.get('config_id')).toBe(CONFIG_ID);
+            expect(url.searchParams.get('response_type')).toBe('code');
+            expect(url.searchParams.has('scope')).toBe(false);
+        });
+
+        test('uses the configured redirect_uri exactly, with no trailing slash', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.get('redirect_uri')).toBe(REDIRECT);
+        });
+
+        test('prefers the redirect_uri bound to the OAuth state when one is passed', async () => {
+            const bound = 'https://app.easymod.tech/channels/oauth-callback';
+            config.metaOAuthRedirectUri = 'https://changed.example.com/channels/oauth-callback';
+            const url = new URL(await build({ redirectUri: bound }));
+            expect(url.searchParams.get('redirect_uri')).toBe(bound);
+        });
+
+        test('passes state through byte-identically', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.get('state')).toBe(STATE);
+        });
+
+        // buildAuthUrl passes a caller-supplied redirectUri through verbatim: the
+        // service supplies config.metaOAuthRedirectUri and Meta's whitelist enforces
+        // it. What this pins is only that hostile text stays inside its own
+        // percent-encoded parameter and cannot add or override another one.
+        test('keeps hostile state and redirect_uri values inside their own encoded parameters', async () => {
+            const hostileState = `${STATE}&scope=business_management&config_id=999#frag`;
+            const hostileRedirect = `${REDIRECT}&scope=instagram_basic&client_id=1`;
+            const url = new URL(await build({ state: hostileState, redirectUri: hostileRedirect }));
+
+            expect([...url.searchParams.keys()].sort()).toEqual([
+                'client_id',
+                'config_id',
+                'redirect_uri',
+                'response_type',
+                'state',
+            ]);
+            expect(url.searchParams.get('state')).toBe(hostileState);
+            expect(url.searchParams.get('redirect_uri')).toBe(hostileRedirect);
+            expect(url.searchParams.get('client_id')).toBe(APP_ID);
+            expect(url.searchParams.get('config_id')).toBe(CONFIG_ID);
+            expect(url.searchParams.has('scope')).toBe(false);
+        });
+
+        test('does not send the system-user-only response-type override', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.has('override_default_response_type')).toBe(false);
+        });
+    });
+
     describe('webhookFields()', () => {
         test('includes only Messenger messages', () => {
             const fields = provider.webhookFields();
