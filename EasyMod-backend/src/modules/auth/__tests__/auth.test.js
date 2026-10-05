@@ -439,15 +439,13 @@ describe('Auth API', () => {
             expect(res.body.data?.requires2fa).toBeUndefined();
         });
 
-        it('requires an active shop row when selecting a login shop', async () => {
+        it('filters inactive shop memberships without excluding shop-less Growth users', async () => {
             User.findOne.mockResolvedValue(mockUser);
 
             await authService.authenticateUser('test@example.com', 'correct-password');
 
             expect(User.findOne).toHaveBeenCalledWith(expect.objectContaining({
                 include: [expect.objectContaining({
-                    where: { is_active: true },
-                    required: true,
                     through: expect.objectContaining({
                         where: { is_active: true },
                     }),

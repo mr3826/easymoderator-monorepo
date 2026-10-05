@@ -171,11 +171,7 @@ const authenticateRequest = async (
         if (decoded.shopId && requireShopMembership !== false && !shopMembershipVerified) {
             activeMembership = await findActiveMembership(decoded.userId, decoded.shopId);
             if (!activeMembership) {
-                throw new AppError(
-                    'Your shop membership is inactive. Please login again.',
-                    403,
-                    'GROWTH_OS_FORBIDDEN',
-                );
+                throw new AppError('Your shop membership is inactive. Please login again.', 401);
             }
         }
 

@@ -281,12 +281,11 @@ describe('auth.middleware sid revocation branch (ADR M-004)', () => {
             expect(mockUserShopFindOne).toHaveBeenCalledTimes(1);
         });
 
-        test('a web token that lost its membership keeps the web 403 and never touches the sessions table', async () => {
+        test('a web token that lost its membership requires reauthentication and never touches sessions', async () => {
             mockUserShopFindOne.mockResolvedValue(null);
             const { req, err } = await runMiddleware(webToken(), { originalUrl: '/api/analytics/funnel' });
 
-            expect(err.status).toBe(403);
-            expect(err.code).toBe('GROWTH_OS_FORBIDDEN');
+            expect(err.status).toBe(401);
             expect(req.user).toBeUndefined();
             expect(mockSessionFindByPk).not.toHaveBeenCalled();
         });

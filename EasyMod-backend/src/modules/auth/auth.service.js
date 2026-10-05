@@ -359,9 +359,7 @@ const resolveAuthenticatedUser = async (email, password) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            },
-            where: { is_active: true },
-            required: true,
+            }
         }]
     });
 
@@ -788,9 +786,7 @@ const getAuthContext = async (userId, shopIdFromToken) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            },
-            where: { is_active: true },
-            required: true,
+            }
         }]
     });
 
