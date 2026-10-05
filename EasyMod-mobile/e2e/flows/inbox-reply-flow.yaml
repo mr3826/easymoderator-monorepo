@@ -1,0 +1,35 @@
+appId: tech.easymod.merchant.dev
+name: Shared Inbox Human Reply and AI Toggle Flow
+tags:
+  - mobile-e2e
+  - inbox
+  - reply
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- openLink: easymodmerchant://conversation/conv-test-reply-1
+- extendedWaitUntil:
+    visible:
+      id: mobile-conversation-messages
+    timeout: 30000
+- assertVisible:
+    id: mobile-conversation-reply-input
+- assertVisible:
+    id: mobile-conversation-reply-send
+- tapOn:
+    id: mobile-conversation-reply-input
+- inputText: "Hello, this is merchant reply from mobile app"
+- hideKeyboard
+- tapOn:
+    id: mobile-conversation-reply-send
+- extendedWaitUntil:
+    visible:
+      text: "Hello, this is merchant reply from mobile app"
+    timeout: 30000
+- assertVisible:
+    id: mobile-conversation-ai-toggle
+- tapOn:
+    id: mobile-conversation-ai-toggle
