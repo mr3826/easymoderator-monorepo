@@ -21,7 +21,7 @@ Exit code `0` = all hard gates pass. The script prints PASS/FAIL per gate.
 
 | # | Gate | How it's verified | Owner |
 |---|------|-------------------|-------|
-| 1 | **CI is green on `main`** — backend tests + frontend build pass; build/deploy only run after the test gate | GitHub Actions: the `Test & Build Gate` job is green on the latest `main` push | Eng |
+| 1 | **CI is green on `main`** — backend tests + frontend build pass; build/deploy only run after the test gate | GitHub Actions: the `Quality fast` job is green on the latest `main` validation | Eng |
 | 2 | **Infra up** — API answers `/health/ready` 200 | `launch-readiness.js` gate 1 | Auto |
 | 3 | **DB + Redis + Vector store healthy** — Postgres connected, Redis connected, Qdrant available | `launch-readiness.js` gate 2 (`/health/detailed`) | Auto |
 | 4 | **No silent reply failures** — `message-dlq` depth = 0 | `launch-readiness.js` gate 3 (`autoReplyDlq`) | Auto |

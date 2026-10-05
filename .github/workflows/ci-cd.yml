@@ -1,8 +1,8 @@
 name: CI / CD
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Changes to this workflow intentionally exercise the protected PR test gate;
-# receipt-only and docs-only release updates use this path as well; publish and
+# Pull requests exercise the protected test gate. Trusted main/manual release
+# runs enter through release.yml and reuse this reviewed graph; publish and
 # deploy jobs remain guarded by event, branch, and repository gates.
 # Required GitHub secrets (Settings → Secrets → Actions):
 #   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
@@ -29,12 +29,64 @@ name: CI / CD
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    branches: [main]
   # Run the test gate on PRs into main so breakage is caught BEFORE it lands.
-  # build/deploy are guarded to never run on pull_request (see those jobs).
+  # Publish/deploy runs are entered through release.yml and are guarded to never
+  # run on pull_request (see those jobs).
   pull_request:
     branches: [main]
+  # Keep the implementation in one reviewed graph while giving release.yml a
+  # separate, trusted main/manual entrypoint. The caller supplies only operator
+  # inputs; secrets are inherited by the trusted caller, never by pull requests.
+  workflow_call:
+    inputs:
+      target:
+        required: false
+        type: string
+        default: ''
+      before_sha:
+        required: false
+        type: string
+        default: ''
+      wipe_db_first:
+        required: false
+        type: string
+        default: ''
+      seed_admin:
+        required: false
+        type: string
+        default: ''
+      deploy_confirmation:
+        required: false
+        type: string
+        default: ''
+      existing_backend_digest:
+        required: false
+        type: string
+        default: ''
+      existing_candidate_sha:
+        required: false
+        type: string
+        default: ''
+      growth_image_override:
+        required: false
+        type: string
+        default: ''
+      expect_schema_drift:
+        required: false
+        type: string
+        default: ''
+      trace_from:
+        required: false
+        type: string
+        default: ''
+      trace_to:
+        required: false
+        type: string
+        default: ''
+      trace_marker:
+        required: false
+        type: string
+        default: EASYMOD_AFTER_DONE
   workflow_dispatch:
     inputs:
       target:
@@ -120,6 +172,7 @@ jobs:
   changes:
     name: Detect changed services
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: none
@@ -139,8 +192,8 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          TARGET: ${{ github.event.inputs.target || '' }}
-          BEFORE_SHA: ${{ github.event.before || '' }}
+          TARGET: ${{ inputs.target || '' }}
+          BEFORE_SHA: ${{ inputs.before_sha || github.event.before || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -153,10 +206,7 @@ jobs:
           # growth-os.yml still owns push/deploy on its own trigger.
           growth=false
 
-          if [[ "$EVENT_NAME" == "push" ]]; then
-            backend=true
-            frontend=true
-          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || ( "$EVENT_NAME" == "workflow_call" && -n "$TARGET" ) ]]; then
             [[ "$TARGET" == "all" || "$TARGET" == "backend" ]] && backend=true
             [[ "$TARGET" == "all" || "$TARGET" == "frontend" ]] && frontend=true
           else
@@ -201,8 +251,9 @@ jobs:
   # sent:false) impossible to ship "green": backend unit tests run here, and the
   # build/deploy jobs below are blocked unless this job succeeds.
   test:
-    name: Test & Build Gate
+    name: Quality fast (affected backend/frontend)
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     permissions:
@@ -267,6 +318,7 @@ jobs:
   frontend-e2e:
     name: EasyModerator frontend Playwright (mock-only)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
     permissions:
@@ -318,6 +370,7 @@ jobs:
   meta-e2e:
     name: Meta-shaped E2E (AI trust boundary)
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [changes]
     # Same condition as `test` so the deploy graph stays simple; the heavy steps
     # below are skipped when only the frontend changed.
@@ -379,11 +432,12 @@ jobs:
   deployment-config:
     name: Deployment configuration dry run
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [changes, test, meta-e2e]
     if: |
       always() &&
       (
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'probe') ||
+        ((github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.target == 'probe') ||
         (
           needs.changes.result == 'success' &&
           needs.test.result == 'success' &&
@@ -517,9 +571,9 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
-          PROBE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'probe' }}
+          PROBE_MODE: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.target == 'probe' }}
           SCHEMA_DRIFT_MODE: ${{ inputs.expect_schema_drift == 'DRIFT' }}
-          PROBE_INBOUND_TRACE: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'probe' && inputs.trace_from != '' && inputs.trace_to != '' }}
+          PROBE_INBOUND_TRACE: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.target == 'probe' && inputs.trace_from != '' && inputs.trace_to != '' }}
           TRACE_FROM: ${{ inputs.trace_from }}
           TRACE_TO: ${{ inputs.trace_to }}
           TRACE_MARKER: ${{ inputs.trace_marker }}
@@ -614,6 +668,7 @@ jobs:
   docker-build-validation:
     name: Docker build validation (no push)
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [changes, test, meta-e2e, deployment-config]
     # Feature branches and pull requests get a non-publishing Docker build.
     # The main-branch production path builds and pushes each image exactly once
@@ -675,6 +730,7 @@ jobs:
   integration:
     name: Backend integration (PostgreSQL + Redis)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     permissions:
@@ -766,8 +822,9 @@ jobs:
 
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
-    name: Build & Push Docker Images
+    name: Build & publish immutable images
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     permissions:
       contents: read
       packages: write
@@ -865,8 +922,9 @@ jobs:
 
   # ── 4. Deploy to DO droplet ──────────────────────────────────────────────────
   deploy:
-    name: Deploy to DO Droplet
+    name: Production deploy + verification
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     needs: [changes, build, frontend-e2e]
     # A new monorepo must not switch the live droplet merely because its
     # default branch was populated. Enable this repository variable only after
@@ -879,11 +937,11 @@ jobs:
       needs.changes.result == 'success' &&
       needs.build.result == 'success' &&
       (needs.frontend-e2e.result == 'success' || needs.frontend-e2e.result == 'skipped') &&
-      github.event_name == 'workflow_dispatch' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
-      github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha) &&
-      (github.event.inputs.target != 'frontend' || github.event.inputs.existing_candidate_sha != '')
+      inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha) &&
+      (inputs.target != 'frontend' || inputs.existing_candidate_sha != '')
     environment: production
     permissions:
       contents: read
@@ -1566,13 +1624,13 @@ jobs:
           FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
           BACKEND_DIGEST: ${{ needs.build.outputs.backend_digest }}
           FRONTEND_DIGEST: ${{ needs.build.outputs.frontend_digest }}
-          DEPLOYED_COMMIT: ${{ github.event.inputs.existing_candidate_sha || github.sha }}
+          DEPLOYED_COMMIT: ${{ inputs.existing_candidate_sha || github.sha }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           DEPLOYED_AT: ${{ needs.build.outputs.build_time }}
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
-          SEED_ADMIN: ${{ github.event.inputs.seed_admin }}
+          WIPE_DB: ${{ inputs.wipe_db_first }}
+          SEED_ADMIN: ${{ inputs.seed_admin }}
           ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
           SCHEMA_DRIFT_MODE: ${{ inputs.expect_schema_drift == 'DRIFT' }}
 
@@ -1624,6 +1682,7 @@ jobs:
   pr-merge-gate:
     name: PR Merge Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always() && github.event_name == 'pull_request'
     needs:
       - changes
@@ -1698,7 +1757,7 @@ jobs:
 
           echo "── PR Merge Gate ─────────────────────────────────────────────"
           verdict "Detect changed services"                "$R_CHANGES"        true
-          verdict "Test & Build Gate"                      "$R_TEST"           "$code_changed"
+          verdict "Quality fast"                         "$R_TEST"           "$code_changed"
           verdict "EasyModerator frontend Playwright"      "$R_FRONTEND_E2E"   "$FRONTEND"
           verdict "Meta-shaped E2E (AI trust boundary)"    "$R_META_E2E"       "$code_changed"
           verdict "Backend integration (PostgreSQL+Redis)" "$R_INTEGRATION"    "$code_changed"

@@ -52,6 +52,7 @@ jobs:
   purge:
     name: Purge account on production
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
