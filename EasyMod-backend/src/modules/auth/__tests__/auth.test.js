@@ -407,6 +407,7 @@ describe('Auth API', () => {
         });
 
         it('continues to reject an unmarked shop-less account', async () => {
+            UserShop.findOne.mockResolvedValue(null);
             User.findOne.mockResolvedValue({
                 ...mockUser,
                 shops: [],
@@ -423,6 +424,7 @@ describe('Auth API', () => {
         });
 
         it('rejects an unmarked shop-less account with 403 even when TOTP is enabled (no pre-boundary challenge)', async () => {
+            UserShop.findOne.mockResolvedValue(null);
             User.findOne.mockResolvedValue({
                 ...mockUser,
                 shops: [],

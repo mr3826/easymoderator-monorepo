@@ -359,7 +359,9 @@ const resolveAuthenticatedUser = async (email, password) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            }
+            },
+            where: { is_active: true },
+            required: false,
         }]
     });
 
@@ -393,6 +395,19 @@ const resolveAuthenticatedUser = async (email, password) => {
     // This boundary runs BEFORE the 2FA challenge: an account that can never
     // obtain a session (e.g. a suspended operator whose role was revoked)
     // must not receive a fresh temp token merely for knowing the password.
+    if (!isGrowthOsUser
+        && !isInitialGrowthBootstrapUser(user)
+        && (!user.shops || user.shops.length === 0)) {
+        const hasMembership = await UserShop.findOne({
+            attributes: ['id'],
+            where: { user_id: user.id },
+        });
+        if (hasMembership) {
+            await recordFailedLogin(email);
+            throw new AppError('Invalid email or password', 401);
+        }
+    }
+
     if (!isGrowthOsUser
         && !isInitialGrowthBootstrapUser(user)
         && (!user.shops || user.shops.length === 0)) {
@@ -786,7 +801,9 @@ const getAuthContext = async (userId, shopIdFromToken) => {
             through: {
                 attributes: ['role', 'is_active'],
                 where: { is_active: true }
-            }
+            },
+            where: { is_active: true },
+            required: false,
         }]
     });
 

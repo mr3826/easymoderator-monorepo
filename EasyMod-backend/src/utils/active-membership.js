@@ -21,7 +21,7 @@ const findActiveMembership = async (userId, shopId) => {
             as: 'shop',
             // Keep this projection deliberately narrow; callers only need the
             // shop identity and active-state proof for authorization.
-            attributes: ['id', 'is_active'],
+            attributes: ['id', 'is_active', 'timezone'],
             where: { is_active: true },
             required: true,
         }],
