@@ -3,9 +3,9 @@ name: Mobile CI
 # Isolation contract (ADR M-009, amended by ADR M-013 when mobile joined main):
 # this workflow carries no secrets, no deployment environment and no
 # workflow_dispatch trigger, and it never pushes to a registry or reaches a host
-# over SSH. It validates pull requests into main that change the mobile app,
-# mobile API contracts, shared authentication, or this program's CI, and pushes
-# to mobile/** branches; it never
+# over SSH. It validates every pull request with a cheap isolation check, then
+# runs the mobile proof only for mobile-relevant changes. Pushes to mobile/**
+# branches also run the mobile proof; it never
 # runs for a push to main (the signed build there is mobile-release.yml). The
 # isolation-guard job below fails the run structurally if any of that ever
 # changes — do not weaken it to make a future change pass.
@@ -27,27 +27,11 @@ on:
       - '.github/workflows/mobile-release.yml'
       - '.github/scripts/verify-mobile-ci-isolation.js'
       - '.github/scripts/verify-mobile-protected-paths.js'
-  # Pull requests into main run this gate when they touch the mobile app, its
-  # consumed backend contracts or this program's CI. Main's required checks
-  # still run for every PR; this workflow owns only mobile-specific proof and
-  # the small backend contract check below.
+  # Every PR gets a stable Mobile CI status. Non-mobile diffs run only the
+  # isolation/path detector; mobile-relevant diffs run the full proof.
   pull_request:
     branches:
       - main
-    paths:
-      - 'EasyMod-mobile/**'
-      - 'docs/mobile/**'
-      - 'EasyMod-backend/src/modules/mobile/**'
-      - 'EasyMod-backend/src/modules/auth/**'
-      - 'EasyMod-backend/src/modules/notification/**'
-      - 'EasyMod-backend/src/middleware/auth.middleware.js'
-      - 'EasyMod-backend/src/middleware/mobile-client-context.middleware.js'
-      - 'EasyMod-backend/src/config/config.js'
-      - '.github/workflows/mobile-ci.yml'
-      - '.github/workflows/mobile-release.yml'
-      - '.github/scripts/verify-mobile-ci-isolation.js'
-      - '.github/scripts/verify-mobile-protected-paths.js'
-      - '.github/scripts/verify-native-auth-fixture-shape.js'
     types: [opened, synchronize, reopened, labeled]
 
 # Mobile validation has no release or deployment side effect, so a newer run
@@ -82,6 +66,7 @@ jobs:
     timeout-minutes: 10
     needs: [isolation-guard]
     outputs:
+      mobile_relevant: ${{ steps.diff.outputs.mobile_relevant }}
       backend_touched: ${{ steps.diff.outputs.backend_touched }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -96,7 +81,8 @@ jobs:
     name: Mobile — typecheck, lint, unit, audit
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    needs: [isolation-guard]
+    needs: [isolation-guard, protected-paths]
+    if: needs.protected-paths.result == 'success' && needs.protected-paths.outputs.mobile_relevant == 'true'
     defaults:
       run:
         working-directory: ./EasyMod-mobile
@@ -147,7 +133,8 @@ jobs:
     # and installs/cold-launches the re-signed APK on the oldest supported API.
     name: Android release build (all ABIs) + install/launch
     runs-on: ubuntu-latest
-    needs: [isolation-guard, mobile]
+    needs: [isolation-guard, mobile, protected-paths]
+    if: needs.protected-paths.result == 'success' && needs.protected-paths.outputs.mobile_relevant == 'true'
     timeout-minutes: 90
     env:
       APP_VARIANT: preview
@@ -571,6 +558,7 @@ jobs:
         env:
           R_GUARD: ${{ needs.isolation-guard.result }}
           R_PATHS: ${{ needs.protected-paths.result }}
+          MOBILE_RELEVANT: ${{ needs.protected-paths.outputs.mobile_relevant }}
           R_MOBILE: ${{ needs.mobile.result }}
           R_RELEASE: ${{ needs.android-release.result }}
           R_BACKEND: ${{ needs.mobile-backend-contract.result }}
@@ -582,6 +570,7 @@ jobs:
           set -euo pipefail
           echo "Isolation guard:    $R_GUARD"
           echo "Protected paths:    $R_PATHS"
+          echo "Mobile relevant:    $MOBILE_RELEVANT"
           echo "Mobile checks:      $R_MOBILE"
           echo "Android release:    $R_RELEASE"
           echo "Backend contract:   $R_BACKEND (backend touched: $BACKEND_TOUCHED)"
@@ -589,9 +578,18 @@ jobs:
           echo "Mobile E2E:         $R_E2E"
           echo "Device test APK:    $R_DEVICE_APK"
           fail=0
-          for result in "$R_GUARD" "$R_PATHS" "$R_MOBILE" "$R_RELEASE"; do
+          for result in "$R_GUARD" "$R_PATHS"; do
             [ "$result" = "success" ] || fail=1
           done
+          if [ "$MOBILE_RELEVANT" = "true" ]; then
+            for result in "$R_MOBILE" "$R_RELEASE"; do
+              [ "$result" = "success" ] || fail=1
+            done
+          else
+            for result in "$R_MOBILE" "$R_RELEASE"; do
+              [ "$result" = "skipped" ] || fail=1
+            done
+          fi
           # The focused backend contract may only be skipped when the diff never
           # touched a backend path consumed by mobile.
           if [ "$R_BACKEND" != "success" ] && { [ "$R_BACKEND" != "skipped" ] || [ "$BACKEND_TOUCHED" = "true" ]; }; then
