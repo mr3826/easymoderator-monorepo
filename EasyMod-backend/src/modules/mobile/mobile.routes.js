@@ -25,6 +25,7 @@ const mobileInboxController = require('./mobile-inbox.controller');
 const mobileOrderController = require('./mobile-order.controller');
 const mobileCourierController = require('./mobile-courier.controller');
 const mobileCustomerController = require('./mobile-customer.controller');
+const mobileProductController = require('./mobile-product.controller');
 const { isMobileE2eFixturesEnabled } = require('./mobile-e2e-fixtures');
 
 const router = express.Router();
@@ -67,5 +68,8 @@ router.post('/orders/:orderId/book-courier', mobileCourierController.bookCourier
 router.get('/courier/problems', mobileCourierController.getProblemParcels);
 router.get('/orders/:orderId/tracking', mobileCourierController.getDeliveryTracking);
 router.get('/customers/:customerId', mobileCustomerController.getCustomerQuickView);
+router.get('/products', mobileProductController.getProducts);
+router.patch('/products/:productId/quick-update', mobileProductController.quickUpdateStock);
+router.post('/products/photo-draft', mobileProductController.createPhotoDraft);
 
 module.exports = router;

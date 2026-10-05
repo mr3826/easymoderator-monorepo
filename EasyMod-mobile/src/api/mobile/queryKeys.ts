@@ -23,6 +23,8 @@ export const mobileQueryKeys = {
     ['mobile', 'problem-parcels', shopId, filter] as const,
   deliveryTracking: (shopId: string | null | undefined, orderId: string) =>
     ['mobile', 'delivery-tracking', shopId, orderId] as const,
+  products: (shopId: string | null | undefined, filter = '', search = '') =>
+    ['mobile', 'products', shopId, filter, search] as const,
 };
 
 /**

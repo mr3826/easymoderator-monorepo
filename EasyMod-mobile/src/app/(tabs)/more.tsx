@@ -39,6 +39,15 @@ export default function MoreScreen() {
         })}
       </Text>
       <Pressable
+        style={styles.productsBtn}
+        onPress={() => router.push('/products')}
+        testID="more-products-button"
+        accessibilityRole="button"
+      >
+        <Text style={styles.productsBtnText}>📦 {t('mobile.products.screenTitle', 'Products & Stock')}</Text>
+      </Pressable>
+
+      <Pressable
         style={styles.courierBtn}
         onPress={() => router.push('/courier-problems')}
         testID="more-courier-problems-button"
@@ -105,6 +114,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
+  productsBtn: {
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderRadius: radius.default,
+    paddingHorizontal: spacing.four,
+    paddingVertical: spacing.two,
+    minWidth: 200,
+    alignItems: 'center',
+    marginVertical: spacing.one,
+  },
+  productsBtnText: {
+    color: '#4338CA',
+    fontWeight: '600',
+    fontSize: 14,
+  },
   courierBtn: {
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
@@ -114,7 +139,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.two,
     minWidth: 200,
     alignItems: 'center',
-    marginVertical: spacing.two,
+    marginVertical: spacing.one,
   },
   courierBtnText: {
     color: '#1D4ED8',
