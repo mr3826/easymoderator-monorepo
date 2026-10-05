@@ -322,7 +322,7 @@ async function markProcessed(
         last_error_code: null,
         next_retry_at: null,
         processed_at: new Date(),
-    });
+    }, { expectedQueueJobId });
 }
 
 /**
