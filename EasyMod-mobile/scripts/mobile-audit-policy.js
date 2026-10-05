@@ -12,8 +12,19 @@ if (!auditPath || !sourceMapPath) {
 const audit = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
 const sourceMap = JSON.parse(fs.readFileSync(sourceMapPath, 'utf8'));
 const allowedBuildAdvisories = new Map([
-    [1240992, { packageName: 'braces', url: 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm' }],
-    [1240912, { packageName: 'node-forge', url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv' }],
+    [1240992, {
+        packageName: 'braces',
+        url: 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm',
+        remediations: [
+            { name: 'jest', version: '30.5.2', isSemVerMajor: true },
+            { name: 'expo', version: '44.0.6', isSemVerMajor: true },
+        ],
+    }],
+    [1240912, {
+        packageName: 'node-forge',
+        url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
+        remediations: [{ name: 'expo', version: '44.0.6', isSemVerMajor: true }],
+    }],
 ]);
 
 const advisories = new Map();
@@ -43,7 +54,11 @@ for (const advisory of advisories.values()) {
     }
 
     const fix = audit.vulnerabilities?.[allowed.packageName]?.fixAvailable;
-    if (!fix || fix.name !== 'expo' || fix.version !== '44.0.6' || fix.isSemVerMajor !== true) {
+    const remediationReviewed = allowed.remediations.some((remediation) => fix
+        && fix.name === remediation.name
+        && fix.version === remediation.version
+        && fix.isSemVerMajor === remediation.isSemVerMajor);
+    if (!remediationReviewed) {
         failures.push(`advisory ${advisory.source} now has a remediation requiring fresh review`);
     }
 
