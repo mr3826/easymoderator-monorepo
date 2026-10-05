@@ -222,7 +222,11 @@ const verifyTwoFactor = async ({ tempToken, token }, req) => {
 
     const shopId = await resolveActiveShopId(user);
     if (!shopId) {
-        throw new AppError('No active shop session found. Please login again.', 401);
+        throw new AppError(
+            'No active shop session found. Please login again.',
+            403,
+            'NATIVE_SHOP_ACCESS_REVOKED',
+        );
     }
 
     return issueNewSession(user, shopId, req, { mfaVerified: true });
