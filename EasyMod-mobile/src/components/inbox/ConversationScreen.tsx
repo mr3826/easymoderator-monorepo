@@ -166,6 +166,10 @@ export function ConversationScreen({ id }: { id: string | undefined }) {
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.messages}
+          windowSize={5}
+          maxToRenderPerBatch={5}
+          removeClippedSubviews={true}
+          initialNumToRender={8}
           ListEmptyComponent={<ConversationState title={t('mobile.inbox.detail.empty.title')} message={t('mobile.inbox.detail.empty.message')} />}
           renderItem={({ item }) => <MessageBubble message={item} />}
         />

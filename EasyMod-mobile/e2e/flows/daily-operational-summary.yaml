@@ -1,0 +1,34 @@
+appId: tech.easymod.merchant.dev
+name: Daily Operational Summary and Problem Resolution Flow
+tags:
+  - mobile-e2e
+  - home
+  - daily-summary
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- assertVisible:
+    id: today-summary
+- assertVisible:
+    id: today-orders-count
+- assertVisible:
+    id: today-revenue-value
+- assertVisible:
+    id: today-delivered-count
+- assertVisible:
+    id: today-attention-count
+- assertVisible:
+    id: today-problems-count
+- tapOn:
+    id: today-fix-problems-btn
+- extendedWaitUntil:
+    visible:
+      id: mobile-courier-filter-all
+    timeout: 30000
+- assertVisible:
+    id: mobile-courier-filter-failed
+- assertVisible:
+    id: mobile-courier-filter-returned
