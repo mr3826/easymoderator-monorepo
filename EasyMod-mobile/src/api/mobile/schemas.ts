@@ -292,4 +292,45 @@ export const deliveryTrackingResponseSchema = z.object({
 });
 export type DeliveryTrackingResponse = z.infer<typeof deliveryTrackingResponseSchema>;
 
+export const mobileProductSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    name_bn: z.string().nullable().optional(),
+    sku: z.string().nullable().optional(),
+    category: z.string().nullable().optional(),
+    price: z.number().nonnegative(),
+    compare_at_price: z.number().nullable().optional(),
+    quantity: z.number().int(),
+    low_stock_threshold: z.number().int().optional(),
+    track_quantity: z.boolean().optional(),
+    in_stock: z.boolean(),
+    stock_status: z.enum(['in_stock', 'low_stock', 'out_of_stock']),
+    image_url: z.string().nullable().optional(),
+    images: z.array(z.string()).optional(),
+    description: z.string().nullable().optional(),
+    is_active: z.boolean().optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type MobileProduct = z.infer<typeof mobileProductSchema>;
+
+export const productListResponseSchema = z.object({
+  products: z.array(mobileProductSchema),
+  pagination: z.object({
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    total_items: z.number().int().min(0),
+    total_pages: z.number().int().min(0),
+  }),
+});
+export type ProductListResponse = z.infer<typeof productListResponseSchema>;
+
+export const productQuickUpdateResponseSchema = mobileProductSchema;
+export type ProductQuickUpdateResponse = z.infer<typeof productQuickUpdateResponseSchema>;
+
+export const photoDraftResponseSchema = mobileProductSchema;
+export type PhotoDraftResponse = z.infer<typeof photoDraftResponseSchema>;
+
 

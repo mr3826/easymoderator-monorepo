@@ -42,6 +42,7 @@ module.exports = {
     mobileCourierActionsEnabled: process.env.MOBILE_COURIER_ACTIONS_ENABLED === 'true' || process.env.NODE_ENV === 'test',
     mobileAiDraftsEnabled: process.env.MOBILE_AI_DRAFTS_ENABLED === 'true',
     mobileInboxWritesEnabled: process.env.MOBILE_INBOX_WRITES_ENABLED === 'true' || process.env.NODE_ENV === 'test',
+    mobileProductMutationsEnabled: process.env.MOBILE_PRODUCT_MUTATIONS_ENABLED === 'true' || process.env.NODE_ENV === 'test',
     corsOrigins: process.env.CORS_ORIGINS
         ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
         : [],
