@@ -131,10 +131,17 @@ jobs:
     # that can happen, this job proves the signing path end to end with a
     # throwaway key, proves a debug-signed build cannot pass the release check,
     # and installs/cold-launches the re-signed APK on the oldest supported API.
+    # The all-ABI proof is opt-in on pull requests because it is an expensive
+    # native validation. Add the `mobile-native` label when native/dependency
+    # changes require it; mobile-release.yml remains the post-merge release
+    # proof for every mobile artifact change.
     name: Android release build (all ABIs) + install/launch
     runs-on: ubuntu-latest
     needs: [isolation-guard, mobile, protected-paths]
-    if: needs.protected-paths.result == 'success' && needs.protected-paths.outputs.mobile_relevant == 'true'
+    if: >-
+      needs.protected-paths.result == 'success' &&
+      needs.protected-paths.outputs.mobile_relevant == 'true' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mobile-native'))
     timeout-minutes: 90
     env:
       APP_VARIANT: preview
@@ -561,6 +568,7 @@ jobs:
           MOBILE_RELEVANT: ${{ needs.protected-paths.outputs.mobile_relevant }}
           R_MOBILE: ${{ needs.mobile.result }}
           R_RELEASE: ${{ needs.android-release.result }}
+          ANDROID_REQUIRED: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mobile-native') }}
           R_BACKEND: ${{ needs.mobile-backend-contract.result }}
           BACKEND_TOUCHED: ${{ needs.protected-paths.outputs.backend_touched }}
           R_E2E_SCOPE: ${{ needs.mobile-e2e-scope.result }}
@@ -573,6 +581,7 @@ jobs:
           echo "Mobile relevant:    $MOBILE_RELEVANT"
           echo "Mobile checks:      $R_MOBILE"
           echo "Android release:    $R_RELEASE"
+          echo "Android required:   $ANDROID_REQUIRED"
           echo "Backend contract:   $R_BACKEND (backend touched: $BACKEND_TOUCHED)"
           echo "Mobile E2E scope:   $R_E2E_SCOPE"
           echo "Mobile E2E:         $R_E2E"
@@ -582,9 +591,12 @@ jobs:
             [ "$result" = "success" ] || fail=1
           done
           if [ "$MOBILE_RELEVANT" = "true" ]; then
-            for result in "$R_MOBILE" "$R_RELEASE"; do
-              [ "$result" = "success" ] || fail=1
-            done
+            [ "$R_MOBILE" = "success" ] || fail=1
+            if [ "$ANDROID_REQUIRED" = "true" ]; then
+              [ "$R_RELEASE" = "success" ] || fail=1
+            else
+              [ "$R_RELEASE" = "skipped" ] || fail=1
+            fi
           else
             for result in "$R_MOBILE" "$R_RELEASE"; do
               [ "$result" = "skipped" ] || fail=1
