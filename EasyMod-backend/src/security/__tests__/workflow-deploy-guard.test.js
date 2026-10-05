@@ -9,6 +9,15 @@ const workflowPath = path.resolve(
 );
 const workflow = fs.readFileSync(workflowPath, 'utf8');
 const workflowDirectory = path.resolve(__dirname, '../../../../.github/workflows');
+const releaseWorkflowPath = path.resolve(
+    __dirname,
+    '../../../../.github/workflows/release.yml',
+);
+const releaseWorkflow = fs.readFileSync(releaseWorkflowPath, 'utf8');
+const mobileCiWorkflow = fs.readFileSync(
+    path.resolve(__dirname, '../../../../.github/workflows/mobile-ci.yml'),
+    'utf8',
+);
 const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
 const compose = fs.readFileSync(composePath, 'utf8');
 const securityWorkflowPath = path.resolve(
@@ -38,12 +47,28 @@ const growthImporterWorkflowPath = path.resolve(
 const growthImporterWorkflow = fs.readFileSync(growthImporterWorkflowPath, 'utf8');
 
 describe('production workflow branch safety', () => {
+    test('keeps post-merge release entry separate from pull-request validation', () => {
+        expect(workflow).toContain('workflow_call:');
+        expect(workflow).not.toMatch(/^ {2}push:/m);
+        expect(releaseWorkflow).toContain('branches: [main]');
+        expect(releaseWorkflow).not.toMatch(/^ {2}pull_request:/m);
+        expect(releaseWorkflow).toContain('uses: ./.github/workflows/ci-cd.yml');
+        expect(releaseWorkflow).toContain('secrets: inherit');
+    });
+
+    test('mobile CI delegates repository-wide security and backend gates', () => {
+        expect(mobileCiWorkflow).not.toContain('gitleaks');
+        expect(mobileCiWorkflow).not.toContain('backend-regression');
+        expect(mobileCiWorkflow).toContain('mobile-backend-contract');
+        expect(mobileCiWorkflow).toContain('EasyMod-backend/src/middleware/auth.middleware.js');
+    });
+
     test('build and deploy jobs are restricted to main', () => {
         const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
 
         expect(buildBlock).toContain("github.ref == 'refs/heads/main'");
-        expect(deployBlock).toContain("github.event_name == 'workflow_dispatch'");
+        expect(deployBlock).toContain("github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'");
         expect(deployBlock).toContain("github.ref == 'refs/heads/main'");
     });
 
@@ -109,7 +134,7 @@ describe('production workflow branch safety', () => {
         // repeating against a future reviewer who only trusts actionlint.
         // Final receipt: Actions run `35561961284` at SHA `3e5077d` — 16/16
         // checks pass or correctly skip; this Jest assertion is included in the
-        // `Test & Build Gate` job's execution.
+        // `Quality fast` job's execution.
         //
         // Regression guard for the reusable-workflow permission-mismatch I
         // actually shipped at a56045e: `growth-os.yml` requests packages.write
@@ -397,7 +422,7 @@ describe('production workflow branch safety', () => {
     test('keeps repository-variable mutation outside contributor-controlled jobs', () => {
         expect(workflow).not.toContain('actions: write');
         expect(workflow).toContain('operator-owned repository control');
-        expect(workflow).toContain("github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)");
+        expect(workflow).toContain("inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)");
         expect(workflow).toContain("description: 'One-shot production confirmation. Type DEPLOY-<full main SHA>.'");
     });
 
@@ -491,10 +516,10 @@ describe('production workflow branch safety', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
 
         expect(deployBlock).toContain(
-            "github.event.inputs.target != 'frontend' || github.event.inputs.existing_candidate_sha != ''",
+            "inputs.target != 'frontend' || inputs.existing_candidate_sha != ''",
         );
         expect(deployBlock).toContain(
-            'DEPLOYED_COMMIT: ${{ github.event.inputs.existing_candidate_sha || github.sha }}',
+            'DEPLOYED_COMMIT: ${{ inputs.existing_candidate_sha || github.sha }}',
         );
     });
 });
