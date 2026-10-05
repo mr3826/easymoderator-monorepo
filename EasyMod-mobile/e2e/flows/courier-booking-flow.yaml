@@ -1,0 +1,25 @@
+appId: tech.easymod.merchant.dev
+name: Courier Problem Center and Resolution Flow
+tags:
+  - mobile-e2e
+  - courier
+  - problem-center
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- openLink: easymodmerchant://courier-problems
+- extendedWaitUntil:
+    visible:
+      id: mobile-courier-filter-all
+    timeout: 30000
+- assertVisible:
+    id: mobile-courier-filter-failed
+- assertVisible:
+    id: mobile-courier-filter-returned
+- assertVisible:
+    id: mobile-courier-filter-hold
+- tapOn:
+    id: mobile-courier-filter-failed

@@ -1,0 +1,35 @@
+appId: tech.easymod.merchant.dev
+name: Order Verification and Confirmation Flow
+tags:
+  - mobile-e2e
+  - orders
+  - order-confirm
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- openLink: easymodmerchant://order/ord-test-confirm-1
+- extendedWaitUntil:
+    visible:
+      id: order-detail-screen
+    timeout: 30000
+- assertVisible:
+    id: order-customer-risk-panel
+- assertVisible:
+    id: order-confirm-btn
+- assertVisible:
+    id: order-cancel-btn
+- tapOn:
+    id: order-confirm-btn
+- extendedWaitUntil:
+    visible:
+      id: order-confirm-modal-submit
+    timeout: 10000
+- tapOn:
+    id: order-confirm-modal-submit
+- extendedWaitUntil:
+    visible:
+      id: order-status-confirmed
+    timeout: 30000
