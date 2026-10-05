@@ -56,6 +56,7 @@ jobs:
   backfill:
     name: Derive ai_* search columns on production
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.ref == 'refs/heads/main'
     environment: production
     steps:

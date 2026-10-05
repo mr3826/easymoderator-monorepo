@@ -29,6 +29,7 @@ jobs:
     name: Seed initial operator on production
     if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     steps:
       - name: Derive pinned SSH host fingerprint

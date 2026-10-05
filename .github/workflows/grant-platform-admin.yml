@@ -46,6 +46,7 @@ jobs:
   grant:
     name: Set platform_role on production
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Parity with the Growth privileged workflows: bind dispatch authority to
     # the reviewed production operator identity, not environment approval alone.
     if: github.ref == 'refs/heads/main' && github.actor == 'mr3826'

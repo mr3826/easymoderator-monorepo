@@ -50,7 +50,7 @@ const SUITES = [
         name: 'unit',
         config: 'jest.config.js',
         command: 'npm test',
-        ciJob: 'Test & Build Gate',
+        ciJob: 'Quality fast (affected backend/frontend)',
         ciRequired: true,
     },
     {
