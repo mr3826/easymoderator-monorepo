@@ -7,7 +7,7 @@
 // This does not judge WHETHER a backend change is additive — that is a human
 // reviewer's job — it only (a) blocks changes to files this program must never
 // touch under any circumstance, and (b) reports whether EasyMod-backend/ was
-// touched at all, so the backend-regression job knows whether to run.
+// touched at all, so the mobile-backend-contract job knows whether to run.
 // Dependency-free: only Node's built-in child_process and fs.
 
 const { execSync } = require('child_process');

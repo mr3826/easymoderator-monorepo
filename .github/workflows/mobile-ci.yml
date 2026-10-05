@@ -3,8 +3,9 @@ name: Mobile CI
 # Isolation contract (ADR M-009, amended by ADR M-013 when mobile joined main):
 # this workflow carries no secrets, no deployment environment and no
 # workflow_dispatch trigger, and it never pushes to a registry or reaches a host
-# over SSH. It validates pull requests into main that change the mobile app or
-# its dedicated backend modules, and pushes to mobile/** branches; it never
+# over SSH. It validates pull requests into main that change the mobile app,
+# mobile API contracts, shared authentication, or this program's CI, and pushes
+# to mobile/** branches; it never
 # runs for a push to main (the signed build there is mobile-release.yml). The
 # isolation-guard job below fails the run structurally if any of that ever
 # changes — do not weaken it to make a future change pass.
@@ -15,16 +16,21 @@ on:
       - 'mobile/**'
     paths:
       - 'EasyMod-mobile/**'
-      - 'EasyMod-backend/**'
+      - 'EasyMod-backend/src/modules/mobile/**'
+      - 'EasyMod-backend/src/modules/auth/**'
+      - 'EasyMod-backend/src/modules/notification/**'
+      - 'EasyMod-backend/src/middleware/auth.middleware.js'
+      - 'EasyMod-backend/src/middleware/mobile-client-context.middleware.js'
+      - 'EasyMod-backend/src/config/config.js'
       - 'docs/mobile/**'
       - '.github/workflows/mobile-ci.yml'
       - '.github/workflows/mobile-release.yml'
       - '.github/scripts/verify-mobile-ci-isolation.js'
       - '.github/scripts/verify-mobile-protected-paths.js'
   # Pull requests into main run this gate when they touch the mobile app, its
-  # dedicated backend modules or this program's CI. main's own required checks
-  # (PR Merge Gate, Security Scan) still run for every PR, including the backend
-  # suites that cover the shared auth middleware.
+  # consumed backend contracts or this program's CI. Main's required checks
+  # still run for every PR; this workflow owns only mobile-specific proof and
+  # the small backend contract check below.
   pull_request:
     branches:
       - main
@@ -32,8 +38,11 @@ on:
       - 'EasyMod-mobile/**'
       - 'docs/mobile/**'
       - 'EasyMod-backend/src/modules/mobile/**'
-      - 'EasyMod-backend/src/modules/auth/native/**'
+      - 'EasyMod-backend/src/modules/auth/**'
+      - 'EasyMod-backend/src/modules/notification/**'
+      - 'EasyMod-backend/src/middleware/auth.middleware.js'
       - 'EasyMod-backend/src/middleware/mobile-client-context.middleware.js'
+      - 'EasyMod-backend/src/config/config.js'
       - '.github/workflows/mobile-ci.yml'
       - '.github/workflows/mobile-release.yml'
       - '.github/scripts/verify-mobile-ci-isolation.js'
@@ -47,8 +56,8 @@ on:
 # (different scopes), and a PR is keyed by its number so concurrent PRs sharing
 # a head branch never cancel each other. `persist-credentials` is deliberately
 # left at its safe default: the mobile repo is private and both the protected-
-# paths diff and the Gitleaks history scan fetch full ref history, which needs
-# the persisted token to auth to GitHub.
+# paths diff fetches full ref history, which needs the persisted token to auth to
+# GitHub. Historical secret scanning remains owned by Security Scan.
 concurrency:
   group: mobile-ci-${{ github.repository }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
@@ -60,6 +69,7 @@ jobs:
   isolation-guard:
     name: Isolation guard
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -69,6 +79,7 @@ jobs:
   protected-paths:
     name: Protected paths untouched
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [isolation-guard]
     outputs:
       backend_touched: ${{ steps.diff.outputs.backend_touched }}
@@ -81,28 +92,10 @@ jobs:
         id: diff
         run: node .github/scripts/verify-mobile-protected-paths.js
 
-  gitleaks:
-    name: Historical secret scan
-    runs-on: ubuntu-latest
-    needs: [isolation-guard]
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-
-      - name: Scan repository history with Gitleaks
-        # Same pinned digest as the existing Security Scan workflow (Gitleaks
-        # v8.28.0). Keep the block scalar free of inline comments — they
-        # become literal Docker arguments.
-        run: >-
-          docker run --rm
-          -v "$GITHUB_WORKSPACE:/repo"
-          zricethezav/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
-          git --config=/repo/.gitleaks.toml --redact --verbose --log-opts="--all" /repo
-
   mobile:
     name: Mobile — typecheck, lint, unit, audit
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [isolation-guard]
     defaults:
       run:
@@ -540,35 +533,15 @@ jobs:
           if-no-files-found: error
           path: EasyMod-mobile/device-apk/
 
-  backend-regression:
-    name: Backend regression (Node 20)
+  mobile-backend-contract:
+    name: Mobile backend contract
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [protected-paths]
-    # Only runs when this branch's diff against origin/main touches
-    # EasyMod-backend/ at all — a documentation-only or mobile-app-only branch
-    # never spins up Postgres/Redis for this job.
+    # Runs only when this branch's diff against origin/main touches a backend
+    # contract consumed by mobile; mobile-only changes do not start backend
+    # services because the repository-wide integration job owns that coverage.
     if: needs.protected-paths.outputs.backend_touched == 'true'
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: e2e
-          POSTGRES_PASSWORD: e2e
-          POSTGRES_DB: easymod_integration_test
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -580,27 +553,6 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci
 
-      - name: Backend unit + security suite
-        working-directory: ./EasyMod-backend
-        run: |
-          npm run test:security
-          npm test
-
-      - name: Migrate the integration database
-        working-directory: ./EasyMod-backend
-        env:
-          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
-          DB_SSL: 'false'
-          NODE_ENV: test
-        run: npm run migrate
-
-      - name: Backend integration suite
-        working-directory: ./EasyMod-backend
-        env:
-          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
-          REDIS_URL: redis://127.0.0.1:6379
-        run: npm run test:integration
-
       - name: Every backend test has exactly one execution home
         working-directory: ./EasyMod-backend
         run: npm run test:discovery
@@ -611,17 +563,17 @@ jobs:
   mobile-ci-gate:
     name: Mobile CI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
-    needs: [isolation-guard, protected-paths, gitleaks, mobile, android-release, backend-regression, mobile-e2e-scope, mobile-e2e, android-device-apk]
+    needs: [isolation-guard, protected-paths, mobile, android-release, mobile-backend-contract, mobile-e2e-scope, mobile-e2e, android-device-apk]
     steps:
       - name: Report the mobile CI verdict
         env:
           R_GUARD: ${{ needs.isolation-guard.result }}
           R_PATHS: ${{ needs.protected-paths.result }}
-          R_LEAKS: ${{ needs.gitleaks.result }}
           R_MOBILE: ${{ needs.mobile.result }}
           R_RELEASE: ${{ needs.android-release.result }}
-          R_BACKEND: ${{ needs.backend-regression.result }}
+          R_BACKEND: ${{ needs.mobile-backend-contract.result }}
           BACKEND_TOUCHED: ${{ needs.protected-paths.outputs.backend_touched }}
           R_E2E_SCOPE: ${{ needs.mobile-e2e-scope.result }}
           R_E2E: ${{ needs.mobile-e2e.result }}
@@ -630,18 +582,18 @@ jobs:
           set -euo pipefail
           echo "Isolation guard:    $R_GUARD"
           echo "Protected paths:    $R_PATHS"
-          echo "Gitleaks:           $R_LEAKS"
           echo "Mobile checks:      $R_MOBILE"
           echo "Android release:    $R_RELEASE"
-          echo "Backend regression: $R_BACKEND (backend touched: $BACKEND_TOUCHED)"
+          echo "Backend contract:   $R_BACKEND (backend touched: $BACKEND_TOUCHED)"
           echo "Mobile E2E scope:   $R_E2E_SCOPE"
           echo "Mobile E2E:         $R_E2E"
           echo "Device test APK:    $R_DEVICE_APK"
           fail=0
-          for result in "$R_GUARD" "$R_PATHS" "$R_LEAKS" "$R_MOBILE" "$R_RELEASE"; do
+          for result in "$R_GUARD" "$R_PATHS" "$R_MOBILE" "$R_RELEASE"; do
             [ "$result" = "success" ] || fail=1
           done
-          # Backend regression may only be skipped when the diff never touched the backend.
+          # The focused backend contract may only be skipped when the diff never
+          # touched a backend path consumed by mobile.
           if [ "$R_BACKEND" != "success" ] && { [ "$R_BACKEND" != "skipped" ] || [ "$BACKEND_TOUCHED" = "true" ]; }; then
             fail=1
           fi
