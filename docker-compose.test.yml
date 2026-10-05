@@ -17,7 +17,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Integration and Meta E2E use isolated logical DBs up to 25.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--databases", "32"]
     ports:
       - "127.0.0.1:${TEST_REDIS_PORT:-56379}:6379"
     tmpfs:

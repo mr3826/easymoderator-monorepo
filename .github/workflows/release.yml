@@ -1,0 +1,107 @@
+name: Release / Production
+
+# Trusted post-merge entrypoint for the existing guarded CI/CD engine. Pull
+# requests never call this workflow, so its inherited secrets are unavailable to
+# untrusted PR code. A main push publishes immutable images; production deploys
+# remain explicitly confirmed and environment-protected.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'EasyMod-backend/**'
+      - 'EasyMod-frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'docker-compose.prod.yml'
+      - 'docker-compose.test.yml'
+      - 'Caddyfile'
+      - 'scripts/rollback-rehearsal.sh'
+      - '.github/workflows/ci-cd.yml'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which service to build/deploy'
+        required: false
+        default: all
+        type: choice
+        options: [all, backend, frontend, probe]
+      wipe_db_first:
+        description: 'Destructive database reset confirmation (must be WIPE; currently refused by deploy guard)'
+        required: false
+        default: ''
+        type: string
+      seed_admin:
+        description: 'Seed the production review account (must be SEED)'
+        required: false
+        default: ''
+        type: string
+      deploy_confirmation:
+        description: 'One-shot production confirmation: DEPLOY-<full main SHA>'
+        required: false
+        default: ''
+        type: string
+      existing_backend_digest:
+        description: 'Previously published backend sha256 digest for exact-artifact deployment'
+        required: false
+        default: ''
+        type: string
+      existing_candidate_sha:
+        description: 'Full main SHA that produced existing_backend_digest'
+        required: false
+        default: ''
+        type: string
+      growth_image_override:
+        description: 'Published Growth image digest for this commit'
+        required: false
+        default: ''
+        type: string
+      expect_schema_drift:
+        description: 'Require the one-shot schema drift precondition (type DRIFT)'
+        required: false
+        default: ''
+        type: string
+      trace_from:
+        description: 'Read-only inbound trace window start (ISO UTC)'
+        required: false
+        default: ''
+        type: string
+      trace_to:
+        description: 'Read-only inbound trace window end (ISO UTC)'
+        required: false
+        default: ''
+        type: string
+      trace_marker:
+        description: 'Read-only inbound marker'
+        required: false
+        default: EASYMOD_AFTER_DONE
+        type: string
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
+
+jobs:
+  release:
+    name: Release engine
+    uses: ./.github/workflows/ci-cd.yml
+    with:
+      target: ${{ inputs.target }}
+      before_sha: ${{ github.event.before }}
+      wipe_db_first: ${{ inputs.wipe_db_first }}
+      seed_admin: ${{ inputs.seed_admin }}
+      deploy_confirmation: ${{ inputs.deploy_confirmation }}
+      existing_backend_digest: ${{ inputs.existing_backend_digest }}
+      existing_candidate_sha: ${{ inputs.existing_candidate_sha }}
+      growth_image_override: ${{ inputs.growth_image_override }}
+      expect_schema_drift: ${{ inputs.expect_schema_drift }}
+      trace_from: ${{ inputs.trace_from }}
+      trace_to: ${{ inputs.trace_to }}
+      trace_marker: ${{ inputs.trace_marker }}
+    secrets: inherit

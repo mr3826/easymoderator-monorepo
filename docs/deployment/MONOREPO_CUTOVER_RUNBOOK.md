@@ -23,6 +23,12 @@ Production deployment remains disabled until every gate below is evidenced:
   unit/build checks, the Growth OS typecheck and build, and the historical
   secret scan are green.
 
+The trusted post-merge entrypoint is `.github/workflows/release.yml`. It calls
+the guarded CI/CD engine only from `main` or an operator workflow dispatch.
+Pull-request validation remains non-publishing and non-deploying; the
+production deploy path requires the existing `PRODUCTION_DEPLOY_ENABLED`
+control, exact `DEPLOY-<main SHA>` confirmation, and the production environment.
+
 Telegram is disabled by default. It is an optional integration and may be
 enabled only by setting the `TELEGRAM_ENABLED` repository variable and adding
 all three Telegram secrets. bKash is likewise disabled unless explicitly
