@@ -725,5 +725,4 @@ WAVE_3_STATUS=LOCKED_NOT_STARTED
     - `courier-booking-flow.yaml`
     - `product-stock-stepper.yaml`
   - **Audit Logging & Telemetry Verification:** Confirmed that 100% of mobile mutation endpoints record audit logs with `source: 'MOBILE'`, `userId`, `shopId`, and idempotency tracking.
-  - **Zero Overlap & Isolation Guarantees:** 100% adherence to zero mutations in `order.service.js`, `EasyMod-frontend/**`, zero DB migrations, and complete isolation from parallel agent worktree `_wt-pilot-customer-rto`.
-
+   - **Zero Overlap & Isolation Guarantees:** 100% adherence to zero mutations in `order.service.js`, `EasyMod-frontend/**`, zero DB migrations, and complete isolation from parallel agent worktree `_wt-pilot-customer-rto`.

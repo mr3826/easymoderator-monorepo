@@ -30,12 +30,7 @@ export function TodaySummary({
   onFixProblems,
 }: TodaySummaryProps) {
   const { t } = useTranslation();
-  let router: any = null;
-  try {
-    router = useRouter();
-  } catch {
-    router = null;
-  }
+  const router = useRouter();
 
   if (!data && !isOnline) {
     return (

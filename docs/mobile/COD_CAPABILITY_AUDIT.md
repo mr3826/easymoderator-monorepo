@@ -1,8 +1,8 @@
 # Mobile COD Financial Capability Audit: Provider Limitations & Projection Invariants
 
-**Status:** Completed (Phase 5 - Deliver + Collect Gate)  
-**Date:** 2026-10-05  
-**Governing ADRs:** ADR M-008 (Attention & Today Ranking), ADR M-012 (Single Order Status Projection & Truth)  
+**Status:** Completed (Phase 5 - Deliver + Collect Gate)
+**Date:** 2026-10-05
+**Governing ADRs:** ADR M-008 (Attention & Today Ranking), ADR M-012 (Single Order Status Projection & Truth)
 **Target Applications:** EasyMod Mobile (Android First) & EasyMod Backend (`/api/mobile/*`)
 
 ---
@@ -12,7 +12,7 @@
 In Bangladeshi social commerce, the vast majority of transactions are Cash on Delivery (COD). A critical failure mode in merchant applications is conflating **"Parcel Marked Delivered"** with **"Disbursed Cash in Bank"**.
 
 ### The Non-Negotiable Invariant
-> **Mobile displays order-derived COD expectations only, NEVER reconciled settlement cash.**  
+> **Mobile displays order-derived COD expectations only, NEVER reconciled settlement cash.**
 > Any COD amount rendered in EasyMod Mobile must be explicitly labelled as an **expected** collection figure (`৳X.XX (Order-derived expectation)` / `৳X.XX (অর্ডার ভিত্তিক প্রত্যাশা)`). Under no circumstances may mobile present this as settled revenue until courier disbursement accounts reconcile against the merchant's actual bank ledger.
 
 ---
@@ -28,11 +28,11 @@ EasyModerator integrates with the top three courier logistics networks in Bangla
 | **RedX** | `status: "delivered"` | Weekly disbursement cycle. | Return charges accrued to shop account balance. | Webhook confirms transit status; actual remittance happens via aggregated bank transfer. |
 
 ### Technical Gaps Identified:
-1. **Deductions are Non-Deterministic at Delivery Time:**  
+1. **Deductions are Non-Deterministic at Delivery Time:**
    Courier fees (COD commission 1%, platform service charge, weight surge charges, fuel surcharges) are calculated dynamically at invoice generation, not upon initial parcel delivery. Displaying `Order.total` as settled cash would systematically overstate merchant cash-in-hand by 3–5%.
-2. **Reverse Deliveries & Late Exchanges:**  
+2. **Reverse Deliveries & Late Exchanges:**
    In up to 4% of delivered parcels, customers request return/exchange within 24 hours of rider departure, triggering an adjustment on the courier's financial ledger before the payout batch closes.
-3. **No Direct Bank Feed:**  
+3. **No Direct Bank Feed:**
    Neither Steadfast, Pathao, nor RedX provides an automated real-time bank reconciliation webhook directly into merchant bank accounts.
 
 ---

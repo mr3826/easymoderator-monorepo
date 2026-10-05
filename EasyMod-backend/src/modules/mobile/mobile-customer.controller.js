@@ -63,4 +63,3 @@ const getCustomerQuickView = asyncHandler(async (req, res) => {
 });
 
 module.exports = { getCustomerQuickView };
-

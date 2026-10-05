@@ -342,5 +342,3 @@ export type ProductQuickUpdateResponse = z.infer<typeof productQuickUpdateRespon
 
 export const photoDraftResponseSchema = mobileProductSchema;
 export type PhotoDraftResponse = z.infer<typeof photoDraftResponseSchema>;
-
-

@@ -22,8 +22,7 @@ describe('mobile-customer.controller', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         CustomerDeliveryStats.findOne.mockReset();
-    });
-
+});
     test('returns a shop-scoped customer quick view with bounded recent orders and calculated stats', async () => {
         const res = response();
         customerService.getCustomerById.mockResolvedValue({
@@ -123,4 +122,3 @@ describe('mobile-customer.controller', () => {
         );
     });
 });
-

@@ -216,7 +216,9 @@ export function HomeScreen() {
             isOnline={isOnline}
             onRetry={handleTodayRetry}
           />
-          <Text style={styles.sectionTitle}>{t('mobile.home.attention.title')}</Text>
+          <Text style={styles.sectionTitle} testID="home-attention-title">
+            {t('mobile.home.attention.title')}
+          </Text>
           {isOnline && attentionQuery.isPending && !hasAttentionData ? (
             <View style={styles.inlineLoading} testID="attention-loading">
               <ActivityIndicator color={brandColors.primary} accessibilityLabel={t('common.loading')} />

@@ -34,7 +34,6 @@ function inboxPath(page: number, status?: string): string {
   if (status) params.set('status', status);
   return `/api/mobile/inbox/conversations?${params.toString()}`;
 }
-
 export function useInboxConversations(
   status?: string,
 ): UseInfiniteQueryResult<InfiniteData<ConversationListResponse>, NormalizedError> {
@@ -57,7 +56,6 @@ export function useInboxConversations(
     retry: retryNormalizedError,
   });
 }
-
 export function useConversation(conversationId: string): UseQueryResult<Conversation, NormalizedError> {
   const { user } = useAuth();
   const shopId = user?.shopId ?? null;
@@ -173,4 +171,3 @@ export function useSetConversationAiMode() {
     },
   });
 }
-
