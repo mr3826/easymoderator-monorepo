@@ -484,14 +484,18 @@ describe('HomeScreen locale and shop boundaries', () => {
 
     const summary = await screen.findByTestId('today-summary');
     expect(within(summary).getByText(i18n.t('mobile.home.today.title', { lng: 'bn' }))).toBeTruthy();
-    expect(screen.getByText(i18n.t('mobile.home.attention.title', { lng: 'bn' }))).toBeTruthy();
+    expect(screen.getByTestId('home-attention-title')).toHaveTextContent(
+      i18n.t('mobile.home.attention.title', { lng: 'bn' }),
+    );
 
     await act(async () => {
       await i18n.changeLanguage('en');
     });
     await waitFor(() => {
-      expect(within(screen.getByTestId('today-summary')).getByText('Today')).toBeTruthy();
-      expect(screen.getByText('Needs Attention')).toBeTruthy();
+      expect(within(screen.getByTestId('today-summary')).getByText(
+        i18n.t('mobile.home.today.title', { lng: 'en' }),
+      )).toBeTruthy();
+      expect(screen.getByTestId('home-attention-title')).toHaveTextContent('Needs Attention');
       expect(screen.getByText('Order')).toBeTruthy();
     });
   });

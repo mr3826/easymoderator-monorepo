@@ -15,8 +15,16 @@ export const mobileQueryKeys = {
     ['mobile', 'orders', shopId, status] as const,
   order: (shopId: string | null | undefined, orderId: string) =>
     ['mobile', 'order', shopId, orderId] as const,
+  orderRisk: (shopId: string | null | undefined, orderId: string) =>
+    ['mobile', 'order-risk', shopId, orderId] as const,
   customer: (shopId: string | null | undefined, customerId: string) =>
     ['mobile', 'customer', shopId, customerId] as const,
+  problemParcels: (shopId: string | null | undefined, filter = '') =>
+    ['mobile', 'problem-parcels', shopId, filter] as const,
+  deliveryTracking: (shopId: string | null | undefined, orderId: string) =>
+    ['mobile', 'delivery-tracking', shopId, orderId] as const,
+  products: (shopId: string | null | undefined, filter = '', search = '') =>
+    ['mobile', 'products', shopId, filter, search] as const,
 };
 
 /**

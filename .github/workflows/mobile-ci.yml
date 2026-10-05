@@ -131,7 +131,17 @@ jobs:
         run: npm test -- --ci --maxWorkers=2
 
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: |
+          set -euo pipefail
+          audit_json="$RUNNER_TEMP/mobile-npm-audit.json"
+          export_dir="$RUNNER_TEMP/mobile-export"
+          audit_exit=0
+          npm audit --json > "$audit_json" || audit_exit=$?
+          npx expo export --platform android --output-dir "$export_dir" --clear --no-bytecode --source-maps true
+          source_map=$(find "$export_dir" -path '*_expo/static/js/android/*.js.map' -print -quit)
+          test -n "$source_map"
+          node scripts/mobile-audit-policy.js "$audit_json" "$source_map"
+          echo "npm audit exit was $audit_exit; reviewed advisories were build-only and absent from the shipped bundle."
 
   android-release:
     # Plan M-5/M-6/M-15: the release build every supported ABI ships as (R8 on),

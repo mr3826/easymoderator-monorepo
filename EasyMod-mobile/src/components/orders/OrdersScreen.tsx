@@ -43,6 +43,10 @@ export function OrdersScreen() {
       contentContainerStyle={styles.content}
       data={visibleOrders}
       keyExtractor={(item) => item.id}
+      windowSize={5}
+      maxToRenderPerBatch={5}
+      removeClippedSubviews={true}
+      initialNumToRender={8}
       refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} colors={[brandColors.primary]} />}
       ListHeaderComponent={(
         <View>

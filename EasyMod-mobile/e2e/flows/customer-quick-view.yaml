@@ -1,0 +1,42 @@
+appId: tech.easymod.merchant.dev
+name: Customer Quick View and Lifetime History Flow
+tags:
+  - mobile-e2e
+  - customer
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- openLink: easymodmerchant://customer-detail/cust-test-1
+- extendedWaitUntil:
+    visible:
+      id: mobile-customer-quick-view
+    timeout: 30000
+- assertVisible:
+    id: customer-identity-card
+- assertVisible:
+    id: customer-action-row
+- assertVisible:
+    id: customer-call-btn
+- assertVisible:
+    id: customer-message-btn
+- assertVisible:
+    id: customer-create-order-btn
+- assertVisible:
+    id: customer-lifetime-stats
+- assertVisible:
+    id: customer-stat-total
+- assertVisible:
+    id: customer-stat-delivered
+- assertVisible:
+    id: customer-stat-returned
+- assertVisible:
+    id: customer-stat-rate
+- tapOn:
+    id: mobile-customer-back
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 30000

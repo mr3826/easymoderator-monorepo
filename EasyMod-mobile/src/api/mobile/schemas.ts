@@ -182,8 +182,163 @@ export type OrderListResponse = z.infer<typeof orderListResponseSchema>;
 export const orderDetailSchema = orderSummarySchema.passthrough();
 export type OrderDetail = z.infer<typeof orderDetailSchema>;
 
+export const customerStatsSchema = z.object({
+  total_orders: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  rto_count: z.number().int().nonnegative(),
+  cancelled_count: z.number().int().nonnegative(),
+  return_rate: z.number().nonnegative(),
+});
+export type CustomerStats = z.infer<typeof customerStatsSchema>;
+
 export const customerQuickViewSchema = z.object({
   customer: z.record(z.string(), z.unknown()),
   orders: z.array(orderSummarySchema),
+  stats: customerStatsSchema.optional(),
 });
 export type CustomerQuickView = z.infer<typeof customerQuickViewSchema>;
+
+export const replyResponseSchema = z.object({
+  message: messageSchema,
+});
+export type ReplyResponse = z.infer<typeof replyResponseSchema>;
+
+export const aiModeResponseSchema = z.object({
+  success: z.boolean(),
+  ai_mode: z.string(),
+  conversation_id: z.string(),
+});
+export type AiModeResponse = z.infer<typeof aiModeResponseSchema>;
+
+export const customerRiskSummarySchema = z.object({
+  delivered_count: z.number().int().nonnegative(),
+  rto_count: z.number().int().nonnegative(),
+  cancelled_count: z.number().int().nonnegative(),
+  total_orders: z.number().int().nonnegative(),
+  has_duplicate_recent_order: z.boolean(),
+  recent_order_id: z.string().nullable().optional(),
+  risk_level: z.enum(['low', 'medium', 'high']),
+});
+export type CustomerRiskSummary = z.infer<typeof customerRiskSummarySchema>;
+
+export const customerRiskResponseSchema = z.object({
+  risk: customerRiskSummarySchema,
+});
+export type CustomerRiskResponse = z.infer<typeof customerRiskResponseSchema>;
+
+export const orderActionResponseSchema = z.object({
+  success: z.boolean(),
+  order: orderSummarySchema.passthrough(),
+  idempotencyReplay: z.boolean().optional(),
+});
+export type OrderActionResponse = z.infer<typeof orderActionResponseSchema>;
+
+export const courierBookingResponseSchema = z.object({
+  success: z.boolean().optional(),
+  tracking_id: z.string().nullable().optional(),
+  consignment_id: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  booked_at: z.string().optional(),
+  status: z.string().optional(),
+  idempotencyReplay: z.boolean().optional(),
+});
+export type CourierBookingResponse = z.infer<typeof courierBookingResponseSchema>;
+
+export const problemParcelSchema = z.object({
+  order_id: z.string(),
+  order_number: z.string().nullable().optional(),
+  customer_name: z.string().nullable().optional(),
+  customer_phone: z.string().nullable().optional(),
+  total_amount: z.number().nonnegative(),
+  cod_amount: z.number().nonnegative(),
+  delivery_provider: z.string().nullable().optional(),
+  consignment_id: z.string().nullable().optional(),
+  tracking_code: z.string().nullable().optional(),
+  delivery_status: z.string().nullable().optional(),
+  order_status: z.string().nullable().optional(),
+  delivery_address: z.string().nullable().optional(),
+  problem_reason: z.string().nullable().optional(),
+  updated_at: z.string().optional(),
+});
+export type ProblemParcel = z.infer<typeof problemParcelSchema>;
+
+export const problemParcelsResponseSchema = z.object({
+  parcels: z.array(problemParcelSchema),
+  pagination: z.object({
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    total: z.number().int().min(0),
+    hasNextPage: z.boolean(),
+  }),
+});
+export type ProblemParcelsResponse = z.infer<typeof problemParcelsResponseSchema>;
+
+export const trackingHistoryItemSchema = z.object({
+  status: z.string(),
+  timestamp: z.string().optional(),
+  location: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+export type TrackingHistoryItem = z.infer<typeof trackingHistoryItemSchema>;
+
+export const deliveryTrackingResponseSchema = z.object({
+  order_id: z.string(),
+  order_number: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  tracking_number: z.string().nullable().optional(),
+  consignment_id: z.string().nullable().optional(),
+  current_status: z.string().nullable().optional(),
+  estimated_delivery: z.string().nullable().optional(),
+  actual_delivery: z.string().nullable().optional(),
+  location_info: z.record(z.string(), z.unknown()).nullable().optional(),
+  delivery_agent_info: z.record(z.string(), z.unknown()).nullable().optional(),
+  status_history: z.array(trackingHistoryItemSchema).optional(),
+  customer_name: z.string().nullable().optional(),
+  customer_phone: z.string().nullable().optional(),
+  delivery_address: z.string().nullable().optional(),
+  total_amount: z.number().nonnegative().optional(),
+  cod_amount: z.number().nonnegative().optional(),
+  cod_derived_note: z.string().optional(),
+});
+export type DeliveryTrackingResponse = z.infer<typeof deliveryTrackingResponseSchema>;
+
+export const mobileProductSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    name_bn: z.string().nullable().optional(),
+    sku: z.string().nullable().optional(),
+    category: z.string().nullable().optional(),
+    price: z.number().nonnegative(),
+    compare_at_price: z.number().nullable().optional(),
+    quantity: z.number().int(),
+    low_stock_threshold: z.number().int().optional(),
+    track_quantity: z.boolean().optional(),
+    in_stock: z.boolean(),
+    stock_status: z.enum(['in_stock', 'low_stock', 'out_of_stock']),
+    image_url: z.string().nullable().optional(),
+    images: z.array(z.string()).optional(),
+    description: z.string().nullable().optional(),
+    is_active: z.boolean().optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type MobileProduct = z.infer<typeof mobileProductSchema>;
+
+export const productListResponseSchema = z.object({
+  products: z.array(mobileProductSchema),
+  pagination: z.object({
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    total_items: z.number().int().min(0),
+    total_pages: z.number().int().min(0),
+  }),
+});
+export type ProductListResponse = z.infer<typeof productListResponseSchema>;
+
+export const productQuickUpdateResponseSchema = mobileProductSchema;
+export type ProductQuickUpdateResponse = z.infer<typeof productQuickUpdateResponseSchema>;
+
+export const photoDraftResponseSchema = mobileProductSchema;
+export type PhotoDraftResponse = z.infer<typeof photoDraftResponseSchema>;

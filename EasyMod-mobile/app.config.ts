@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 /**
@@ -159,6 +161,11 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
         monochromeImage: './assets/images/android-icon-monochrome.png',
         backgroundColor: '#F9FAF8',
       },
+      googleServicesFile:
+        process.env.GOOGLE_SERVICES_JSON ??
+        (fs.existsSync(path.resolve(__dirname, 'google-services.json'))
+          ? './google-services.json'
+          : undefined),
       // `resolveApiBaseUrl` above is the actual traffic-shape enforcement point — only the
       // "development" variant is ever allowed an http:// API URL. Android 9+ (API 28+, and this
       // app targets 36) additionally blocks cleartext traffic by default at the OS level
@@ -204,6 +211,13 @@ export default ({ config }: ConfigContext): ExpoConfigWithLegacyNewArchFlag => {
             enableMinifyInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
           },
+        },
+      ],
+      [
+        'expo-notifications',
+        {
+          icon: './assets/images/android-icon-monochrome.png',
+          color: '#10B981',
         },
       ],
     ],

@@ -4,9 +4,39 @@ jest.mock('../../conversation/conversation.service', () => ({
     getConversations: jest.fn(),
     getConversationById: jest.fn(),
     getMessages: jest.fn(),
+    createMessage: jest.fn(),
+    holdPendingAiCandidates: jest.fn().mockResolvedValue(0),
+}));
+
+jest.mock('../../conversation/conversation.controller', () => ({
+    _deliverViaMetaIfApplicable: jest.fn(),
+}));
+
+jest.mock('../../../utils/sse-manager', () => ({
+    emit: jest.fn(),
+}));
+
+jest.mock('../../../config/redis', () => ({
+    cacheRedis: {
+        setex: jest.fn().mockResolvedValue('OK'),
+        del: jest.fn().mockResolvedValue(1),
+    },
+}));
+
+jest.mock('../../entities', () => ({
+    Message: {
+        findOne: jest.fn(),
+    },
+    AuditLog: {
+        create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+    },
 }));
 
 const conversationService = require('../../conversation/conversation.service');
+const conversationController = require('../../conversation/conversation.controller');
+const sseManager = require('../../../utils/sse-manager');
+const { cacheRedis } = require('../../../config/redis');
+const { Message, AuditLog } = require('../../entities');
 const controller = require('../mobile-inbox.controller');
 
 function response() {
@@ -57,6 +87,174 @@ describe('mobile Inbox read contract', () => {
         await controller.getConversation({ params: { conversationId: '' }, shop: { id: 'shop-a' } }, response(), next);
 
         expect(conversationService.getConversationById).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', status: 400 }));
+    });
+});
+
+describe('mobile Inbox write contract (replyConversation & setAiMode)', () => {
+    beforeEach(() => jest.clearAllMocks());
+
+    test('successfully sends merchant human reply, pauses AI, and emits audit log', async () => {
+        const res = response();
+        const conv = {
+            id: 'conv-123',
+            channel: 'messenger',
+            last_customer_message_at: new Date().toISOString(), // within 24 hours
+        };
+        conversationService.getConversationById.mockResolvedValue(conv);
+        conversationService.createMessage.mockResolvedValue({
+            id: 'msg-1',
+            conversation_id: 'conv-123',
+            content: 'Hello customer!',
+            sender: 'business',
+        });
+        conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: true });
+
+        const req = {
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            user: { id: 'user-1' },
+            body: { message: 'Hello customer!', idempotencyKey: 'idemp-1' },
+            get: jest.fn().mockReturnValue('idemp-1'),
+        };
+
+        await controller.replyConversation(req, res, jest.fn());
+
+        expect(conversationService.getConversationById).toHaveBeenCalledWith('conv-123', 'shop-a');
+        expect(cacheRedis.setex).toHaveBeenCalledWith('ai:pause:conv-123', 1800, '1');
+        expect(conversationService.holdPendingAiCandidates).toHaveBeenCalledWith('conv-123', 'shop-a', 'human_active');
+        expect(conversationService.createMessage).toHaveBeenCalledWith('conv-123', 'shop-a', expect.objectContaining({
+            content: 'Hello customer!',
+            sender: 'business',
+            send_idempotency_key: 'idemp-1',
+            metadata: expect.objectContaining({ source: 'MOBILE' }),
+        }));
+        expect(sseManager.emit).toHaveBeenCalledWith('shop-a', 'new_message', expect.anything());
+        expect(conversationController._deliverViaMetaIfApplicable).toHaveBeenCalledWith('conv-123', 'shop-a', expect.anything(), 'agent');
+        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'INBOX_MESSAGE_SENT',
+            shop_id: 'shop-a',
+            resource_type: 'conversation_message',
+        }));
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: { message: expect.anything() } }));
+    });
+
+    test('rejects reply when message content is missing or whitespace', async () => {
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({ id: 'conv-123', channel: 'web' });
+
+        const req = {
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { message: '   ' },
+            get: jest.fn(),
+        };
+
+        await controller.replyConversation(req, response(), next);
+
+        expect(conversationService.createMessage).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', status: 400 }));
+    });
+
+    test('rejects reply when outside Meta 24-hour messaging window on Facebook/Messenger without message tag', async () => {
+        const next = jest.fn();
+        const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+        conversationService.getConversationById.mockResolvedValue({
+            id: 'conv-123',
+            channel: 'messenger',
+            last_customer_message_at: thirtyHoursAgo,
+        });
+
+        const req = {
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { message: 'Checking in after 30 hours' },
+            get: jest.fn(),
+        };
+
+        await controller.replyConversation(req, response(), next);
+
+        expect(conversationService.createMessage).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'OUTSIDE_24H_WINDOW',
+            status: 422,
+        }));
+    });
+
+    test('permits reply outside Meta 24-hour window when message_tag is explicitly supplied', async () => {
+        const res = response();
+        const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+        conversationService.getConversationById.mockResolvedValue({
+            id: 'conv-123',
+            channel: 'messenger',
+            last_customer_message_at: thirtyHoursAgo,
+        });
+        conversationService.createMessage.mockResolvedValue({
+            id: 'msg-tagged',
+            conversation_id: 'conv-123',
+            content: 'Your order has been shipped',
+        });
+        conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: true });
+
+        const req = {
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { message: 'Your order has been shipped', message_tag: 'POST_PURCHASE_UPDATE' },
+            get: jest.fn(),
+        };
+
+        await controller.replyConversation(req, res, jest.fn());
+
+        expect(conversationService.createMessage).toHaveBeenCalledWith('conv-123', 'shop-a', expect.objectContaining({
+            message_tag: 'POST_PURCHASE_UPDATE',
+        }));
+        expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    test('toggles AI mode to pause and resume', async () => {
+        const res1 = response();
+        conversationService.getConversationById.mockResolvedValue({ id: 'conv-123' });
+
+        // Pause
+        await controller.setAiMode({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { mode: 'pause' },
+        }, res1, jest.fn());
+
+        expect(cacheRedis.setex).toHaveBeenCalledWith('ai:pause:conv-123', 1800, '1');
+        expect(conversationService.holdPendingAiCandidates).toHaveBeenCalledWith('conv-123', 'shop-a', 'human_paused');
+        expect(res1.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            data: expect.objectContaining({ ai_mode: 'paused' }),
+        }));
+
+        // Resume
+        const res2 = response();
+        await controller.setAiMode({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { mode: 'resume' },
+        }, res2, jest.fn());
+
+        expect(cacheRedis.del).toHaveBeenCalledWith('ai:pause:conv-123');
+        expect(res2.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            data: expect.objectContaining({ ai_mode: 'ai_active' }),
+        }));
+    });
+
+    test('rejects setAiMode with invalid mode', async () => {
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({ id: 'conv-123' });
+
+        await controller.setAiMode({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { mode: 'invalid_mode' },
+        }, response(), next);
+
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', status: 400 }));
     });
 });

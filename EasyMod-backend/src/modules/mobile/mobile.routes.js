@@ -23,7 +23,9 @@ const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
 const mobileController = require('./mobile.controller');
 const mobileInboxController = require('./mobile-inbox.controller');
 const mobileOrderController = require('./mobile-order.controller');
+const mobileCourierController = require('./mobile-courier.controller');
 const mobileCustomerController = require('./mobile-customer.controller');
+const mobileProductController = require('./mobile-product.controller');
 const { isMobileE2eFixturesEnabled } = require('./mobile-e2e-fixtures');
 
 const router = express.Router();
@@ -50,13 +52,24 @@ router.use(verifyShopAccess);
 
 router.get('/attention', mobileController.getAttention);
 router.get('/today', mobileController.getToday);
-// Phase 3 read surface. Native write access remains deliberately denied until a
-// separate mobile capability flag, idempotency contract, and device proof exist.
 router.get('/inbox/conversations', mobileInboxController.getConversations);
 router.get('/inbox/conversations/:conversationId/messages', mobileInboxController.getMessages);
 router.get('/inbox/conversations/:conversationId', mobileInboxController.getConversation);
+router.post('/inbox/conversations/:conversationId/reply', mobileInboxController.replyConversation);
+router.post('/inbox/conversations/:conversationId/ai-mode', mobileInboxController.setAiMode);
 router.get('/orders', mobileOrderController.getOrders);
 router.get('/orders/:orderId', mobileOrderController.getOrder);
+router.get('/orders/:orderId/customer-risk', mobileOrderController.getCustomerRiskSummary);
+router.post('/orders/:orderId/confirm', mobileOrderController.confirmOrder);
+router.post('/orders/:orderId/cancel', mobileOrderController.cancelOrder);
+router.post('/orders/manual', mobileOrderController.createManualOrder);
+router.post('/orders/draft', mobileOrderController.createManualOrder);
+router.post('/orders/:orderId/book-courier', mobileCourierController.bookCourier);
+router.get('/courier/problems', mobileCourierController.getProblemParcels);
+router.get('/orders/:orderId/tracking', mobileCourierController.getDeliveryTracking);
 router.get('/customers/:customerId', mobileCustomerController.getCustomerQuickView);
+router.get('/products', mobileProductController.getProducts);
+router.patch('/products/:productId/quick-update', mobileProductController.quickUpdateStock);
+router.post('/products/photo-draft', mobileProductController.createPhotoDraft);
 
 module.exports = router;

@@ -31,9 +31,55 @@ const isNativeAuthRoute = (req) => {
     return path === NATIVE_AUTH_PATH || path.startsWith(`${NATIVE_AUTH_PATH}/`);
 };
 
+const isNativePushRoute = (req) => {
+    const path = requestPath(req);
+    return path === '/api/notifications/subscriptions' || path.startsWith('/api/notifications/subscriptions/');
+};
+
 const isNativeReadRoute = (req) => {
     const path = requestPath(req);
     return NATIVE_READ_ROUTES.some((route) => route.test(path));
+};
+
+const NATIVE_INBOX_WRITE_ROUTES = [
+    new RegExp(`^/api/mobile/inbox/conversations/[^/]+/reply$`, 'i'),
+    new RegExp(`^/api/mobile/inbox/conversations/[^/]+/ai-mode$`, 'i'),
+];
+
+const isNativeInboxWriteRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_INBOX_WRITE_ROUTES.some((route) => route.test(path));
+};
+
+const NATIVE_ORDER_WRITE_ROUTES = [
+    new RegExp(`^/api/mobile/orders/[^/]+/confirm$`, 'i'),
+    new RegExp(`^/api/mobile/orders/[^/]+/cancel$`, 'i'),
+    new RegExp(`^/api/mobile/orders/manual$`, 'i'),
+    new RegExp(`^/api/mobile/orders/draft$`, 'i'),
+];
+
+const isNativeOrderWriteRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_ORDER_WRITE_ROUTES.some((route) => route.test(path));
+};
+
+const NATIVE_COURIER_WRITE_ROUTES = [
+    new RegExp(`^/api/mobile/orders/[^/]+/book-courier$`, 'i'),
+];
+
+const isNativeCourierWriteRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_COURIER_WRITE_ROUTES.some((route) => route.test(path));
+};
+
+const NATIVE_PRODUCT_WRITE_ROUTES = [
+    new RegExp(`^/api/mobile/products/[^/]+/quick-update$`, 'i'),
+    new RegExp(`^/api/mobile/products/photo-draft$`, 'i'),
+];
+
+const isNativeProductWriteRoute = (req) => {
+    const path = requestPath(req);
+    return NATIVE_PRODUCT_WRITE_ROUTES.some((route) => route.test(path));
 };
 
 const hasUnexpiredSession = (session) => {
@@ -135,9 +181,22 @@ const authenticateRequest = async (
             }
 
             // Native tokens are read-only everywhere except their dedicated
-            // auth/session routes. Web tokens have no sid and retain all
-            // existing mutation privileges.
-            if (!isNativeAuthRoute(req)) {
+            // auth/session routes and permitted mobile write routes when enabled.
+            // Web tokens have no sid and retain all existing mutation privileges.
+            const isPermittedInboxWrite = Boolean(config.mobileInboxWritesEnabled)
+                && req.method === 'POST'
+                && isNativeInboxWriteRoute(req);
+            const isPermittedOrderWrite = Boolean(config.mobileOrderMutationsEnabled)
+                && req.method === 'POST'
+                && isNativeOrderWriteRoute(req);
+            const isPermittedCourierWrite = Boolean(config.mobileCourierActionsEnabled)
+                && req.method === 'POST'
+                && isNativeCourierWriteRoute(req);
+            const isPermittedProductWrite = Boolean(config.mobileProductMutationsEnabled)
+                && (req.method === 'PATCH' || req.method === 'POST')
+                && isNativeProductWriteRoute(req);
+
+            if (!isNativeAuthRoute(req) && !isNativePushRoute(req) && !isPermittedInboxWrite && !isPermittedOrderWrite && !isPermittedCourierWrite && !isPermittedProductWrite) {
                 if (!SAFE_METHODS.has(req.method || 'GET')) {
                     throw new AppError('Native API access is read-only during the mobile pilot.', 403, 'NATIVE_READ_ONLY');
                 }

@@ -1,0 +1,37 @@
+appId: tech.easymod.merchant.dev
+name: Product Catalog and Fast Stock Stepper Flow
+tags:
+  - mobile-e2e
+  - products
+  - stock-stepper
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: home-attention-list
+    timeout: 60000
+- openLink: easymodmerchant://products
+- extendedWaitUntil:
+    visible:
+      id: product-screen-title
+    timeout: 30000
+- assertVisible:
+    id: product-add-draft-btn
+- assertVisible:
+    id: product-chip-all
+- assertVisible:
+    id: product-chip-low_stock
+- assertVisible:
+    id: product-chip-out_of_stock
+- tapOn:
+    id: product-add-draft-btn
+- extendedWaitUntil:
+    visible:
+      id: draft-name-input
+    timeout: 10000
+- assertVisible:
+    id: draft-price-input
+- assertVisible:
+    id: draft-save-btn
+- tapOn:
+    id: draft-cancel-btn
