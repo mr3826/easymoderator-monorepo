@@ -208,6 +208,10 @@ export function ProductListScreen() {
           renderItem={renderProductItem}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
+          windowSize={5}
+          maxToRenderPerBatch={5}
+          removeClippedSubviews={true}
+          initialNumToRender={8}
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}

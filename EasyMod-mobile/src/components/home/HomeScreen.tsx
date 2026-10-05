@@ -189,6 +189,10 @@ export function HomeScreen() {
       data={items}
       keyExtractor={(item) => item.id}
       renderItem={({ item }) => <AttentionCard item={item} onPress={handleCardPress} />}
+      windowSize={5}
+      maxToRenderPerBatch={5}
+      removeClippedSubviews={true}
+      initialNumToRender={8}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
