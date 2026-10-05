@@ -83,7 +83,6 @@ function LegacyCustomers() {
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [togglingBlacklist, setTogglingBlacklist] = useState(false);
 
   const [newCustomer, setNewCustomer] = useState({
     name: "",
@@ -197,26 +196,6 @@ function LegacyCustomers() {
       toast.error(getErrorMessage(err, t('customers.errors.deleteFailed')));
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleToggleBlacklist = async (customer: Customer) => {
-    try {
-      setTogglingBlacklist(true);
-      const nextBlacklisted = !customer.blacklisted;
-      if (nextBlacklisted) {
-        await apiClient.blacklistCustomer(customer.id);
-      } else {
-        await apiClient.removeFromBlacklist(customer.id);
-      }
-      const updated: Customer = { ...customer, blacklisted: nextBlacklisted };
-      setCustomers(prev => prev.map(c => c.id === customer.id ? updated : c));
-      setSelectedCustomer(updated);
-      toast.success(updated.blacklisted ? t('customers.success.blacklisted') : t('customers.success.unblacklisted'));
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, t('customers.errors.blacklistFailed')));
-    } finally {
-      setTogglingBlacklist(false);
     }
   };
 
@@ -625,24 +604,6 @@ function LegacyCustomers() {
                   </div>
                 )}
 
-                {/* Blacklist Toggle */}
-                <div className="pt-2">
-                  <button
-                    onClick={() => handleToggleBlacklist(selectedCustomer)}
-                    disabled={togglingBlacklist}
-                    className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-                      selectedCustomer.blacklisted
-                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
-                    }`}
-                  >
-                    {selectedCustomer.blacklisted ? (
-                      <><ShieldOff className="w-4 h-4" /> {t('customers.detail.removeBlacklist')}</>
-                    ) : (
-                      <><ShieldAlert className="w-4 h-4" /> {t('customers.detail.addBlacklist')}</>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           </div>

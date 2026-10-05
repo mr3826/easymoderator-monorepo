@@ -105,37 +105,6 @@ export async function updateCustomer(
   return response.data.data;
 }
 
-/**
- * Blacklist customer with optional reason
- * @param customerId - ID of customer to blacklist
- * @param reason - Optional reason for blacklisting
- * @returns Promise that resolves when blacklisting completes
- * @throws {Error} When customer blacklisting fails
- * @example
- * ```typescript
- * await blacklistCustomer('cust123', 'Fraudulent activity');
- * // Customer is now blacklisted
- * ```
- */
-export async function blacklistCustomer(customerId: string, reason?: string): Promise<void> {
-  await httpClient.post(`/api/customer/${customerId}/blacklist`, { reason });
-}
-
-/**
- * Remove customer from blacklist
- * @param customerId - ID of customer to remove from blacklist
- * @returns Promise that resolves when removal completes
- * @throws {Error} When customer removal from blacklist fails
- * @example
- * ```typescript
- * await removeFromBlacklist('cust123');
- * // Customer is no longer blacklisted
- * ```
- */
-export async function removeFromBlacklist(customerId: string): Promise<void> {
-  await httpClient.delete(`/api/customer/${customerId}/blacklist`);
-}
-
 export async function deleteCustomer(customerId: string): Promise<void> {
   await httpClient.delete(`/api/customer/${customerId}`);
 }

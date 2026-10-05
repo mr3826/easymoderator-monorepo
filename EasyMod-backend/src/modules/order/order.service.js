@@ -363,7 +363,18 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
             };
         });
 
-        // 5. Create Order
+        // 5. Verify customer_id belongs to this shop if provided (Tech Debt #7)
+        if (orderData.customer_id) {
+            const customerRecord = await Customer.findOne({
+                where: { id: orderData.customer_id, shop_id: shopId },
+                transaction,
+            });
+            if (!customerRecord) {
+                throw new AppError('Customer does not belong to this shop', 400);
+            }
+        }
+
+        // 6. Create Order
         const order = await Order.create({
             shop_id: shopId,
             customer_id: orderData.customer_id,

@@ -84,6 +84,9 @@ test.output.txt
 EasyMod-growth/tests/e2e/.fixtures.json
 EasyMod-growth/playwright-report/
 EasyMod-growth/test-results/
+EasyMod-frontend/tests/e2e/.pilot-fixtures.json
+EasyMod-frontend/playwright-report/
+EasyMod-frontend/test-results/
 
 # Ignore scripts output
 scripts/output/
