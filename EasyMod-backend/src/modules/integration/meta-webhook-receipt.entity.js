@@ -107,6 +107,11 @@ const MetaWebhookReceipt = sequelize.define('MetaWebhookReceipt', {
         allowNull: true,
         comment: 'Optimistic-concurrency fence for the reconciler',
     },
+    queue_job_id: {
+        type: DataTypes.STRING(191),
+        allowNull: true,
+        comment: 'BullMQ job identity retained until the worker settles the receipt',
+    },
     received_at: {
         type: DataTypes.DATE,
         allowNull: false,

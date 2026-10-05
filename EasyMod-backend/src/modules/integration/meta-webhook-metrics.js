@@ -14,6 +14,20 @@ let malformedCount = 0;
 let lastMalformedAt = null;
 let receiptClaimConflictCount = 0;
 let lastReceiptClaimConflictAt = null;
+const inboundEvents = new Map();
+
+function recordInboundEventMetric(name) {
+    const current = inboundEvents.get(name) || { count: 0, lastAt: null };
+    current.count += 1;
+    current.lastAt = new Date().toISOString();
+    inboundEvents.set(name, current);
+}
+
+function getInboundEventMetrics() {
+    return Object.fromEntries(
+        [...inboundEvents.entries()].map(([name, value]) => [name, { ...value }]),
+    );
+}
 
 const toBodyBuffer = (rawBody) => {
     if (Buffer.isBuffer(rawBody)) return rawBody;
@@ -86,4 +100,6 @@ module.exports = {
     getMalformedWebhookMetrics,
     recordReceiptClaimConflict,
     getReceiptClaimConflictMetrics,
+    recordInboundEventMetric,
+    getInboundEventMetrics,
 };

@@ -137,6 +137,7 @@ function buildRenderedEnv(source = process.env) {
         POSTGRES_PASSWORD: required('DB_PASSWORD'),
         POSTGRES_DB: required('DB_NAME'),
         REDIS_URL: source.REDIS_URL || 'redis://redis:6379',
+        ...(source.REDIS_QUEUE_DB ? { REDIS_QUEUE_DB: source.REDIS_QUEUE_DB } : {}),
         REDIS_HOST: 'redis',
         REDIS_PORT: '6379',
         DB_SSL: source.DB_SSL || 'false',
@@ -151,6 +152,9 @@ function buildRenderedEnv(source = process.env) {
         REDX_WEBHOOK_SECRET: required('REDX_WEBHOOK_SECRET'),
         REDX_REQUEST_TIMEOUT_MS: source.REDX_REQUEST_TIMEOUT_MS || '10000',
         CHANNEL_ENCRYPTION_KEY: required('CHANNEL_ENCRYPTION_KEY'),
+        ...(source.CHANNEL_ENCRYPTION_KEY_PREVIOUS
+            ? { CHANNEL_ENCRYPTION_KEY_PREVIOUS: source.CHANNEL_ENCRYPTION_KEY_PREVIOUS }
+            : {}),
         PAYMENT_CALLBACK_HMAC_SECRET: required('PAYMENT_CALLBACK_HMAC_SECRET'),
         AI_ACTION_GATE_SECRET: required('AI_ACTION_GATE_SECRET'),
         MARKETING_URL: marketingUrl,

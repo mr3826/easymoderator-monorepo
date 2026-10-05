@@ -19,8 +19,12 @@
  */
 
 const receiptService = require('../modules/integration/meta-webhook-receipt.service');
-const { resolveConnectedChannel } = require('../modules/integration/meta-channel-resolver');
+const {
+    resolveConnectedChannel,
+    resolveConnectedChannelForReceipt,
+} = require('../modules/integration/meta-channel-resolver');
 const { processMessagingEvent } = require('../modules/integration/meta-webhook-events.handler');
+const { recordInboundEventMetric } = require('../modules/integration/meta-webhook-metrics');
 const { createLogger } = require('../utils/structured-logger');
 
 const logger = createLogger('WebhookReceiptReconciler');
@@ -31,6 +35,19 @@ const num = (envVal, fallback) => {
 };
 
 const BATCH_SIZE = num(process.env.WEBHOOK_RECONCILE_BATCH, 25);
+const LIVE_QUEUE_STATES = new Set(['waiting', 'delayed', 'prioritized', 'paused', 'active']);
+
+async function inspectQueuedJob(queueJobId) {
+    if (!queueJobId) return { state: 'missing' };
+    try {
+        const { messageQueue } = require('./message-queue');
+        const job = await messageQueue.getJob(queueJobId);
+        if (!job) return { state: 'missing' };
+        return { state: await job.getState() };
+    } catch (error) {
+        return { state: 'unavailable', error };
+    }
+}
 
 class WebhookReceiptReconcilerJob {
     /**
@@ -38,7 +55,7 @@ class WebhookReceiptReconcilerJob {
      * @param {boolean} [opts.dryRun] report what is due without replaying it
      */
     async execute({ dryRun = false } = {}) {
-        const results = { claimed: 0, processed: 0, skipped: 0, failed: 0, unresolved: 0, purged: 0, dryRun };
+        const results = { claimed: 0, processed: 0, skipped: 0, failed: 0, deferred: 0, unresolved: 0, purged: 0, dryRun };
 
         if (dryRun) {
             results.unresolved = await receiptService.countUnresolved();
@@ -55,11 +72,39 @@ class WebhookReceiptReconcilerJob {
         }
         results.claimed = claimed.length;
 
-        for (const { receipt, payload } of claimed) {
+        for (const { receipt, payload, priorStatus } of claimed) {
+            recordInboundEventMetric('inbound_recovery_attempt');
+            if (priorStatus === 'QUEUED') {
+                const queueState = await inspectQueuedJob(receipt.queue_job_id);
+                if (queueState.state === 'unavailable' || LIVE_QUEUE_STATES.has(queueState.state)) {
+                    await receiptService.deferQueued(receipt);
+                    results.deferred += 1;
+                    continue;
+                }
+                if (queueState.state === 'completed') {
+                    await receiptService.markProcessed(receipt, {
+                        shopId: receipt.shop_id,
+                        metaChannelId: receipt.meta_channel_id,
+                    }, { expectedQueueJobId: receipt.queue_job_id });
+                    results.processed += 1;
+                    recordInboundEventMetric('inbound_recovery_success');
+                    continue;
+                }
+                // A missing or failed BullMQ job is replayable from the encrypted
+                // receipt body. The normal ingestion path will create/reuse the
+                // deterministic burst job identity.
+            }
             const pageId = receipt.page_id;
             let channel = null;
             try {
-                channel = await resolveConnectedChannel(pageId, 'facebook');
+                channel = receipt.shop_id && receipt.meta_channel_id
+                    ? await resolveConnectedChannelForReceipt({
+                        channelId: receipt.meta_channel_id,
+                        shopId: receipt.shop_id,
+                        assetId: pageId,
+                        platform: 'facebook',
+                    })
+                    : await resolveConnectedChannel(pageId, 'facebook');
             } catch (err) {
                 logger.error('Channel resolution failed during reconcile', {
                     receiptId: receipt.id, errorCode: err?.name || 'UnknownError',
@@ -89,6 +134,8 @@ class WebhookReceiptReconcilerJob {
             if (outcome === 'processed') results.processed += 1;
             else if (outcome === 'skipped') results.skipped += 1;
             else results.failed += 1;
+            if (outcome === 'processed') recordInboundEventMetric('inbound_recovery_success');
+            else recordInboundEventMetric('inbound_processing_failure');
         }
 
         try {

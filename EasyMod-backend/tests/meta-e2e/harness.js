@@ -17,8 +17,9 @@
  *                     →  MetaMessengerProvider.sendMessage (real)
  *                     →  Graph transport CAPTURE          ← the only Meta stub
  *
- * Queue boundary: the webhook awaits the BullMQ enqueue and settles its receipt
- * as QUEUED before returning. The worker is then invoked by draining the jobs
+ * Queue boundary: the webhook awaits the BullMQ enqueue and records its receipt
+ * as recoverable QUEUED before returning. The encrypted replay body remains
+ * until worker settlement. The worker is then invoked by draining the jobs
  * the webhook really enqueued in Redis, rather than by racing a live BullMQ
  * Worker process. The job payload, queue round-trip and worker handler are all
  * real; what this does not cover is BullMQ's own scheduler timing, which
@@ -111,7 +112,13 @@ const pendingJobs = async () => {
 /** The durable receipt for one Meta message id. */
 const receiptForEvent = async (eventId) => {
     const MetaWebhookReceipt = require('../../src/modules/integration/meta-webhook-receipt.entity');
-    return MetaWebhookReceipt.findOne({ where: { event_id: eventId } });
+    const deadline = Date.now() + 2000;
+    do {
+        const receipt = await MetaWebhookReceipt.findOne({ where: { event_id: eventId } });
+        if (receipt) return receipt;
+        await sleep(25);
+    } while (Date.now() < deadline);
+    return null;
 };
 
 /** All durable receipts in a state, for DLQ and dedup assertions. */
@@ -124,7 +131,7 @@ const receiptsWithStatus = async (status) => {
  * Wait for the queue to reach `count` jobs.
  *
  * The webhook handler awaits Queue.add before acknowledging Meta and marking
- * the receipt QUEUED. This helper remains useful for direct route assertions and
+ * the receipt recoverable QUEUED. This helper remains useful for direct route assertions and
  * gives BullMQ a bounded visibility check without depending on scheduler timing.
  * Returns whatever is queued when the deadline passes so the caller's own
  * assertion produces the failure message.

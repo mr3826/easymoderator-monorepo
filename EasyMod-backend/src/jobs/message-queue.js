@@ -5,7 +5,7 @@ const config = require('../config/config');
 
 function buildConnection() {
     const base = {
-        db: 3, // Dedicated DB — separate from Bull queues (DB 0) and app cache (DB 1)
+        db: Number(process.env.REDIS_QUEUE_DB || 3),
         maxRetriesPerRequest: null, // Required by BullMQ
         enableReadyCheck: false,   // Required by BullMQ
     };

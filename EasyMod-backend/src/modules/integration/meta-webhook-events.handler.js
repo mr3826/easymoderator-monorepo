@@ -27,7 +27,7 @@ const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
-const { recordReceiptClaimConflict } = require('./meta-webhook-metrics');
+const { recordReceiptClaimConflict, recordInboundEventMetric } = require('./meta-webhook-metrics');
 const { cacheRedis } = require('../../config/redis');
 const receiptService = require('./meta-webhook-receipt.service');
 
@@ -281,29 +281,49 @@ function toReceiptFailure(error, fallbackCode) {
     return failure;
 }
 
-async function markQueuedReceipt(receipt, channel) {
+async function markQueuedReceipt(receipt, channel, queueJob) {
     try {
+        if (!queueJob?.id) {
+            throw new QueueDispatchError('Queue did not return a durable job identity', null, 'QUEUE_JOB_ID_MISSING');
+        }
         await receiptService.markQueued(receipt, {
             shopId: channel.shop_id,
             metaChannelId: channel.id,
+            queueJobId: queueJob.id,
         });
+        const receiptIds = queueJob.data?.receiptIds;
+        const previousReceiptIds = Array.isArray(receiptIds)
+            ? receiptIds.filter((receiptId) => String(receiptId) !== String(receipt.id))
+            : [];
+        if (previousReceiptIds.length > 0) {
+            try {
+                await receiptService.rebindQueuedReceipts(previousReceiptIds, {
+                    shopId: channel.shop_id,
+                    metaChannelId: channel.id,
+                    queueJobId: queueJob.id,
+                    expectedQueueJobId: queueJob.data?.replacedQueueJobId,
+                });
+            } catch (rebindError) {
+                // The current receipt is already durable and bound to this job.
+                // Older coalesced receipts retain their own replay path if a
+                // best-effort bulk rebind cannot complete.
+                logger.warn('Could not rebind an older burst receipt', {
+                    queueJobId: String(queueJob.id),
+                    error: rebindError.message,
+                });
+            }
+        }
     } catch (err) {
-        const error = new Error('Queued receipt update did not take effect');
-        error.code = 'QUEUE_RECEIPT_UPDATE_FAILED';
-        error.retryable = true;
-        error.cause = err;
-        throw error;
+        throw new QueueDispatchError(
+            'Queued receipt update did not take effect',
+            err,
+            'QUEUE_RECEIPT_UPDATE_FAILED',
+        );
     }
 
-    // Verify the in-memory/Sequelize instance as well, so an enqueue followed by
-    // a weakly consistent update remains retryable instead of being reported as
-    // a terminal handoff.
-    if (receipt?.status && receipt.status !== 'QUEUED') {
-        const error = new Error('Queued receipt update did not take effect');
-        error.code = 'QUEUE_RECEIPT_UPDATE_FAILED';
-        error.retryable = true;
-        throw error;
-    }
+    // `updateOrThrow` deliberately treats a lost processing fence as success:
+    // another concurrent delivery owns the receipt and will settle it. Do not
+    // inspect the stale in-memory instance and turn that safe race into a 503.
 }
 
 function getMessageQueue() {
@@ -325,9 +345,10 @@ function getMessageQueue() {
  * ONE AI turn and ONE reply (see burst-coalescer.js). The exact Page asset is
  * retained in the job payload so the worker cannot substitute another Page.
  */
-async function dispatchMessageJob(storeResult, event) {
+async function dispatchMessageJob(storeResult, event, receipt = null) {
     const queue = getMessageQueue();
     if (!queue || typeof queue.add !== 'function') {
+        recordInboundEventMetric('inbound_enqueue_failure');
         // No Error object here (queue is simply null), so pass null as the 2nd
         // arg and put context in meta — otherwise the logger reads .message off
         // this object (undefined) and the shop/platform context is dropped.
@@ -367,6 +388,7 @@ async function dispatchMessageJob(storeResult, event) {
             senderInfo: { customer_id },
             messageId: storeResult.message_id || storeResult.id,
             replyContext: storeResult.message?.metadata?.reply_to || null,
+            receiptIds: receipt?.id ? [receipt.id] : [],
         };
         if (storeResult.within_allowance !== undefined) {
             burstPayload.within_allowance = storeResult.within_allowance;
@@ -374,6 +396,7 @@ async function dispatchMessageJob(storeResult, event) {
         const queueResult = await scheduleBurstFlush(burstPayload);
         return queueResult;
     } catch (err) {
+        recordInboundEventMetric('inbound_enqueue_failure');
         logger.error('Failed to schedule burst flush — message stored but auto-reply skipped', err, {
             shop_id,
             conversationId: conversation_id,
@@ -1420,8 +1443,8 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         }
         const consentResult = await processInboundConsent({ storeResult, normalizedEvent, channel });
         if (consentResult?.shouldDispatch === true) {
-            await dispatchMessageJob(storeResult, normalizedEvent);
-            await markQueuedReceipt(receipt, channel);
+            const queueJob = await dispatchMessageJob(storeResult, normalizedEvent, receipt);
+            await markQueuedReceipt(receipt, channel, queueJob);
         } else {
             await cancelPendingDispatch(storeResult.conversation_id);
             await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
@@ -1435,11 +1458,19 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         });
         // Durable, retryable, and alerted. Previously this branch swallowed the
         // failure and the message was gone.
-        await receiptService.markStoreFailure(
-            receipt,
-            toReceiptFailure(err, 'MESSAGE_STORE_FAILED'),
-            { pageId: metaAssetId || pageId },
-        );
+        if (err instanceof QueueDispatchError || err?.code === 'BURST_CANCELLATION_FAILED') {
+            await receiptService.markQueueFailure(
+                receipt,
+                toReceiptFailure(err, 'MESSAGE_QUEUE_UNAVAILABLE'),
+                { pageId: metaAssetId || pageId },
+            );
+        } else {
+            await receiptService.markStoreFailure(
+                receipt,
+                toReceiptFailure(err, 'MESSAGE_STORE_FAILED'),
+                { pageId: metaAssetId || pageId },
+            );
+        }
         return 'failed';
     }
 }
@@ -1461,7 +1492,10 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
         // work. Nothing below this point can lose an event.
         const recorded = [];
         for (const messaging of events) {
-            const { receipt, duplicate } = await receiptService.recordReceipt({ pageId, messaging });
+            const { receipt, duplicate } = await receiptService.recordReceipt({
+                pageId,
+                messaging,
+            });
             recorded.push({ messaging, receipt, duplicate });
         }
 
@@ -1529,7 +1563,32 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
                 logger.debug(`Duplicate webhook event skipped (receipt ${receipt.id} is ${receipt.status})`);
                 continue;
             }
-            await processMessagingEvent({ messaging, channel, receipt, pageId, metaAssetId: pageId });
+            let eventChannel = channel;
+            const wasBound = Boolean(receipt?.shop_id && receipt?.meta_channel_id);
+            if (!wasBound && channel?.shop_id && channel?.id) {
+                await receiptService.bindReceiptTenant(receipt, {
+                    shopId: channel.shop_id,
+                    metaChannelId: channel.id,
+                });
+            }
+            if (wasBound) {
+                const { resolveConnectedChannelForReceipt } = require('./meta-channel-resolver');
+                eventChannel = await resolveConnectedChannelForReceipt({
+                    channelId: receipt.meta_channel_id,
+                    shopId: receipt.shop_id,
+                    assetId: pageId,
+                    platform: 'facebook',
+                });
+                if (!eventChannel) {
+                    if (['message', 'optin', 'echo'].includes(receipt.event_type)) {
+                        await receiptService.markIdentityNotResolved(receipt, { pageId });
+                    } else {
+                        await receiptService.markSkipped(receipt, 'BOUND_CHANNEL_UNAVAILABLE');
+                    }
+                    continue;
+                }
+            }
+            await processMessagingEvent({ messaging, channel: eventChannel, receipt, pageId, metaAssetId: pageId });
         }
     }
 }
