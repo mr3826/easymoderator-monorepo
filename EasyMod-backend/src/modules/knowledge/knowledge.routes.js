@@ -3,6 +3,7 @@ const knowledgeController = require('./knowledge.controller');
 const knowledgeValidator = require('./knowledge.validator');
 const { validate } = require('../helpers');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { requirePlatformAdmin } = require('../../middleware/platform-admin.middleware');
 
 const router = express.Router();
 
@@ -15,12 +16,7 @@ router.post('/faq/search', knowledgeController.searchFaq);
 router.get('/shop-settings/:shopId/policies', knowledgeController.getPolicies);
 router.post('/language/normalize', knowledgeController.normalizeLanguage);
 // Writing to the shared Banglish dictionary is restricted to admins to prevent poisoning.
-router.post('/language/cache-learning', (req, res, next) => {
-    if (req.user?.role !== 'admin') {
-        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Admin role required.' } });
-    }
-    next();
-}, knowledgeController.cacheLanguageLearning);
+router.post('/language/cache-learning', requirePlatformAdmin(), knowledgeController.cacheLanguageLearning);
 router.post('/query', knowledgeController.queryKnowledge);
 
 router.get('/faqs', knowledgeController.listFaqs);

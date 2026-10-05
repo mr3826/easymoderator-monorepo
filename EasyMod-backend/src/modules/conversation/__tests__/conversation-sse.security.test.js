@@ -95,7 +95,7 @@ describe('conversation SSE tenant binding', () => {
 
             await controller.getEventStream(req, res);
 
-            expect(mockSseManager.attachToRequest).toHaveBeenCalledWith(req, res, shopId);
+            expect(mockSseManager.attachToRequest).toHaveBeenCalledWith(req, res, shopId, 'user-1');
             req.emit('close');
             expect(mockSseManager.unregister).toHaveBeenCalledWith(shopId, res);
         },

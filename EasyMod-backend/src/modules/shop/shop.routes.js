@@ -14,18 +14,21 @@ const {
 } = require('./shop.validator');
 
 const router = express.Router();
-
-// All shop routes require authentication
-router.use(authenticate);
+const recoveryAuthenticate = typeof authenticate.withOptions === 'function'
+  ? authenticate.withOptions({ requireShopMembership: false })
+  : authenticate;
 
 // GET /shop/list - Get all shops for user
-router.get('/list', shopController.getUserShops);
+router.get('/list', recoveryAuthenticate, shopController.getUserShops);
+
+// POST /shop/create - Create new shop
+router.post('/create', recoveryAuthenticate, shopCreateValidator, shopController.createShop);
+
+// All remaining shop routes require active membership for the token's shop.
+router.use(authenticate);
 
 // GET /shop/me - Get current shop context (RESTful alias for /shop/get)
 router.get('/me', shopController.getShop);
-
-// POST /shop/create - Create new shop
-router.post('/create', shopCreateValidator, shopController.createShop);
 
 // POST /shop/update - Update shop
 router.post('/update', verifyShopAccess, requireOwner, shopUpdateValidator, shopController.updateShop);

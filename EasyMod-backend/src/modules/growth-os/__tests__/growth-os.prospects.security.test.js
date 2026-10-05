@@ -60,14 +60,17 @@ jest.mock('../../../config/redis', () => ({
   rateLimitRedis: null,
 }));
 jest.mock('../../../middleware/auth.middleware', () => ({
-  authenticate: (req, _res, next) => {
-    if (!roleHolder.user) {
-      const error = new Error('No token provided. Please authenticate.');
-      error.status = 401;
-      return next(error);
-    }
-    req.user = { ...roleHolder.user };
-    return next();
+  authenticate: (...args) => {
+    const middleware = (req, _res, next) => {
+      if (!roleHolder.user) {
+        const error = new Error('No token provided. Please authenticate.');
+        error.status = 401;
+        return next(error);
+      }
+      req.user = { ...roleHolder.user };
+      return next();
+    };
+    return args.length === 1 ? middleware : middleware(...args);
   },
 }));
 jest.mock('../../../utils/cache.service', () => mockCacheService);

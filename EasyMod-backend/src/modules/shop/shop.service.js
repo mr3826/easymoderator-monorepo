@@ -1,5 +1,13 @@
 const { Op } = require('sequelize');
-const { User, Shop, UserShop, Tenant, GrowthOsUserRole, PushSubscription } = require('../entities');
+const {
+    User,
+    Shop,
+    UserShop,
+    Session,
+    Tenant,
+    GrowthOsUserRole,
+    PushSubscription,
+} = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
@@ -11,6 +19,7 @@ const {
 const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 const { normalizeAiReplyMode, isAutoSendMode } = require('./ai-reply-mode');
 const { invalidateUserSessions } = require('../auth/session-invalidation.service');
+const cacheService = require('../../utils/cache.service');
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
@@ -74,6 +83,32 @@ const assertSingleOwner = async (shopId, transaction) => {
         transaction,
     });
     if (owners > 1) throw new AppError('Shop cannot have multiple owners', 400);
+};
+
+const recordMembershipAudit = async ({
+    actorUserId,
+    targetUserId,
+    shopId,
+    action,
+    metadata = {},
+    oldValues,
+    newValues,
+}) => {
+    try {
+        const auditService = require('../audit/audit.service');
+        await auditService.logOperation({
+            userId: actorUserId,
+            shopId,
+            action,
+            resourceType: 'USER_SHOP',
+            resourceId: `${targetUserId}:${shopId}`,
+            metadata: { target_user_id: targetUserId, ...metadata },
+            ...(oldValues ? { oldValues } : {}),
+            ...(newValues ? { newValues } : {}),
+        });
+    } catch (_) {
+        // Audit failure must not undo an already-authorized membership change.
+    }
 };
 
 /**
@@ -325,6 +360,16 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
         });
         if (!shop) throw new AppError('Shop not found', 404);
 
+        // Reject a second owner before looking up the invitee. The locked
+        // count remains the authoritative invariant check after creation too.
+        if (role === 'owner') {
+            const existingOwners = await UserShop.count({
+                where: { shop_id: shopId, role: 'owner', is_active: true },
+                transaction,
+            });
+            if (existingOwners > 0) throw new AppError('A shop can only have one owner', 400);
+        }
+
         // Lock the target user row so role grants/reactivation cannot race a
         // merchant membership grant for the same account.
         const user = await User.findOne({
@@ -357,6 +402,13 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
             // Reactivate if previously deactivated.
             await existingUserShop.update({ is_active: true, role }, { transaction });
             await assertSingleOwner(shop.id, transaction);
+            await recordMembershipAudit({
+                actorUserId: requestingUserId,
+                targetUserId: user.id,
+                shopId,
+                action: 'SHOP_MEMBERSHIP_GRANTED',
+                metadata: { role, reactivated: true },
+            });
             return existingUserShop;
         }
 
@@ -369,6 +421,13 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
         }, { transaction });
 
         await assertSingleOwner(shop.id, transaction);
+        await recordMembershipAudit({
+            actorUserId: requestingUserId,
+            targetUserId: user.id,
+            shopId,
+            action: 'SHOP_MEMBERSHIP_GRANTED',
+            metadata: { role, reactivated: false },
+        });
         return userShop;
     });
 };
@@ -430,6 +489,42 @@ const removeUserFromShop = async (shopId, requestingUserId, targetUserId) => {
             await clearLastLoggedShop([targetUserShop.user_id], shopId, transaction);
             // Keep invalidation last so cache/session failure rejects the transaction.
             await invalidateSessionsForUsers([targetUserShop.user_id], transaction);
+
+            const finalizeMembershipRevocation = async () => {
+                // Token-version and live-membership checks are authoritative. These
+                // session/SSE/cache updates are best-effort cleanup of already-open
+                // connections and must not undo the committed membership change.
+                try {
+                    await Session.update(
+                        { is_active: false },
+                        { where: { user_id: targetUserShop.user_id, shop_id: shopId, is_active: true } },
+                    );
+                } catch (_) {
+                    // The next authenticated request still fails closed.
+                }
+                await cacheService.delete(`user:${targetUserShop.user_id}:token_version`).catch(() => {});
+                try {
+                    const sseManager = require('../../utils/sse-manager');
+                    if (typeof sseManager.disconnectUser === 'function') {
+                        sseManager.disconnectUser(targetUserShop.user_id);
+                    }
+                } catch (_) {
+                    // Token and membership invalidation remain authoritative.
+                }
+                await recordMembershipAudit({
+                    actorUserId: requestingUserId,
+                    targetUserId: targetUserShop.user_id,
+                    shopId,
+                    action: 'SHOP_MEMBERSHIP_REVOKED',
+                    metadata: { revoked_at: new Date().toISOString() },
+                });
+            };
+
+            if (typeof transaction.afterCommit === 'function') {
+                transaction.afterCommit(() => finalizeMembershipRevocation());
+            } else {
+                await finalizeMembershipRevocation();
+            }
         }
 
         return { message: 'User removed from shop successfully' };
@@ -473,7 +568,18 @@ const updateUserRole = async (shopId, requestingUserId, targetUserId, newRole) =
     }
 
     // Update role
+    const previousRole = targetUserShop.role;
     await targetUserShop.update({ role: newRole });
+
+    await recordMembershipAudit({
+        actorUserId: requestingUserId,
+        targetUserId,
+        shopId,
+        action: 'SHOP_MEMBERSHIP_ROLE_CHANGED',
+        metadata: { changed_at: new Date().toISOString() },
+        oldValues: { role: previousRole },
+        newValues: { role: newRole },
+    });
 
     return targetUserShop;
 };

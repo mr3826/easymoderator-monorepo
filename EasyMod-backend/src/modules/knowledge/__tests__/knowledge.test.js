@@ -107,6 +107,8 @@ jest.mock('src/modules/ai/gemini-cache.service', () => ({
 
 // ── Mock cache service ────────────────────────────────────────────────────
 jest.mock('src/utils/cache.service', () => ({
+    get:            jest.fn(() => Promise.resolve(null)),
+    set:            jest.fn(() => Promise.resolve(true)),
     getForShop:    jest.fn(() => Promise.resolve(null)),
     setForShop:    jest.fn(() => Promise.resolve()),
     deleteForShop: jest.fn(() => Promise.resolve()),
@@ -155,7 +157,7 @@ jest.mock('src/modules/routes', () => {
 });
 
 // ── Refs to mocked modules (populated after jest.mock) ────────────────────
-const { Shop, UserShop, FaqResponse } = require('src/modules/entities');
+const { Shop, User, UserShop, FaqResponse } = require('src/modules/entities');
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
@@ -173,6 +175,7 @@ describe('Knowledge API', () => {
 
         // Default: user has shop access
         UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true });
+        User.findByPk.mockResolvedValue({ platform_role: null });
         Shop.findByPk.mockResolvedValue(mockShop);
         FaqResponse.findAll.mockResolvedValue([]);
         FaqResponse.destroy.mockResolvedValue(1);
@@ -425,7 +428,7 @@ describe('Knowledge API', () => {
                 .send({ banglish: 'taka', english: 'money' });
 
             expect(res.status).toBe(403);
-            expect(res.body.error.code).toBe('FORBIDDEN');
+            expect(res.body.message).toMatch(/forbidden|authorization/i);
         });
     });
 

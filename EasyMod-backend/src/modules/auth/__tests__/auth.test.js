@@ -195,7 +195,13 @@ describe('Auth API', () => {
         mockUser.update.mockImplementation(() => Promise.resolve());
         mockUser.must_change_password = false;
         mockUser.temporary_password_expires_at = null;
-        UserShop.findOne.mockResolvedValue({ id: 'membership-1' });
+        UserShop.findOne.mockResolvedValue({
+            user_id: mockUser.id,
+            shop_id: mockUser.last_logged_shop_id,
+            role: 'owner',
+            is_active: true,
+            shop: { id: mockUser.last_logged_shop_id, is_active: true },
+        });
         const { GrowthOsUserRole } = require('src/modules/entities');
         GrowthOsUserRole.findOne.mockResolvedValue(null);
     });
@@ -401,6 +407,7 @@ describe('Auth API', () => {
         });
 
         it('continues to reject an unmarked shop-less account', async () => {
+            UserShop.findOne.mockResolvedValue(null);
             User.findOne.mockResolvedValue({
                 ...mockUser,
                 shops: [],
@@ -417,6 +424,7 @@ describe('Auth API', () => {
         });
 
         it('rejects an unmarked shop-less account with 403 even when TOTP is enabled (no pre-boundary challenge)', async () => {
+            UserShop.findOne.mockResolvedValue(null);
             User.findOne.mockResolvedValue({
                 ...mockUser,
                 shops: [],
@@ -431,6 +439,20 @@ describe('Auth API', () => {
             expect(res.status).toBe(403);
             expect(res.body.message || res.body.error?.message).toContain('no associated shops');
             expect(res.body.data?.requires2fa).toBeUndefined();
+        });
+
+        it('filters inactive shop memberships without excluding shop-less Growth users', async () => {
+            User.findOne.mockResolvedValue(mockUser);
+
+            await authService.authenticateUser('test@example.com', 'correct-password');
+
+            expect(User.findOne).toHaveBeenCalledWith(expect.objectContaining({
+                include: [expect.objectContaining({
+                    through: expect.objectContaining({
+                        where: { is_active: true },
+                    }),
+                })],
+            }));
         });
 
         it('should return 400 when email is missing', async () => {

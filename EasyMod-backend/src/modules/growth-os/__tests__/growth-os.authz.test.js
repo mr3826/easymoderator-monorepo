@@ -21,17 +21,20 @@ jest.mock('../../../config/config', () => mockConfig);
 jest.mock('../../../config/redis', () => ({ cacheRedis: mockCacheRedis }));
 
 jest.mock('../../../middleware/auth.middleware', () => ({
-  authenticate: (req, _res, next) => {
-    if (!roleHolder.user) {
-      const err = new Error('No token provided. Please authenticate.');
-      err.status = 401;
-      return next(err);
-    }
-    req.user = roleHolder.user;
-    if (roleHolder.frontendGuardClaim) {
-      req.headers['x-frontend-guard-claim'] = roleHolder.frontendGuardClaim;
-    }
-    return next();
+  authenticate: (...args) => {
+    const middleware = (req, _res, next) => {
+      if (!roleHolder.user) {
+        const err = new Error('No token provided. Please authenticate.');
+        err.status = 401;
+        return next(err);
+      }
+      req.user = roleHolder.user;
+      if (roleHolder.frontendGuardClaim) {
+        req.headers['x-frontend-guard-claim'] = roleHolder.frontendGuardClaim;
+      }
+      return next();
+    };
+    return args.length === 1 ? middleware : middleware(...args);
   },
 }));
 

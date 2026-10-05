@@ -22,6 +22,7 @@ jest.mock('../auth.service', () => ({
 jest.mock('../../entities', () => ({
   User: { findByPk: jest.fn() },
   Shop: {},
+  UserShop: { findOne: jest.fn() },
 }));
 jest.mock('../../../utils/jwt.util', () => ({
   generateAccessToken: jest.fn(() => 'access-token'),
@@ -31,7 +32,7 @@ jest.mock('../../../utils/auth-cookies', () => ({ setAuthCookies: jest.fn() }));
 
 const totpService = require('../totp.service');
 const authService = require('../auth.service');
-const { User } = require('../../entities');
+const { User, UserShop } = require('../../entities');
 const { generateAccessToken } = require('../../../utils/jwt.util');
 const controller = require('../totp.controller');
 
@@ -42,6 +43,12 @@ describe('TOTP shop-context security', () => {
     totpService.verifyTotpToken.mockResolvedValue(true);
     authService.getActiveGrowthOsRole.mockResolvedValue(null);
     User.findByPk.mockResolvedValue(mockUser);
+    UserShop.findOne.mockResolvedValue({
+      user_id: mockUser.id,
+      shop_id: 'active-shop',
+      is_active: true,
+      shop: { id: 'active-shop', is_active: true },
+    });
   });
 
   it('resolves an active shop instead of trusting a stale merchant shop id', async () => {

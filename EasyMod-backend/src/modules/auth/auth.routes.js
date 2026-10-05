@@ -12,6 +12,9 @@ const validate = require('../../middleware/validate.middleware');
 const { AppError } = require('../../utils/AppError');
 
 const router = express.Router();
+const recoveryAuthenticate = typeof authenticate.withOptions === 'function'
+    ? authenticate.withOptions({ requireShopMembership: false })
+    : authenticate;
 
 // Rate limiters for password reset (prevent email enumeration / spam)
 let forgotPasswordIpLimiter;
@@ -97,7 +100,7 @@ router.post('/refresh',
 );
 
 // GET /auth/me - Get current auth context
-router.get('/me', authenticate, authController.me);
+router.get('/me', recoveryAuthenticate, authController.me);
 
 // POST /auth/forgot-password - Request password reset email (rate limited per IP + per email)
 router.post('/forgot-password',
@@ -114,7 +117,7 @@ router.post('/reset-password', validate(resetPasswordValidator), authController.
 router.post('/change-password', validate(changePasswordValidator), authenticateForPasswordChange, authController.changeTemporaryPassword);
 
 // POST /auth/logout - Logout and revoke token
-router.post('/logout', authenticate, authController.logout);
+router.post('/logout', recoveryAuthenticate, authController.logout);
 
 // 2FA / TOTP routes
 // POST /auth/2fa/setup   — generate secret (requires auth)

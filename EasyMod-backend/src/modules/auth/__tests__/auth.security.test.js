@@ -183,7 +183,13 @@ describe('Auth Security Fixes', () => {
         mockUser.token_version = 1;
         mockUser.refresh_token = null;
         mockUser.last_logged_shop_id = 'shop-1';
-        UserShop.findOne.mockResolvedValue({ id: 'membership-1' });
+        UserShop.findOne.mockResolvedValue({
+            user_id: mockUser.id,
+            shop_id: mockUser.last_logged_shop_id,
+            role: 'owner',
+            is_active: true,
+            shop: { id: mockUser.last_logged_shop_id, is_active: true },
+        });
         GrowthOsUserRole.findOne.mockResolvedValue(null);
     });
 
