@@ -379,29 +379,29 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
-    describe('buildAuthUrl() dialog contract (manual Facebook Login flow)', () => {
-        // These tests pin the CURRENT dialog contract so a change to it is
-        // deliberate. Context: on 2026-09-22 this dialog showed "Feature
-        // unavailable" in production. Nothing found so far shows the URL is at
-        // fault, but whether the app's Facebook Login for Business configuration
-        // requires `config_id` is UNCONFIRMED. If it turns out to, update the
-        // exact-parameter test below together with that change. See
-        // docs/incidents/2026-09-22-meta-login-unavailable.md.
+    describe('buildAuthUrl() dialog contract (Facebook Login for Business)', () => {
         const config = require('../../../config/config');
         const APP_ID = '2040799330176198';
         const REDIRECT = 'https://app.easymod.tech/channels/oauth-callback';
+        const CONFIG_ID = '1685388446490514';
         const STATE = 'facebook:shop-1:user-1:nonce-fixture';
         let saved;
 
         beforeEach(() => {
-            saved = { id: config.metaAppId, redirect: config.metaOAuthRedirectUri };
+            saved = {
+                id: config.metaAppId,
+                redirect: config.metaOAuthRedirectUri,
+                configId: config.metaLoginConfigId,
+            };
             config.metaAppId = APP_ID;
             config.metaOAuthRedirectUri = REDIRECT;
+            config.metaLoginConfigId = CONFIG_ID;
         });
 
         afterEach(() => {
             config.metaAppId = saved.id;
             config.metaOAuthRedirectUri = saved.redirect;
+            config.metaLoginConfigId = saved.configId;
         });
 
         const build = (args = {}) => provider.buildAuthUrl({ state: STATE, scopes: [], ...args });
@@ -413,17 +413,19 @@ describe('MetaMessengerProvider', () => {
             expect(url.pathname).toBe(`/${version}/dialog/oauth`);
         });
 
-        test('emits exactly client_id, redirect_uri, response_type, scope and state', async () => {
+        test('emits exactly client_id, redirect_uri, config_id, response_type and state', async () => {
             const url = new URL(await build());
             expect([...url.searchParams.keys()].sort()).toEqual([
                 'client_id',
+                'config_id',
                 'redirect_uri',
                 'response_type',
-                'scope',
                 'state',
             ]);
             expect(url.searchParams.get('client_id')).toBe(APP_ID);
+            expect(url.searchParams.get('config_id')).toBe(CONFIG_ID);
             expect(url.searchParams.get('response_type')).toBe('code');
+            expect(url.searchParams.has('scope')).toBe(false);
         });
 
         test('uses the configured redirect_uri exactly, with no trailing slash', async () => {
@@ -454,28 +456,21 @@ describe('MetaMessengerProvider', () => {
 
             expect([...url.searchParams.keys()].sort()).toEqual([
                 'client_id',
+                'config_id',
                 'redirect_uri',
                 'response_type',
-                'scope',
                 'state',
             ]);
             expect(url.searchParams.get('state')).toBe(hostileState);
             expect(url.searchParams.get('redirect_uri')).toBe(hostileRedirect);
             expect(url.searchParams.get('client_id')).toBe(APP_ID);
-            expect(url.searchParams.get('scope').split(',').sort()).toEqual([
-                'pages_manage_metadata',
-                'pages_messaging',
-                'pages_show_list',
-            ]);
+            expect(url.searchParams.get('config_id')).toBe(CONFIG_ID);
+            expect(url.searchParams.has('scope')).toBe(false);
         });
 
-        test('never requests pages_read_engagement, pages_manage_engagement or ads scopes', async () => {
-            const scope = new URL(await build()).searchParams.get('scope');
-            expect(scope).not.toContain('pages_read_engagement');
-            expect(scope).not.toContain('pages_manage_engagement');
-            expect(scope).not.toContain('ads_management');
-            expect(scope).not.toContain('business_management');
-            expect(scope).not.toMatch(/instagram_/);
+        test('does not send the system-user-only response-type override', async () => {
+            const url = new URL(await build());
+            expect(url.searchParams.has('override_default_response_type')).toBe(false);
         });
     });
 
