@@ -182,9 +182,19 @@ export type OrderListResponse = z.infer<typeof orderListResponseSchema>;
 export const orderDetailSchema = orderSummarySchema.passthrough();
 export type OrderDetail = z.infer<typeof orderDetailSchema>;
 
+export const customerStatsSchema = z.object({
+  total_orders: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  rto_count: z.number().int().nonnegative(),
+  cancelled_count: z.number().int().nonnegative(),
+  return_rate: z.number().nonnegative(),
+});
+export type CustomerStats = z.infer<typeof customerStatsSchema>;
+
 export const customerQuickViewSchema = z.object({
   customer: z.record(z.string(), z.unknown()),
   orders: z.array(orderSummarySchema),
+  stats: customerStatsSchema.optional(),
 });
 export type CustomerQuickView = z.infer<typeof customerQuickViewSchema>;
 

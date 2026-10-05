@@ -318,7 +318,18 @@
       "unknown": "Unknown customer",
       "orders": "Recent orders",
       "noOrders": "No recent orders",
-      "readOnly": "Customer changes and notes are available in Web while mobile writes are being rolled out.",
+      "readOnly": "Customer profile is synced with your store.",
+      "call": "Call",
+      "message": "Message",
+      "createOrder": "New Order",
+      "lifetimeStats": "Lifetime Delivery History",
+      "delivered": "Delivered",
+      "returned": "Returned (RTO)",
+      "cancelled": "Cancelled",
+      "returnRate": "Return Rate",
+      "totalOrders": "Total Orders",
+      "notes": "Customer Notes",
+      "noPhone": "No phone number available",
       "error": {
         "title": "Couldn't load customer"
       }
@@ -345,10 +356,13 @@
     },
     "home": {
       "today": {
-        "title": "Today",
+        "title": "Daily Operational Summary",
         "orders": "Orders",
-        "revenue": "Expected order value",
+        "revenue": "Sales (৳)",
         "delivered": "Delivered",
+        "attentionNeeded": "Needs Attention",
+        "courierProblems": "Courier Problems",
+        "fixProblems": "Fix Problems",
         "unavailable": "Couldn't load today's summary",
         "timezoneFallback": "Shop timezone is unavailable; using {{timezone}} day boundaries."
       },

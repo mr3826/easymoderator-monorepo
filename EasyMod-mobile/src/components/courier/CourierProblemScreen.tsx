@@ -156,6 +156,10 @@ export function CourierProblemScreen() {
           data={parcels}
           keyExtractor={(item) => item.order_id}
           contentContainerStyle={styles.listContent}
+          windowSize={5}
+          maxToRenderPerBatch={5}
+          removeClippedSubviews={true}
+          initialNumToRender={8}
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}
