@@ -106,7 +106,7 @@ describe('access-token revocation state', () => {
 
         const { error } = await runAuthenticate();
 
-        expect(error).toMatchObject({ status: 401 });
+        expect(error).toMatchObject({ status: 403, code: 'GROWTH_OS_FORBIDDEN' });
         expect(error.message).toMatch(/membership is inactive/);
     });
 
