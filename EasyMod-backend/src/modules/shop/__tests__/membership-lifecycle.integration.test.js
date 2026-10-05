@@ -221,7 +221,8 @@ describe('membership revocation lifecycle on PostgreSQL and Redis', () => {
         const existingToken = await request(app)
             .get('/api/shop/me')
             .set('Authorization', `Bearer ${token}`);
-        expect(existingToken.status).toBe(401);
+        // The token is valid but no longer authorized for the inactive shop.
+        expect(existingToken.status).toBe(403);
 
         const login = await request(app)
             .post('/api/auth/signin')
