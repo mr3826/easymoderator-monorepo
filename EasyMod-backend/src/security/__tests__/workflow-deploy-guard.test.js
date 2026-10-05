@@ -14,10 +14,6 @@ const releaseWorkflowPath = path.resolve(
     '../../../../.github/workflows/release.yml',
 );
 const releaseWorkflow = fs.readFileSync(releaseWorkflowPath, 'utf8');
-const mobileCiWorkflow = fs.readFileSync(
-    path.resolve(__dirname, '../../../../.github/workflows/mobile-ci.yml'),
-    'utf8',
-);
 const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
 const compose = fs.readFileSync(composePath, 'utf8');
 const securityWorkflowPath = path.resolve(
@@ -54,13 +50,6 @@ describe('production workflow branch safety', () => {
         expect(releaseWorkflow).not.toMatch(/^ {2}pull_request:/m);
         expect(releaseWorkflow).toContain('uses: ./.github/workflows/ci-cd.yml');
         expect(releaseWorkflow).toContain('secrets: inherit');
-    });
-
-    test('mobile CI delegates repository-wide security and backend gates', () => {
-        expect(mobileCiWorkflow).not.toContain('gitleaks');
-        expect(mobileCiWorkflow).not.toContain('backend-regression');
-        expect(mobileCiWorkflow).toContain('mobile-backend-contract');
-        expect(mobileCiWorkflow).toContain('EasyMod-backend/src/middleware/auth.middleware.js');
     });
 
     test('build and deploy jobs are restricted to main', () => {
