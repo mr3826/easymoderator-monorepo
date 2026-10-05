@@ -409,7 +409,7 @@ fails without it. `main` was not changed by this work.
 | 9 | Native token scope | Resolved. The token must match its session's user and shop, and is limited to an allowlist of read routes (`/api/mobile/*`, order/conversation detail GETs). Anything else gets 403. | `60535649` |
 | 10 | Web product/order flows trust client tenant fields | Not mobile scope. Native tokens cannot reach these routes (P1-9). | Web backlog |
 | 11 | Telegram binding authorization | Not mobile scope. Unreachable with native tokens. | Web backlog |
-| 12 | CI verdict ignores backend regression | Resolved. The gate requires `backend-regression` whenever the backend is touched, plus `android-release`, gitleaks and E2E when it runs. | `18167adc` |
+| 12 | CI verdict ignores backend regression | Resolved. The mobile gate retains a focused `mobile-backend-contract`; repository-wide backend integration/unit coverage and historical secret scanning are owned once by the main PR gates. | Current workflow reconciliation |
 | 13 | Path filters bypass the gate | Resolved. Pull requests have no `paths:` filter. | `18167adc` |
 
 ### P2 / P3
