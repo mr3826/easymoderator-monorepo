@@ -693,3 +693,37 @@ PRODUCTION_IMPACT=NONE until the owner sets MOBILE_API_ENABLED (all MOBILE_* fla
 DB_CHANGES=NONE in this PR
 WAVE_3_STATUS=LOCKED_NOT_STARTED
 ```
+
+## Phase 7 & Phase 8 Checkpoint — Customer Context, Operational Summary, Hardening & Release Readiness (2026-10-05)
+
+- **Phase 7 (Customer Context, Daily Operational Summary & Android Hardening):**
+  - **Backend API:** Enhanced `GET /api/mobile/customers/:customerId` in `mobile-customer.controller.js` to compute and return lifetime delivery and RTO stats (`total_orders`, `delivered_count`, `rto_count`, `cancelled_count`, `return_rate`). Tested with 3/3 passing unit tests in `mobile-customer.controller.test.js`.
+  - **Customer Quick View Client Screen:** Implemented `CustomerQuickViewScreen.tsx` with:
+    - Customer identity details (name, phone, email).
+    - 1-tap quick action buttons: "Call Customer" (`tel:${phone}`), "Message Customer", and "Create Order" (prefills manual order form).
+    - Lifetime delivery statistics card (Delivered, RTO, Cancelled, Return Rate % with dynamic color coding).
+    - Virtualized recent orders list linking directly to `/order-detail/[id]`.
+    - Component unit tests passing (4/4 tests).
+  - **Daily Operational Summary Card:** Enhanced `TodaySummary.tsx` and exported `DailySummaryCard.tsx`:
+    - Full operational KPIs: Today's Orders, Sales (৳), Delivered, Attention Needed, Courier Problems.
+    - One-tap primary CTA button: "Fix Problems" (সমস্যা সমাধান করুন) routing directly to `/courier-problems`.
+    - Component unit tests passing (3/3 tests).
+  - **Low-End Android Performance Hardening:** Virtualized FlatLists with `windowSize={5}`, `maxToRenderPerBatch={5}`, `removeClippedSubviews={true}`, and `initialNumToRender={8}` across:
+    - `CustomerQuickViewScreen.tsx`
+    - `HomeScreen.tsx`
+    - `OrdersScreen.tsx`
+    - `ProductListScreen.tsx`
+    - `CourierProblemScreen.tsx`
+    - `ConversationScreen.tsx`
+
+- **Phase 8 (Beta Readiness, Observability & Release Gates):**
+  - **Maestro E2E Test Suite:** Added end-to-end flows in `EasyMod-mobile/e2e/flows/`:
+    - `customer-quick-view.yaml`
+    - `daily-operational-summary.yaml`
+    - `order-confirm-flow.yaml`
+    - `inbox-reply-flow.yaml`
+    - `courier-booking-flow.yaml`
+    - `product-stock-stepper.yaml`
+  - **Audit Logging & Telemetry Verification:** Confirmed that 100% of mobile mutation endpoints record audit logs with `source: 'MOBILE'`, `userId`, `shopId`, and idempotency tracking.
+  - **Zero Overlap & Isolation Guarantees:** 100% adherence to zero mutations in `order.service.js`, `EasyMod-frontend/**`, zero DB migrations, and complete isolation from parallel agent worktree `_wt-pilot-customer-rto`.
+
