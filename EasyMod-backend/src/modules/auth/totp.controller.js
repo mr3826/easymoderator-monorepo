@@ -7,7 +7,7 @@ const { AppError } = require('../../utils/AppError');
 const { generateAccessToken, generateRefreshToken } = require('../../utils/jwt.util');
 const { hashPassword } = require('../../utils/password.util');
 const { setAuthCookies } = require('../../utils/auth-cookies');
-const { User } = require('../entities');
+const { Shop, User } = require('../entities');
 const { findActiveMembership } = require('../../utils/active-membership');
 
 /**
@@ -105,7 +105,7 @@ const verify = async (req, res, next) => {
                 throw new AppError('No active shop session found. Please login again.', 401);
             }
         }
-        if (!await findActiveMembership(user.id, shopId)) {
+        if (shopId && !await findActiveMembership(user.id, shopId)) {
             throw new AppError('No active shop session found. Please login again.', 401);
         }
 

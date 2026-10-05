@@ -591,7 +591,9 @@ describe('Shop Service', () => {
 
     it('removeUserFromShop — invalidates tokens, sessions, cache, and local SSE', async () => {
         const targetMembership = {
+            user_id: 'user-staff',
             role: 'staff',
+            is_active: true,
             update: jest.fn().mockResolvedValue(undefined),
         };
         UserShop.findOne
@@ -625,7 +627,9 @@ describe('Shop Service', () => {
             update: jest.fn().mockResolvedValue(undefined),
         };
         const targetMembership = {
+            user_id: 'user-staff',
             role: 'staff',
+            is_active: true,
             update: jest.fn().mockResolvedValue(undefined),
         };
         User.findByPk.mockResolvedValue(targetUser);
