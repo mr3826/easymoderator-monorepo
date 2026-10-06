@@ -28,7 +28,10 @@ const allowedBuildAdvisories = new Map([
     [1241202, {
         packageName: 'sprintf-js',
         url: 'https://github.com/advisories/GHSA-hp3w-g68c-fv3c',
-        remediations: [{ name: 'jest', version: '30.5.2', isSemVerMajor: true }],
+        remediations: [
+            { name: 'jest', version: '30.5.2', isSemVerMajor: true },
+            { name: 'jest-expo', version: '58.0.7', isSemVerMajor: true },
+        ],
     }],
 ]);
 
