@@ -571,10 +571,11 @@ describe('mobile production proof workflow', () => {
     test('verifies the signed artifact before any device run and scans every upload for the credential', () => {
         expect(code).toContain('git diff --quiet "$release_source_sha" HEAD -- EasyMod-mobile');
         expect(code).toContain('sha256sum --check SHA256SUMS');
+        expect(code).toContain("steps.api.outcome == 'success'");
         expect(code).toContain("--expect-signer \"$(node -p \"require('./EasyMod-mobile/release-signing.json').certificateSha256\")\"");
         expect(code.indexOf('--expect-signer')).toBeLessThan(code.indexOf('android-emulator-runner'));
         expect(code).toContain('grep -rlF -- "$secret" proof');
-        expect(code).toContain("if: ${{ !cancelled() && steps.scan.outcome == 'success' }}");
+        expect(code).toContain("if: ${{ !cancelled() && steps.api.outcome == 'success' && steps.scan.outcome == 'success' }}");
     });
 
     test('runs a signed build variant only under that variant\'s own identity', () => {
