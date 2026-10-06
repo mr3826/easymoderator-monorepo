@@ -4,9 +4,10 @@ name: Mobile CI
 # this workflow carries no secrets, no deployment environment and no
 # workflow_dispatch trigger, and it never pushes to a registry or reaches a host
 # over SSH. It validates every pull request with a cheap isolation check, then
-# runs the mobile proof only for mobile-relevant changes. Pushes to mobile/**
-# branches also run the mobile proof; it never
-# runs for a push to main (the signed build there is mobile-release.yml). The
+# runs the fast mobile proof only for mobile-relevant changes. Pushes to mobile/**
+# branches also run the fast proof. The expensive all-ABI/runtime proof is
+# opt-in on a pull request with the `mobile-native` label and the signed build
+# on main is owned by mobile-release.yml. It never runs for a push to main. The
 # isolation-guard job below fails the run structurally if any of that ever
 # changes — do not weaken it to make a future change pass.
 
@@ -28,7 +29,7 @@ on:
       - '.github/scripts/verify-mobile-ci-isolation.js'
       - '.github/scripts/verify-mobile-protected-paths.js'
   # Every PR gets a stable Mobile CI status. Non-mobile diffs run only the
-  # isolation/path detector; mobile-relevant diffs run the full proof.
+  # isolation/path detector; mobile-relevant diffs run the fast proof.
   pull_request:
     branches:
       - main
@@ -141,7 +142,8 @@ jobs:
     if: >-
       needs.protected-paths.result == 'success' &&
       needs.protected-paths.outputs.mobile_relevant == 'true' &&
-      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mobile-native'))
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'mobile-native')
     timeout-minutes: 90
     env:
       APP_VARIANT: preview
@@ -568,7 +570,7 @@ jobs:
           MOBILE_RELEVANT: ${{ needs.protected-paths.outputs.mobile_relevant }}
           R_MOBILE: ${{ needs.mobile.result }}
           R_RELEASE: ${{ needs.android-release.result }}
-          ANDROID_REQUIRED: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mobile-native') }}
+          ANDROID_REQUIRED: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mobile-native') }}
           R_BACKEND: ${{ needs.mobile-backend-contract.result }}
           BACKEND_TOUCHED: ${{ needs.protected-paths.outputs.backend_touched }}
           R_E2E_SCOPE: ${{ needs.mobile-e2e-scope.result }}
