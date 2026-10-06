@@ -254,6 +254,13 @@ jobs:
         run: |
           df -h | tee signed/release/disk-after-emulator.txt
 
+      - name: Prepare verified artifact with release root
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p final/release
+          cp -R signed/release/. final/release/
+
       - name: Upload verified release artifact
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -262,7 +269,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           compression-level: 0
-          path: signed/release/
+          path: final/
 
       - name: Upload runtime diagnostics (failed run)
         if: failure()
