@@ -40,13 +40,12 @@ export function OrderDraftModal({
   const [quantity, setQuantity] = useState(1);
   const [price, setPrice] = useState('');
   const [deliveryFee, setDeliveryFee] = useState(60);
-  const [discount, setDiscount] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const createOrderMutation = useCreateManualOrder();
 
   const unitPrice = Number(price) || 0;
-  const discountAmount = Number(discount) || 0;
+  const discountAmount = 0;
   const subtotal = quantity * unitPrice;
   const totalAmount = Math.max(0, subtotal + deliveryFee - discountAmount);
 
