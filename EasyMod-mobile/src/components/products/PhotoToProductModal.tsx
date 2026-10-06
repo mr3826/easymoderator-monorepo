@@ -12,6 +12,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { usePhotoDraft } from '@/hooks/useProducts';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { brandColors, fontFamily, neutral, radius, spacing } from '@/theme/tokens';
 
 interface PhotoToProductModalProps {
@@ -22,6 +23,7 @@ interface PhotoToProductModalProps {
 
 export function PhotoToProductModal({ visible, onClose, onSuccess }: PhotoToProductModalProps) {
   const { t } = useTranslation();
+  const isOnline = useNetworkStatus();
   const photoDraftMutation = usePhotoDraft();
 
   const [name, setName] = useState('');
@@ -34,6 +36,10 @@ export function PhotoToProductModal({ visible, onClose, onSuccess }: PhotoToProd
 
   const handleSubmit = () => {
     setErrorMessage(null);
+    if (!isOnline) {
+      setErrorMessage(t('mobile.offline.mutationUnavailable', 'Reconnect to continue this action.'));
+      return;
+    }
     const trimmedName = name.trim();
     if (!trimmedName) {
       setErrorMessage(t('mobile.products.nameRequired', 'পণ্যের নাম আবশ্যক'));
@@ -212,7 +218,7 @@ export function PhotoToProductModal({ visible, onClose, onSuccess }: PhotoToProd
                 testID="photo-draft-submit-btn"
                 style={styles.saveDraftBtn}
                 onPress={handleSubmit}
-                disabled={isPending}
+                disabled={isPending || !isOnline}
               >
                 {isPending ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
