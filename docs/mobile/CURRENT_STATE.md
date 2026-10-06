@@ -418,6 +418,7 @@ This appendix supersedes §18 where they differ.
 - **Signing exists** (ADR M-013).
   - An RSA-4096 upload key lives only in the main-only `mobile-release` environment. The pinned
     certificate SHA-256 is `9d8e323c…046a382b`.
-  - Signed APK/AAB come only from `mobile-release.yml` on `main`, verified against that fingerprint.
+  - Signed APK/AAB come only from `mobile-release.yml` on `main` (push or exact-source dispatch),
+    verified against that fingerprint and a fresh-runner API 24 runtime proof.
   - Mobile CI still holds no secrets.
 - **R8 is on** for every release build, and the Maestro flows run against it.

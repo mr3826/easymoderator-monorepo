@@ -159,24 +159,24 @@ emulator job and the arm64 phone APK build. Signed release retrieval and the USB
 
 ## CI and Protected Areas
 
-- Mobile CI runs on PRs into `main` that touch mobile paths, and on pushes to `mobile/**`. It never runs
-  for a push to `main`. It carries no secrets, no environment and no `workflow_dispatch`.
+- Mobile CI runs on every PR into `main` with a stable not-applicable result for unrelated changes,
+  and runs full mobile proof for mobile-relevant paths or pushes to `mobile/**`. It carries no secrets,
+  no environment and no `workflow_dispatch`.
 - Mobile CI jobs:
   - isolation guard (also pins `mobile-release.yml`'s signing boundary)
   - protected paths
-  - gitleaks (full history)
   - mobile (typecheck, lint, Jest, audit)
-  - backend regression (when the backend is touched)
-  - `android-release`: all ABIs, R8 mapping, the debug-signature negative control, a throwaway-key
+  - focused mobile backend contract checks when consumed backend paths change
+  - opt-in `android-release`: all ABIs, R8 mapping, the debug-signature negative control, a throwaway-key
     signing proof, install/launch on API 24
   - `mobile-e2e`: label-gated, API 34, all Maestro flows on the R8 build
   - `android-device-apk`: label-gated arm64 build for a USB phone
   - the `Mobile CI` gate over all of them
-- `mobile-release.yml` runs on pushes to `main` that change `EasyMod-mobile/`:
-  - it builds both variants, `preview` and `production` (`tech.easymod.merchant`, the Play build), without secrets;
+- `mobile-release.yml` runs on mobile pushes to `main` or a main-only exact-source dispatch:
+  - it builds both variants, `preview` and `production` (`tech.easymod.merchant`, the Play build);
   - it signs each in one step with the upload key from the main-only `mobile-release` environment;
-  - it verifies each against the pinned fingerprint and its own variant, package and source SHA, then
-    installs/launches on API 24;
+  - it verifies each against the pinned fingerprint and its own variant, package and source SHA;
+  - it hands the signed candidate to a fresh runner, which installs/launches on API 24;
   - it uploads `mobile-release-<sha>` (preview) and `mobile-release-production-<sha>`.
 
   It distributes nothing. See ADR M-013 for rotation and recovery.

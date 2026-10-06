@@ -664,9 +664,10 @@ policy). When it runs, the `Mobile CI` gate requires it to pass.
 
 ### Signed release (`mobile-release.yml`, ADR M-013)
 
-Every push to `main` that changes `EasyMod-mobile/` builds the `preview` APK and AAB (all four ABIs,
-R8), signs them with the upload key, verifies them, and launches the APK on API 24. The signed build
-is uploaded as the run's `mobile-release-<sha>` artifact. Nothing is published anywhere.
+Every push to `main` that changes `EasyMod-mobile/` builds both variants (preview and production),
+signs them with the upload key, verifies them, and launches each APK on a fresh API 24 runner. A
+protected manual dispatch can rebuild an exact merged source SHA. The signed build is uploaded as the
+run's `mobile-release-<sha>` artifact. Nothing is published anywhere.
 
 ```bash
 gh run list --workflow "Mobile Release" --branch main --limit 5
@@ -677,6 +678,15 @@ node EasyMod-mobile/scripts/verify-android-artifact.js --apk release/app-release
   --package tech.easymod.merchant.preview --abis armeabi-v7a,arm64-v8a,x86,x86_64 \
   --expect-signer "$(node -p "require('./EasyMod-mobile/release-signing.json').certificateSha256")" --out verify
 ```
+
+To validate the exact source used by a prior main commit:
+
+```bash
+gh workflow run mobile-release.yml --ref main -f source_sha=<full-main-sha>
+```
+
+The workflow records that source in `release/source-sha.txt`; the runtime proof runs
+on a separate fresh runner from the Gradle build.
 
 - Sideload with `adb install -r release/app-release.apk`. A device that has a CI (debug-signed) build of
   `tech.easymod.merchant.preview` must uninstall it first, because the signatures differ.

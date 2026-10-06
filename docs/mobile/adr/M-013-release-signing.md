@@ -37,9 +37,13 @@ Amends ADR M-009 (mobile CI isolation). Implements plan items M-5/M-6 (release b
 
 ### Signing pipeline
 
-`.github/workflows/mobile-release.yml` runs for pushes to `main` that change `EasyMod-mobile/`:
+`.github/workflows/mobile-release.yml` runs for pushes to `main` that change `EasyMod-mobile/`.
+It also supports a protected `workflow_dispatch` from `main` with an explicit full
+`source_sha`, so a previously merged mobile source can be rebuilt without silently
+building a newer tree:
 
-1. It builds the APK and AAB for all four ABIs with R8, **without** any secret in the environment.
+1. The `signed-build` job builds the APK and AAB for all four ABIs with R8, **without** the upload
+   key in the environment.
    Each run builds both variants of the same source as two matrix jobs:
    - `preview` (`tech.easymod.merchant.preview`), the internal QA sideload build;
    - `production` (`tech.easymod.merchant`), the build a Play upload would use.
@@ -61,8 +65,10 @@ Amends ADR M-009 (mobile CI isolation). Implements plan items M-5/M-6 (release b
    - that the app config embedded in both artifacts names this variant, its package, an HTTPS API
      and the source SHA (`--variant`, `--source-sha`). A preview build cannot pass as production;
      `mobile-ci.yml` proves that refusal on every mobile PR.
-4. The signed APK is installed and cold-launched on an API 24 emulator.
-5. Only then is the artifact uploaded: APK, AAB, manifest, mapping and `SHA256SUMS`. It is named
+4. A separate `runtime-proof` job starts on a fresh runner, downloads the signed candidate, frees
+   safe heavyweight Android SDK content, and installs and cold-launches the APK on an API 24 emulator.
+5. Only after the fresh-runner proof is green is the final artifact uploaded: APK, AAB, manifest,
+   mapping, source identity and `SHA256SUMS`. It is named
    `mobile-release-<sha>` for preview and `mobile-release-production-<sha>` for production.
 
 The version code is `git rev-list --count HEAD`, which is monotonic on `main` and reproducible per SHA.
@@ -80,10 +86,11 @@ never run while the key exists.
   - runs the same signing script with a throwaway CI-generated key (never a release key);
   - installs the re-signed APK.
 - `verify-mobile-ci-isolation.js` now also pins `mobile-release.yml`'s shape:
-  - push to `main` is the only trigger;
+  - push to `main`, or a `source_sha` dispatch from `main`, are the only triggers;
   - `contents: read`;
   - the job is bound to the `mobile-release` environment;
   - only the two upload-key secrets, and only in the signing step;
+  - the signed build job is restricted to `refs/heads/main`;
   - no GitHub-release, store or other distribution step.
 
 ### R8

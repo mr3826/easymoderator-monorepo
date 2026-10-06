@@ -148,7 +148,7 @@ for (const [pattern, label] of forbiddenStepPatterns) {
 // ── mobile-release.yml (ADR M-013) ─────────────────────────────────────────
 // The one mobile workflow allowed a secret: the Android upload key, from the
 // `mobile-release` environment (deployment branch policy: main only). Its shape
-// is pinned so the key can never reach pull-request code, an on-demand run, a
+// is pinned so the key can never reach pull-request code, a non-main manual run,
 // step other than the signing step, or a distribution side effect.
 const RELEASE_PATH = path.join(__dirname, '..', 'workflows', 'mobile-release.yml');
 const RELEASE_SECRETS = new Set(['ANDROID_UPLOAD_KEYSTORE_BASE64', 'ANDROID_UPLOAD_KEYSTORE_PASSWORD']);
@@ -166,18 +166,22 @@ if (fs.existsSync(RELEASE_PATH)) {
   const triggers = releaseOn.split('\n')
     .filter((line) => /^\s{2}[A-Za-z_]+\s*:/.test(line))
     .map((line) => line.trim().replace(/\s*:.*$/, ''));
-  if (triggers.length !== 1 || triggers[0] !== 'push') {
-    releaseFailures.push(`mobile-release.yml must trigger on push only (found: ${triggers.join(', ') || 'none'})`);
+  if (triggers.length !== 2 || !triggers.includes('push') || !triggers.includes('workflow_dispatch')) {
+    releaseFailures.push(`mobile-release.yml must trigger on push and workflow_dispatch only (found: ${triggers.join(', ') || 'none'})`);
   }
   const releaseBranches = (extractTopLevelBlock(extractTopLevelBlock(releaseOn, 'push') || '', 'branches') || '')
     .split('\n').map((l) => l.trim().replace(/^-\s*/, '').replace(/['"]/g, '').trim()).filter(Boolean);
   if (releaseBranches.length !== 1 || releaseBranches[0] !== 'main') {
     releaseFailures.push('mobile-release.yml must run for pushes to main only');
   }
-  for (const forbidden of ['pull_request', 'pull_request_target', 'workflow_dispatch', 'workflow_run', 'workflow_call', 'repository_dispatch', 'schedule', 'issue_comment']) {
+  for (const forbidden of ['pull_request', 'pull_request_target', 'workflow_run', 'workflow_call', 'repository_dispatch', 'schedule', 'issue_comment']) {
     if (new RegExp(`^\\s*${forbidden}\\s*:`, 'm').test(release)) {
       releaseFailures.push(`\`${forbidden}\` is forbidden in mobile-release.yml`);
     }
+  }
+  const dispatchBlock = extractTopLevelBlock(releaseOn, 'workflow_dispatch') || '';
+  if (!/source_sha\s*:/m.test(dispatchBlock) || !/required\s*:\s*true/m.test(dispatchBlock)) {
+    releaseFailures.push('mobile-release.yml manual dispatch must require the full source_sha input');
   }
 
   const releasePermissions = (extractTopLevelBlock(release, 'permissions') || '')
@@ -190,6 +194,9 @@ if (fs.existsSync(RELEASE_PATH)) {
   }
   if (!/^\s*environment\s*:\s*mobile-release\s*$/m.test(release)) {
     releaseFailures.push('mobile-release.yml must bind its job to the `mobile-release` environment');
+  }
+  if (!/^\s*if:\s*github\.ref\s*==\s*["']refs\/heads\/main["']\s*$/m.test(release)) {
+    releaseFailures.push('mobile-release.yml signed build must be restricted to refs/heads/main');
   }
 
   // Secrets: only the upload key's two values, and only inside the signing step.
@@ -229,5 +236,5 @@ if (failures.length > 0 || releaseFailures.length > 0) {
 console.log(
   'Mobile workflow isolation guard passed: mobile-ci.yml has no secrets, no environment, no ' +
     'workflow_dispatch, no push-to-main trigger and no deploy-shaped step; mobile-release.yml runs ' +
-    'only for pushes to main, holds the upload key in its signing step only and distributes nothing.',
+    'only for main pushes or a main-only source_sha dispatch, holds the upload key in its signing step only and distributes nothing.',
 );

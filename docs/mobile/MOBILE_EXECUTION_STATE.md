@@ -657,7 +657,7 @@ MAIN_MERGED_IN=aea32ddd (auth conflicts resolved line by line), 3cdeff45 (docs),
 
 RELEASE_SIGNING=upload key (RSA-4096, alias easymod-upload) held only in GitHub environment mobile-release (main only)
 RELEASE_CERT_SHA256=9d8e323ca0fd9a2bc174b957e631e492c1919443c251872df587b11f046a382b (pinned in EasyMod-mobile/release-signing.json)
-RELEASE_PIPELINE=mobile-release.yml: build without secrets -> sign (apksigner v2+v3; jarsigner AAB) -> verify pinned signer -> API 24 install/launch -> upload mobile-release-<sha>
+RELEASE_PIPELINE=mobile-release.yml: signed-build -> candidate artifact -> fresh-runner API 24 install/launch -> Mobile Release Gate -> upload mobile-release-<sha>
 DEBUG_SIGN_FALLBACK=NONE (verifier refuses the debug certificate; missing key material stops the run)
 R8=ON (minify + resource shrink in every release build; mapping required)
 
