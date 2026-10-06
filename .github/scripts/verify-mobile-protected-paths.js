@@ -31,6 +31,7 @@ const MOBILE_RELEVANT = [
   /^EasyMod-backend\/src\/middleware\/mobile-client-context\.middleware\.js$/,
   /^EasyMod-backend\/src\/config\/config\.js$/,
   /^\.github\/workflows\/mobile-ci\.yml$/,
+  /^\.github\/workflows\/mobile-production-proof\.yml$/,
   /^\.github\/scripts\/verify-mobile-(?:ci-isolation|protected-paths)\.js$/,
 ];
 
@@ -47,8 +48,9 @@ const NEVER_TOUCH = [
   /^Dockerfile/i,
   /docker-compose.*\.ya?ml$/i,
   /^Caddyfile/i,
-  // Any workflow file except this program's own two (ADR M-009 / M-013).
-  /^\.github\/workflows\/(?!mobile-(?:ci|release)\.yml$).+/,
+  // Any workflow file except this program's own release/CI/proof workflows
+  // (ADR M-009 / M-013).
+  /^\.github\/workflows\/(?!mobile-(?:ci|release|production-proof)\.yml$).+/,
   /^EasyMod-frontend\//,
   /^EasyMod-growth\//,
 ];
