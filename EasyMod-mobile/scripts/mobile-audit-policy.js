@@ -25,6 +25,11 @@ const allowedBuildAdvisories = new Map([
         url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
         remediations: [{ name: 'expo', version: '44.0.6', isSemVerMajor: true }],
     }],
+    [1241202, {
+        packageName: 'sprintf-js',
+        url: 'https://github.com/advisories/GHSA-hp3w-g68c-fv3c',
+        remediations: [{ name: 'jest', version: '30.5.2', isSemVerMajor: true }],
+    }],
 ]);
 
 const advisories = new Map();
