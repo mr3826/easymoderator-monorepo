@@ -9,7 +9,7 @@ tags:
     visible:
       id: home-attention-list
     timeout: 60000
-- openLink: easymodmerchant://customer-detail/cust-test-1
+- openLink: easymodmerchantdev://customer-detail/${E2E_SHOP_A_CUSTOMER_ID}
 - extendedWaitUntil:
     visible:
       id: mobile-customer-quick-view

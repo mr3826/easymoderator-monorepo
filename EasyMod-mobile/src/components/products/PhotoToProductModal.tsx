@@ -28,7 +28,6 @@ export function PhotoToProductModal({ visible, onClose, onSuccess }: PhotoToProd
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('0');
   const [category, setCategory] = useState('');
-  const [sku, setSku] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -76,7 +75,6 @@ export function PhotoToProductModal({ visible, onClose, onSuccess }: PhotoToProd
     setPrice('');
     setQuantity('0');
     setCategory('');
-    setSku('');
     setDescription('');
     setImageUrl('');
     setErrorMessage(null);
@@ -96,7 +94,7 @@ export function PhotoToProductModal({ visible, onClose, onSuccess }: PhotoToProd
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             <View style={styles.headerRow}>
               <Text style={styles.modalTitle}>{t('mobile.products.addDraftTitle', 'নতুন পণ্যের ড্রাফট')}</Text>
-              <Pressable onPress={onClose} hitSlop={10}>
+              <Pressable onPress={onClose} hitSlop={10} testID="photo-draft-close-btn">
                 <Text style={styles.closeBtn}>✕</Text>
               </Pressable>
             </View>

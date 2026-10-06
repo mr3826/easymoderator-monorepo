@@ -10,7 +10,13 @@ tags:
     visible:
       id: home-attention-list
     timeout: 60000
-- openLink: easymodmerchant://conversation/conv-test-reply-1
+- openLink: easymodmerchantdev://conversation/${E2E_SHOP_A_CONVERSATION_ID}
+- extendedWaitUntil:
+    visible:
+      id: deeplink-view-detail
+    timeout: 30000
+- tapOn:
+    id: deeplink-view-detail
 - extendedWaitUntil:
     visible:
       id: mobile-conversation-messages
@@ -18,13 +24,13 @@ tags:
 - assertVisible:
     id: mobile-conversation-reply-input
 - assertVisible:
-    id: mobile-conversation-reply-send
+    id: mobile-conversation-send-btn
 - tapOn:
     id: mobile-conversation-reply-input
 - inputText: "Hello, this is merchant reply from mobile app"
 - hideKeyboard
 - tapOn:
-    id: mobile-conversation-reply-send
+    id: mobile-conversation-send-btn
 - extendedWaitUntil:
     visible:
       text: "Hello, this is merchant reply from mobile app"

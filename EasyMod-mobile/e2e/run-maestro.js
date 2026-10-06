@@ -46,7 +46,9 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
 // mobile-e2e-fixtures.integration.test.js.
 const SEED = {
   secondOwnerEmail: 'mobile-dev-b@easymod.test',
+  shopACustomerId: '56962817-240b-515a-8c02-e3f6268c7be6', // customer:draft-risky
   shopAOrderId: 'efc22718-691a-5966-8ac9-9f025c36da8b', // order:draft-large
+  shopAConversationId: '9cf21b45-d24d-53ce-8559-a20a5dc877bf', // conversation:needs-reply
   shopAProductId: '1594cc1f-d329-55dc-8033-7bf979411da8', // product:low-stock-a
   shopBProductId: '4c432011-9187-5b43-bb46-3dbe5526308c', // product:shop-b-low-stock
 };
@@ -70,6 +72,12 @@ const FLOW_PLAN = [
   { name: 'two-factor', file: 'two-factor.yaml' },
   { name: 'deep-link-stale', file: 'wave25-stale-entity.yaml' },
   { name: 'deep-link-cold-launch', file: 'deeplink-cold-launch.yaml' },
+  { name: 'customer-quick-view', file: 'customer-quick-view.yaml' },
+  { name: 'daily-operational-summary', file: 'daily-operational-summary.yaml' },
+  { name: 'inbox-reply', file: 'inbox-reply-flow.yaml' },
+  { name: 'order-confirm', file: 'order-confirm-flow.yaml' },
+  { name: 'product-stock-stepper', file: 'product-stock-stepper.yaml' },
+  { name: 'courier-booking', file: 'courier-booking-flow.yaml' },
   { name: 'reinstall-keeps-session', file: 'reinstall-keeps-session.yaml', reset: false, beforeFlow: 'reinstall' },
   { name: 'shop-isolation', file: 'shop-isolation.yaml' },
 ];
@@ -627,7 +635,9 @@ async function main() {
       E2E_EMAIL: email,
       E2E_PASSWORD: password,
       E2E_SECOND_EMAIL: SEED.secondOwnerEmail,
+      E2E_SHOP_A_CUSTOMER_ID: SEED.shopACustomerId,
       E2E_SHOP_A_ORDER_ID: SEED.shopAOrderId,
+      E2E_SHOP_A_CONVERSATION_ID: SEED.shopAConversationId,
       E2E_SHOP_A_PRODUCT_ID: SEED.shopAProductId,
       E2E_SHOP_B_PRODUCT_ID: SEED.shopBProductId,
     };
