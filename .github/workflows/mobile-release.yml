@@ -1,14 +1,12 @@
 name: Mobile Release
 
 # Signed Android release build (ADR M-013, docs/mobile/adr/M-013-release-signing.md).
-# Runs only for pushes to main that change the mobile app; never for a pull request, never
-# on demand. The upload key reaches exactly one step ("Sign with the upload key") from the
-# `mobile-release` environment, whose deployment branch policy admits main only. Nothing is
-# distributed from here: the signed APK/AAB are uploaded as this run's artifacts.
-# Every run signs both build variants of the same source with the same upload key:
-#   preview    -> tech.easymod.merchant.preview, artifact mobile-release-<sha> (internal QA sideload)
-#   production -> tech.easymod.merchant, artifact mobile-release-production-<sha> (the Play AAB)
-# .github/scripts/verify-mobile-ci-isolation.js checks this file's shape on every mobile PR.
+# Pushes to main build the mobile source from that exact commit; workflow_dispatch
+# can rerun a previously merged source SHA from main without rebuilding a different
+# application. The upload key is available only to the build job in the protected
+# mobile-release environment. Android runtime verification runs on a fresh runner,
+# after Gradle and SDK build state have been discarded with the build runner.
+# Nothing is distributed from here: verified APK/AAB files are uploaded as artifacts.
 
 on:
   push:
@@ -17,6 +15,13 @@ on:
     paths:
       - 'EasyMod-mobile/**'
       - '.github/workflows/mobile-release.yml'
+      - '.github/workflows/mobile-production-proof.yml'
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Full main SHA whose EasyMod-mobile source must be built and signed'
+        required: true
+        type: string
 
 # A release build is never cancelled halfway; a newer push to main queues behind it.
 concurrency:
@@ -27,17 +32,16 @@ permissions:
   contents: read
 
 jobs:
-  signed-release:
-    name: Signed Android release, ${{ matrix.variant }} (all ABIs) + install/launch
+  signed-build:
+    name: Signed Android build, ${{ matrix.variant }} (all ABIs)
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     environment: mobile-release
     timeout-minutes: 120
     strategy:
-      # Each variant completes its own evidence; the run fails if either variant fails.
       fail-fast: false
       matrix:
         include:
-          # mobile-production-proof.yml downloads the preview artifact by this name.
           - variant: preview
             package: tech.easymod.merchant.preview
             artifact: mobile-release
@@ -47,7 +51,8 @@ jobs:
     env:
       APP_VARIANT: ${{ matrix.variant }}
       EXPO_PUBLIC_API_BASE_URL: https://api.easymod.tech
-      GIT_SHA: ${{ github.sha }}
+      SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+      GIT_SHA: ${{ inputs.source_sha || github.sha }}
       EXPO_NO_TELEMETRY: '1'
     defaults:
       run:
@@ -55,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          # The version code is main's commit count: monotonic on main and reproducible per SHA.
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
@@ -71,8 +76,22 @@ jobs:
           cache: npm
           cache-dependency-path: EasyMod-mobile/package-lock.json
 
+      - name: Validate exact source SHA
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::source_sha must be a full lowercase SHA'; exit 1; }
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "SOURCE_SHA=$SOURCE_SHA"
+          echo "BUILD_RUN=$GITHUB_RUN_ID"
+
       - name: Derive the version code
         run: echo "APP_BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+
+      - name: Disk diagnostics before Android setup
+        run: |
+          set -euo pipefail
+          df -h
+          du -sh "${ANDROID_HOME:-/usr/local/lib/android/sdk}" "$HOME/.gradle" "$RUNNER_TEMP" 2>/dev/null || true
 
       - name: Install
         run: npm ci
@@ -89,8 +108,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p release-logs
+          df -h | tee release-logs/disk-before-gradle.txt
           cd android
           ./gradlew --no-daemon assembleRelease bundleRelease 2>&1 | tee ../release-logs/gradle-release.log
+          cd ..
+          df -h | tee release-logs/disk-after-gradle.txt
 
       - name: Sign with the upload key
         env:
@@ -119,6 +141,93 @@ jobs:
           --expect-signer "$(node -p "require('./release-signing.json').certificateSha256")"
           --out release
 
+      - name: Record source identity and checksums
+        run: |
+          cp android/app/build/outputs/mapping/release/mapping.txt release/r8-mapping.txt
+          printf '%s\n' "$GIT_SHA" > release/source-sha.txt
+          cd release
+          sha256sum app-release.apk app-release.aab r8-mapping.txt source-sha.txt > SHA256SUMS
+          cat SHA256SUMS
+
+      # This is an internal handoff artifact. The final public release artifact
+      # is uploaded only by the fresh-runner runtime job after launch succeeds.
+      - name: Upload signed build candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-release-candidate-${{ matrix.variant }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+          path: |
+            EasyMod-mobile/release/
+            EasyMod-mobile/release-logs/
+
+      - name: Upload build logs (failed run)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-release-build-logs-${{ matrix.variant }}-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 0
+          path: EasyMod-mobile/release-logs/
+
+  runtime-proof:
+    name: Android runtime proof, ${{ matrix.variant }} (fresh runner)
+    needs: signed-build
+    if: ${{ needs.signed-build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: preview
+            package: tech.easymod.merchant.preview
+            artifact: mobile-release
+          - variant: production
+            package: tech.easymod.merchant
+            artifact: mobile-release-production
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Disk diagnostics on fresh runner
+        run: |
+          set -euo pipefail
+          df -h
+          du -sh "${ANDROID_HOME:-/usr/local/lib/android/sdk}" "$HOME/.gradle" "$RUNNER_TEMP" 2>/dev/null || true
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            EasyMod-mobile/scripts/android-install-launch-check.js
+
+      - name: Download signed build candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: mobile-release-candidate-${{ matrix.variant }}-${{ github.sha }}
+          path: signed
+
+      - name: Verify handoff and record disk state
+        run: |
+          set -euo pipefail
+          test -f signed/release/app-release.apk
+          test -f signed/release/app-release.aab
+          test "$(cat signed/release/source-sha.txt)" = "$SOURCE_SHA"
+          (cd signed/release && sha256sum --check SHA256SUMS)
+          df -h | tee signed/release/disk-before-emulator.txt
+
+      - name: Free safe runner storage before emulator provisioning
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sudo rm -rf "$sdk_root/system-images" "$sdk_root/ndk" "$sdk_root/cmake"
+          df -h | tee signed/release/disk-after-cleanup.txt
+
       - name: Enable KVM
         run: |
           set -euo pipefail
@@ -130,38 +239,54 @@ jobs:
         uses: reactivecircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
         with:
           api-level: 24
-          target: google_apis
+          target: default
           arch: x86
           profile: Nexus 5
           ram-size: 2048M
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          working-directory: ./EasyMod-mobile
-          script: node scripts/android-install-launch-check.js release/app-release.apk ${{ matrix.package }} release
+          working-directory: ./
+          script: node EasyMod-mobile/scripts/android-install-launch-check.js signed/release/app-release.apk ${{ matrix.package }} signed/release/runtime
 
-      - name: Checksums
+      - name: Disk diagnostics after emulator verification
+        if: always()
         run: |
-          cp android/app/build/outputs/mapping/release/mapping.txt release/r8-mapping.txt
-          cd release
-          sha256sum app-release.apk app-release.aab r8-mapping.txt > SHA256SUMS
-          cat SHA256SUMS
+          df -h | tee signed/release/disk-after-emulator.txt
 
-      # Only a fully verified, signed and launched release is uploaded.
-      - name: Upload the signed release
+      - name: Upload verified release artifact
+        if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 90
-          path: |
-            EasyMod-mobile/release/
-            EasyMod-mobile/release-logs/
+          compression-level: 0
+          path: signed/release/
 
-      - name: Upload build logs (failed run)
+      - name: Upload runtime diagnostics (failed run)
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ matrix.artifact }}-logs-${{ github.sha }}
+          name: mobile-release-runtime-logs-${{ matrix.variant }}-${{ github.sha }}
           if-no-files-found: ignore
-          path: EasyMod-mobile/release-logs/
+          retention-days: 14
+          compression-level: 0
+          path: signed/release/
+
+  release-gate:
+    name: Mobile Release Gate
+    needs: [signed-build, runtime-proof]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require build and fresh-runner runtime proof
+        env:
+          BUILD_RESULT: ${{ needs.signed-build.result }}
+          RUNTIME_RESULT: ${{ needs.runtime-proof.result }}
+        run: |
+          set -euo pipefail
+          echo "Signed build:       $BUILD_RESULT"
+          echo "Fresh-runner proof: $RUNTIME_RESULT"
+          [ "$BUILD_RESULT" = success ] && [ "$RUNTIME_RESULT" = success ]
