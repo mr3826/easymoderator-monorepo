@@ -1401,3 +1401,16 @@ schema receipts, Docker image smoke, final remote CI/security/reviewer results,
 production CORS/flag/secrets/backup configuration, live Growth health/auth
 checks, and an authorized release decision. No deployment or production
 mutation was performed.
+
+Read-only live-origin receipt (2026-10-07):
+
+```text
+https://growth.easymod.tech/health/ready=200
+https://growth.easymod.tech/api/internal/growth-os/session=401
+https://growth.easymod.tech/api/version=404
+https://growth.easymod.tech/build-info.json.commit=8e83f17839b21331bbda52f164a3cc8b6a3af918
+```
+
+The live image predates this branch and its CSP does not yet contain the new
+API-origin allowance; this is evidence of the current deployed state, not a
+claim that the branch has been deployed.
