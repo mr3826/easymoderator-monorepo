@@ -75,8 +75,15 @@ function isTrustedAuthOrigin(
     const parsedRequestOrigin = parseOrigin(origin);
     if (!parsedRequestOrigin) return false;
 
+    // Explicit origins are used by pure callers/tests as an isolated policy.
+    // The request middleware passes no explicit origins and therefore uses the
+    // deployed CORS configuration. This prevents a developer .env allowlist
+    // from contaminating a caller that supplied the production app/Growth
+    // origins directly.
     const configuredCorsOrigins = corsOrigins === undefined
-        ? (process.env.CORS_ORIGINS ?? config.corsOrigins)
+        ? ((appOrigin !== undefined || growthOrigin !== undefined)
+            ? []
+            : (process.env.CORS_ORIGINS ?? config.corsOrigins))
         : corsOrigins;
     const parsedCorsOrigins = parseConfiguredOrigins(configuredCorsOrigins);
     if (!parsedCorsOrigins.valid) return false;

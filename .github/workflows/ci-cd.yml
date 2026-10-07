@@ -1385,7 +1385,7 @@ jobs:
                 sleep 5
               done
               if [ "$backend_healthy" != "true" ]; then
-                echo "ERROR: rollback backend health check failed after 100s"
+                echo "ERROR: rollback health check failed after 100s (backend)"
                 return 1
               fi
               if [ -n "$previous_growth_image" ]; then
