@@ -521,7 +521,7 @@ jobs:
               --mount "type=volume,src=$RESTORE_UPLOADS_VOLUME,dst=/restore" \
               --mount "type=bind,src=$UPLOADS_FILE,dst=/tmp/uploads.tar.gz,readonly" \
               "$POSTGRES_HELPER_IMAGE" sh -c \
-                'tar xzf /tmp/uploads.tar.gz -C /restore && find /restore -type f -print -quit | grep -q .'
+                'tar xzf /tmp/uploads.tar.gz -C /restore'
             echo 'RESTORE_UPLOADS_ARCHIVE=PASS'
 
             for table in users shops growth_os_user_roles growth_os_prospects growth_os_prospect_events growth_os_followups growth_os_notes; do

@@ -78,9 +78,11 @@ async function main() {
     const deepLink = await request(`${baseUrl}/prospects`);
     assert(deepLink.status === 200 && /<html/i.test(deepLink.body), 'Growth deep link did not fall back to the SPA');
 
-    const unsupportedApi = await request(`${baseUrl}/api/unsupported`);
-    assert(unsupportedApi.status === 404, 'Direct Growth image API fallback must be a 404');
-    assert(!/<html/i.test(unsupportedApi.body), 'Direct Growth image API fallback returned the SPA shell');
+    for (const apiPath of ['/api', '/api/unsupported']) {
+      const unsupportedApi = await request(`${baseUrl}${apiPath}`);
+      assert(unsupportedApi.status === 404, `Direct Growth image ${apiPath} fallback must be a 404`);
+      assert(!/<html/i.test(unsupportedApi.body), `Direct Growth image ${apiPath} fallback returned the SPA shell`);
+    }
 
     const buildInfo = await request(`${baseUrl}/build-info.json`);
     assert(buildInfo.status === 200, 'Growth build-info.json is not served');

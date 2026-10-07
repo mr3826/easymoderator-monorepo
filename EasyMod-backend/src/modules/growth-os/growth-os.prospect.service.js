@@ -1335,7 +1335,13 @@ class GrowthOsProspectService {
           lock: true,
           include: false,
         });
-        if (!prospect || prospect.status !== 'onboarding') continue;
+        if (!prospect || prospect.status !== 'onboarding' || prospect.linked_shop_id !== shopId) continue;
+        const lockedShop = await Shop.findByPk(shopId, {
+          attributes: ['id', 'is_active', 'settings'],
+          transaction,
+          lock: true,
+        });
+        if (!lockedShop?.is_active || !lockedShop.settings?.first_ai_reply?.occurred_at) continue;
         const oldValues = auditSnapshot(prospect);
         await prospect.update({
           status: 'converted',

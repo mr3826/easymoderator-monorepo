@@ -186,6 +186,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: verify
+    permissions:
+      contents: read
     # This is a local disposable image, not a production deployment. It proves
     # the exact Nginx artifact serves SPA deep links and does not turn an
     # unsupported /api path into a successful HTML response.

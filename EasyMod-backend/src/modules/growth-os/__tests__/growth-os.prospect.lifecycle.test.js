@@ -183,7 +183,7 @@ describe('Growth OS prospect lifecycle', () => {
     mockRepository.getModels.mockReturnValue({
       GrowthOsProspectEvent: { create: mockEventCreate },
       GrowthOsProspect: { findAll },
-      Shop: { findByPk: jest.fn() },
+      Shop: { findByPk: jest.fn().mockResolvedValue(shop) },
     });
 
     const result = await prospectService.link({
