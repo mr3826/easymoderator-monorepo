@@ -1325,3 +1325,79 @@ OS product phase and does not change the Growth release gates above.
 - Live membership revocation remains database-backed and does not use frontend
   claims or stale membership cache state. No production Growth host, database,
   Redis, TLS, operator bootstrap, or browser gate was changed or claimed.
+
+## Growth completion branch receipt (2026-10-07)
+
+This entry supersedes older branch/runtime values above for the completion work.
+It records the exact local evidence; it does not claim production or CI proof
+for an unpushed SHA.
+
+```text
+INITIAL_BRANCH=execution/mobile-release-readiness
+INITIAL_HEAD=981f8f74595e0c17f3e779b91708e9d5ba79facc
+ORIGIN_MAIN=981f8f74595e0c17f3e779b91708e9d5ba79facc
+INITIAL_WORKTREE_CLEAN=false (two pre-existing mobile workflow modifications were reported; they were not carried into this branch)
+PREBRANCH_WORKTREE_CLEAN=true (the transient mobile workflow state was no longer present before branch creation)
+BASE_SHA=981f8f74595e0c17f3e779b91708e9d5ba79facc
+BRANCH=growth/growth-os-completion
+```
+
+Implementation commits on this branch:
+
+- `e2f8708f` `docs(growth): record completion execution plan`
+- `a854d5c6` `fix(growth): close scoped analytics and search leaks`
+- `8ffe44a6` `fix(growth): reconcile activation and merged work`
+- `b48c349d` `fix(growth): harden production rollback and release gates`
+- `7dc8c00a` `test(growth): make validation and image gates reproducible`
+- `5eacc81b` `fix(growth): align auth origin and rollback assertions`
+
+Completed locally:
+
+- source/assigned analytics follow-up counts use cohort and row scope;
+- source-scoped search suppresses owner identifiers and preserves Unicode
+  normalized search;
+- Growth prospect audit snapshots redact contact data, URLs, notes, metadata,
+  source references, and disqualification reasons;
+- merge referential integrity is `RESTRICT`, and merged follow-ups/notes are
+  rehomed to the surviving prospect;
+- delayed linkage reconciles an already-recorded first AI reply;
+- follow-up ownership requires an eligible operational Growth role;
+- Growth reads and mutations use authenticated-user keyed, IPv6-safe quotas;
+- migration advisory locking, cohort indexes, explicit Growth opt-in/CORS,
+  commit-bound Growth image checks, Growth-aware rollback, Caddy reload/validate,
+  worker readiness, log rotation, restore-table/upload verification, and Nginx
+  image smoke coverage are implemented;
+- the frontend test worker pool is deterministic and the Growth lint gate is
+  strict.
+
+Validation receipts:
+
+| Command | Result |
+| --- | --- |
+| `npm test --workspace=easymod-growth` | PASS, 24 files / 151 tests; TypeScript no-emit passed. |
+| `npm run typecheck --workspace=easymod-growth` | PASS. |
+| `npm run build --workspace=easymod-growth` | PASS, Vite production build. |
+| `npm run lint:growth -- --max-warnings=0` | PASS. |
+| `npx jest src/modules/growth-os/__tests__ --testPathIgnorePatterns=integration --runInBand --forceExit` | PASS, 12 suites / 88 tests. |
+| Growth security/config/migration focused Jest suites | PASS, including 69 auth-origin/workflow-guard tests and production config/migration tests. |
+| `npm run test:discovery` | PASS, 296 tracked tests with one execution home. |
+| `npm audit --omit=dev --audit-level=high` | PASS, 0 production vulnerabilities. |
+| `npx jest --runInBand` backend aggregate | CONDITIONAL: 257 suites / 3362 tests passed; 7 unrelated/environment-sensitive suites failed because local PostgreSQL/Redis were unavailable, plus existing environment-dependent TOTP/grounding assertions. |
+| Growth PostgreSQL/Redis integration, `migrate:status`, `schema:audit` | NOT RUNNABLE locally: required services refused connections at the configured local ports. |
+| `npm run test:growthos:image` | NOT RUNNABLE locally: Docker Desktop Linux daemon unavailable. CI image-smoke job is wired for this gate. |
+
+Current release status:
+
+```text
+LOCAL_CODE_GATES=PASS
+LOCAL_EXTERNAL_SERVICE_GATES=UNVERIFIED
+PRODUCTION_RUNTIME_RECEIPTS=UNVERIFIED
+FINAL_STATUS=CONDITIONAL
+DEPLOYMENT_READINESS=NOT_READY
+```
+
+Remaining release evidence is limited to PostgreSQL/Redis integration and
+schema receipts, Docker image smoke, final remote CI/security/reviewer results,
+production CORS/flag/secrets/backup configuration, live Growth health/auth
+checks, and an authorized release decision. No deployment or production
+mutation was performed.

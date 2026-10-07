@@ -63,6 +63,9 @@ The historical marketing list is classified as follows:
 | GOS-102 | P0 | Remove owner identifiers from source-scoped global search results. | GOS-001 | `growth-os.workspace.service.js`, search/security tests | Redacted search responses contain no owner UUID/name/email while preserving permitted business/status/source fields. |
 | GOS-103 | P0 | Make merged-prospect referential integrity consistent with the merged-row check. | GOS-001 | prospect entity, new migration, sync bootstrap, migration tests | Deleting a merge target is rejected rather than silently nulling `merged_into_id`; existing data is preserved. |
 | GOS-104 | P1 | Redact Growth PII and working content from prospect audit snapshots and document retention ownership/limits without changing the ledger source of truth. | GOS-001 | prospect audit sanitizer/service, audit tests, authoritative docs | New audit rows contain no raw contact name/email/phone/page URL/notes/metadata; redaction is covered for create/update/merge/import paths. |
+| GOS-105 | P1 | Reconcile activation when a prospect is linked after the linked shop has already recorded its first AI reply. | GOS-001 | prospect linkage service, activation metrics service, lifecycle tests | Either ordering of first-reply and prospect-link events reaches the same converted/activation result exactly once. |
+| GOS-106 | P1 | Restrict follow-up ownership to roles that can actually read/manage follow-ups. | GOS-001 | follow-up service, permission policy, authorization tests | Customer-success/read-only roles cannot be assigned operational follow-up work; eligible Growth roles remain assignable. |
+| GOS-107 | P1 | Rehome or terminally suppress follow-ups and notes when a prospect is merged. | GOS-103 | merge service, follow-up/note repositories, merge integration tests | No active queue item remains attached to a hidden merged source; history remains auditable and the surviving prospect owns actionable work. |
 
 ### Wave 2 - Read-path hardening
 
@@ -109,3 +112,15 @@ Implementation commits will remain coherent and scoped to the waves above:
 5. `docs(growth): record completion audit and release gates`
 
 No commit will include unrelated mobile or developer work.
+
+## Execution Status
+
+| Task group | Status | Evidence |
+| --- | --- | --- |
+| GOS-001, GOS-101 through GOS-107 | COMPLETE | Commits `a854d5c6`, `8ffe44a6`, focused Growth suites. |
+| GOS-201 through GOS-203 | COMPLETE | Commit `a854d5c6`, migration/security tests, lint. |
+| GOS-301 through GOS-304 | COMPLETE locally / CI pending | Commit `7dc8c00a`, 24/151 frontend tests, typecheck, build, lint; Docker image smoke requires CI daemon. |
+| GOS-401 | COMPLETE locally / external services pending | `EXECUTION_STATE.md` receipt; integration/schema/Docker gates could not run on this workstation. |
+| GOS-402 | IN PROGRESS | Independent review is being performed against the branch before release documentation is finalized. |
+| GOS-403 | IN PROGRESS | Current-state and execution-state receipts updated; final SHA and review verdict remain pending. |
+| GOS-404 | BLOCKED BY RELEASE GATES | No remote push/PR/deployment until CI, review, credentials, approval, and runtime evidence exist. |
