@@ -32,3 +32,4 @@ tags:
     id: mobile-courier-filter-failed
 - assertVisible:
     id: mobile-courier-filter-returned
+- back

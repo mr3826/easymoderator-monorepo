@@ -43,3 +43,4 @@ tags:
     id: photo-draft-submit-btn
 - tapOn:
     id: photo-draft-close-btn
+- back
