@@ -551,16 +551,18 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
     });
 
     test('merging a prospect rehomes operational work to the surviving record', async () => {
+      const sourceSeed = suffix();
+      const targetSeed = suffix();
       const source = await api(superAdmin, 'post', '/prospects', {
-        businessName: `CP Merge Source ${suffix()}`,
-        contactPhone: phoneFor(`cp-merge-source-${suffix()}`),
-        contactEmail: `cp-merge-source-${suffix()}@example.test`,
+        businessName: `CP Merge Source ${sourceSeed}`,
+        contactPhone: phoneFor(`1${sourceSeed}`),
+        contactEmail: `cp-merge-source-${sourceSeed}@example.test`,
         source: 'manual_entry',
       });
       const target = await api(superAdmin, 'post', '/prospects', {
-        businessName: `CP Merge Target ${suffix()}`,
-        contactPhone: phoneFor(`cp-merge-target-${suffix()}`),
-        contactEmail: `cp-merge-target-${suffix()}@example.test`,
+        businessName: `CP Merge Target ${targetSeed}`,
+        contactPhone: phoneFor(`2${targetSeed}`),
+        contactEmail: `cp-merge-target-${targetSeed}@example.test`,
         source: 'manual_entry',
       });
       expect(source.status).toBe(201);
