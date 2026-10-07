@@ -295,6 +295,7 @@ function plain(record) {
 
 const AUDIT_SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp)/i;
 const AUDIT_URL_KEY = /(?:page[_-]?url|source[_-]?url|redirect[_-]?uri|callback[_-]?url)/i;
+const AUDIT_PRIVATE_KEY = /^(?:contact[_-]?(?:name|phone|email)|normalized[_-]?(?:phone|email|page)|page[_-]?url|notes?|metadata|source[_-]?reference|disqualified[_-]?reason)$/i;
 
 function sanitizeAuditValue(value, depth = 0) {
   if (depth > 8) return '[redacted]';
@@ -306,7 +307,9 @@ function sanitizeAuditValue(value, depth = 0) {
   if (value && typeof value === 'object') {
     const sanitized = {};
     for (const [key, child] of Object.entries(value)) {
-      sanitized[key] = AUDIT_URL_KEY.test(key)
+      sanitized[key] = AUDIT_PRIVATE_KEY.test(key)
+        ? '[redacted]'
+        : AUDIT_URL_KEY.test(key)
         ? redactSensitiveUrl(child)
         : AUDIT_SENSITIVE_KEY.test(key)
           ? '[redacted]'

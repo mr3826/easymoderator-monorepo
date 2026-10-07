@@ -13,6 +13,7 @@ const inboxDeliveryOutboxMigration = require('../../database/migrations/20260904
 const growthUserRoleMigration = require('../../database/migrations/20260820_001_growth_os_user_roles');
 const growthProspectMigration = require('../../database/migrations/20260820_002_growth_os_prospects');
 const growthProspectSourceReferenceMigration = require('../../database/migrations/20260820_003_growth_os_prospect_source_reference_idx');
+const growthProspectIntegrityMigration = require('../../database/migrations/20261007_001_growth_os_prospect_integrity');
 const growthRoleModelMigration = require('../../database/migrations/20260913_001_growth_os_role_model');
 const growthWorkflowMigration = require('../../database/migrations/20260913_002_growth_os_workflow_expansion');
 const growthFollowupsMigration = require('../../database/migrations/20260913_003_growth_os_followups');
@@ -42,6 +43,7 @@ const syncDatabase = async () => {
         }
         await growthProspectMigration.up(sequelize);
         await growthProspectSourceReferenceMigration.up(sequelize);
+        await growthProspectIntegrityMigration.up(sequelize);
         await growthWorkflowMigration.up(sequelize);
         await growthFollowupsMigration.up(sequelize);
         await growthNotesMigration.up(sequelize);

@@ -1,6 +1,7 @@
 'use strict';
 
 const { redactSecretiveValues } = require('../growth-os.audit-sanitizer');
+const { auditSnapshot } = require('../growth-os.prospect.service');
 
 describe('Growth OS audit sanitizer', () => {
   test('redacts sensitive object keys without changing safe values', () => {
@@ -52,5 +53,40 @@ describe('Growth OS audit sanitizer', () => {
       business_name: 'North Star Retail',
       owner_user_id: 'owner-uuid',
     });
+  });
+
+  test('does not retain prospect contact content or working metadata in snapshots', () => {
+    const snapshot = auditSnapshot({
+      toJSON: () => ({
+        id: 'prospect-1',
+        business_name: 'North Star Retail',
+        contact_name: 'Private Owner',
+        contact_phone: '+8801700000000',
+        contact_email: 'merchant@example.test',
+        page_url: 'https://example.test/private-page',
+        notes: 'Private working note',
+        source_reference: 'crm-private-id',
+        metadata: { campaign: 'internal' },
+        normalized_business_name: 'north star retail',
+        normalized_phone: '+8801700000000',
+        normalized_email: 'merchant@example.test',
+        normalized_page: 'example.test/private-page',
+      }),
+    });
+
+    expect(snapshot).toMatchObject({
+      id: 'prospect-1',
+      business_name: 'North Star Retail',
+      contact_name: '[redacted]',
+      contact_phone: '[redacted]',
+      contact_email: '[redacted]',
+      page_url: '[redacted]',
+      notes: '[redacted]',
+      source_reference: '[redacted]',
+      metadata: '[redacted]',
+    });
+    expect(snapshot.normalized_business_name).toBeUndefined();
+    expect(JSON.stringify(snapshot)).not.toContain('Private Owner');
+    expect(JSON.stringify(snapshot)).not.toContain('Private working note');
   });
 });
