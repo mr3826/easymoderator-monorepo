@@ -656,6 +656,12 @@ async function main() {
             throw new Error('APK reinstall over the signed-in app failed.');
           }
         }
+        // Maestro launchApp can restore the previous navigation stack. Force-stop
+        // between flows so every scenario starts from AuthProvider's Home route
+        // without clearing SecureStore or invalidating the reinstall-session flow.
+        if ((await runCommand(deviceTools.adb, ['shell', 'am', 'force-stop', APP_ID])) !== 0) {
+          throw new Error('Android app force-stop failed.');
+        }
         if (emulator) await closeSystemDialogs(deviceTools.adb);
         console.log(`\n=== FLOW ${flow.name} (${flow.file}) ===`);
         passed = (await runFlow(deviceTools.maestro, flow, flowEnv)) === 0;
