@@ -3,7 +3,7 @@
 Date: 2026-10-07
 Evidence checkout: `growth/growth-os-completion` from
 `981f8f74595e0c17f3e779b91708e9d5ba79facc`.
-Reviewed head: `a85ecff969352102ec925d36a2b9426dd83628e4`.
+Reviewed head: `423ad4f0b09ed68bbcbc263aab9a84a8fc8a2524`.
 Release verdict: `CONDITIONAL` while this completion branch is validated;
 production deployment remains blocked until the exact branch SHA has CI,
 reviewer, credential, and runtime receipts.
