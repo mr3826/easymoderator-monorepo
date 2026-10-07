@@ -1243,6 +1243,7 @@ class GrowthOsProspectService {
           transaction,
         },
       );
+      const auditContext = mutationAudit(audit);
 
       await recordMutation({
         prospectId: source.id,
@@ -1252,7 +1253,9 @@ class GrowthOsProspectService {
         toValue: target.id,
         reason,
         changedFields: ['status', 'status_changed_at', 'merged_into_id', 'merged_at'],
+        ...auditContext,
         metadata: {
+          ...auditContext.metadata,
           target_prospect_id: target.id,
           followups_rehomed: followupsRehomed || 0,
           notes_rehomed: notesRehomed || 0,
@@ -1260,7 +1263,6 @@ class GrowthOsProspectService {
         action: 'growth_os:prospect_merged',
         oldValues: sourceOldValues,
         newValues: auditSnapshot(source),
-        ...mutationAudit(audit),
       }, transaction);
       await recordMutation({
         prospectId: target.id,
@@ -1270,11 +1272,11 @@ class GrowthOsProspectService {
         toValue: source.id,
         reason,
         changedFields: Object.keys(targetUpdates).filter((field) => !field.startsWith('normalized_')),
-        metadata: { merged_prospect_id: source.id },
+        ...auditContext,
+        metadata: { ...auditContext.metadata, merged_prospect_id: source.id },
         action: 'growth_os:prospect_merge_target',
         oldValues: targetOldValues,
         newValues: auditSnapshot(target),
-        ...mutationAudit(audit),
       }, transaction);
 
       return {
