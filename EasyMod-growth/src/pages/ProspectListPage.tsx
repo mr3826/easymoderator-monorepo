@@ -165,6 +165,9 @@ export function ProspectListPage() {
   const canCreate = usePermission('growth_os.prospects.manage_all');
   const { reportApiError } = useGrowthAuth();
 
+  // reportApiError is a context callback that is intentionally not a fetch
+  // dependency; including its unstable identity would refetch on every render.
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (!canCreate) return undefined;
     let active = true;
@@ -217,6 +220,7 @@ export function ProspectListPage() {
       active = false;
     };
   }, [filters]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   function submitFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

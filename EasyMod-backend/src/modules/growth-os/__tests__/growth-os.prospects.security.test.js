@@ -549,4 +549,14 @@ describe('Growth OS prospect route security', () => {
 
     expect(responses.some((response) => response.status === 429)).toBe(true);
   });
+
+  it('keeps the duplicate-check quota user-keyed across rotating client IPs', async () => {
+    setIdentity({ id: MARKETER_ID, role: 'MARKETER' });
+    const responses = await Promise.all(Array.from({ length: 121 }, (_, index) => request(app)
+      .post('/api/internal/growth-os/prospects/duplicate-check')
+      .set('X-Forwarded-For', `203.0.113.${(index % 2) + 1}`)
+      .send({ contactEmail: 'owner@example.test' })));
+
+    expect(responses.some((response) => response.status === 429)).toBe(true);
+  });
 });
