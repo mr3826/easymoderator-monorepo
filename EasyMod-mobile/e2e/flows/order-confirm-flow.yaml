@@ -10,13 +10,7 @@ tags:
     visible:
       id: home-attention-list
     timeout: 60000
-- openLink: easymodmerchantdev://order/${E2E_SHOP_A_ORDER_ID}
-- extendedWaitUntil:
-    visible:
-      id: deeplink-view-detail
-    timeout: 30000
-- tapOn:
-    id: deeplink-view-detail
+- openLink: easymodmerchantdev://order-detail/${E2E_SHOP_A_ORDER_ID}
 - extendedWaitUntil:
     visible:
       id: mobile-order-detail

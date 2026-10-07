@@ -30,6 +30,7 @@ const summaryJsonPath = path.join(artifactRoot, 'e2e-summary.json');
 const summaryTextPath = path.join(artifactRoot, 'e2e-summary.txt');
 
 const APP_ID = 'tech.easymod.merchant.dev';
+const APP_SCHEME = process.env.E2E_APP_SCHEME || 'easymodmerchantdev';
 const DEFAULT_EMAIL = 'mobile-dev@easymod.test';
 const DEFAULT_PASSWORD = 'MobileDev123!';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:4000';
@@ -227,6 +228,22 @@ function runCommand(command, args, options = {}) {
       resolve(signal ? 1 : (code ?? 1));
     });
   });
+}
+
+async function resetAppNavigation(adb) {
+  if (await runCommand(adb, ['shell', 'am', 'force-stop', APP_ID]) !== 0) {
+    throw new Error('Android app force-stop failed.');
+  }
+
+  const rootUrl = `${APP_SCHEME}:///`;
+  if (await runCommand(adb, [
+    'shell', 'am', 'start', '-W',
+    '-a', 'android.intent.action.VIEW',
+    '-d', rootUrl,
+    '-p', APP_ID,
+  ]) !== 0) {
+    throw new Error(`Android app root navigation failed for ${rootUrl}.`);
+  }
 }
 
 function captureCommand(command, args) {
@@ -656,12 +673,11 @@ async function main() {
             throw new Error('APK reinstall over the signed-in app failed.');
           }
         }
-        // Maestro launchApp can restore the previous navigation stack. Force-stop
-        // between flows so every scenario starts from AuthProvider's Home route
-        // without clearing SecureStore or invalidating the reinstall-session flow.
-        if ((await runCommand(deviceTools.adb, ['shell', 'am', 'force-stop', APP_ID])) !== 0) {
-          throw new Error('Android app force-stop failed.');
-        }
+        // Maestro launchApp can restore the previous navigation stack. Re-open
+        // the app's root URL between flows so every scenario starts from
+        // AuthProvider's Home route without clearing SecureStore or invalidating
+        // the reinstall-session flow.
+        await resetAppNavigation(deviceTools.adb);
         if (emulator) await closeSystemDialogs(deviceTools.adb);
         console.log(`\n=== FLOW ${flow.name} (${flow.file}) ===`);
         passed = (await runFlow(deviceTools.maestro, flow, flowEnv)) === 0;
