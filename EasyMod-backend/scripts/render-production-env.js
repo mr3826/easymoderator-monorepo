@@ -189,9 +189,10 @@ function buildRenderedEnv(source = process.env) {
         // 15 req/min free-tier cap); AI_VISION_ENABLED stays off.
         AI_PHOTO_MATCH_ENABLED: source.AI_PHOTO_MATCH_ENABLED || 'true',
         AI_VISION_ENABLED: source.AI_VISION_ENABLED || 'false',
-        // Growth remains authorization-gated; this enables the protected
-        // runtime surface without granting any role or bypassing MFA.
-        GROWTH_OS_ENABLED: source.GROWTH_OS_ENABLED || 'true',
+        // Growth remains authorization-gated, but it must still be explicitly
+        // enabled by the production operator. A missing repository variable
+        // must not turn on a new internal surface during an unrelated deploy.
+        GROWTH_OS_ENABLED: strictBooleanFlag(source.GROWTH_OS_ENABLED, 'GROWTH_OS_ENABLED', 'false'),
         // Mobile API (ADR M-010): /api/auth/native/*, /api/mobile/* and every
         // native (sid) token. Off unless the MOBILE_API_ENABLED repository
         // variable is exactly "true"; rollback is setting it back to "false"

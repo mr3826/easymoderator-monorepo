@@ -24,6 +24,9 @@ let sequelize;
  * src/database/migrations/archive/.
  */
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+// One cluster-wide lock prevents two release paths from observing the same
+// pending migration and racing DDL/record insertion.
+const MIGRATION_ADVISORY_LOCK = 726573474;
 
 const loadMigrations = () => {
   const files = fs.readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
@@ -70,10 +73,13 @@ const createMigrationsTable = async () => {
   }
 };
 
-const isMigrationExecuted = async (name) => {
+const isMigrationExecuted = async (name, transaction = null) => {
   const [results] = await sequelize.query(
     `SELECT name FROM migrations WHERE name = ?`,
-    { replacements: [name] }
+    {
+      replacements: [name],
+      ...(transaction ? { transaction } : {}),
+    },
   );
   return results.length > 0;
 };
@@ -116,24 +122,33 @@ const removeMigrationRecord = async (name) => {
 
 const runMigrations = async () => {
   console.log('Starting migrations...');
-  
+
   await createMigrationsTable();
-  
+
   for (const migration of migrations) {
     const { name, up } = migration;
-    
-    if (await isMigrationExecuted(name)) {
-      console.log(`⏭️  Migration ${name} already executed, skipping...`);
-      continue;
-    }
-    
-    console.log(`▶️  Running migration: ${name}`);
-    
-    let transaction = null;
+    const transaction = typeof sequelize.transaction === 'function'
+      ? await sequelize.transaction()
+      : null;
+
     try {
-      transaction = typeof sequelize.transaction === 'function'
-        ? await sequelize.transaction()
-        : null;
+      // The lock is acquired inside the same transaction that checks and
+      // records migration state. It therefore remains pinned to one database
+      // connection even when Sequelize returns other pooled connections to
+      // migration code that opens its own nested transaction.
+      if (transaction && sequelize.getDialect() === 'postgres') {
+        await sequelize.query(`SELECT pg_advisory_xact_lock(${MIGRATION_ADVISORY_LOCK})`, {
+          transaction,
+        });
+      }
+
+      if (await isMigrationExecuted(name, transaction)) {
+        if (transaction) await transaction.commit();
+        console.log(`⏭️  Migration ${name} already executed, skipping...`);
+        continue;
+      }
+
+      console.log(`▶️  Running migration: ${name}`);
       await up(transaction ? transactionSequelize(transaction) : sequelize);
       await recordMigration(name, transaction);
       if (transaction) await transaction.commit();
@@ -144,7 +159,7 @@ const runMigrations = async () => {
       throw error;
     }
   }
-  
+
   console.log('✅ All migrations completed successfully!');
 };
 
@@ -270,7 +285,7 @@ const command = process.argv[2];
       case 'seed-as-executed':
         await seedAllAsExecuted();
         break;
-      case 'status':
+      case 'status': {
         await createMigrationsTable();
         const [executed] = await sequelize.query(`SELECT * FROM migrations ORDER BY executed_at`);
         console.log('\n📋 Migration Status:');
@@ -281,6 +296,7 @@ const command = process.argv[2];
         }
         console.log('='.repeat(60));
         break;
+      }
       default:
         console.log(`
 Migration System

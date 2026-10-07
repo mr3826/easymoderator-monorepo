@@ -14,9 +14,11 @@ const http = require('http');
 async function startWorker() {
     // 1. Bind port FIRST — before any other async work — so Cloud Run health probe passes
     const port = process.env.PORT || 8080;
+    let workerReady = false;
     const healthServer = http.createServer((req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('worker ok');
+        const ready = req.url !== '/health/ready' || workerReady;
+        res.writeHead(ready ? 200 : 503, { 'Content-Type': 'text/plain' });
+        res.end(ready ? 'worker ok' : 'worker starting');
     });
     await new Promise((resolve) => healthServer.listen(port, resolve));
     console.log(`✅ Worker health server listening on port ${port}`);
@@ -37,6 +39,7 @@ async function startWorker() {
 
         // 5. Schedule recurring jobs and start workers
         await queueManager.scheduleJobs();
+        workerReady = true;
 
         console.log('✅ Queue worker started successfully');
         console.log('📊 Worker is processing jobs...');

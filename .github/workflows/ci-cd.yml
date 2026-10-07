@@ -533,6 +533,7 @@ jobs:
           META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
+          GROWTH_OS_ENABLED: ${{ vars.GROWTH_OS_ENABLED || 'false' }}
           # Mobile API switch (ADR M-010). Operator-owned repository variable:
           # exactly "true" or "false", anything else fails the render.
           # Rollback: set it to "false" and redeploy
@@ -973,7 +974,7 @@ jobs:
           APP_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
           API_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
           PUBLIC_ASSET_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
-          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech' }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech,https://growth.easymod.tech' }}
           FRONTEND_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
           BASE_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
@@ -992,6 +993,7 @@ jobs:
           META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
+          GROWTH_OS_ENABLED: ${{ vars.GROWTH_OS_ENABLED || 'false' }}
           # Mobile API switch (ADR M-010). Operator-owned repository variable:
           # exactly "true" or "false", anything else fails the render.
           # Rollback: set it to "false" and redeploy
@@ -1172,6 +1174,7 @@ jobs:
 
             previous_backend_image=$(resolve_container_digest easymod-backend-1 2>/dev/null || true)
             previous_frontend_image=$(resolve_container_digest easymod-frontend-1 2>/dev/null || true)
+            previous_growth_image=$(resolve_container_digest easymod-growth-frontend-1 2>/dev/null || true)
 
             if [ -z "$previous_backend_image" ] || [ -z "$previous_frontend_image" ]; then
               echo "ERROR: running services are not backed by content-addressed images; manual digest pinning is required before cutover"
@@ -1326,6 +1329,14 @@ jobs:
             if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ] || [ -n "$GROWTH_IMAGE_OVERRIDE" ]; then
               echo "Pulling Growth digest: $GHCR_IMAGE_GROWTH"
               docker pull "$GHCR_IMAGE_GROWTH"
+              growth_build_info=$(docker run --rm "$GHCR_IMAGE_GROWTH" \
+                cat /usr/share/nginx/html/build-info.json 2>/dev/null || true)
+              growth_build_commit=$(printf '%s' "$growth_build_info" | node -e "let data=''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { try { process.stdout.write(String(JSON.parse(data).commit || '')); } catch (_) { process.exit(1); } });")
+              if [ "$growth_build_commit" != "$DEPLOYED_COMMIT" ]; then
+                echo "ERROR: Growth image build-info commit '$growth_build_commit' does not match deployed commit '$DEPLOYED_COMMIT'"
+                exit 1
+              fi
+              echo "Growth image commit binding verified: $growth_build_commit"
             fi
 
             # Validate the rendered environment with the candidate backend image
@@ -1334,11 +1345,21 @@ jobs:
               node -e "require('./src/config/production-config.validator').assertProductionConfig(process.env)"
 
             verify_rollback() {
-              local restored_backend restored_frontend saved_hash current_hash
+              local restored_backend restored_frontend restored_growth saved_hash current_hash
               restored_backend=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
               restored_frontend=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
               if [ "$restored_backend" != "$previous_backend_image" ] || [ "$restored_frontend" != "$previous_frontend_image" ]; then
                 echo "ERROR: rollback image references were not restored"
+                return 1
+              fi
+              if [ -n "$previous_growth_image" ]; then
+                restored_growth=$(docker inspect -f '{{.Config.Image}}' easymod-growth-frontend-1 2>/dev/null || true)
+                if [ "$restored_growth" != "$previous_growth_image" ]; then
+                  echo "ERROR: rollback Growth image reference was not restored"
+                  return 1
+                fi
+              elif docker inspect easymod-growth-frontend-1 >/dev/null 2>&1; then
+                echo "ERROR: rollback recreated a Growth container that was absent before cutover"
                 return 1
               fi
               saved_hash=$(sha256sum "$ROLLBACK_STATE_DIR/.env.prod" | awk '{print $1}')
@@ -1352,17 +1373,40 @@ jobs:
                 echo "ERROR: rollback production configuration was not restored"
                 return 1
               fi
+              local backend_healthy=false
               for i in $(seq 1 20); do
                 local status
                 status=$(docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready', r => { process.stdout.write(String(r.statusCode)); process.exit(0); }).on('error', () => { process.stdout.write('000'); process.exit(0); })" 2>/dev/null || echo "000")
                 if [ "$status" = "200" ]; then
-                  echo "Rollback health check passed on attempt $i"
-                  return 0
+                  echo "Rollback backend health check passed on attempt $i"
+                  backend_healthy=true
+                  break
                 fi
                 sleep 5
               done
-              echo "ERROR: rollback health check failed after 100s"
-              return 1
+              if [ "$backend_healthy" != "true" ]; then
+                echo "ERROR: rollback backend health check failed after 100s"
+                return 1
+              fi
+              if [ -n "$previous_growth_image" ]; then
+                local growth_status=starting
+                for i in $(seq 1 20); do
+                  growth_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' easymod-growth-frontend-1 2>/dev/null || echo missing)
+                  [ "$growth_status" = "healthy" ] && break
+                  sleep 5
+                done
+                if [ "$growth_status" != "healthy" ]; then
+                  echo "ERROR: rollback Growth health check failed after 100s"
+                  return 1
+                fi
+              fi
+              if ! docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
+                echo "ERROR: restored Caddy configuration failed validation"
+                return 1
+              fi
+              echo "Rollback backend, Growth, Caddy, and configuration checks passed"
+              return 0
             }
 
             rollback() {
@@ -1380,8 +1424,23 @@ jobs:
               chmod 600 /opt/easymod/.env.prod
               export GHCR_IMAGE_BACKEND="$previous_backend_image"
               export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
+              # Compose still requires an immutable Growth value to render its
+              # service. On a first rollout there is no previous Growth
+              # container, so use the candidate only to render the stack and
+              # remove that service immediately after restoring the incumbents.
+              export GHCR_IMAGE_GROWTH="${previous_growth_image:-$candidate_growth_image}"
               if ! docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans; then
                 echo "ERROR: rollback compose restore failed"
+                return 1
+              fi
+              if [ -z "$previous_growth_image" ]; then
+                if ! docker compose --env-file .env.prod -f docker-compose.prod.yml rm --force --stop growth-frontend; then
+                  echo "ERROR: rollback could not remove the first-rollout Growth container"
+                  return 1
+                fi
+              fi
+              if ! docker compose --env-file .env.prod -f docker-compose.prod.yml restart caddy; then
+                echo "ERROR: rollback Caddy restart failed"
                 return 1
               fi
               verify_rollback
@@ -1607,6 +1666,7 @@ jobs:
               "GROWTH_IMAGE_DIGEST": "${GHCR_IMAGE_GROWTH}",
               "PREVIOUS_BACKEND_IMAGE_DIGEST": "${previous_backend_image}",
               "PREVIOUS_FRONTEND_IMAGE_DIGEST": "${previous_frontend_image}",
+              "PREVIOUS_GROWTH_IMAGE_DIGEST": "${previous_growth_image}",
               "WORKFLOW_RUN_ID": "${WORKFLOW_RUN_ID}",
               "DEPLOYED_AT": "${DEPLOYED_AT}"
             }

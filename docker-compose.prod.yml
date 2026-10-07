@@ -15,6 +15,12 @@
 # matching ./Caddyfile (reverse_proxy backend:3000 / frontend:8080).
 # ──────────────────────────────────────────────────────────────────────────────
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 networks:
   internal:
     driver: bridge
@@ -32,6 +38,7 @@ services:
   caddy:
     image: caddy@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -58,11 +65,13 @@ services:
   backend:
     image: ${GHCR_IMAGE_BACKEND:?GHCR_IMAGE_BACKEND must be set to an immutable image reference}
     restart: unless-stopped
+    logging: *default-logging
     command: ["node", "server.js"]
     env_file:
       - .env.prod
     environment:
       - NODE_ENV=production
+      - PORT=8080
       - START_EMBEDDED_WORKERS=false
       - RUN_MIGRATIONS_ON_STARTUP=false
     volumes:
@@ -85,11 +94,18 @@ services:
   worker:
     image: ${GHCR_IMAGE_BACKEND:?GHCR_IMAGE_BACKEND must be set to an immutable image reference}
     restart: unless-stopped
+    logging: *default-logging
     command: ["node", "src/jobs/worker.js"]
     env_file:
       - .env.prod
     environment:
       - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
     networks:
       - internal
     depends_on:
@@ -102,6 +118,7 @@ services:
   frontend:
     image: ${GHCR_IMAGE_FRONTEND:?GHCR_IMAGE_FRONTEND must be set to an immutable image reference}
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - internal
     # Port 8080 is internal only — Caddy proxies to it
@@ -110,6 +127,7 @@ services:
   growth-frontend:
     image: ${GHCR_IMAGE_GROWTH:?GHCR_IMAGE_GROWTH must be set to an immutable image reference}
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - internal
     # Port 8080 is internal only — Caddy proxies growth.easymod.tech to it
@@ -124,6 +142,7 @@ services:
   postgres:
     image: postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - .env.prod
     environment:
@@ -145,6 +164,7 @@ services:
   redis:
     image: redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     restart: unless-stopped
+    logging: *default-logging
     # noeviction, not allkeys-lru: this Redis backs BullMQ, and the eviction
     # policy is server-wide even though the queues are isolated in db3. Under LRU
     # a burst of session writes in db0 can evict a job key in db3, and the job
@@ -171,6 +191,7 @@ services:
   qdrant:
     image: qdrant/qdrant@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
