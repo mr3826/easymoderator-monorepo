@@ -120,7 +120,7 @@ No commit will include unrelated mobile or developer work.
 | GOS-001, GOS-101 through GOS-107 | COMPLETE | Commits `a854d5c6`, `8ffe44a6`, focused Growth suites. |
 | GOS-201 through GOS-203 | COMPLETE | Commit `a854d5c6`, migration/security tests, lint. |
 | GOS-301 through GOS-304 | COMPLETE locally / CI pending | Commit `7dc8c00a`, 24/151 frontend tests, typecheck, build, lint; Docker image smoke requires CI daemon. |
-| GOS-401 | COMPLETE locally / external services pending | `EXECUTION_STATE.md` receipt; integration/schema/Docker gates could not run on this workstation. |
-| GOS-402 | IN PROGRESS | Independent review is being performed against the branch before release documentation is finalized. |
-| GOS-403 | IN PROGRESS | Current-state and execution-state receipts updated; final SHA and review verdict remain pending. |
-| GOS-404 | BLOCKED BY RELEASE GATES | No remote push/PR/deployment until CI, review, credentials, approval, and runtime evidence exist. |
+| GOS-401 | COMPLETE | Local gates plus GitHub `CI / CD` run `37627702108`, Growth run `37628476705`, and Security run `37627981587` pass on `5b11a4c1`. |
+| GOS-402 | COMPLETE | Independent adversarial review of the branch found no remaining P0/P1 defect; the remote integration run caught and closed the merge fixture/audit metadata defects. |
+| GOS-403 | COMPLETE | `EXECUTION_STATE.md` and `GROWTH_OS_CURRENT_STATE.md` contain the final branch, SHA, receipts, limitations, and live-runtime distinction. |
+| GOS-404 | IN PROGRESS | Implementation gates pass; one final PR is being created. Deployment remains separately blocked by production policy/configuration gates. |

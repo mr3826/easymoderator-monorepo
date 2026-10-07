@@ -1340,6 +1340,8 @@ INITIAL_WORKTREE_CLEAN=false (two pre-existing mobile workflow modifications wer
 PREBRANCH_WORKTREE_CLEAN=true (the transient mobile workflow state was no longer present before branch creation)
 BASE_SHA=981f8f74595e0c17f3e779b91708e9d5ba79facc
 BRANCH=growth/growth-os-completion
+FINAL_HEAD=5b11a4c18e6aa660aafdd05a44df807f3188a968
+REMOTE_BRANCH_HEAD=5b11a4c18e6aa660aafdd05a44df807f3188a968
 ```
 
 Implementation commits on this branch:
@@ -1350,6 +1352,10 @@ Implementation commits on this branch:
 - `b48c349d` `fix(growth): harden production rollback and release gates`
 - `7dc8c00a` `test(growth): make validation and image gates reproducible`
 - `5eacc81b` `fix(growth): align auth origin and rollback assertions`
+- `c20f8dcd` `docs(growth): record completion receipts and gates`
+- `d4494441` `docs(growth): add live release evidence`
+- `682ba57b` `test(growth): use distinct merge fixture identities`
+- `5b11a4c1` `fix(growth): preserve merge audit metadata`
 
 Completed locally:
 
@@ -1378,10 +1384,13 @@ Validation receipts:
 | `npm run typecheck --workspace=easymod-growth` | PASS. |
 | `npm run build --workspace=easymod-growth` | PASS, Vite production build. |
 | `npm run lint:growth -- --max-warnings=0` | PASS. |
-| `npx jest src/modules/growth-os/__tests__ --testPathIgnorePatterns=integration --runInBand --forceExit` | PASS, 12 suites / 88 tests. |
+| `npx jest src/modules/growth-os/__tests__ --testPathIgnorePatterns=integration --runInBand --forceExit` | PASS, 12 suites / 88 tests before the post-`npm ci` Node 25 native SQLite loader mismatch; remote Node 20 quality passed the same backend suite. |
 | Growth security/config/migration focused Jest suites | PASS, including 69 auth-origin/workflow-guard tests and production config/migration tests. |
 | `npm run test:discovery` | PASS, 296 tracked tests with one execution home. |
 | `npm audit --omit=dev --audit-level=high` | PASS, 0 production vulnerabilities. |
+| GitHub `CI / CD` run `37627702108` at `5b11a4c1` | PASS: migration/schema audit, 28 integration suites / 196 tests, backend quality, frontend build/unit, Meta E2E, and mock Playwright. |
+| GitHub `Growth OS CI / CD` run `37628476705` at `5b11a4c1` | PASS: extension validation/tests, typecheck, lint, 151 behavioral tests, build, browser E2E, and built Nginx image smoke. |
+| GitHub `Security Scan` run `37627981587` at `5b11a4c1` | PASS: historical Gitleaks and production dependency audit. |
 | `npx jest --runInBand` backend aggregate | CONDITIONAL: 257 suites / 3362 tests passed; 7 unrelated/environment-sensitive suites failed because local PostgreSQL/Redis were unavailable, plus existing environment-dependent TOTP/grounding assertions. |
 | Growth PostgreSQL/Redis integration, `migrate:status`, `schema:audit` | NOT RUNNABLE locally: required services refused connections at the configured local ports. |
 | `npm run test:growthos:image` | NOT RUNNABLE locally: Docker Desktop Linux daemon unavailable. CI image-smoke job is wired for this gate. |
@@ -1389,11 +1398,12 @@ Validation receipts:
 Current release status:
 
 ```text
-LOCAL_CODE_GATES=PASS
-LOCAL_EXTERNAL_SERVICE_GATES=UNVERIFIED
+LOCAL_CODE_GATES=PASS (Node 20 CI is authoritative for native SQLite/Docker-dependent paths)
+REMOTE_CODE_GATES=PASS
 PRODUCTION_RUNTIME_RECEIPTS=UNVERIFIED
 FINAL_STATUS=CONDITIONAL
 DEPLOYMENT_READINESS=NOT_READY
+INDEPENDENT_REVIEW=PASS (adversarial branch review found no remaining P0/P1 defect)
 ```
 
 Remaining release evidence is limited to PostgreSQL/Redis integration and
