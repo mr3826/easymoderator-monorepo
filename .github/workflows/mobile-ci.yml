@@ -256,6 +256,15 @@ jobs:
             --out "$RUNNER_TEMP/signing-path-manifest" | tee artifacts/signing-path-check.txt
           rm -f "$keystore"
 
+      - name: Free safe runner storage before emulator provisioning
+        # Hosted runners may already contain multiple SDK system images. Remove
+        # those unused images before the API 24 runtime proof provisions its own.
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sudo rm -rf "$sdk_root/system-images" "$sdk_root/ndk" "$sdk_root/cmake"
+          df -h
+
       - name: Enable KVM
         run: |
           set -euo pipefail
@@ -267,7 +276,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
         with:
           api-level: 24
-          target: google_apis
+          target: default
           arch: x86
           profile: Nexus 5
           ram-size: 2048M
@@ -419,7 +428,14 @@ jobs:
           unzip -q "$MAESTRO_ZIP" -d "$MAESTRO_UNPACK"
           cp -R "$MAESTRO_UNPACK/maestro/." "$MAESTRO_DIR/"
           echo "$MAESTRO_DIR/bin" >> "$GITHUB_PATH"
-          "$MAESTRO_DIR/bin/maestro" --version
+           "$MAESTRO_DIR/bin/maestro" --version
+
+      - name: Free safe runner storage before emulator provisioning
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sudo rm -rf "$sdk_root/system-images" "$sdk_root/ndk" "$sdk_root/cmake"
+          df -h
 
       - name: Enable KVM
         run: |
