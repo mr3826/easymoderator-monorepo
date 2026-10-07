@@ -222,6 +222,12 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
     where: cohortWhere,
     attributes: [],
   }];
+  const followupCohortInclude = [{
+    association: 'prospect',
+    required: true,
+    where: cohortWhere,
+    attributes: [],
+  }];
 
   const [statusRows, sourceRows, activatedRows, prospectRows, eventRows, lostRows] = await Promise.all([
     GrowthOsProspect.findAll({
@@ -271,17 +277,22 @@ async function getGrowthAnalytics({ access, userId, windowDays = 90 }) {
     followupTotal, followupOpen, followupCompleted, followupCancelled,
     followupOnTime, followupLate, followupOverdueOpen, ownerRows, unassignedRows,
   ] = await Promise.all([
-    GrowthOsFollowup.count(),
-    GrowthOsFollowup.count({ where: { status: 'open' } }),
-    GrowthOsFollowup.count({ where: { status: 'completed' } }),
-    GrowthOsFollowup.count({ where: { status: 'cancelled' } }),
+    GrowthOsFollowup.count({ include: followupCohortInclude }),
+    GrowthOsFollowup.count({ where: { status: 'open' }, include: followupCohortInclude }),
+    GrowthOsFollowup.count({ where: { status: 'completed' }, include: followupCohortInclude }),
+    GrowthOsFollowup.count({ where: { status: 'cancelled' }, include: followupCohortInclude }),
     GrowthOsFollowup.count({
       where: { status: 'completed', completed_at: { [Op.lte]: col('due_at') } },
+      include: followupCohortInclude,
     }),
     GrowthOsFollowup.count({
       where: { status: 'completed', completed_at: { [Op.gt]: col('due_at') } },
+      include: followupCohortInclude,
     }),
-    GrowthOsFollowup.count({ where: { status: 'open', due_at: { [Op.lt]: until } } }),
+    GrowthOsFollowup.count({
+      where: { status: 'open', due_at: { [Op.lt]: until } },
+      include: followupCohortInclude,
+    }),
     GrowthOsProspect.findAll({
       attributes: [
         [col('owner_user_id'), 'ownerUserId'],
@@ -434,7 +445,7 @@ async function globalSearch({ access, userId, query, isSuperAdmin }) {
   }
   const pattern = likePattern(term);
   const normalizedTerm = term.toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ');
   const normalizedPattern = likePattern(normalizedTerm);
@@ -474,7 +485,7 @@ async function globalSearch({ access, userId, query, isSuperAdmin }) {
       businessName: row.business_name,
       status: row.status,
       source: row.source,
-      ownerUserId: row.owner_user_id,
+      ownerUserId: prospectScope.redacted ? null : row.owner_user_id,
     };
     if (!prospectScope.redacted) {
       item.contactName = row.contact_name;

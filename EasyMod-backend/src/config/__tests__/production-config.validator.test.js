@@ -191,6 +191,20 @@ describe('production configuration validation', () => {
         ]));
     });
 
+    test('requires an explicit boolean Growth rollout flag', () => {
+        const result = validateProductionConfig(validEnv({ GROWTH_OS_ENABLED: 'yes' }));
+
+        expect(result.valid).toBe(false);
+        expect(result.invalid).toContain('GROWTH_OS_ENABLED');
+    });
+
+    test('requires the Growth origin in credentialed CORS when Growth is enabled', () => {
+        const result = validateProductionConfig(validEnv({ GROWTH_OS_ENABLED: 'true' }));
+
+        expect(result.valid).toBe(false);
+        expect(result.invalid).toContain('CORS_ORIGINS');
+    });
+
     test('rejects the obsolete /app OAuth callback on the canonical app host', () => {
         const result = validateProductionConfig(validEnv({
             META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/app/channels/oauth-callback',

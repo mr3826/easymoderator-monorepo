@@ -67,7 +67,7 @@ const GrowthOsProspect = sequelize.define('GrowthOsProspect', {
     type: DataTypes.UUID,
     allowNull: true,
     references: { model: 'growth_os_prospects', key: 'id' },
-    onDelete: 'SET NULL',
+    onDelete: 'RESTRICT',
   },
   merged_at: { type: DataTypes.DATE, allowNull: true },
   created_by: {
@@ -138,6 +138,14 @@ const GrowthOsProspect = sequelize.define('GrowthOsProspect', {
         source_reference: { [Op.ne]: null },
         status: { [Op.ne]: 'merged' },
       },
+    },
+    {
+      name: 'growth_os_prospects_source_recorded_status_idx',
+      fields: ['source', { name: 'source_recorded_at', order: 'DESC' }, 'status'],
+    },
+    {
+      name: 'growth_os_prospects_owner_source_recorded_idx',
+      fields: ['owner_user_id', { name: 'source_recorded_at', order: 'DESC' }, 'status'],
     },
   ],
 });

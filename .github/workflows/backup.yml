@@ -443,11 +443,13 @@ jobs:
             RESTORE_CONTAINER="easymod-restore-drill-${RESTORE_DRILL_RUN_ID}"
             RESTORE_NETWORK="${RESTORE_CONTAINER}-network"
             RESTORE_VOLUME="${RESTORE_CONTAINER}-data"
+            RESTORE_UPLOADS_VOLUME="${RESTORE_CONTAINER}-uploads"
             POSTGRES_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'
 
             cleanup() {
               docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
               docker volume rm "$RESTORE_VOLUME" >/dev/null 2>&1 || true
+              docker volume rm "$RESTORE_UPLOADS_VOLUME" >/dev/null 2>&1 || true
               docker network rm "$RESTORE_NETWORK" >/dev/null 2>&1 || true
             }
             trap cleanup EXIT
@@ -508,7 +510,21 @@ jobs:
               --clean --if-exists --exit-on-error --no-owner --no-privileges \
               -U "$POSTGRES_USER" -d "$POSTGRES_DB" /tmp/restore.dump
 
-            for table in users shops growth_os_user_roles growth_prospects; do
+            # Restore and read back the product uploads archive as well as the
+            # database. This keeps the DR drill from proving only relational
+            # data while silently ignoring customer media.
+            UPLOADS_FILE="${BACKUP_FILE%.dump}"
+            UPLOADS_FILE="${UPLOADS_FILE/easymod-/easymod-uploads-}.tar.gz"
+            test -f "$UPLOADS_FILE"
+            docker volume create "$RESTORE_UPLOADS_VOLUME" >/dev/null
+            docker run --rm \
+              --mount "type=volume,src=$RESTORE_UPLOADS_VOLUME,dst=/restore" \
+              --mount "type=bind,src=$UPLOADS_FILE,dst=/tmp/uploads.tar.gz,readonly" \
+              "$POSTGRES_HELPER_IMAGE" sh -c \
+                'tar xzf /tmp/uploads.tar.gz -C /restore'
+            echo 'RESTORE_UPLOADS_ARCHIVE=PASS'
+
+            for table in users shops growth_os_user_roles growth_os_prospects growth_os_prospect_events growth_os_followups growth_os_notes; do
               table_exists=$(docker exec "$RESTORE_CONTAINER" psql -X -At \
                 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
                 -c "SELECT to_regclass('public.' || quote_ident('$table')) IS NOT NULL;")

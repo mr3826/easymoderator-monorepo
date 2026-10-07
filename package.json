@@ -17,6 +17,8 @@
     "test:frontend": "npm run test:unit --workspace=easymod-frontend",
     "test:growthos": "npm run test --workspace=easymod-growth",
     "test:growthos:e2e": "node scripts/run-growth-e2e.js",
+    "test:growthos:image": "node scripts/run-growth-image-smoke.js",
+    "lint:growth": "eslint --config eslint.config.mjs EasyMod-growth/src EasyMod-backend/src/modules/growth-os EasyMod-backend/src/database/migrate.js EasyMod-backend/src/database/migrations/20261007_001_growth_os_prospect_integrity.js EasyMod-backend/src/utils/database/sync.js scripts/run-growth-image-smoke.js",
     "test:extension": "node --test EasyMod-extension/test/capture.test.js EasyMod-extension/test/manifest.test.js EasyMod-extension/test/popup.test.js EasyMod-extension/test/relay.test.js",
     "validate:extension": "node EasyMod-extension/validate.js",
     "test:all": "npm run test:backend && npm run test:frontend && npm run test:growthos && npm run test:extension",
@@ -34,5 +36,13 @@
   },
   "engines": {
     "node": "20.x"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.3",
+    "eslint": "9.39.3",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "eslint-plugin-react-refresh": "0.4.24",
+    "globals": "16.4.0",
+    "typescript-eslint": "8.71.1"
   }
 }

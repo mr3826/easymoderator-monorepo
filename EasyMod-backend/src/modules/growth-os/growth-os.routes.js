@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator, rateLimit } = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const { authenticate } = require('../../middleware/auth.middleware');
 const validate = require('../../middleware/validate.middleware');
@@ -82,12 +82,18 @@ function requireDistributedRateLimit(req, res, next) {
   ));
 }
 
+function growthRateLimitKey(req) {
+  if (req.user?.userId) return `user:${req.user.userId}`;
+  return `ip:${ipKeyGenerator(req.ip || '0.0.0.0', 56)}`;
+}
+
 const prospectLookupRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   store: buildRateLimitStore('rl:growth-os:prospects:'),
+  keyGenerator: growthRateLimitKey,
   message: {
     success: false,
     code: 'RATE_LIMITED',
@@ -101,15 +107,36 @@ const prospectLookupLimiter = (req, res, next) => requireDistributedRateLimit(
   (error) => (error ? next(error) : prospectLookupRateLimit(req, res, next)),
 );
 
-// All Growth OS/admin mutations are per-user+IP limited (closes audit
-// finding SEC-03: mutation endpoints previously had no quota bound).
+const growthReadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: buildRateLimitStore('rl:growth-os:reads:'),
+  keyGenerator: growthRateLimitKey,
+  message: {
+    success: false,
+    code: 'RATE_LIMITED',
+    message: 'Too many Growth OS reads. Please try again later.',
+  },
+});
+
+const growthReadLimiter = (req, res, next) => requireDistributedRateLimit(
+  req,
+  res,
+  (error) => (error ? next(error) : growthReadRateLimit(req, res, next)),
+);
+
+// All Growth OS/admin mutations are keyed to the authenticated user (with an
+// IPv6-safe IP fallback for defensive direct middleware use), closing audit
+// finding SEC-03 without allowing address rotation to bypass a user quota.
 const growthMutationRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 40,
   standardHeaders: true,
   legacyHeaders: false,
   store: buildRateLimitStore('rl:growth-os:mutations:'),
-  keyGenerator: (req) => `${req.user?.userId || 'anon'}:${req.ip}`,
+  keyGenerator: growthRateLimitKey,
   message: {
     success: false,
     code: 'RATE_LIMITED',
@@ -134,6 +161,7 @@ router.delete('/roles/:userId', growthMutationLimiter, requireGrowthOsAccess('gr
 
 router.get(
   '/prospect-owners',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.prospects.manage_all'),
   validateProspect(prospectValidator.eligibleAssignees),
   prospectCtrl.listEligibleAssignees,
@@ -141,6 +169,7 @@ router.get(
 
 router.get(
   '/prospects',
+  growthReadLimiter,
   requireGrowthOsAccess(hasProspectReadAccess),
   validateProspect(prospectValidator.listProspects),
   prospectCtrl.listProspects,
@@ -164,6 +193,7 @@ router.post(
 
 router.get(
   '/prospects/:id',
+  growthReadLimiter,
   requireGrowthOsAccess(hasProspectReadAccess),
   validateProspect(prospectValidator.idParams),
   prospectCtrl.getProspect,
@@ -221,12 +251,14 @@ router.post(
 
 router.get(
   '/home',
+  growthReadLimiter,
   requireGrowthOsAccess(hasProspectReadAccess),
   workspaceCtrl.home,
 );
 
 router.get(
   '/analytics/growth',
+  growthReadLimiter,
   requireGrowthOsAccess(['growth_os.reports.read_all', 'growth_os.reports.read_source_scope']),
   validateWork(workValidator.workspace.analytics),
   workspaceCtrl.analytics,
@@ -244,6 +276,7 @@ router.post(
 
 router.get(
   '/followups',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.followups.manage'),
   validateWork(workValidator.followups.list),
   workspaceCtrl.listFollowups,
@@ -275,6 +308,7 @@ router.post(
 
 router.get(
   '/notes',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.notes.manage'),
   validateWork(workValidator.notes.list),
   workspaceCtrl.listNotes,
@@ -300,6 +334,7 @@ router.post(
 
 router.get(
   '/merchants',
+  growthReadLimiter,
   requireGrowthOsAccess(['growth_os.admin.merchants.read', 'growth_os.merchants.read_insight']),
   validateWork(workValidator.merchantsAdmin.list),
   adminCtrl.listMerchants,
@@ -307,6 +342,7 @@ router.get(
 
 router.get(
   '/merchants/:shopId',
+  growthReadLimiter,
   requireGrowthOsAccess(['growth_os.admin.merchants.read', 'growth_os.merchants.read_insight']),
   validateWork(workValidator.merchantsAdmin.shopId),
   adminCtrl.merchantDetail,
@@ -316,6 +352,7 @@ router.get(
 
 router.get(
   '/admin/users',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.admin.users.read'),
   validateWork(workValidator.usersAdmin.list),
   usersCtrl.listGrowthUsers,
@@ -323,6 +360,7 @@ router.get(
 
 router.post(
   '/admin/users/search',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.admin.users.read'),
   validateWork(workValidator.usersAdmin.search),
   usersCtrl.listGrowthUsers,
@@ -402,6 +440,7 @@ router.post(
 
 router.get(
   '/admin/operations',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.admin.operations.read'),
   validateWork(workValidator.merchantsAdmin.operations),
   adminCtrl.operations,
@@ -409,6 +448,7 @@ router.get(
 
 router.get(
   '/admin/audit',
+  growthReadLimiter,
   requireGrowthOsAccess('growth_os.admin.audit.read'),
   validateWork(workValidator.merchantsAdmin.auditList),
   adminCtrl.auditLogs,

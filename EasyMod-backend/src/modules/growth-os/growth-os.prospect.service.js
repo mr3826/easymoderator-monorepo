@@ -295,6 +295,7 @@ function plain(record) {
 
 const AUDIT_SENSITIVE_KEY = /(password|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|cookie|credential|otp|totp)/i;
 const AUDIT_URL_KEY = /(?:page[_-]?url|source[_-]?url|redirect[_-]?uri|callback[_-]?url)/i;
+const AUDIT_PRIVATE_KEY = /^(?:contact[_-]?(?:name|phone|email)|normalized[_-]?(?:phone|email|page)|page[_-]?url|notes?|metadata|source[_-]?reference|disqualified[_-]?reason)$/i;
 
 function sanitizeAuditValue(value, depth = 0) {
   if (depth > 8) return '[redacted]';
@@ -306,7 +307,9 @@ function sanitizeAuditValue(value, depth = 0) {
   if (value && typeof value === 'object') {
     const sanitized = {};
     for (const [key, child] of Object.entries(value)) {
-      sanitized[key] = AUDIT_URL_KEY.test(key)
+      sanitized[key] = AUDIT_PRIVATE_KEY.test(key)
+        ? '[redacted]'
+        : AUDIT_URL_KEY.test(key)
         ? redactSensitiveUrl(child)
         : AUDIT_SENSITIVE_KEY.test(key)
           ? '[redacted]'
@@ -1137,6 +1140,17 @@ class GrowthOsProspectService {
         newValues: auditSnapshot(prospect),
         ...mutationAudit(audit),
       }, transaction);
+      // Reconcile the opposite event ordering: a shop may already have its
+      // first successful AI reply before an operator links an onboarding
+      // prospect. The reply-side Redis claim cannot be replayed reliably after
+      // that point, so linkage performs the same idempotent check in-transaction.
+      if (nextShop) {
+        await this.markLinkedShopsActivated({
+          shopId: nextShop,
+          actorUserId: userId,
+          transaction,
+        });
+      }
       return toApiProspect(prospect, scope);
     }));
   }
@@ -1214,6 +1228,23 @@ class GrowthOsProspectService {
        if (conflict[0]) throw duplicateError(conflict[0].id);
        if (Object.keys(targetUpdates).length > 0) await target.update(targetUpdates, { transaction });
 
+      const { GrowthOsFollowup, GrowthOsNote } = require('../entities');
+      const [followupsRehomed] = await GrowthOsFollowup.update(
+        { prospect_id: target.id },
+        { where: { prospect_id: source.id }, transaction },
+      );
+      const [notesRehomed] = await GrowthOsNote.update(
+        { target_id: target.id },
+        {
+          where: {
+            target_type: 'prospect',
+            target_id: source.id,
+          },
+          transaction,
+        },
+      );
+      const auditContext = mutationAudit(audit);
+
       await recordMutation({
         prospectId: source.id,
         actorUserId: userId,
@@ -1222,11 +1253,16 @@ class GrowthOsProspectService {
         toValue: target.id,
         reason,
         changedFields: ['status', 'status_changed_at', 'merged_into_id', 'merged_at'],
-        metadata: { target_prospect_id: target.id },
+        ...auditContext,
+        metadata: {
+          ...auditContext.metadata,
+          target_prospect_id: target.id,
+          followups_rehomed: followupsRehomed || 0,
+          notes_rehomed: notesRehomed || 0,
+        },
         action: 'growth_os:prospect_merged',
         oldValues: sourceOldValues,
         newValues: auditSnapshot(source),
-        ...mutationAudit(audit),
       }, transaction);
       await recordMutation({
         prospectId: target.id,
@@ -1236,11 +1272,11 @@ class GrowthOsProspectService {
         toValue: source.id,
         reason,
         changedFields: Object.keys(targetUpdates).filter((field) => !field.startsWith('normalized_')),
-        metadata: { merged_prospect_id: source.id },
+        ...auditContext,
+        metadata: { ...auditContext.metadata, merged_prospect_id: source.id },
         action: 'growth_os:prospect_merge_target',
         oldValues: targetOldValues,
         newValues: auditSnapshot(target),
-        ...mutationAudit(audit),
       }, transaction);
 
       return {
@@ -1299,7 +1335,13 @@ class GrowthOsProspectService {
           lock: true,
           include: false,
         });
-        if (!prospect || prospect.status !== 'onboarding') continue;
+        if (!prospect || prospect.status !== 'onboarding' || prospect.linked_shop_id !== shopId) continue;
+        const lockedShop = await Shop.findByPk(shopId, {
+          attributes: ['id', 'is_active', 'settings'],
+          transaction,
+          lock: true,
+        });
+        if (!lockedShop?.is_active || !lockedShop.settings?.first_ai_reply?.occurred_at) continue;
         const oldValues = auditSnapshot(prospect);
         await prospect.update({
           status: 'converted',

@@ -140,6 +140,8 @@ describe('Growth workspace analytics', () => {
     expect(result.unassigned.openCount).toBe(2);
     expect(result.unassigned.oldestSourceRecordedAt).toBe('2026-09-01T06:00:00.000Z');
     expect(result.unassigned.oldestAgeDays).toBeGreaterThanOrEqual(0);
+    expect(mockFollowup.count.mock.calls[0][0].include[0].where.source_recorded_at).toBeDefined();
+    expect(mockFollowup.count.mock.calls[0][0].include[0].where.status).toEqual({ [require('sequelize').Op.ne]: 'merged' });
   });
 
   test('hides owner display names from redacted source scopes', async () => {

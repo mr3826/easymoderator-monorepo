@@ -150,6 +150,9 @@ export function ProspectFormPage() {
   const [duplicateConflictId, setDuplicateConflictId] = useState<string | null>(null);
   const [duplicateConflictMessage, setDuplicateConflictMessage] = useState<string | null>(null);
 
+  // reportApiError is a context callback that is intentionally not a fetch
+  // dependency; including its unstable identity would refetch on every render.
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (!prospectId) {
       setLoading(false);
@@ -175,6 +178,7 @@ export function ProspectFormPage() {
       active = false;
     };
   }, [prospectId]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   function updateValue(field: keyof ProspectFormValues, value: string) {
     setValues((current) => ({ ...current, [field]: value }));

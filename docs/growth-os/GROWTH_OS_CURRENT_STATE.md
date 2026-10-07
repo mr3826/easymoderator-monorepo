@@ -1,9 +1,16 @@
 # Growth OS Current State
 
-Date: 2026-08-22 (historical determination; reconciled in the appendix below)
-Evidence checkout: historical checkout unavailable; current evidence is the
-repository revision and receipts named in the reconciliation appendix below.
-Release verdict: `NOT READY`
+Date: 2026-10-07
+Evidence checkout: `growth/growth-os-completion` from
+`981f8f74595e0c17f3e779b91708e9d5ba79facc`.
+Reviewed head: `423ad4f0b09ed68bbcbc263aab9a84a8fc8a2524`.
+Release verdict: `CONDITIONAL` while this completion branch is validated;
+production deployment remains blocked until the exact branch SHA has CI,
+reviewer, credential, and runtime receipts.
+
+> The historical findings and receipts below remain evidence for how the
+> current contract was recovered. The 2026-10-07 completion plan and the latest
+> completion entry in `EXECUTION_STATE.md` supersede older verdict lines.
 
 This document is a current-state determination, not a product vision. It uses
 the current code, tests, deployment configuration, and `EXECUTION_STATE.md` as
@@ -785,3 +792,38 @@ The dated determination and the evidence below are historical to the audit date:
 - Public Growth readiness returned HTTP 200, but the running Growth image digest,
   authenticated Founder bootstrap, and live authenticated browser walkthrough
   remain unverified. The Growth release verdict therefore remains conditional.
+
+## 2026-10-07 Completion Branch Reconciliation
+
+The completion branch closes the locally actionable correctness and release
+hardening gaps identified above:
+
+- source/assigned Growth analytics follow-up counts now use the same cohort and
+  row scope as the report;
+- source-scoped search no longer returns owner identifiers, and normalized
+  search preserves Unicode letters/numbers;
+- prospect audit snapshots redact contact fields, URLs, notes, metadata, source
+  references, and disqualification reasons;
+- prospect merge uses `RESTRICT` referential integrity and rehomes follow-ups
+  and notes to the surviving prospect;
+- delayed prospect linkage reconciles an already-recorded first AI reply;
+- follow-up owners must have an eligible operational Growth role;
+- Growth read/mutation quotas are authenticated-user keyed and Redis fail closed
+  outside development;
+- migrations serialize through a PostgreSQL transaction advisory lock and the
+  source-cohort indexes are present in the entity, migration, and sync paths;
+- production config explicitly opts Growth in, validates its CORS origin, binds
+  changed Growth images to the deployed commit, and rollback restores Growth
+  and reloads/validates Caddy;
+- the restore drill reads the actual Growth tables and extracts the uploads
+  archive into an isolated volume;
+- the worker exposes readiness, Compose logs rotate, the Growth Nginx image has
+  a deterministic API 404 boundary, and CI runs a built-image smoke gate;
+- Growth Vitest file parallelism is deterministic and the repository has a
+  strict Growth lint gate.
+
+The following remain release evidence gates rather than code claims: PostgreSQL
+and Redis integration receipts, Docker/image smoke execution on a runner with
+the daemon available, live Growth origin health/auth/CORS proof, production
+repository variables and secrets, off-site backup credentials, reviewer
+approval, CI for the final branch SHA, and an authorized deployment.

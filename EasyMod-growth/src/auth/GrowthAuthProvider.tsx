@@ -116,9 +116,13 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
     return false;
   }, [refreshSession, resolveForbidden]);
 
+  // Session bootstrap is intentionally mount-only; refreshSession changes
+  // after the session is established and must not create a refresh loop.
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     void refreshSession();
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const signin = useCallback(async (payload: SigninPayload) => {
     setStatus('loading');
