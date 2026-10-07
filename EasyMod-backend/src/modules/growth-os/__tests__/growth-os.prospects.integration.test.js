@@ -130,6 +130,9 @@ async function removeProspects() {
       resource_id: { [Op.in]: ids },
     },
   });
+  await GrowthOsProspect.destroy({
+    where: { id: { [Op.in]: ids }, status: 'merged' },
+  });
   await GrowthOsProspect.destroy({ where: { id: { [Op.in]: ids } } });
   prospectIds.clear();
 }

@@ -77,6 +77,7 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
   let createdUserId;
   let createdEmail;
   let createdPassword;
+  let transientReadOnlyId;
 
   beforeAll(async () => {
     const s = suffix();
@@ -127,6 +128,7 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
 
   afterAll(async () => {
     const ids = [superAdmin, secondSuper, growthUser].map((u) => u.id);
+    if (transientReadOnlyId) ids.push(transientReadOnlyId);
     if (createdUserId) ids.push(createdUserId);
     await GrowthOsFollowup.destroy({ where: { owner_user_id: { [Op.in]: ids } } });
     const prospects = await GrowthOsProspect.findAll({
@@ -136,6 +138,7 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       const pid = prospects.map((p) => p.id);
       await GrowthOsProspectEvent.destroy({ where: { prospect_id: { [Op.in]: pid } } });
       await GrowthOsFollowup.destroy({ where: { prospect_id: { [Op.in]: pid } } });
+      await GrowthOsProspect.destroy({ where: { id: { [Op.in]: pid }, status: 'merged' } });
       await GrowthOsProspect.destroy({ where: { id: { [Op.in]: pid } } });
     }
     await GrowthOsNote.destroy({ where: { author_user_id: { [Op.in]: ids } } });
@@ -484,6 +487,34 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       expect(overdue.status).toBe(201);
       expect(overdue.body.data.overdue).toBe(true);
 
+      const readOnlyUser = await User.create({
+        email: `cp-readonly-${suffix()}@example.test`,
+        password: 'integration-only',
+        full_name: 'CP Read Only Analyst',
+        phone: phoneFor(`cp-readonly-${suffix()}`),
+        token_version: 0,
+        settings: {},
+      });
+      transientReadOnlyId = readOnlyUser.id;
+      const readOnlyRole = await GrowthOsUserRole.create({
+        user_id: readOnlyUser.id,
+        role: 'READ_ONLY_ANALYST',
+        is_active: true,
+        granted_by: superAdmin.id,
+        metadata: { source: 'control_plane_integration' },
+      });
+      const invalidOwner = await api(superAdmin, 'post', '/followups', {
+        prospectId,
+        ownerUserId: readOnlyUser.id,
+        dueAt: new Date(Date.now() + 60_000).toISOString(),
+        action: 'Must not be assigned to a read-only role',
+      });
+      expect(invalidOwner.status).toBe(400);
+      expect(invalidOwner.body.code).toBe('GROWTH_OS_PROSPECT_INVALID_OWNER');
+      await readOnlyRole.destroy();
+      await readOnlyUser.destroy();
+      transientReadOnlyId = null;
+
       const mine = await api(growthUser, 'get', '/followups?state=overdue&owner=me');
       expect(mine.status).toBe(200);
       expect(mine.body.data.items.map((i) => i.id)).toContain(overdue.body.data.id);
@@ -517,6 +548,54 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
         'followup_completed',
         'followup_cancelled',
       ]));
+    });
+
+    test('merging a prospect rehomes operational work to the surviving record', async () => {
+      const source = await api(superAdmin, 'post', '/prospects', {
+        businessName: `CP Merge Source ${suffix()}`,
+        contactPhone: phoneFor(`cp-merge-source-${suffix()}`),
+        contactEmail: `cp-merge-source-${suffix()}@example.test`,
+        source: 'manual_entry',
+      });
+      const target = await api(superAdmin, 'post', '/prospects', {
+        businessName: `CP Merge Target ${suffix()}`,
+        contactPhone: phoneFor(`cp-merge-target-${suffix()}`),
+        contactEmail: `cp-merge-target-${suffix()}@example.test`,
+        source: 'manual_entry',
+      });
+      expect(source.status).toBe(201);
+      expect(target.status).toBe(201);
+
+      const sourceId = source.body.data.id;
+      const targetId = target.body.data.id;
+      const followup = await api(superAdmin, 'post', '/followups', {
+        prospectId: sourceId,
+        dueAt: new Date(Date.now() + 60_000).toISOString(),
+        action: 'Rehome this follow-up',
+      });
+      const note = await api(superAdmin, 'post', '/notes', {
+        targetType: 'prospect',
+        targetId: sourceId,
+        body: 'Rehome this note',
+      });
+      expect(followup.status).toBe(201);
+      expect(note.status).toBe(201);
+
+      const merged = await api(superAdmin, 'post', `/prospects/${sourceId}/merge`, {
+        targetProspectId: targetId,
+        reason: 'Consolidate operational work',
+      });
+      expect(merged.status).toBe(200);
+
+      expect((await GrowthOsFollowup.findByPk(followup.body.data.id)).prospect_id).toBe(targetId);
+      expect((await GrowthOsNote.findByPk(note.body.data.id)).target_id).toBe(targetId);
+      const mergeEvent = await GrowthOsProspectEvent.findOne({
+        where: { prospect_id: sourceId, event_type: 'merged' },
+      });
+      expect(mergeEvent.metadata).toMatchObject({
+        followups_rehomed: 1,
+        notes_rehomed: 1,
+      });
     });
 
     test('notes: prospects allowed for GROWTH_USER, shop/user targets require Super Admin', async () => {

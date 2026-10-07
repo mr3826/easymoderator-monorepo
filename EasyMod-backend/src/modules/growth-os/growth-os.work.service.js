@@ -11,6 +11,7 @@ const { resolveProspectScope } = require('./growth-os.prospect.scope');
 const { NOTE_TARGET_TYPES } = require('./growth-os-note.entity');
 const { redactSecretiveValues } = require('./growth-os.audit-sanitizer');
 const { getBusinessDayBounds } = require('./growth-os.time');
+const { isEligibleGrowthAssigneeRole } = require('./growth-os.permissions');
 
 const FOLLOWUP_STATUSES = Object.freeze(['open', 'completed', 'cancelled']);
 const MAX_PAGE_SIZE = 100;
@@ -77,9 +78,9 @@ async function assertActiveGrowthOwner(ownerUserId, transaction) {
     transaction,
     lock: true,
   });
-  if (!growthRole) {
+  if (!growthRole || !isEligibleGrowthAssigneeRole(growthRole.role)) {
     throw new AppError(
-      'Owner user must have an active Growth OS role.',
+      'Owner user must have an active Growth OS operational role.',
       400,
       'GROWTH_OS_PROSPECT_INVALID_OWNER',
     );
@@ -228,7 +229,9 @@ async function listFollowups({
     as: 'prospect',
     required: true,
     attributes: ['id', 'business_name'],
-    ...(scope.kind === 'all' ? {} : { where: scope.where }),
+    where: scope.kind === 'all'
+      ? { status: { [Op.ne]: 'merged' } }
+      : { [Op.and]: [{ status: { [Op.ne]: 'merged' } }, scope.where] },
   }];
   const { rows, count } = await GrowthOsFollowup.findAndCountAll({
     where,

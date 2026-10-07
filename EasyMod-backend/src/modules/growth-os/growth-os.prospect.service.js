@@ -1140,6 +1140,17 @@ class GrowthOsProspectService {
         newValues: auditSnapshot(prospect),
         ...mutationAudit(audit),
       }, transaction);
+      // Reconcile the opposite event ordering: a shop may already have its
+      // first successful AI reply before an operator links an onboarding
+      // prospect. The reply-side Redis claim cannot be replayed reliably after
+      // that point, so linkage performs the same idempotent check in-transaction.
+      if (nextShop) {
+        await this.markLinkedShopsActivated({
+          shopId: nextShop,
+          actorUserId: userId,
+          transaction,
+        });
+      }
       return toApiProspect(prospect, scope);
     }));
   }
@@ -1217,6 +1228,22 @@ class GrowthOsProspectService {
        if (conflict[0]) throw duplicateError(conflict[0].id);
        if (Object.keys(targetUpdates).length > 0) await target.update(targetUpdates, { transaction });
 
+      const { GrowthOsFollowup, GrowthOsNote } = require('../entities');
+      const [followupsRehomed] = await GrowthOsFollowup.update(
+        { prospect_id: target.id },
+        { where: { prospect_id: source.id }, transaction },
+      );
+      const [notesRehomed] = await GrowthOsNote.update(
+        { target_id: target.id },
+        {
+          where: {
+            target_type: 'prospect',
+            target_id: source.id,
+          },
+          transaction,
+        },
+      );
+
       await recordMutation({
         prospectId: source.id,
         actorUserId: userId,
@@ -1225,7 +1252,11 @@ class GrowthOsProspectService {
         toValue: target.id,
         reason,
         changedFields: ['status', 'status_changed_at', 'merged_into_id', 'merged_at'],
-        metadata: { target_prospect_id: target.id },
+        metadata: {
+          target_prospect_id: target.id,
+          followups_rehomed: followupsRehomed || 0,
+          notes_rehomed: notesRehomed || 0,
+        },
         action: 'growth_os:prospect_merged',
         oldValues: sourceOldValues,
         newValues: auditSnapshot(source),
