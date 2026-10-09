@@ -2,7 +2,7 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import ConversationAlertBanner from './ConversationAlertBanner';
 import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
-  Store, LogOut,
+  Store, Users, LogOut,
   CreditCard, Bell, ChevronLeft, ChevronRight,
   ChevronDown, Building2, MessageSquare, Truck, Settings, BookOpen,
 } from "lucide-react";
@@ -28,6 +28,7 @@ export default function DashboardLayout() {
     { name: t('nav.orders'), path: '/orders', icon: ShoppingBag },
     { name: t('nav.messages'), path: '/inbox', icon: MessageCircle },
     { name: t('nav.products'), path: '/products', icon: Grid3X3 },
+    { name: t('nav.customers'), path: '/customers', icon: Users },
   ];
 
   const settingsNavigation = [
