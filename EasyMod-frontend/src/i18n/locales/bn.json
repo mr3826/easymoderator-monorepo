@@ -13,7 +13,8 @@
     "settings": "সেটিংস",
     "subscription": "সাবস্ক্রিপশন",
     "shopSettings": "শপ সেটিংস",
-    "collapse": "ছোট করুন"
+    "collapse": "ছোট করুন",
+    "customers": "কাস্টমার"
   },
   "common": {
     "privacyPolicy": "গোপনীয়তা নীতি",
@@ -2225,9 +2226,18 @@
       "partner": "কোনো upfront fee নেই; সফল delivered order-এ পেমেন্ট।"
     },
     "plans": {
-      "shuru": { "name": "Shuru", "description": "Messenger sales শুরু করার জন্য চিরদিন ফ্রি।" },
-      "growth": { "name": "Growth", "description": "বাড়তে থাকা শপের জন্য সম্পূর্ণ Messenger sales assistant।" },
-      "partner": { "name": "Partner", "description": "কোনো upfront fee নেই; সফল delivered order-এ পেমেন্ট।" }
+      "shuru": {
+        "name": "Shuru",
+        "description": "Messenger sales শুরু করার জন্য চিরদিন ফ্রি।"
+      },
+      "growth": {
+        "name": "Growth",
+        "description": "বাড়তে থাকা শপের জন্য সম্পূর্ণ Messenger sales assistant।"
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "কোনো upfront fee নেই; সফল delivered order-এ পেমেন্ট।"
+      }
     }
   },
   "conversationAlert": {
