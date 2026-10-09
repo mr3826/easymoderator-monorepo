@@ -13,7 +13,8 @@
     "settings": "Settings",
     "subscription": "Subscription",
     "shopSettings": "Shop Settings",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "customers": "Customers"
   },
   "common": {
     "privacyPolicy": "Privacy Policy",
@@ -2225,9 +2226,18 @@
       "partner": "No upfront fee; pay for successfully delivered orders."
     },
     "plans": {
-      "shuru": { "name": "Shuru", "description": "Free forever for getting started with Messenger sales." },
-      "growth": { "name": "Growth", "description": "The full Messenger sales assistant for growing shops." },
-      "partner": { "name": "Partner", "description": "No upfront fee; pay for successfully delivered orders." }
+      "shuru": {
+        "name": "Shuru",
+        "description": "Free forever for getting started with Messenger sales."
+      },
+      "growth": {
+        "name": "Growth",
+        "description": "The full Messenger sales assistant for growing shops."
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "No upfront fee; pay for successfully delivered orders."
+      }
     }
   },
   "conversationAlert": {
