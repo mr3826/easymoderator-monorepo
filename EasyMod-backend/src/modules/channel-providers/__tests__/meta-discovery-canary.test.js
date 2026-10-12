@@ -2,12 +2,14 @@
 
 const {
     MAX_WINDOW_MS,
+    assertValidCanaryEnvironment,
     createCanaryAttempt,
     createDiagnostics,
     readCanaryConfig,
     resumeCanaryAttempt,
     sanitizeTasks,
     snapshotDiagnostics,
+    validateCanaryEnvironment,
 } = require('../meta-discovery-canary');
 
 const NOW = Date.parse('2026-10-12T20:00:00.000Z');
@@ -19,6 +21,27 @@ const BASE_ENV = {
 };
 
 describe('Meta discovery canary boundary', () => {
+    test('validates enabled deployment configuration and rejects unsafe values', () => {
+        expect(validateCanaryEnvironment(BASE_ENV, NOW)).toEqual([]);
+        expect(() => assertValidCanaryEnvironment(BASE_ENV, NOW)).not.toThrow();
+        expect(() => assertValidCanaryEnvironment({
+            ...BASE_ENV,
+            META_DISCOVERY_CANARY_EXPIRES_AT: '2026-10-12T20:30:00+00:00',
+        }, NOW)).toThrow(/UTC ISO-8601/);
+        expect(() => assertValidCanaryEnvironment({
+            ...BASE_ENV,
+            META_DISCOVERY_CANARY_EXPIRES_AT: '2026-04-31T20:30:00.000Z',
+        }, NOW)).toThrow(/UTC ISO-8601/);
+        expect(() => assertValidCanaryEnvironment({
+            ...BASE_ENV,
+            META_DISCOVERY_CANARY_EXPIRES_AT: new Date(NOW + MAX_WINDOW_MS + 1).toISOString(),
+        }, NOW)).toThrow(/no more than one hour/);
+        expect(() => assertValidCanaryEnvironment({
+            ...BASE_ENV,
+            META_DISCOVERY_CANARY_ENABLED: 'yes',
+        }, NOW)).toThrow(/exactly/);
+    });
+
     test('is disabled by default and requires an exact shop and valid Page ID', () => {
         expect(readCanaryConfig({}, NOW).active).toBe(false);
         expect(createCanaryAttempt({

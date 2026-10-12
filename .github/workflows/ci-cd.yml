@@ -140,11 +140,8 @@ on:
         required: false
         default: ''
         type: string
-      trace_marker:
-        description: 'Read-only inbound marker; used only with target=probe.'
-        required: false
-        default: EASYMOD_AFTER_DONE
-        type: string
+      # trace_marker is available through workflow_call. Direct dispatch uses
+      # the same stable default to keep workflow_dispatch under GitHub's limit.
 
 concurrency:
   group: ci-cd-${{ github.ref }}
@@ -302,7 +299,7 @@ jobs:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
           VITE_APP_URL: ${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
           VITE_MARKETING_URL: ${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
-          VITE_META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          VITE_META_APP_ID: ${{ vars.VITE_META_APP_ID || '2040799330176198' }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_ENV: production
 
@@ -523,7 +520,7 @@ jobs:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
           LEGACY_COOKIE_DOMAIN: ${{ vars.LEGACY_COOKIE_DOMAIN || 'easymod.tech' }}
           META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
-          META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          META_APP_ID: ${{ vars.VITE_META_APP_ID || '2040799330176198' }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           # Facebook Login for Business configuration ID. Public, not a secret,
           # so it lives in a repository variable like META_OAUTH_REDIRECT_URI.
@@ -532,6 +529,13 @@ jobs:
           # pointed at somebody else's configuration.
           META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          # The canary is disabled on normal releases. A manual, protected
+          # activation requires the exact protected repository-variable phrase
+          # and complete canary configuration; the renderer validates the rest.
+          META_DISCOVERY_CANARY_ENABLED: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_ENABLED == 'true' && 'true' || 'false' }}
+          META_DISCOVERY_CANARY_SHOP_ID: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_SHOP_ID || '' }}
+          META_DISCOVERY_CANARY_PAGE_ID: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_PAGE_ID || '' }}
+          META_DISCOVERY_CANARY_EXPIRES_AT: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_EXPIRES_AT || '' }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
           # Mobile API switch (ADR M-010). Operator-owned repository variable:
           # exactly "true" or "false", anything else fails the render.
@@ -576,7 +580,7 @@ jobs:
           PROBE_INBOUND_TRACE: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.target == 'probe' && inputs.trace_from != '' && inputs.trace_to != '' }}
           TRACE_FROM: ${{ inputs.trace_from }}
           TRACE_TO: ${{ inputs.trace_to }}
-          TRACE_MARKER: ${{ inputs.trace_marker }}
+          TRACE_MARKER: ${{ inputs.trace_marker || 'EASYMOD_AFTER_DONE' }}
         run: |
           set -euo pipefail
           mkdir -p _tmp
@@ -608,8 +612,8 @@ jobs:
           echo 'secret-backed-render=PASS'
 
           # META_APP_ID and META_APP_SECRET must belong to the SAME Meta app.
-          # They arrive from two differently-named secrets (VITE_META_APP_ID
-          # feeds META_APP_ID), so nothing but this check stops one drifting
+          # The public app ID comes from the repository variable while the
+          # secret remains masked, so nothing but this check stops one drifting
           # to a different app than the other -- which silently retargets the
           # consent dialog and 403s every webhook. Graph rejects a mismatched
           # client_id/client_secret pair, so one client_credentials call is a
@@ -621,7 +625,7 @@ jobs:
           pair_url='https://graph.facebook.com/v21.0/oauth/access_token?grant_type=client_credentials'
           if ! curl -sf --get "$pair_url" --data-urlencode "client_id=$meta_id" --data-urlencode "client_secret=$meta_secret" | grep -q access_token; then
             echo "META_APP_ID ($meta_id) and META_APP_SECRET are not a valid pair for one Meta app." >&2
-            echo "Fix the VITE_META_APP_ID / META_APP_SECRET repository secrets before deploying." >&2
+          echo "Fix the VITE_META_APP_ID repository variable / META_APP_SECRET secret before deploying." >&2
             exit 1
           fi
           echo "meta-app-credential-pair=PASS (app $meta_id)"
@@ -713,7 +717,7 @@ jobs:
             VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
             VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
-            VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+            VITE_META_APP_ID=${{ vars.VITE_META_APP_ID || '2040799330176198' }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
             VITE_ENV=production
             VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
@@ -913,7 +917,7 @@ jobs:
             VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
             VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
-            VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+            VITE_META_APP_ID=${{ vars.VITE_META_APP_ID || '2040799330176198' }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
             VITE_ENV=production
             VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
@@ -982,7 +986,7 @@ jobs:
           COOKIE_DOMAIN: ${{ vars.COOKIE_DOMAIN }}
           LEGACY_COOKIE_DOMAIN: ${{ vars.LEGACY_COOKIE_DOMAIN || 'easymod.tech' }}
           META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
-          META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          META_APP_ID: ${{ vars.VITE_META_APP_ID || '2040799330176198' }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           # Facebook Login for Business configuration ID. Public, not a secret,
           # so it lives in a repository variable like META_OAUTH_REDIRECT_URI.
@@ -991,6 +995,12 @@ jobs:
           # pointed at somebody else's configuration.
           META_LOGIN_CONFIG_ID: ${{ vars.META_LOGIN_CONFIG_ID }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          # Keep the canary default-off on every ordinary release. Only the
+          # explicit protected repository-variable phrase can pass an enabled value.
+          META_DISCOVERY_CANARY_ENABLED: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_ENABLED == 'true' && 'true' || 'false' }}
+          META_DISCOVERY_CANARY_SHOP_ID: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_SHOP_ID || '' }}
+          META_DISCOVERY_CANARY_PAGE_ID: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_PAGE_ID || '' }}
+          META_DISCOVERY_CANARY_EXPIRES_AT: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_EXPIRES_AT || '' }}
           META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
           # Mobile API switch (ADR M-010). Operator-owned repository variable:
           # exactly "true" or "false", anything else fails the render.

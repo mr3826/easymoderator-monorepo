@@ -5,6 +5,8 @@ const { normalizePageTasks } = require('./meta-page-eligibility');
 
 const MAX_WINDOW_MS = 60 * 60 * 1000;
 const PAGE_ID_PATTERN = /^\d{1,32}$/;
+const SHOP_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
 const SAFE_REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const KNOWN_META_PAGE_TASKS = new Set([
     'MESSAGING',
@@ -25,13 +27,85 @@ function safePageId(value) {
     return PAGE_ID_PATTERN.test(candidate) ? candidate : null;
 }
 
+function safeShopId(value) {
+    const candidate = typeof value === 'string' ? value.trim() : '';
+    return SHOP_ID_PATTERN.test(candidate) ? candidate : null;
+}
+
+function parseUtcExpiry(value) {
+    const candidate = typeof value === 'string' ? value.trim() : '';
+    const match = candidate.match(UTC_TIMESTAMP_PATTERN);
+    if (!match) return null;
+
+    const [, year, month, day, hour, minute, second, fraction = ''] = match;
+    const milliseconds = Number((fraction + '000').slice(0, 3));
+    const parsed = Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+        milliseconds,
+    );
+    if (!Number.isFinite(parsed)) return null;
+
+    const parsedDate = new Date(parsed);
+    return parsedDate.getUTCFullYear() === Number(year)
+        && parsedDate.getUTCMonth() === Number(month) - 1
+        && parsedDate.getUTCDate() === Number(day)
+        && parsedDate.getUTCHours() === Number(hour)
+        && parsedDate.getUTCMinutes() === Number(minute)
+        && parsedDate.getUTCSeconds() === Number(second)
+        ? parsed
+        : null;
+}
+
+function validateCanaryEnvironment(env = process.env, now = Date.now()) {
+    const enabled = env.META_DISCOVERY_CANARY_ENABLED === 'true';
+    const errors = [];
+    const rawEnabled = env.META_DISCOVERY_CANARY_ENABLED;
+
+    if (rawEnabled !== undefined && rawEnabled !== '' && rawEnabled !== 'true' && rawEnabled !== 'false') {
+        errors.push('META_DISCOVERY_CANARY_ENABLED must be exactly "true" or "false"');
+    }
+    if (!enabled) return errors;
+
+    if (!safeShopId(env.META_DISCOVERY_CANARY_SHOP_ID)) {
+        errors.push('META_DISCOVERY_CANARY_SHOP_ID must be a non-empty safe shop identifier');
+    }
+    if (!safePageId(env.META_DISCOVERY_CANARY_PAGE_ID)) {
+        errors.push('META_DISCOVERY_CANARY_PAGE_ID must be a numeric Meta Page ID');
+    }
+
+    const expiresAtMs = parseUtcExpiry(env.META_DISCOVERY_CANARY_EXPIRES_AT);
+    if (expiresAtMs === null) {
+        errors.push('META_DISCOVERY_CANARY_EXPIRES_AT must be a UTC ISO-8601 timestamp');
+    } else {
+        const remainingMs = expiresAtMs - now;
+        if (remainingMs <= 0) errors.push('META_DISCOVERY_CANARY_EXPIRES_AT must be in the future');
+        if (remainingMs > MAX_WINDOW_MS) errors.push('META_DISCOVERY_CANARY_EXPIRES_AT must be no more than one hour away');
+    }
+
+    return errors;
+}
+
+function assertValidCanaryEnvironment(env = process.env, now = Date.now()) {
+    const errors = validateCanaryEnvironment(env, now);
+    if (errors.length) {
+        const error = new Error(`Invalid Meta discovery canary configuration: ${errors.join('; ')}`);
+        error.code = 'INVALID_META_DISCOVERY_CANARY_CONFIG';
+        error.details = { errors };
+        throw error;
+    }
+    return true;
+}
+
 function readCanaryConfig(env = process.env, now = Date.now()) {
     const enabled = env.META_DISCOVERY_CANARY_ENABLED === 'true';
-    const shopId = typeof env.META_DISCOVERY_CANARY_SHOP_ID === 'string'
-        ? env.META_DISCOVERY_CANARY_SHOP_ID.trim()
-        : '';
+    const shopId = safeShopId(env.META_DISCOVERY_CANARY_SHOP_ID) || '';
     const expectedPageId = safePageId(env.META_DISCOVERY_CANARY_PAGE_ID);
-    const expiresAtMs = Date.parse(String(env.META_DISCOVERY_CANARY_EXPIRES_AT || ''));
+    const expiresAtMs = parseUtcExpiry(env.META_DISCOVERY_CANARY_EXPIRES_AT);
     const remainingMs = Number.isFinite(expiresAtMs) ? expiresAtMs - now : null;
     const active = enabled
         && shopId.length > 0
@@ -157,6 +231,8 @@ function snapshotDiagnostics(diagnostics) {
 
 module.exports = {
     MAX_WINDOW_MS,
+    validateCanaryEnvironment,
+    assertValidCanaryEnvironment,
     readCanaryConfig,
     createCanaryAttempt,
     resumeCanaryAttempt,

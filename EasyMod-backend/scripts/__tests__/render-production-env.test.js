@@ -158,20 +158,39 @@ describe('Meta discovery canary environment gate', () => {
     });
 
     test('renders an explicitly configured, time-bounded canary without secrets', () => {
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
         const rendered = buildRenderedEnv(validSource({
             META_DISCOVERY_CANARY_ENABLED: 'true',
             META_DISCOVERY_CANARY_SHOP_ID: 'shop-kutir',
             META_DISCOVERY_CANARY_PAGE_ID: '1362174360316889',
-            META_DISCOVERY_CANARY_EXPIRES_AT: '2026-10-12T20:30:00.000Z',
+            META_DISCOVERY_CANARY_EXPIRES_AT: expiresAt,
         }));
 
         expect(rendered).toMatchObject({
             META_DISCOVERY_CANARY_ENABLED: 'true',
             META_DISCOVERY_CANARY_SHOP_ID: 'shop-kutir',
             META_DISCOVERY_CANARY_PAGE_ID: '1362174360316889',
-            META_DISCOVERY_CANARY_EXPIRES_AT: '2026-10-12T20:30:00.000Z',
+            META_DISCOVERY_CANARY_EXPIRES_AT: expiresAt,
         });
         expect(rendered).not.toHaveProperty('META_DISCOVERY_CANARY_TOKEN');
+    });
+
+    test('rejects an enabled canary with missing, malformed, or expired settings', () => {
+        expect(() => buildRenderedEnv(validSource({
+            META_DISCOVERY_CANARY_ENABLED: 'true',
+        }))).toThrow(/META_DISCOVERY_CANARY_SHOP_ID/);
+        expect(() => buildRenderedEnv(validSource({
+            META_DISCOVERY_CANARY_ENABLED: 'true',
+            META_DISCOVERY_CANARY_SHOP_ID: 'shop-kutir',
+            META_DISCOVERY_CANARY_PAGE_ID: 'page-name',
+            META_DISCOVERY_CANARY_EXPIRES_AT: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        }))).toThrow(/META_DISCOVERY_CANARY_PAGE_ID/);
+        expect(() => buildRenderedEnv(validSource({
+            META_DISCOVERY_CANARY_ENABLED: 'true',
+            META_DISCOVERY_CANARY_SHOP_ID: 'shop-kutir',
+            META_DISCOVERY_CANARY_PAGE_ID: '1362174360316889',
+            META_DISCOVERY_CANARY_EXPIRES_AT: new Date(Date.now() - 1).toISOString(),
+        }))).toThrow(/must be in the future/);
     });
 });
 

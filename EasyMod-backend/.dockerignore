@@ -4,3 +4,10 @@ node_modules
 .env*
 *.sqlite
 npm-debug.log
+.test-uploads
+coverage
+test-results
+playwright-report
+uploads
+tmp
+*.log

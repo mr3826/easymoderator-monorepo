@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { assertProductionConfig } = require('../src/config/production-config.validator');
 const { serializeRenderedEnvValue } = require('../src/config/rendered-env');
+const { assertValidCanaryEnvironment } = require('../src/modules/channel-providers/meta-discovery-canary');
 
 const RENDER_INPUT_REQUIRED = ['DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 
@@ -247,6 +248,8 @@ function buildRenderedEnv(source = process.env) {
     if (missingInputs.length) {
         throw new Error(`Missing deployment environment variables: ${missingInputs.join(', ')}`);
     }
+
+    assertValidCanaryEnvironment(rendered);
 
     // Fail before writing anything if the config is unsafe.
     assertProductionConfig(rendered);

@@ -90,6 +90,12 @@ services:
       - .env.prod
     environment:
       - NODE_ENV=production
+      # The OAuth canary is an API callback concern. Keep background workers
+      # fail-closed even when the shared production env enables the backend.
+      - META_DISCOVERY_CANARY_ENABLED=false
+      - META_DISCOVERY_CANARY_SHOP_ID=
+      - META_DISCOVERY_CANARY_PAGE_ID=
+      - META_DISCOVERY_CANARY_EXPIRES_AT=
     networks:
       - internal
     depends_on:

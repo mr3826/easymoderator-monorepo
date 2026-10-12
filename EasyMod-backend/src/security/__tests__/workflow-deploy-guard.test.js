@@ -16,6 +16,10 @@ const releaseWorkflowPath = path.resolve(
 const releaseWorkflow = fs.readFileSync(releaseWorkflowPath, 'utf8');
 const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
 const compose = fs.readFileSync(composePath, 'utf8');
+const backendDockerfilePath = path.resolve(__dirname, '../../../Dockerfile');
+const backendDockerfile = fs.readFileSync(backendDockerfilePath, 'utf8');
+const backendDockerignorePath = path.resolve(__dirname, '../../../.dockerignore');
+const backendDockerignore = fs.readFileSync(backendDockerignorePath, 'utf8');
 const securityWorkflowPath = path.resolve(
     __dirname,
     '../../../../.github/workflows/security-scan.yml',
@@ -43,6 +47,14 @@ const growthImporterWorkflowPath = path.resolve(
 const growthImporterWorkflow = fs.readFileSync(growthImporterWorkflowPath, 'utf8');
 
 describe('production workflow branch safety', () => {
+    test('keeps the production backend non-root with targeted writable ownership', () => {
+        expect(backendDockerfile).toContain('USER node');
+        expect(backendDockerfile).toContain('chown node:node /app/uploads');
+        expect(backendDockerfile).not.toContain('chown -R node:node /app');
+        expect(backendDockerignore).toContain('coverage');
+        expect(backendDockerignore).toContain('.test-uploads');
+    });
+
     test('keeps post-merge release entry separate from pull-request validation', () => {
         expect(workflow).toContain('workflow_call:');
         expect(workflow).not.toMatch(/^ {2}push:/m);
@@ -86,6 +98,19 @@ describe('production workflow branch safety', () => {
         expect(workflow.match(/MOBILE_API_ENABLED:/g)).toHaveLength(2);
         expect(workflow).not.toMatch(/secrets\.MOBILE_/);
         expect(workflow).not.toMatch(/MOBILE_(PUSH|ORDER_MUTATIONS|COURIER_ACTIONS|AI_DRAFTS)_ENABLED|MOBILE_E2E_FIXTURES/);
+    });
+
+    test('keeps Meta discovery canary disabled unless the protected activation variable is explicit', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const dryRunBlock = workflow.match(/\n  deployment-config:\n([\s\S]*?)\n  docker-build-validation:/)?.[1];
+        const enabledLine = "META_DISCOVERY_CANARY_ENABLED: ${{ vars.META_DISCOVERY_CANARY_CONFIRMATION == 'ENABLE-META-DISCOVERY-CANARY' && vars.META_DISCOVERY_CANARY_ENABLED == 'true' && 'true' || 'false' }}";
+
+        expect(workflow).not.toContain('meta_discovery_canary_confirmation:');
+        expect(releaseWorkflow).not.toContain('meta_discovery_canary_confirmation:');
+        expect(deployBlock).toContain(enabledLine);
+        expect(dryRunBlock).toContain(enabledLine);
+        expect(workflow.match(/META_DISCOVERY_CANARY_ENABLED:/g)).toHaveLength(2);
+        expect(workflow).not.toContain('META_DISCOVERY_CANARY_ENABLED: ${{ vars.META_DISCOVERY_CANARY_ENABLED }}');
     });
 
     test('pull requests can run tests but cannot build deployable images', () => {
@@ -287,6 +312,17 @@ describe('production workflow branch safety', () => {
         expect(compose).toContain('image: qdrant/qdrant@sha256:');
         expect(workflow).toContain('docker image inspect -f');
         expect(workflow).toContain('config --images');
+    });
+
+    test('production Compose keeps the canary API-only and workers fail-closed', () => {
+        const backendBlock = compose.match(/\r?\n  backend:\r?\n([\s\S]*?)\r?\n  # ── Worker:/)?.[1];
+        const workerBlock = compose.match(/\r?\n  worker:\r?\n([\s\S]*?)\r?\n  # ── Frontend:/)?.[1];
+
+        expect(backendBlock).toContain('env_file:');
+        expect(workerBlock).toContain('META_DISCOVERY_CANARY_ENABLED=false');
+        expect(workerBlock).toContain('META_DISCOVERY_CANARY_SHOP_ID=');
+        expect(workerBlock).toContain('META_DISCOVERY_CANARY_PAGE_ID=');
+        expect(workerBlock).toContain('META_DISCOVERY_CANARY_EXPIRES_AT=');
     });
 
     // BUILD_TIME lands in the image as ENV and is read back by /health, /version

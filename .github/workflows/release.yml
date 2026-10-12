@@ -72,11 +72,6 @@ on:
         required: false
         default: ''
         type: string
-      trace_marker:
-        description: 'Read-only inbound marker'
-        required: false
-        default: EASYMOD_AFTER_DONE
-        type: string
 
 concurrency:
   group: release-main
@@ -103,5 +98,4 @@ jobs:
       expect_schema_drift: ${{ inputs.expect_schema_drift }}
       trace_from: ${{ inputs.trace_from }}
       trace_to: ${{ inputs.trace_to }}
-      trace_marker: ${{ inputs.trace_marker }}
     secrets: inherit
