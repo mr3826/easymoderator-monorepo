@@ -24,7 +24,9 @@ exports.initiate = async (req, res, next) => {
     try {
         const { platform } = req.body;
         const { userId, shopId } = req.user;
-        const result = await oauthService.initiateOAuth(userId, shopId, platform);
+        const result = req.requestId
+            ? await oauthService.initiateOAuth(userId, shopId, platform, null, req.requestId)
+            : await oauthService.initiateOAuth(userId, shopId, platform);
         logger.info('OAuth initiated', { shopId, platform });
         res.json({ success: true, data: result });
     } catch (err) {
@@ -41,7 +43,9 @@ exports.callback = async (req, res, next) => {
     try {
         const { code, state } = req.body;
         const { userId, shopId } = req.user;
-        const result = await oauthService.handleCallback(code, state, userId, shopId);
+        const result = req.requestId
+            ? await oauthService.handleCallback(code, state, userId, shopId, req.requestId)
+            : await oauthService.handleCallback(code, state, userId, shopId);
         logger.info('OAuth callback processed', { shopId, pageCount: result.pages?.length ?? 0 });
         res.json({ success: true, data: result });
     } catch (err) {

@@ -175,6 +175,14 @@ function buildRenderedEnv(source = process.env) {
         // deployment can never inherit a developer's configuration.
         META_LOGIN_CONFIG_ID: required('META_LOGIN_CONFIG_ID'),
         META_WEBHOOK_VERIFY_TOKEN: required('META_WEBHOOK_VERIFY_TOKEN'),
+        META_DISCOVERY_CANARY_ENABLED: strictBooleanFlag(
+            source.META_DISCOVERY_CANARY_ENABLED,
+            'META_DISCOVERY_CANARY_ENABLED',
+            'false',
+        ),
+        META_DISCOVERY_CANARY_SHOP_ID: source.META_DISCOVERY_CANARY_SHOP_ID || '',
+        META_DISCOVERY_CANARY_PAGE_ID: source.META_DISCOVERY_CANARY_PAGE_ID || '',
+        META_DISCOVERY_CANARY_EXPIRES_AT: source.META_DISCOVERY_CANARY_EXPIRES_AT || '',
         META_USER_PROFILE_ENABLED: source.META_USER_PROFILE_ENABLED || 'false',
         ...bkashSection,
         ...telegramSection,

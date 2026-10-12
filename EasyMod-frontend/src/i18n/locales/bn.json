@@ -2547,6 +2547,7 @@
       "channelDisconnected": "চ্যানেল বিচ্ছিন্ন হয়েছে। Reconnect বাটন ব্যবহার করুন।",
       "webhookFailed": "Webhook যাচাই ব্যর্থ হয়েছে। Meta App Dashboard-এ সেটিংস চেক করুন।",
       "pageTasksRequired": "এই Page Messenger-এর জন্য eligible নয়। Messaging ও Page management access দিয়ে আবার অনুমোদন করুন।",
+      "pageDiscoveryFailed": "Meta Page discovery যাচাই করা যায়নি। Authorization আবার চেষ্টা করুন; কোনো Page সংযুক্ত করা হয়নি।",
       "fallback": "কিছু একটা ভুল হয়েছে। পুনরায় সংযুক্ত করুন অথবা Support-এ যোগাযোগ করুন।"
     }
   },

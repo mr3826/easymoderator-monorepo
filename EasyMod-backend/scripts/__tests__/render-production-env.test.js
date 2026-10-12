@@ -147,6 +147,34 @@ describe('Docker production env-file serialization', () => {
     });
 });
 
+describe('Meta discovery canary environment gate', () => {
+    test('renders the canary disabled with empty shop, Page and expiry by default', () => {
+        const rendered = buildRenderedEnv(validSource());
+
+        expect(rendered.META_DISCOVERY_CANARY_ENABLED).toBe('false');
+        expect(rendered.META_DISCOVERY_CANARY_SHOP_ID).toBe('');
+        expect(rendered.META_DISCOVERY_CANARY_PAGE_ID).toBe('');
+        expect(rendered.META_DISCOVERY_CANARY_EXPIRES_AT).toBe('');
+    });
+
+    test('renders an explicitly configured, time-bounded canary without secrets', () => {
+        const rendered = buildRenderedEnv(validSource({
+            META_DISCOVERY_CANARY_ENABLED: 'true',
+            META_DISCOVERY_CANARY_SHOP_ID: 'shop-kutir',
+            META_DISCOVERY_CANARY_PAGE_ID: '1362174360316889',
+            META_DISCOVERY_CANARY_EXPIRES_AT: '2026-10-12T20:30:00.000Z',
+        }));
+
+        expect(rendered).toMatchObject({
+            META_DISCOVERY_CANARY_ENABLED: 'true',
+            META_DISCOVERY_CANARY_SHOP_ID: 'shop-kutir',
+            META_DISCOVERY_CANARY_PAGE_ID: '1362174360316889',
+            META_DISCOVERY_CANARY_EXPIRES_AT: '2026-10-12T20:30:00.000Z',
+        });
+        expect(rendered).not.toHaveProperty('META_DISCOVERY_CANARY_TOKEN');
+    });
+});
+
 describe('bKash provider posture (§6)', () => {
     test('disabled with no bKash secrets renders a valid config', () => {
         const rendered = buildRenderedEnv(validSource({ BKASH_ENABLED: 'false' }));

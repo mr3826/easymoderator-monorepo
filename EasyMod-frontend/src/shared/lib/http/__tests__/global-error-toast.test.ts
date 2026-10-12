@@ -102,4 +102,17 @@ describe('HTTP client — global error toast', () => {
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith('Server exploded', { id: 'SERVER_ERROR' });
   });
+
+  it('does not retry a consumed OAuth discovery failure', async () => {
+    const attempts = await request('/api/channels/meta/oauth/callback', () => ({
+      status: 502,
+      data: {
+        code: 'META_PAGE_DISCOVERY_FAILED',
+        message: 'Meta Page discovery failed during the authorized canary.',
+      },
+    }));
+
+    expect(attempts).toBe(1);
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
 });

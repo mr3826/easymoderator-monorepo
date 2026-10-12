@@ -62,6 +62,28 @@ describe('meta-oauth.controller', () => {
             expect(next).toHaveBeenCalledWith(err);
             expect(res.json).not.toHaveBeenCalled();
         });
+
+        test('forwards the server request ID for canary correlation when middleware provides one', async () => {
+            oauthService.initiateOAuth.mockResolvedValue({ redirectUrl: 'https://x', state: 'st' });
+            const req = {
+                requestId: 'init-request-1',
+                user: { userId: 'u1', shopId: 's1' },
+                body: { platform: 'facebook' },
+            };
+            const res = mkRes();
+            const next = jest.fn();
+
+            await controller.initiate(req, res, next);
+
+            expect(oauthService.initiateOAuth).toHaveBeenCalledWith(
+                'u1',
+                's1',
+                'facebook',
+                null,
+                'init-request-1',
+            );
+        });
+
     });
 
     describe('callback', () => {
@@ -91,6 +113,27 @@ describe('meta-oauth.controller', () => {
             expect(JSON.stringify(responseData)).not.toMatch(/access_token|accessToken|pageAccessToken|page_access_token/);
             expect(responseData).not.toHaveProperty('token');
             expect(responseData).toHaveProperty('tempToken', 'tt');
+        });
+
+        test('forwards the server request ID for canary correlation when middleware provides one', async () => {
+            oauthService.handleCallback.mockResolvedValue({ pages: [], tempToken: 'tt' });
+            const req = {
+                requestId: 'callback-request-1',
+                user: { userId: 'u1', shopId: 's1' },
+                body: { code: 'abcdefghij', state: 'x'.repeat(64) },
+            };
+            const res = mkRes();
+            const next = jest.fn();
+
+            await controller.callback(req, res, next);
+
+            expect(oauthService.handleCallback).toHaveBeenCalledWith(
+                'abcdefghij',
+                'x'.repeat(64),
+                'u1',
+                's1',
+                'callback-request-1',
+            );
         });
     });
 

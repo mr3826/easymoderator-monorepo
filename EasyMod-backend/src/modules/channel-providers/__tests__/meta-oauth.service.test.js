@@ -727,3 +727,87 @@ describe('connectPage() webhook verify wiring', () => {
         }));
     });
 });
+
+describe('shop-scoped Meta discovery canary', () => {
+    const canaryEnvKeys = [
+        'META_DISCOVERY_CANARY_ENABLED',
+        'META_DISCOVERY_CANARY_SHOP_ID',
+        'META_DISCOVERY_CANARY_PAGE_ID',
+        'META_DISCOVERY_CANARY_EXPIRES_AT',
+    ];
+    let savedEnv;
+
+    beforeEach(() => {
+        savedEnv = Object.fromEntries(canaryEnvKeys.map((key) => [key, process.env[key]]));
+        process.env.META_DISCOVERY_CANARY_ENABLED = 'true';
+        process.env.META_DISCOVERY_CANARY_SHOP_ID = 'shop-abc';
+        process.env.META_DISCOVERY_CANARY_PAGE_ID = '1362174360316889';
+        process.env.META_DISCOVERY_CANARY_EXPIRES_AT = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        jest.clearAllMocks();
+    });
+
+    afterEach(() => {
+        for (const key of canaryEnvKeys) {
+            if (savedEnv[key] === undefined) delete process.env[key];
+            else process.env[key] = savedEnv[key];
+        }
+    });
+
+    test('stores only a server-generated canary correlation record for the exact shop', async () => {
+        await oauthService.initiateOAuth(
+            'user-xyz',
+            'shop-abc',
+            'facebook',
+            null,
+            '11111111-1111-4111-8111-111111111111',
+        );
+        const statePayload = stateStore.put.mock.calls[0][1];
+
+        expect(statePayload.canaryAttempt).toMatchObject({
+            expectedPageId: '1362174360316889',
+            initiateRequestId: '11111111-1111-4111-8111-111111111111',
+        });
+        expect(statePayload.canaryAttempt.correlationId).toMatch(/^[a-f0-9]{32}$/);
+        expect(JSON.stringify(statePayload.canaryAttempt)).not.toContain('token');
+
+        stateStore.put.mockClear();
+        await oauthService.initiateOAuth('user-xyz', 'different-shop', 'facebook');
+        expect(stateStore.put.mock.calls[0][1].canaryAttempt).toBeUndefined();
+    });
+
+    test('passes correlation diagnostics only after OAuth state and shop binding succeed', async () => {
+        await oauthService.initiateOAuth('user-xyz', 'shop-abc', 'facebook');
+        const statePayload = stateStore.put.mock.calls[0][1];
+        stateStore.put.mockClear();
+        stateStore.take.mockResolvedValueOnce(statePayload);
+        mockListManagedAssets.mockResolvedValueOnce([{
+            id: '1362174360316889',
+            name: 'Kutir Fashion',
+            tasks: ['MESSAGING', 'MANAGE'],
+            connectable: true,
+        }]);
+
+        const result = await oauthService.handleCallback(
+            'auth-code',
+            'state-ok',
+            'user-xyz',
+            'shop-abc',
+            '22222222-2222-4222-8222-222222222222',
+        );
+
+        const diagnostics = mockListManagedAssets.mock.calls[0][0].diagnostics;
+        expect(diagnostics).toMatchObject({
+            correlationId: statePayload.canaryAttempt.correlationId,
+            callbackRequestId: '22222222-2222-4222-8222-222222222222',
+            expectedPageId: '1362174360316889',
+        });
+        expect(result).not.toHaveProperty('diagnostics');
+        expect(JSON.stringify(diagnostics)).not.toContain('user-tok');
+    });
+
+    test('does not activate when the expiry exceeds one hour', async () => {
+        process.env.META_DISCOVERY_CANARY_EXPIRES_AT = new Date(Date.now() + 61 * 60 * 1000).toISOString();
+        await oauthService.initiateOAuth('user-xyz', 'shop-abc', 'facebook');
+        expect(stateStore.put.mock.calls[0][1].canaryAttempt).toBeUndefined();
+    });
+});
