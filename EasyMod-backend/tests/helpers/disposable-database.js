@@ -43,16 +43,19 @@ const isDisposableDatabase = (url) => DISPOSABLE_NAME.test(databaseNameFrom(url)
  * @param {string} [suite] name used in the error message
  * @throws if the database is not provably disposable
  */
-const assertDisposableDatabase = (url = process.env.DATABASE_URL, suite = 'this suite') => {
-    if (isDisposableDatabase(url)) return;
-    const name = databaseNameFrom(url);
+function assertDisposableDatabase(url, suite = 'this suite') {
+    // An omitted argument uses the process URL; an explicit undefined is a
+    // deliberate unset-value assertion in unit tests and must fail closed.
+    const resolvedUrl = arguments.length === 0 ? process.env.DATABASE_URL : url;
+    if (isDisposableDatabase(resolvedUrl)) return;
+    const name = databaseNameFrom(resolvedUrl);
     throw new Error(
-        `${suite} refuses to run against database "${name || url || '<unset>'}". `
+        `${suite} refuses to run against database "${name || resolvedUrl || '<unset>'}". `
         + 'It truncates tables and runs migrations, so DATABASE_URL must name a '
         + 'disposable database with "test" or "e2e" as a whole word '
         + '(e.g. easymod_e2e).',
     );
-};
+}
 
 module.exports = {
     DISPOSABLE_NAME,

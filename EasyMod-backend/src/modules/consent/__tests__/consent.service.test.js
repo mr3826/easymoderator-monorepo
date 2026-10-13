@@ -108,7 +108,7 @@ describe('recordOptOut', () => {
         expect(customer.messaging_consent.facebook.opted_out_at).toBeTruthy();
         expect(customer.messaging_consent.facebook.opted_in).toBe(false);
         expect(customer.save).toHaveBeenCalled();
-        expect(MetaChannelConsentEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(MetaChannelConsentEvent.create.mock.calls[0][0]).toEqual(expect.objectContaining({
             event: 'OPT_OUT', source: 'keyword_stop', customer_id: 'cust-1',
         }));
     });
@@ -161,7 +161,7 @@ describe('recordInbound', () => {
 
         expect(customer.messaging_consent.facebook.last_inbound_at).toBeTruthy();
         expect(customer.messaging_consent.facebook.opted_in).toBe(true);
-        expect(MetaChannelConsentEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(MetaChannelConsentEvent.create.mock.calls[0][0]).toEqual(expect.objectContaining({
             event: 'OPT_IN_IMPLICIT', source: 'message',
         }));
     });
@@ -216,7 +216,7 @@ describe('recordOptIn', () => {
         });
 
         expect(customer.messaging_consent.facebook.opted_in).toBe(true);
-        expect(MetaChannelConsentEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(MetaChannelConsentEvent.create.mock.calls[0][0]).toEqual(expect.objectContaining({
             event: 'OPT_IN_EXPLICIT', source: 'webhook_messaging_optins',
         }));
     });

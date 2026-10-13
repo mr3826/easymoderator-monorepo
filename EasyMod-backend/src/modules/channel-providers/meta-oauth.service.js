@@ -27,6 +27,12 @@ const {
     META_PAGE_TASKS_REQUIRED,
     evaluatePageEligibility,
 } = require('./meta-page-eligibility');
+const {
+    createCanaryAttempt,
+    resumeCanaryAttempt,
+    createDiagnostics,
+    snapshotDiagnostics,
+} = require('./meta-discovery-canary');
 
 const logger = createLogger('MetaOAuthService');
 
@@ -74,21 +80,28 @@ function sanitizeManagedAssets(pages) {
  * @param {{ targetChannelId?: string, targetAssetId?: string }|null} [reconnectTarget]
  * @returns {{ redirectUrl: string, state: string }}
  */
-async function initiateOAuth(userId, shopId, platform, reconnectTarget = null) {
+async function initiateOAuth(userId, shopId, platform, reconnectTarget = null, requestId = null) {
     const nonce = crypto.randomBytes(16).toString('hex');
     const state = `${platform}:${shopId}:${userId}:${nonce}`;
 
     // Bind the exact redirect URI to this single-use state. This keeps OAuth
     // exchanges valid if configuration changes while a Facebook dialog is open.
     const redirectUri = config.metaOAuthRedirectUri;
-    await stateStore.put(state, {
+    const canaryAttempt = createCanaryAttempt({
+        authenticatedShopId: shopId,
+        stateShopId: shopId,
+        requestId,
+    });
+    const statePayload = {
         userId,
         shopId,
         platform,
         redirectUri,
         reconnectChannelId: reconnectTarget?.targetChannelId || null,
         reconnectAssetId: reconnectTarget?.targetAssetId || null,
-    });
+    };
+    if (canaryAttempt) statePayload.canaryAttempt = canaryAttempt;
+    await stateStore.put(state, statePayload);
 
     const provider = getProvider('facebook');
     const redirectUrl = await provider.buildAuthUrl({ state, scopes: [], redirectUri });
@@ -107,7 +120,7 @@ async function initiateOAuth(userId, shopId, platform, reconnectTarget = null) {
  * @param {string} shopId
  * @returns {{ pages: Asset[], tempToken: string, reconnectChannelId: string|null, reconnectAssetId: string|null }}
  */
-async function handleCallback(code, state, userId, shopId) {
+async function handleCallback(code, state, userId, shopId, requestId = null) {
     // Recover state (validates CSRF nonce)
     const stored = await stateStore.take(state);
     if (!stored) {
@@ -122,44 +135,75 @@ async function handleCallback(code, state, userId, shopId) {
 
     const platform = stored.platform;
     const provider = getProvider('facebook');
-
-    // Exchange code for long-lived user token
-    const { userToken } = await provider.exchangeCode({ code, redirectUri: stored.redirectUri });
-
-    // List pages/IG accounts this user manages. The provider writes raw Page
-    // credentials into this server-only sink while returning sanitized metadata.
-    // The sink is stored with the existing callback TTL and is never returned.
-    const pageCredentials = Object.create(null);
-    const [discoveredPages, metaIdentity] = await Promise.all([
-        provider.listManagedAssets({ userToken, pageCredentials }),
-        provider.getOAuthIdentity({ userToken }),
-    ]);
-    const pages = sanitizeManagedAssets(discoveredPages);
-
-    // Store the user token server-side for the subsequent connectPage calls.
-    // The returned tempToken is intentionally opaque: the frontend should never
-    // need to hold a raw Meta user token, and connectPage validates assetId
-    // against the exact pages returned by this callback.
-    const tempToken = crypto.randomBytes(32).toString('hex');
-    await stateStore.put(callbackKey(shopId, platform, tempToken), {
-        userToken,
-        platform,
-        pages,
-        pageCredentials,
-        metaIdentity,
-        userId,
-        shopId,
-        reconnectChannelId: stored.reconnectChannelId || null,
-        reconnectAssetId: stored.reconnectAssetId || null,
+    const canaryAttempt = resumeCanaryAttempt({
+        authenticatedShopId: shopId,
+        stateShopId: stored.shopId,
+        storedAttempt: stored.canaryAttempt,
+        requestId,
     });
+    const diagnostics = createDiagnostics(canaryAttempt);
 
-    logger.info('OAuth callback processed', { shopId, platform, pageCount: pages.length });
-    return {
-        pages,
-        tempToken,
-        reconnectChannelId: stored.reconnectChannelId || null,
-        reconnectAssetId: stored.reconnectAssetId || null,
-    };
+    try {
+        // Exchange code for long-lived user token
+        const exchangeOptions = {
+            code,
+            redirectUri: stored.redirectUri,
+        };
+        if (diagnostics) exchangeOptions.diagnostics = diagnostics;
+        const { userToken } = await provider.exchangeCode(exchangeOptions);
+
+        // List pages/IG accounts this user manages. The provider writes raw Page
+        // credentials into this server-only sink while returning sanitized metadata.
+        // The sink is stored with the existing callback TTL and is never returned.
+        const pageCredentials = Object.create(null);
+        const [discoveredPages, metaIdentity] = await Promise.all([
+            provider.listManagedAssets({ userToken, pageCredentials, diagnostics }),
+            provider.getOAuthIdentity({ userToken }),
+        ]);
+        const pages = sanitizeManagedAssets(discoveredPages);
+        if (diagnostics) {
+            diagnostics.metaIdentityAvailable = metaIdentity?.appScopedUserId ? 'YES' : 'NO';
+            diagnostics.callbackPageCount = pages.length;
+            diagnostics.callbackConnectablePageCount = pages.filter((page) => page.connectable === true).length;
+        }
+
+        // Store the user token server-side for the subsequent connectPage calls.
+        // The returned tempToken is intentionally opaque: the frontend should never
+        // need to hold a raw Meta user token, and connectPage validates assetId
+        // against the exact pages returned by this callback.
+        const tempToken = crypto.randomBytes(32).toString('hex');
+        await stateStore.put(callbackKey(shopId, platform, tempToken), {
+            userToken,
+            platform,
+            pages,
+            pageCredentials,
+            metaIdentity,
+            userId,
+            shopId,
+            reconnectChannelId: stored.reconnectChannelId || null,
+            reconnectAssetId: stored.reconnectAssetId || null,
+        });
+
+        logger.info('OAuth callback processed', { shopId, platform, pageCount: pages.length });
+        if (diagnostics) {
+            logger.info('metaDiscoveryCanaryCompleted', snapshotDiagnostics(diagnostics));
+        }
+        return {
+            pages,
+            tempToken,
+            reconnectChannelId: stored.reconnectChannelId || null,
+            reconnectAssetId: stored.reconnectAssetId || null,
+        };
+    } catch (err) {
+        if (diagnostics) {
+            diagnostics.applicationErrorCode = typeof err?.code === 'string'
+                && /^[A-Z0-9_:-]{1,80}$/.test(err.code)
+                ? err.code
+                : 'UNKNOWN';
+            logger.warn('metaDiscoveryCanaryFailed', snapshotDiagnostics(diagnostics));
+        }
+        throw err;
+    }
 }
 
 /**

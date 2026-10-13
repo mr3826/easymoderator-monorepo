@@ -35,6 +35,7 @@ const META_ERROR_MAPPINGS: MetaErrorMapping[] = [
   { match: "disconnected", key: "errors.meta.channelDisconnected" },
   { match: "webhook", key: "errors.meta.webhookFailed" },
   { match: "META_PAGE_TASKS_REQUIRED", key: "errors.meta.pageTasksRequired" },
+  { match: "META_PAGE_DISCOVERY_FAILED", key: "errors.meta.pageDiscoveryFailed" },
 ];
 
 /** Normalised error extracted from an Axios error, regardless of backend shape. */

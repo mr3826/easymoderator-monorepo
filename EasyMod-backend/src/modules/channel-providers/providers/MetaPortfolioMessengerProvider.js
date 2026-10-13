@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const MetaMessengerProvider = require('./MetaMessengerProvider');
 const config = require('../../../config/config');
 const { createLogger } = require('../../../utils/structured-logger');
+const { recordGraphError } = require('../meta-discovery-canary');
 
 const logger = createLogger('MetaPortfolioMessengerProvider');
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
@@ -63,7 +64,7 @@ function retainPageCredential(pageCredentials, page) {
 }
 
 class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
-    async getStrictGrantedPageIds({ userToken }) {
+    async getStrictGrantedPageIds({ userToken, diagnostics = null }) {
         const appId = config.metaAppId || process.env.META_APP_ID;
         const appSecret = config.metaAppSecret || process.env.META_APP_SECRET;
         const appAccessToken = `${appId}|${appSecret}`;
@@ -82,6 +83,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
                 targetSet(debugData, 'pages_manage_metadata'),
             );
         } catch (err) {
+            if (diagnostics) recordGraphError(diagnostics, 'portfolio_strict_debug_token', err);
             // The base provider has already completed its normal discovery. A
             // fallback diagnostic failure must never hide Pages that are valid
             // through /me/accounts.
@@ -93,7 +95,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
         }
     }
 
-    async hydrateStrictGrantedPage(pageId, userToken, pageCredentials) {
+    async hydrateStrictGrantedPage(pageId, userToken, pageCredentials, diagnostics = null) {
         try {
             const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
                 params: {
@@ -106,6 +108,11 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
             if (String(page.id || '') !== String(pageId)) return null;
             if (typeof page.access_token !== 'string' || page.access_token.trim() === '') return null;
             retainPageCredential(pageCredentials, page);
+            if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
+                diagnostics.hydration.minimal.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+                diagnostics.hydration.minimal.status = 'PASS';
+                diagnostics.hydration.minimal.expectedPageToken = 'YES';
+            }
 
             // These normalized task values are an authorization projection for
             // the existing connectPage guard. They are not copied from Meta's
@@ -122,6 +129,10 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
                 reason: null,
             };
         } catch (err) {
+            if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
+                diagnostics.hydration.minimal.status = 'FAIL';
+                recordGraphError(diagnostics, 'portfolio_minimal_hydration', err);
+            }
             logger.warn('metaPortfolioMinimalHydrationFailed', {
                 pageId: String(pageId),
                 metaCode: err.response?.data?.error?.code || null,
@@ -131,9 +142,9 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
         }
     }
 
-    async listManagedAssets({ userToken, pageCredentials }) {
-        const baseAssets = await super.listManagedAssets({ userToken, pageCredentials });
-        const strictGrantedPageIds = await this.getStrictGrantedPageIds({ userToken });
+    async listManagedAssets({ userToken, pageCredentials, diagnostics = null }) {
+        const baseAssets = await super.listManagedAssets({ userToken, pageCredentials, diagnostics });
+        const strictGrantedPageIds = await this.getStrictGrantedPageIds({ userToken, diagnostics });
         if (!strictGrantedPageIds.size) return baseAssets;
 
         const byId = new Map(
@@ -146,8 +157,10 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
             .filter((pageId) => !byId.has(pageId) || byId.get(pageId)?.connectable !== true);
         if (!fallbackIds.length) return [...byId.values()];
 
+        if (diagnostics) diagnostics.portfolioFallbackAttempted = fallbackIds.length;
+
         const hydrated = await Promise.all(
-            fallbackIds.map((pageId) => this.hydrateStrictGrantedPage(pageId, userToken, pageCredentials)),
+            fallbackIds.map((pageId) => this.hydrateStrictGrantedPage(pageId, userToken, pageCredentials, diagnostics)),
         );
         let recovered = 0;
         hydrated.forEach((asset) => {
@@ -155,6 +168,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
             byId.set(String(asset.id), asset);
             recovered += 1;
         });
+        if (diagnostics) diagnostics.portfolioFallbackRecovered = recovered;
 
         logger.info('metaPortfolioPagesRecovered', {
             strict_granted_pages: strictGrantedPageIds.size,

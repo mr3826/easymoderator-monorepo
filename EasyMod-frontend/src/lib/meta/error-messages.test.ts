@@ -18,6 +18,10 @@ describe('Meta error mapping', () => {
     expect(getMetaErrorMessage('META_PAGE_TASKS_REQUIRED', null, 'en')).toContain('not eligible');
   });
 
+  it('maps the canary discovery failure without blaming Page ownership', () => {
+    expect(getMetaErrorMessage('META_PAGE_DISCOVERY_FAILED', null, 'en')).toContain('discovery');
+  });
+
   it('keeps a top-level backend stable code through API error normalization', () => {
     const normalized = normalizeApiError({
       response: {

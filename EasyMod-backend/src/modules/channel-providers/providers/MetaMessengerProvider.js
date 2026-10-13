@@ -24,6 +24,10 @@ const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
 const { reserveSendSlot, releaseSendSlot } = require('../../policy/rules/rateLimit.rule');
 const { evaluatePageEligibility } = require('../meta-page-eligibility');
+const {
+    recordGraphError,
+    sanitizeTasks,
+} = require('../meta-discovery-canary');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -142,6 +146,63 @@ function hasNonEmptyAccessToken(page) {
     return typeof page?.access_token === 'string' && page.access_token.trim().length > 0;
 }
 
+function canaryDiscoveryError(err, context, diagnostics) {
+    recordGraphError(diagnostics, context, err);
+    const graphError = err?.response?.data?.error || {};
+    return new AppError(
+        'Meta Page discovery failed during the authorized canary. Please retry Facebook authorization.',
+        502,
+        'META_PAGE_DISCOVERY_FAILED',
+        {
+            metaCode: Number.isInteger(graphError.code) ? graphError.code : null,
+            metaSubcode: Number.isInteger(graphError.error_subcode) ? graphError.error_subcode : null,
+        },
+    );
+}
+
+function recordDebugTokenDiagnostics(diagnostics, debugData, appId) {
+    if (!diagnostics) return;
+    const granularScopes = Array.isArray(debugData?.granular_scopes) ? debugData.granular_scopes : [];
+    const scopes = new Set(Array.isArray(debugData?.scopes) ? debugData.scopes : []);
+    const expiresAt = Number(debugData?.expires_at);
+    diagnostics.tokenValid = debugData?.is_valid === true
+        ? 'YES'
+        : debugData?.is_valid === false ? 'NO' : 'UNKNOWN';
+    diagnostics.tokenAppIdMatches = debugData?.app_id === null || debugData?.app_id === undefined
+        ? 'UNKNOWN'
+        : String(debugData.app_id) === String(appId) ? 'YES' : 'NO';
+    diagnostics.tokenExpirationStatus = Number.isFinite(expiresAt) && expiresAt > 0
+        ? expiresAt * 1000 > Date.now() ? 'VALID' : 'EXPIRED'
+        : 'UNKNOWN';
+
+    for (const scopeName of ['pages_show_list', 'pages_messaging', 'pages_manage_metadata']) {
+        const entry = granularScopes.find((scope) => scope?.scope === scopeName);
+        const targetIds = Array.isArray(entry?.target_ids) ? entry.target_ids.map(String) : [];
+        diagnostics.granularScopes[scopeName] = {
+            granted: scopes.has(scopeName) || entry ? 'YES' : 'NO',
+            expectedPage: targetIds.includes(diagnostics.expectedPageId) ? 'YES' : 'NO',
+            targetCount: targetIds.length,
+        };
+    }
+}
+
+function recordPageCollectionDiagnostics(diagnostics, stageName, pages) {
+    if (!diagnostics) return;
+    const stage = diagnostics.meAccounts[stageName];
+    const expectedPage = (Array.isArray(pages) ? pages : [])
+        .find((page) => String(page?.id || '') === diagnostics.expectedPageId);
+    stage.status = 'PASS';
+    stage.pageCount = Array.isArray(pages) ? pages.length : 0;
+    stage.expectedPage = expectedPage ? 'YES' : 'NO';
+    stage.expectedPageToken = expectedPage
+        ? hasNonEmptyAccessToken(expectedPage) ? 'YES' : 'NO'
+        : 'UNKNOWN';
+    if (expectedPage) {
+        diagnostics.expectedPageTasks = sanitizeTasks(expectedPage.tasks);
+        diagnostics.expectedPageEligible = evaluatePageEligibility(expectedPage.tasks).connectable ? 'YES' : 'NO';
+    }
+}
+
 function retainPageCredential(pageCredentials, page) {
     if (!pageCredentials || typeof pageCredentials !== 'object') return;
     if (page?.id === null || page?.id === undefined || !hasNonEmptyAccessToken(page)) return;
@@ -159,10 +220,11 @@ function retainPageCredential(pageCredentials, page) {
  * the user token in that URL, and using it would also drop the signed params
  * required when App Secret Proof is enabled.
  */
-async function paginateGraphCollection(url, params) {
+async function paginateGraphCollection(url, params, diagnostics = null, stageName = null) {
     const items = [];
     let after = params?.after ?? null;
     const seenCursors = new Set();
+    let requestCount = 0;
 
     while (true) {
         const response = await axios.get(url, {
@@ -170,14 +232,27 @@ async function paginateGraphCollection(url, params) {
                 ? { ...params, after }
                 : { ...params },
         });
+        requestCount += 1;
+        if (diagnostics && stageName) {
+            diagnostics.meAccounts[stageName].httpStatus = Number.isInteger(response.status)
+                ? response.status
+                : 200;
+            diagnostics.meAccounts[stageName].requestCount = requestCount;
+        }
         const batch = Array.isArray(response.data?.data) ? response.data.data : [];
         items.push(...batch);
 
         const nextAfter = response.data?.paging?.cursors?.after;
-        if (nextAfter === null || nextAfter === undefined || String(nextAfter).length === 0) break;
+        if (nextAfter === null || nextAfter === undefined || String(nextAfter).length === 0) {
+            if (diagnostics && stageName) diagnostics.meAccounts[stageName].paginationCompleted = 'YES';
+            break;
+        }
 
         const cursor = String(nextAfter);
-        if (cursor === String(after) || seenCursors.has(cursor)) break;
+        if (cursor === String(after) || seenCursors.has(cursor)) {
+            if (diagnostics && stageName) diagnostics.meAccounts[stageName].paginationCompleted = 'NO';
+            break;
+        }
         seenCursors.add(cursor);
         after = nextAfter;
     }
@@ -202,7 +277,30 @@ async function mapWithConcurrency(values, concurrency, mapper) {
     return results;
 }
 
-async function hydratePageById(pageId, userToken, pageCredentials) {
+async function hydratePageByIdMinimal(pageId, userToken, diagnostics) {
+    if (!diagnostics) return;
+    try {
+        const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
+            params: {
+                fields: 'id,name,access_token',
+                access_token: userToken,
+                appsecret_proof: appsecretProof(userToken),
+            },
+        });
+        const page = response.data;
+        diagnostics.hydration.minimal.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+        const pageIdMatches = String(page?.id) === String(pageId);
+        diagnostics.hydration.minimal.status = pageIdMatches ? 'PASS' : 'REJECTED';
+        diagnostics.hydration.minimal.expectedPageToken = pageIdMatches && hasNonEmptyAccessToken(page)
+            ? 'YES'
+            : 'NO';
+    } catch (err) {
+        diagnostics.hydration.minimal.status = 'FAIL';
+        recordGraphError(diagnostics, 'minimal_hydration', err);
+    }
+}
+
+async function hydratePageById(pageId, userToken, pageCredentials, diagnostics = null) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
@@ -212,15 +310,38 @@ async function hydratePageById(pageId, userToken, pageCredentials) {
             },
         });
         const page = response.data;
+        const isExpectedPage = diagnostics && String(pageId) === diagnostics.expectedPageId;
         if (String(page?.id) !== String(pageId)) {
             logger.warn('metaPageHydrationRejected', { pageId, reason: 'ID_MISMATCH' });
+            if (isExpectedPage) {
+                diagnostics.hydration.rich.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+                diagnostics.hydration.rich.status = 'REJECTED';
+                diagnostics.hydration.rich.expectedPageToken = 'NO';
+                diagnostics.hydration.rich.expectedPageTasks = [];
+            }
             return { page: null, status: 'rejected' };
         }
         if (!hasNonEmptyAccessToken(page)) {
             logger.warn('metaPageHydrationRejected', { pageId, reason: 'ACCESS_TOKEN_MISSING' });
+            if (isExpectedPage) {
+                diagnostics.hydration.rich.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+                diagnostics.hydration.rich.status = 'REJECTED';
+                diagnostics.hydration.rich.expectedPageToken = 'NO';
+                diagnostics.hydration.rich.expectedPageTasks = sanitizeTasks(page.tasks);
+                diagnostics.expectedPageTasks = sanitizeTasks(page.tasks);
+                diagnostics.expectedPageEligible = evaluatePageEligibility(page.tasks).connectable ? 'YES' : 'NO';
+            }
             return { page: null, status: 'rejected' };
         }
         retainPageCredential(pageCredentials, page);
+        if (isExpectedPage) {
+            diagnostics.hydration.rich.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+            diagnostics.hydration.rich.status = 'PASS';
+            diagnostics.hydration.rich.expectedPageToken = 'YES';
+            diagnostics.hydration.rich.expectedPageTasks = sanitizeTasks(page.tasks);
+            diagnostics.expectedPageTasks = sanitizeTasks(page.tasks);
+            diagnostics.expectedPageEligible = evaluatePageEligibility(page.tasks).connectable ? 'YES' : 'NO';
+        }
         return { page, status: 'succeeded' };
     } catch (err) {
         // Never serialize the Graph error or request config: either can contain
@@ -230,6 +351,11 @@ async function hydratePageById(pageId, userToken, pageCredentials) {
             metaCode: err.response?.data?.error?.code || null,
             metaSubcode: err.response?.data?.error?.error_subcode || null,
         });
+        if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
+            diagnostics.hydration.rich.status = 'FAIL';
+            recordGraphError(diagnostics, 'rich_hydration', err);
+            await hydratePageByIdMinimal(pageId, userToken, diagnostics);
+        }
         return { page: null, status: 'failed' };
     }
 }
@@ -279,7 +405,7 @@ class MetaMessengerProvider extends ChannelProvider {
         return `https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth?${params}`;
     }
 
-    async exchangeCode({ code, redirectUri }) {
+    async exchangeCode({ code, redirectUri, diagnostics = null }) {
         try {
             const short = await axios.get(`${GRAPH_BASE}/oauth/access_token`, {
                 params: {
@@ -308,11 +434,12 @@ class MetaMessengerProvider extends ChannelProvider {
                 expiresAt: expires_in ? new Date(Date.now() + expires_in * 1000) : null
             };
         } catch (err) {
+            if (diagnostics) throw canaryDiscoveryError(err, 'exchangeCode', diagnostics);
             throw metaError(err, 'exchangeCode');
         }
     }
 
-    async getSelectedPageIds({ userToken }) {
+    async getSelectedPageIds({ userToken, diagnostics = null }) {
         const appId = config.metaAppId || process.env.META_APP_ID;
         const appSecret = config.metaAppSecret || process.env.META_APP_SECRET;
         const appAccessToken = `${appId}|${appSecret}`;
@@ -324,21 +451,26 @@ class MetaMessengerProvider extends ChannelProvider {
                     appsecret_proof: appsecretProof(appAccessToken),
                 },
             });
+            if (diagnostics) {
+                diagnostics.debugTokenHttpStatus = Number.isInteger(resp.status) ? resp.status : 200;
+                recordDebugTokenDiagnostics(diagnostics, resp.data?.data || {}, appId);
+            }
             const selectedPageIds = selectedPageIdsFromDebugToken(resp.data?.data || {});
             if (!selectedPageIds.size) {
                 logger.warn('debugTokenGranularScopes missing Page target IDs; returning no connectable Pages');
             }
             return selectedPageIds;
         } catch (err) {
+            if (diagnostics) throw canaryDiscoveryError(err, 'debug_token', diagnostics);
             throw metaError(err, 'debugTokenGranularScopes');
         }
     }
 
-    async listManagedAssets({ userToken, pageCredentials }) {
+    async listManagedAssets({ userToken, pageCredentials, diagnostics = null }) {
         // The pages granted for Messenger are the authorization boundary. This
         // must run even when /me/accounts is empty so a Business Portfolio Page
         // can be recovered through its exact granted target ID.
-        const selectedPageIds = await this.getSelectedPageIds({ userToken });
+        const selectedPageIds = await this.getSelectedPageIds({ userToken, diagnostics });
 
         // /me/accounts is the only discovery edge used in the Messenger-only
         // launch. Do not query Business Portfolio edges here: that requires the
@@ -350,8 +482,26 @@ class MetaMessengerProvider extends ChannelProvider {
                 limit: 100,
                 access_token: userToken,
                 appsecret_proof: appsecretProof(userToken),
-            }));
+            }, diagnostics, 'rich'));
+            recordPageCollectionDiagnostics(diagnostics, 'rich', meAccountsRaw);
         } catch (err) {
+            if (diagnostics) {
+                diagnostics.meAccounts.rich.status = 'FAIL';
+                recordGraphError(diagnostics, 'me_accounts_rich', err);
+                try {
+                    const minimalPages = await paginateGraphCollection(`${GRAPH_BASE}/me/accounts`, {
+                        fields: 'id,name,access_token',
+                        limit: 100,
+                        access_token: userToken,
+                        appsecret_proof: appsecretProof(userToken),
+                    }, diagnostics, 'minimal');
+                    recordPageCollectionDiagnostics(diagnostics, 'minimal', minimalPages);
+                } catch (minimalError) {
+                    recordGraphError(diagnostics, 'me_accounts_minimal', minimalError);
+                    diagnostics.meAccounts.minimal.status = 'FAIL';
+                }
+                throw canaryDiscoveryError(err, 'me_accounts_rich', diagnostics);
+            }
             throw metaError(err, 'listManagedAssets:me/accounts');
         }
 
@@ -379,7 +529,7 @@ class MetaMessengerProvider extends ChannelProvider {
         const hydrationResults = await mapWithConcurrency(
             targetsNeedingHydration,
             PAGE_HYDRATION_CONCURRENCY,
-            (pageId) => hydratePageById(pageId, userToken, pageCredentials),
+            (pageId) => hydratePageById(pageId, userToken, pageCredentials, diagnostics),
         );
         const hydrationStats = {
             attempted: targetsNeedingHydration.length,

@@ -216,7 +216,16 @@ class HttpClient {
         // locked out and retrying only burns more rate-limit budget before the redirect.
         // Never retry auth endpoints (signin/signup) on 429 — the lockout message
         // should be shown immediately; retrying adds 5-15s of invisible latency.
-        if (!isRefreshEndpoint && !isAuthEndpoint && (status === 429 || (status && status >= 500 && status < 600))) {
+        const responseData = error.response?.data as {
+          code?: unknown;
+          error?: { code?: unknown };
+        } | undefined;
+        const responseErrorCode = responseData?.code || responseData?.error?.code;
+        const isConsumedOAuthDiscoveryFailure = responseErrorCode === 'META_PAGE_DISCOVERY_FAILED';
+        if (!isConsumedOAuthDiscoveryFailure
+          && !isRefreshEndpoint
+          && !isAuthEndpoint
+          && (status === 429 || (status && status >= 500 && status < 600))) {
           const retryCount = config.__retryCount || 0;
           if (retryCount < 2) {
             config.__retryCount = retryCount + 1;

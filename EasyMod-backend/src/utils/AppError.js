@@ -53,6 +53,12 @@ class AppError extends Error {
         reason: this.details?.reason || null,
       };
     }
+    if (this.code === 'META_PAGE_DISCOVERY_FAILED') {
+        response.details = {
+            metaCode: Number.isInteger(this.details?.metaCode) ? this.details.metaCode : null,
+            metaSubcode: Number.isInteger(this.details?.metaSubcode) ? this.details.metaSubcode : null,
+        };
+    }
     return response;
   }
 

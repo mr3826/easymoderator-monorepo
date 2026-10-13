@@ -2547,6 +2547,7 @@
       "channelDisconnected": "Channel disconnected. Use the Reconnect button to restore.",
       "webhookFailed": "Webhook verification failed. Check your app settings in Meta App Dashboard.",
       "pageTasksRequired": "This Page is not eligible for Messenger. Re-authorize it with Messaging and Page management access.",
+      "pageDiscoveryFailed": "Meta Page discovery could not be verified. Retry authorization; no Page was connected.",
       "fallback": "Something went wrong. Try reconnecting, or contact support."
     }
   },

@@ -7,6 +7,19 @@ const {
     csrfProtectionMiddleware,
 } = require('../csrf-middleware');
 
+const originalCorsOrigins = process.env.CORS_ORIGINS;
+
+beforeAll(() => {
+    // This contract passes application and Growth origins explicitly. Keep a
+    // developer .env CORS list from changing the meaning of the rejection cases.
+    delete process.env.CORS_ORIGINS;
+});
+
+afterAll(() => {
+    if (originalCorsOrigins === undefined) delete process.env.CORS_ORIGINS;
+    else process.env.CORS_ORIGINS = originalCorsOrigins;
+});
+
 describe('authentication origin binding', () => {
     const appOrigin = 'https://app.easymod.tech';
     const growthOrigin = 'https://growth.easymod.tech';

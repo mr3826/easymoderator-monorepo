@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { assertProductionConfig } = require('../src/config/production-config.validator');
 const { serializeRenderedEnvValue } = require('../src/config/rendered-env');
+const { assertValidCanaryEnvironment } = require('../src/modules/channel-providers/meta-discovery-canary');
 
 const RENDER_INPUT_REQUIRED = ['DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 
@@ -175,6 +176,14 @@ function buildRenderedEnv(source = process.env) {
         // deployment can never inherit a developer's configuration.
         META_LOGIN_CONFIG_ID: required('META_LOGIN_CONFIG_ID'),
         META_WEBHOOK_VERIFY_TOKEN: required('META_WEBHOOK_VERIFY_TOKEN'),
+        META_DISCOVERY_CANARY_ENABLED: strictBooleanFlag(
+            source.META_DISCOVERY_CANARY_ENABLED,
+            'META_DISCOVERY_CANARY_ENABLED',
+            'false',
+        ),
+        META_DISCOVERY_CANARY_SHOP_ID: source.META_DISCOVERY_CANARY_SHOP_ID || '',
+        META_DISCOVERY_CANARY_PAGE_ID: source.META_DISCOVERY_CANARY_PAGE_ID || '',
+        META_DISCOVERY_CANARY_EXPIRES_AT: source.META_DISCOVERY_CANARY_EXPIRES_AT || '',
         META_USER_PROFILE_ENABLED: source.META_USER_PROFILE_ENABLED || 'false',
         ...bkashSection,
         ...telegramSection,
@@ -240,6 +249,8 @@ function buildRenderedEnv(source = process.env) {
     if (missingInputs.length) {
         throw new Error(`Missing deployment environment variables: ${missingInputs.join(', ')}`);
     }
+
+    assertValidCanaryEnvironment(rendered);
 
     // Fail before writing anything if the config is unsafe.
     assertProductionConfig(rendered);

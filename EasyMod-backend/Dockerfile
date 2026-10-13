@@ -13,13 +13,19 @@ ENV BUILD_TIME=${BUILD_TIME}
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN apk upgrade --no-cache \
+  && npm ci --omit=dev \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 COPY . .
 
 # Run as non-root (P1-7). /app/uploads is mounted as a persistent Docker volume
 # in production; creating it here lets the volume inherit node-writable perms.
-RUN mkdir -p /app/uploads && chown -R node:node /app
+# Application code and dependencies are read-only at runtime. Only the mounted
+# upload directory needs write ownership for the non-root process.
+RUN mkdir -p /app/uploads && chown node:node /app/uploads
 USER node
 
 EXPOSE 3000
