@@ -136,12 +136,6 @@ describe('TOTP Service Security', () => {
                 // could not have thrown no matter which secrets were unset.
                 jest.resetModules();
                 const service = require('src/modules/auth/totp.service');
-                // Loading the service re-loads dotenv in the test bootstrap;
-                // clear the accepted sources again immediately before the lazy
-                // encryption call so this test controls its own environment.
-                delete process.env.APP_SECRET;
-                delete process.env.JWT_SECRET;
-                delete process.env.JWT_ACCESS_SECRET;
                 await expect(service.generateTotpSecret('user-1'))
                     .rejects.toThrow(/required for TOTP encryption/);
             } finally {
