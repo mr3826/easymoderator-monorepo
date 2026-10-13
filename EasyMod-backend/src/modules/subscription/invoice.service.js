@@ -16,7 +16,8 @@ const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('InvoiceService');
 
-const INVOICE_DIR = path.join(__dirname, '../../uploads/invoices');
+// Production mounts the persistent backend_uploads volume at /app/uploads.
+const INVOICE_DIR = path.join(__dirname, '../../../uploads/invoices');
 
 // Ensure invoice directory exists
 if (!fs.existsSync(INVOICE_DIR)) {

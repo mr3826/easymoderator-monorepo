@@ -451,6 +451,12 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain('Candidate backend startup preflight failed:');
         expect(deployBlock).toContain('Candidate backend database connection passed');
         expect(deployBlock).toContain('Candidate backend Redis connection passed');
+        expect(deployBlock).toContain('preflight_container_name="easymod-backend-preflight-${WORKFLOW_RUN_ID:-unknown}"');
+        expect(deployBlock).toContain('timeout --signal=TERM --kill-after=10s 120s');
+        expect(deployBlock).toContain('process.exit(exitCode);');
+        expect(deployBlock).toContain("closeWithTimeout('database'");
+        expect(deployBlock).toContain("closeWithTimeout('Redis'");
+        expect(deployBlock).toContain('docker rm -f "$preflight_container_name"');
         expect(deployBlock).not.toMatch(/backend\s+(?:npm|npx)\b/);
         expect(deployBlock).toContain('Rollback Growth health details: {{json .State.Health}}');
         expect(deployBlock).toContain('docker logs --tail 50 easymod-growth-frontend-1');
