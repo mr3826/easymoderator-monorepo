@@ -80,28 +80,45 @@ jobs:
           to_utc=$4
           test -n "$shop_id" -a -n "$page_id" -a -n "$from_utc" -a -n "$to_utc"
           command -v jq >/dev/null 2>&1 || { echo 'RECOVERY_ERROR=JQ_UNAVAILABLE'; exit 2; }
-          names=$(docker ps -a --filter name=easymod-backend --format '{{.Names}}' || true)
+          if ! names=$(docker ps -a --filter name=easymod-backend --format '{{.Names}}'); then
+            echo 'CONTAINER_DISCOVERY_ERROR=DOCKER_PS_FAILED'
+            exit 0
+          fi
           if [ -z "$names" ]; then
             echo 'ORIGINAL_CONTAINER_AVAILABLE=NO'
             exit 0
           fi
           echo 'ORIGINAL_CONTAINER_AVAILABLE=YES'
           for name in $names; do
-            status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo unknown)
-            created=$(docker inspect -f '{{.Created}}' "$name" 2>/dev/null || echo unknown)
+            if ! status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null); then
+              printf 'CONTAINER_INSPECT_ERROR=%s\n' "$name"
+              status=unknown
+            fi
+            if ! created=$(docker inspect -f '{{.Created}}' "$name" 2>/dev/null); then
+              printf 'CONTAINER_INSPECT_ERROR=%s\n' "$name"
+              created=unknown
+            fi
             printf 'CONTAINER_INFO=%s\n' "$(jq -cn --arg name "$name" --arg status "$status" --arg created "$created" '{name:$name,status:$status,created:$created}')"
             if ! log_output=$(docker logs --since "$from_utc" --until "$to_utc" "$name" 2>/dev/null); then
               printf 'LOG_READ_ERROR=%s\n' "$name"
               continue
             fi
-            printf '%s\n' "$log_output" \
-              | jq -c --arg shop "$shop_id" --arg page "$page_id" --arg from "$from_utc" --arg to "$to_utc" '
-                select((.message == "metaDiscoveryCanaryCompleted" or .message == "metaDiscoveryCanaryFailed")
+            if ! filtered=$(printf '%s\n' "$log_output" \
+              | jq -Rrc --arg shop "$shop_id" --arg page "$page_id" --arg from "$from_utc" --arg to "$to_utc" '
+                fromjson?
+                | select(type == "object")
+                | select((.message == "metaDiscoveryCanaryCompleted" or .message == "metaDiscoveryCanaryFailed")
                   and (.shopId|tostring) == $shop
                   and (.expectedPageId|tostring) == $page
                   and (.timestamp >= $from and .timestamp <= $to))
                 | {event:.message,timestamp,service,environment,correlationId,initiateRequestId,callbackRequestId,shopId,expectedPageId,expiresAt,retentionExpiresAt,tokenValid,tokenAppIdMatches,tokenExpirationStatus,granularScopes,meAccounts,hydration,expectedPageTasks,expectedPageEligible,portfolioFallbackAttempted,portfolioFallbackRecovered,callbackPageCount,callbackConnectablePageCount,metaIdentityAvailable,lastGraphError,applicationErrorCode}
-              ' 2>/dev/null | sed 's/^/EVENT=/'
+              ' 2>/dev/null); then
+              printf 'LOG_FILTER_ERROR=%s\n' "$name"
+              continue
+            fi
+            if [ -n "$filtered" ]; then
+              printf '%s\n' "$filtered" | sed 's/^/EVENT=/'
+            fi
           done
           REMOTE
           rm -f ~/.ssh/meta_canary_recovery_key
@@ -120,7 +137,6 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const output = JSON.parse(fs.readFileSync('_tmp/meta-canary-events.json', 'utf8'));
-          const raw = fs.readFileSync('_tmp/meta-canary-filtered.ndjson', 'utf8');
           const audit = {
             runId: process.env.RUN_ID,
             actor: process.env.ACTOR,
@@ -128,10 +144,13 @@ jobs:
             pageId: process.env.PAGE_ID,
             fromUtc: process.env.FROM_UTC,
             toUtc: process.env.TO_UTC,
+            extractionStatus: output.extractionStatus,
             eventCount: output.eventCount,
-            originalContainerAvailable: raw.includes('ORIGINAL_CONTAINER_AVAILABLE=YES'),
-            containerInfoCount: (raw.match(/^CONTAINER_INFO=/gm) || []).length,
-            logReadErrorCount: (raw.match(/^LOG_READ_ERROR=/gm) || []).length,
+            originalContainerAvailable: output.originalContainerAvailable,
+            containerInfoCount: output.containerInfoCount,
+            logReadErrorCount: output.logReadErrorCount,
+            logFilterErrorCount: output.logFilterErrorCount,
+            containerInspectErrorCount: output.containerInspectErrorCount,
           };
           fs.writeFileSync('_tmp/meta-canary-audit.json', `${JSON.stringify(audit, null, 2)}\n`);
           console.log(JSON.stringify(audit));
