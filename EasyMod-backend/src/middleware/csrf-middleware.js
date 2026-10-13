@@ -75,10 +75,16 @@ function isTrustedAuthOrigin(
     const parsedRequestOrigin = parseOrigin(origin);
     if (!parsedRequestOrigin) return false;
 
-    // The general CORS allowlist may include marketing/API origins. It is not
-    // an authentication-origin allowlist, so only an explicit test/caller
-    // override may contribute additional auth origins here.
-    const configuredCorsOrigins = corsOrigins === undefined ? [] : corsOrigins;
+    // Explicit origins are used by pure callers/tests as an isolated policy.
+    // The request middleware passes no explicit origins and therefore uses the
+    // deployed CORS configuration. This prevents a developer .env allowlist
+    // from contaminating a caller that supplied the production app/Growth
+    // origins directly.
+    const configuredCorsOrigins = corsOrigins === undefined
+        ? ((appOrigin !== undefined || growthOrigin !== undefined)
+            ? []
+            : (process.env.CORS_ORIGINS ?? config.corsOrigins))
+        : corsOrigins;
     const parsedCorsOrigins = parseConfiguredOrigins(configuredCorsOrigins);
     if (!parsedCorsOrigins.valid) return false;
 

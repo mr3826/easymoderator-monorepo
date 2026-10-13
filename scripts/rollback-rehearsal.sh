@@ -22,6 +22,7 @@ export PREV_IMG=""
 export CAND_IMG=""
 export PREVIOUS_BACKEND_IMAGE=""
 export PREVIOUS_FRONTEND_IMAGE=""
+export PREVIOUS_GROWTH_IMAGE=""
 export MANIFEST_ENV_HASH=""
 export SNAPSHOT_ENV_HASH=""
 export RESTORED_ENV_HASH=""
@@ -47,6 +48,7 @@ const report = {
         candidate: process.env.CAND_IMG || null,
         capturedBackend: process.env.PREVIOUS_BACKEND_IMAGE || null,
         capturedFrontend: process.env.PREVIOUS_FRONTEND_IMAGE || null,
+        capturedGrowth: process.env.PREVIOUS_GROWTH_IMAGE || null,
     },
     hashes: {
         manifestEnv: process.env.MANIFEST_ENV_HASH || null,
@@ -218,6 +220,7 @@ MARKER_OWNED=true
 
 docker pull node:20-alpine
 docker pull node:22-alpine
+docker pull caddy@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
 PREV_IMG="$(docker image inspect -f '{{index .RepoDigests 0}}' node:20-alpine)"
 CAND_IMG="$(docker image inspect -f '{{index .RepoDigests 0}}' node:22-alpine)"
 export PREV_IMG CAND_IMG
@@ -250,6 +253,25 @@ services:
       interval: 1s
       timeout: 2s
       retries: 10
+  growth-frontend:
+    image: ${GHCR_IMAGE_GROWTH:?GHCR_IMAGE_GROWTH must be immutable}
+    container_name: easymod-growth-frontend-1
+    env_file:
+      - .env.prod
+    command: ["node", "-e", "require('http').createServer((_, res) => res.end()).listen(8080)"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health/ready', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 1s
+      timeout: 2s
+      retries: 10
+  caddy:
+    image: caddy@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
+    container_name: easymod-caddy-1
+    ports:
+      - "18080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 YAML
 
 cat > "$WORK_DIR/previous.env.prod" <<'EOF'
@@ -289,14 +311,18 @@ export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
 install_variant previous
 export GHCR_IMAGE_BACKEND="$PREV_IMG"
 export GHCR_IMAGE_FRONTEND="$PREV_IMG"
+export GHCR_IMAGE_GROWTH="$PREV_IMG"
 compose up --detach --wait --no-build --remove-orphans
 
 previous_backend_image="$(resolve_container_digest easymod-backend-1)"
 previous_frontend_image="$(resolve_container_digest easymod-frontend-1)"
+previous_growth_image="$(resolve_container_digest easymod-growth-frontend-1)"
 export PREVIOUS_BACKEND_IMAGE="$previous_backend_image"
 export PREVIOUS_FRONTEND_IMAGE="$previous_frontend_image"
+export PREVIOUS_GROWTH_IMAGE="$previous_growth_image"
 assert_immutable_ref "$previous_backend_image"
 assert_immutable_ref "$previous_frontend_image"
+assert_immutable_ref "$previous_growth_image"
 
 mkdir -p "$ROLLBACK_STATE_DIR"
 chmod 700 "$ROLLBACK_STATE_DIR"
@@ -317,6 +343,7 @@ export SNAPSHOT_ENV_HASH MANIFEST_ENV_HASH
 install_variant candidate
 export GHCR_IMAGE_BACKEND="$CAND_IMG"
 export GHCR_IMAGE_FRONTEND="$CAND_IMG"
+export GHCR_IMAGE_GROWTH="$CAND_IMG"
 compose up --detach --wait --no-build --remove-orphans
 
 cd "$STAGE_ROOT"
@@ -341,8 +368,10 @@ fi
 
 restored_backend="$(docker inspect -f '{{.Config.Image}}' easymod-backend-1)"
 restored_frontend="$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1)"
+restored_growth="$(docker inspect -f '{{.Config.Image}}' easymod-growth-frontend-1)"
 if [[ "$restored_backend" != "$previous_backend_image" \
-    || "$restored_frontend" != "$previous_frontend_image" ]]; then
+    || "$restored_frontend" != "$previous_frontend_image" \
+    || "$restored_growth" != "$previous_growth_image" ]]; then
     echo 'ERROR: independent image assertion did not match the captured RepoDigests' >&2
     exit 1
 fi
@@ -387,6 +416,22 @@ wait_for_frontend_health() {
 wait_for_frontend_health
 FRONTEND_HEALTH=PASS
 export FRONTEND_HEALTH
+
+wait_for_growth_health() {
+    local growth_health
+    for _ in $(seq 1 30); do
+        growth_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' easymod-growth-frontend-1)"
+        if [[ "$growth_health" == "healthy" ]]; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "ERROR: restored Growth frontend health status was $growth_health" >&2
+    return 1
+}
+
+wait_for_growth_health
+docker exec easymod-caddy-1 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 SCENARIO_B=PASS
 export SCENARIO_B
 

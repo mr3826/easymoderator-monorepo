@@ -14,6 +14,10 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // The suite imports a large browser/client graph. Serial file execution
+    // avoids exhausting constrained local and CI worker pools while keeping
+    // assertions within each file unchanged.
+    fileParallelism: false,
     setupFiles: './src/test/setup.ts',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules/**', 'dist/**'],

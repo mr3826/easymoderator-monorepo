@@ -52,6 +52,9 @@ async function removeImportedFixtures() {
           resource_id: { [Op.in]: importedIds },
         },
       });
+      await GrowthOsProspect.destroy({
+        where: { id: { [Op.in]: importedIds }, status: 'merged' },
+      });
       await GrowthOsProspect.destroy({ where: { id: { [Op.in]: importedIds } } });
     }
   }

@@ -175,6 +175,10 @@ function validateProductionConfig(env = process.env) {
         // credentialed allowlist. Its public endpoints use route-local CORS.
         if (env.MARKETING_URL && allowedOrigins.includes(env.MARKETING_URL)) invalid.push('CORS_ORIGINS');
         if (allowedOrigins.includes('*')) invalid.push('CORS_ORIGINS');
+        if (enabled(env.GROWTH_OS_ENABLED)
+            && !allowedOrigins.includes(env.GROWTH_APP_URL || 'https://growth.easymod.tech')) {
+            invalid.push('CORS_ORIGINS');
+        }
     }
     // Meta Login Configuration IDs are numeric. A transposed, quoted or
     // partially-pasted value is accepted by nothing downstream and would only
@@ -190,6 +194,10 @@ function validateProductionConfig(env = process.env) {
     // The canonical app/API split does not need parent-domain cookies. Keeping
     // auth cookies host-only to api.easymod.tech limits cross-subdomain impact.
     if (env.COOKIE_DOMAIN) invalid.push('COOKIE_DOMAIN');
+    if (env.GROWTH_OS_ENABLED !== undefined
+        && !['true', 'false'].includes(String(env.GROWTH_OS_ENABLED))) {
+        invalid.push('GROWTH_OS_ENABLED');
+    }
     if (env.BKASH_SANDBOX && !['true', 'false'].includes(env.BKASH_SANDBOX)) {
         invalid.push('BKASH_SANDBOX');
     }

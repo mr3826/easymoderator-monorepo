@@ -26,6 +26,18 @@ session — canonical `GROWTH_USER` operators included — requires the existing
 MFA assurance claim. Prospect scope is
 resolved from `req.growthOs.permissions`; client state never authorizes a row.
 
+## Data Handling
+
+Growth prospect records contain operational lead contact data and remain scoped
+by Growth role. Prospect audit snapshots are write-time sanitized: contact
+name/phone/email, page URLs, notes, source references, normalized contact keys,
+metadata, and disqualification reasons are stored as `[redacted]` rather than
+copied into `audit_logs`. Audit-log retention follows the platform audit owner;
+the Growth policy target is 365 days for sanitized prospect mutation history,
+with Security/Operations responsible for the purge/retention job when the
+platform-wide retention control is enabled. No raw contact data is recovered
+from the audit trail.
+
 ## Phase 3 Surface
 
 Phase 3 provides a canonical prospect ledger, deterministic lifecycle changes,
@@ -49,8 +61,10 @@ Frontend routes live inside `EasyMod-growth`:
 Backend unit and security tests run through the backend Jest homes. Real
 PostgreSQL/Redis integration uses `npm run test:backend:integration:docker`.
 Growth frontend tests use Vitest with jsdom and Testing Library. Browser E2E,
-live Growth-origin delivery, operator bootstrap, and production deployment
-remain separate release gates.
+the built Nginx smoke (`npm run test:growthos:image`), live Growth-origin
+delivery, operator bootstrap, and production deployment remain separate release
+gates. `npm run lint:growth` covers the Growth frontend, backend module, and
+Growth image helper.
 
 ## Current Implementation
 

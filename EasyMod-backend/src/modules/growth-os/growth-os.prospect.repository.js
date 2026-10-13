@@ -109,7 +109,7 @@ function searchWhere(value, GrowthOsProspect) {
   // normalized_business_name is punctuation-free; normalize the search term
   // before comparing it so names such as "north-star" remain discoverable.
   const normalizedSearch = search.toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/[\\%_]/g, '\\$&');

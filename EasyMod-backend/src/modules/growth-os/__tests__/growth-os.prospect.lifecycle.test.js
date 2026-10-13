@@ -11,6 +11,7 @@ const mockRepository = {
   findProspectById: jest.fn(),
   findDuplicateProspects: jest.fn(),
   findConflict: jest.fn(),
+  findShopById: jest.fn(),
   listProspectEvents: jest.fn(),
   getModels: jest.fn(),
 };
@@ -87,6 +88,7 @@ describe('Growth OS prospect lifecycle', () => {
     mockRepository.getModels.mockReturnValue({
       GrowthOsProspectEvent: { create: mockEventCreate },
       Shop: { findByPk: jest.fn().mockResolvedValue(null) },
+      GrowthOsProspect: { findAll: jest.fn().mockResolvedValue([]) },
     });
     mockRepository.findDuplicateProspects.mockResolvedValue([]);
     mockRepository.findConflict.mockResolvedValue(null);
@@ -166,6 +168,40 @@ describe('Growth OS prospect lifecycle', () => {
       transaction: mockTransaction,
     });
     expect(mockAuditCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('reconciles activation when linkage follows the first AI reply', async () => {
+    const row = makeProspect({ status: 'onboarding' });
+    const shop = {
+      id: 'shop-1',
+      is_active: true,
+      settings: { first_ai_reply: { occurred_at: '2026-09-15T00:00:00.000Z' } },
+    };
+    const findAll = jest.fn().mockResolvedValue([{ id: row.id, status: 'onboarding', linkedShop: shop }]);
+    mockRepository.findProspectById.mockResolvedValue(row);
+    mockRepository.findShopById.mockResolvedValue(shop);
+    mockRepository.getModels.mockReturnValue({
+      GrowthOsProspectEvent: { create: mockEventCreate },
+      GrowthOsProspect: { findAll },
+      Shop: { findByPk: jest.fn().mockResolvedValue(shop) },
+    });
+
+    const result = await prospectService.link({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      prospectId: row.id,
+      shopId: shop.id,
+      reason: 'Reconcile activation after delayed linkage',
+    });
+
+    expect(result.status).toBe('converted');
+    expect(row.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'converted' }), {
+      transaction: mockTransaction,
+    });
+    expect(mockEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'activated',
+      reason: 'first_successful_ai_reply',
+    }), { transaction: mockTransaction });
   });
 
   it('requires a reason to disqualify and preserves it in the transition event', async () => {
