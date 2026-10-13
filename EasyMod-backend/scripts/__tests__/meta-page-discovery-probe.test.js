@@ -144,4 +144,31 @@ describe('progressive Meta Page discovery probe', () => {
         expect(JSON.stringify(result)).not.toContain('user-token-not-returned');
         expect(JSON.stringify(result)).not.toContain('app-secret-not-returned');
     });
+
+    test('continues endpoint probes when debug_token itself fails', async () => {
+        const request = jest.fn(async (url) => {
+            throw url.endsWith('/debug_token')
+                ? errorResponse(190, null, 'trace-debug-190')
+                : errorResponse(100, null, 'trace-probe-100');
+        });
+
+        const result = await runProgressiveProbe({
+            request,
+            graphBase: 'https://graph.test/v22.0',
+            userToken: 'user-token-not-returned',
+            appId: APP_ID,
+            appSecret: 'app-secret-not-returned',
+            expectedPageId: PAGE_ID,
+            businessId: BUSINESS_ID,
+            configuration: 'A',
+        });
+
+        expect(result.status).toBe('FAIL');
+        expect(result.debugToken.graphError).toMatchObject({
+            code: 190,
+            classification: 'INVALID_OR_EXPIRED_TOKEN',
+        });
+        expect(result.probes.meAccountsMinimal).toBeDefined();
+        expect(result.probes.directMinimal).toBeDefined();
+    });
 });

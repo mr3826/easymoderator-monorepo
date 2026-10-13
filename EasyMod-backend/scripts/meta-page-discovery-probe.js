@@ -250,6 +250,7 @@ async function runProgressiveProbe({
     const proof = appsecretProof(userToken, appSecret);
     const appAccessToken = `${appId}|${appSecret}`;
     let debugData;
+    let debugTokenFailure = null;
     try {
         const response = await request(`${graphBase}/debug_token`, {
             params: {
@@ -261,22 +262,18 @@ async function runProgressiveProbe({
         debugData = response.data?.data || {};
     } catch (error) {
         const details = graphErrorDetails(error);
-        return {
-            configuration,
+        debugData = {};
+        debugTokenFailure = {
             status: 'FAIL',
-            debugToken: {
-                status: 'FAIL',
-                httpStatus: details.httpStatus,
-                graphError: {
-                    code: details.code,
-                    subcode: details.subcode,
-                    fbtraceId: details.fbtraceId,
-                    type: details.type,
-                    message: details.message,
-                    classification: graphErrorClassification(details.code, details.httpStatus),
-                },
+            httpStatus: details.httpStatus,
+            graphError: {
+                code: details.code,
+                subcode: details.subcode,
+                fbtraceId: details.fbtraceId,
+                type: details.type,
+                message: details.message,
+                classification: graphErrorClassification(details.code, details.httpStatus),
             },
-            probes: {},
         };
     }
 
@@ -335,11 +332,11 @@ async function runProgressiveProbe({
         };
     }
 
-    const failedProbe = Object.values(probes).some((probe) => probe.status === 'FAIL');
+    const failedProbe = debugTokenFailure || Object.values(probes).some((probe) => probe.status === 'FAIL');
     return {
         configuration,
         status: failedProbe ? 'FAIL' : 'PASS',
-        debugToken: {
+        debugToken: debugTokenFailure || {
             status: 'PASS',
             tokenValid: scopeEvidence.tokenValid,
             tokenAppIdMatches: scopeEvidence.tokenAppIdMatches,
