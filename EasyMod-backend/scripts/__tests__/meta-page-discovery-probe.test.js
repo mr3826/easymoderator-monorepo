@@ -19,6 +19,8 @@ function errorResponse(code, subcode = null, fbtraceId = 'trace-123') {
                 code,
                 error_subcode: subcode,
                 fbtrace_id: fbtraceId,
+                type: 'OAuthException',
+                message: 'Unsupported get request.',
             },
         },
     };
@@ -131,7 +133,9 @@ describe('progressive Meta Page discovery probe', () => {
         expect(result.probes.directMinimal.graphError).toMatchObject({
             code: 100,
             subcode: 33,
-            classification: 'OBJECT_NOT_FOUND_OR_NOT_VISIBLE',
+            classification: 'INVALID_PARAMETER_OR_REQUEST',
+            type: 'OAuthException',
+            message: 'Unsupported get request.',
         });
         expect(result.probes.businessOwnedPages).toEqual({
             status: 'SKIPPED',

@@ -31,17 +31,26 @@ const USER_TOKEN_ENV_NAMES = ['META_PAGE_DISCOVERY_USER_TOKEN', 'META_DISCOVERY_
 
 const line = (value) => process.stdout.write(`${value}\n`);
 
+function safeGraphErrorMessage(value) {
+    if (typeof value !== 'string' || value.trim() === '') return 'NONE';
+    return value
+        .replace(/(access_token|appsecret_proof)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+        .slice(0, 300);
+}
+
 function graphErrorDetails(error) {
     return {
         httpStatus: error?.response?.status || 'UNKNOWN',
         code: error?.response?.data?.error?.code || 'UNKNOWN',
         subcode: error?.response?.data?.error?.error_subcode || 'NONE',
         fbtraceId: error?.response?.data?.error?.fbtrace_id || 'NONE',
+        type: error?.response?.data?.error?.type || 'NONE',
+        message: safeGraphErrorMessage(error?.response?.data?.error?.message),
     };
 }
 
 function graphErrorClassification(code, httpStatus) {
-    if (String(code) === '100') return 'OBJECT_NOT_FOUND_OR_NOT_VISIBLE';
+    if (String(code) === '100') return 'INVALID_PARAMETER_OR_REQUEST';
     if (String(code) === '190') return 'INVALID_OR_EXPIRED_TOKEN';
     if (String(code) === '200') return 'PERMISSION_OR_ROLE_REQUIRED';
     if (Number(httpStatus) >= 500) return 'GRAPH_SERVER_ERROR';
@@ -149,6 +158,8 @@ async function requestCollection({ request, url, params, expectedPageId, tokenRe
                 code: details.code,
                 subcode: details.subcode,
                 fbtraceId: details.fbtraceId,
+                type: details.type,
+                message: details.message,
                 classification: graphErrorClassification(details.code, details.httpStatus),
             },
         };
@@ -195,6 +206,8 @@ async function requestPage({ request, url, fields, userToken, proof, expectedPag
                 code: details.code,
                 subcode: details.subcode,
                 fbtraceId: details.fbtraceId,
+                type: details.type,
+                message: details.message,
                 classification: graphErrorClassification(details.code, details.httpStatus),
             },
         };
@@ -212,8 +225,10 @@ function printProgressiveProbe(label, result) {
         `graph_code=${error?.code || 'NONE'}`,
         `graph_subcode=${error?.subcode || 'NONE'}`,
         `error_class=${error?.classification || 'NONE'}`,
+        `error_type=${error?.type || 'NONE'}`,
         `fbtrace_id=${error?.fbtraceId || 'NONE'}`,
     ].join(' '));
+    line(`PROBE_ERROR_MESSAGE=${JSON.stringify(error?.message || 'NONE')} probe=${label}`);
     line(`PROBE_TASKS=${JSON.stringify(result.tasks || [])} probe=${label}`);
 }
 
@@ -256,6 +271,8 @@ async function runProgressiveProbe({
                     code: details.code,
                     subcode: details.subcode,
                     fbtraceId: details.fbtraceId,
+                    type: details.type,
+                    message: details.message,
                     classification: graphErrorClassification(details.code, details.httpStatus),
                 },
             },
@@ -551,8 +568,10 @@ function printProgressiveResult(result) {
             `graph_code=${error?.code || 'NONE'}`,
             `graph_subcode=${error?.subcode || 'NONE'}`,
             `error_class=${error?.classification || 'NONE'}`,
+            `error_type=${error?.type || 'NONE'}`,
             `fbtrace_id=${error?.fbtraceId || 'NONE'}`,
         ].join(' '));
+        line(`DEBUG_TOKEN_ERROR_MESSAGE=${JSON.stringify(error?.message || 'NONE')}`);
         return;
     }
 
