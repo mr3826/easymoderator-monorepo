@@ -79,6 +79,7 @@ describe('progressive Meta Page discovery probe', () => {
             expectedPageId: PAGE_ID,
             businessId: BUSINESS_ID,
             configuration: 'B',
+            includeFieldProbes: true,
         });
 
         expect(result.status).toBe('PASS');
@@ -94,7 +95,9 @@ describe('progressive Meta Page discovery probe', () => {
         expect(result.probes.meAccountsWithPageToken.pageTokenAvailable).toBe('YES');
         expect(result.probes.directRich.tasks).toEqual(['MANAGE', 'MESSAGING']);
         expect(result.probes.businessOwnedPages.expectedPageVisible).toBe('YES');
-        expect(request).toHaveBeenCalledTimes(8);
+        expect(result.probes.fieldProbes.category.status).toBe('PASS');
+        expect(result.probes.fieldProbes.tasks.status).toBe('PASS');
+        expect(request).toHaveBeenCalledTimes(16);
         const expectedProof = crypto
             .createHmac('sha256', 'app-secret-not-returned')
             .update('user-token-not-returned')

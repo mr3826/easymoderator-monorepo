@@ -289,6 +289,7 @@ async function runProgressiveProbe({
     expectedPageId,
     businessId = null,
     configuration = 'UNSPECIFIED',
+    includeFieldProbes = false,
 }) {
     const proof = appsecretProof(userToken, appSecret);
     const appAccessToken = `${appId}|${appSecret}`;
@@ -358,6 +359,30 @@ async function runProgressiveProbe({
         });
     }
 
+    if (includeFieldProbes) {
+        const fieldDefinitions = [
+            ['category', 'id,name,category'],
+            ['picture', 'id,name,picture{data{url}}'],
+            ['tasks', 'id,name,tasks'],
+            ['accessToken', 'id,name,access_token'],
+            ['categoryPicture', 'id,name,category,picture{data{url}}'],
+            ['categoryTasks', 'id,name,category,tasks'],
+            ['pictureTasks', 'id,name,picture{data{url}},tasks'],
+            ['tasksAccessToken', 'id,name,tasks,access_token'],
+        ];
+        probes.fieldProbes = {};
+        for (const [label, fields] of fieldDefinitions) {
+            probes.fieldProbes[label] = await requestPage({
+                request,
+                url: `${graphBase}/${encodeURIComponent(expectedPageId)}`,
+                fields,
+                userToken,
+                proof,
+                expectedPageId,
+            });
+        }
+    }
+
     if (scopeEvidence.businessManagementGranted === 'YES' && businessId) {
         probes.businessOwnedPages = await requestCollection({
             request,
@@ -375,7 +400,13 @@ async function runProgressiveProbe({
         };
     }
 
-    const failedProbe = debugTokenFailure || Object.values(probes).some((probe) => probe.status === 'FAIL');
+    const fieldProbeFailures = Object.values(probes.fieldProbes || {})
+        .some((probe) => probe.status === 'FAIL');
+    const failedProbe = debugTokenFailure
+        || Object.entries(probes)
+            .filter(([label]) => label !== 'fieldProbes')
+            .some(([, probe]) => probe.status === 'FAIL')
+        || fieldProbeFailures;
     return {
         configuration,
         status: failedProbe ? 'FAIL' : 'PASS',
