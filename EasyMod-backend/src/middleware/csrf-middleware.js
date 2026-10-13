@@ -75,9 +75,10 @@ function isTrustedAuthOrigin(
     const parsedRequestOrigin = parseOrigin(origin);
     if (!parsedRequestOrigin) return false;
 
-    const configuredCorsOrigins = corsOrigins === undefined
-        ? (process.env.CORS_ORIGINS ?? config.corsOrigins)
-        : corsOrigins;
+    // The general CORS allowlist may include marketing/API origins. It is not
+    // an authentication-origin allowlist, so only an explicit test/caller
+    // override may contribute additional auth origins here.
+    const configuredCorsOrigins = corsOrigins === undefined ? [] : corsOrigins;
     const parsedCorsOrigins = parseConfiguredOrigins(configuredCorsOrigins);
     if (!parsedCorsOrigins.valid) return false;
 

@@ -110,7 +110,7 @@ describe('recordOptOut', () => {
         expect(customer.save).toHaveBeenCalled();
         expect(MetaChannelConsentEvent.create).toHaveBeenCalledWith(expect.objectContaining({
             event: 'OPT_OUT', source: 'keyword_stop', customer_id: 'cust-1',
-        }));
+        }), expect.objectContaining({ transaction: expect.any(Object) }));
     });
 
     test('idempotent — preserves earlier opted_out_at on second call', async () => {
@@ -163,7 +163,7 @@ describe('recordInbound', () => {
         expect(customer.messaging_consent.facebook.opted_in).toBe(true);
         expect(MetaChannelConsentEvent.create).toHaveBeenCalledWith(expect.objectContaining({
             event: 'OPT_IN_IMPLICIT', source: 'message',
-        }));
+        }), expect.objectContaining({ transaction: expect.any(Object) }));
     });
 
     test('does NOT re-grant consent after opt-out', async () => {
@@ -218,7 +218,7 @@ describe('recordOptIn', () => {
         expect(customer.messaging_consent.facebook.opted_in).toBe(true);
         expect(MetaChannelConsentEvent.create).toHaveBeenCalledWith(expect.objectContaining({
             event: 'OPT_IN_EXPLICIT', source: 'webhook_messaging_optins',
-        }));
+        }), expect.objectContaining({ transaction: expect.any(Object) }));
     });
 
     test('admin source can lift a prior opt-out', async () => {
