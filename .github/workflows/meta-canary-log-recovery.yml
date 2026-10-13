@@ -40,7 +40,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout sanitizer
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Validate bounded recovery scope
         env:
@@ -131,7 +131,7 @@ jobs:
           NODE
 
       - name: Upload sanitized evidence with one-day retention
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: meta-canary-recovery-${{ github.run_id }}
           path: |
