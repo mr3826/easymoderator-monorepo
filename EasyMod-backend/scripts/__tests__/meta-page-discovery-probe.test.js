@@ -1,6 +1,7 @@
 'use strict';
 
 const { runProgressiveProbe } = require('../meta-page-discovery-probe');
+const crypto = require('crypto');
 
 const APP_ID = 'test-app-id';
 const PAGE_ID = 'test-page-id';
@@ -10,7 +11,7 @@ function response(data, status = 200) {
     return { data, status };
 }
 
-function errorResponse(code, subcode = null, fbtraceId = 'trace-123') {
+function errorResponse(code, subcode = null, fbtraceId = 'trace-123', message = 'Unsupported get request.') {
     const error = new Error('sanitized test error');
     error.response = {
         status: 400,
@@ -20,7 +21,7 @@ function errorResponse(code, subcode = null, fbtraceId = 'trace-123') {
                 error_subcode: subcode,
                 fbtrace_id: fbtraceId,
                 type: 'OAuthException',
-                message: 'Unsupported get request.',
+                message,
             },
         },
     };
@@ -94,6 +95,23 @@ describe('progressive Meta Page discovery probe', () => {
         expect(result.probes.directRich.tasks).toEqual(['MANAGE', 'MESSAGING']);
         expect(result.probes.businessOwnedPages.expectedPageVisible).toBe('YES');
         expect(request).toHaveBeenCalledTimes(8);
+        const expectedProof = crypto
+            .createHmac('sha256', 'app-secret-not-returned')
+            .update('user-token-not-returned')
+            .digest('hex');
+        const debugCall = request.mock.calls.find(([url]) => url.endsWith('/debug_token'));
+        expect(debugCall[1].params.input_token).toBe('user-token-not-returned');
+        expect(debugCall[1].params.access_token).toBe(`${APP_ID}|app-secret-not-returned`);
+        expect(debugCall[1].params.appsecret_proof).toBe(
+            crypto.createHmac('sha256', 'app-secret-not-returned')
+                .update(`${APP_ID}|app-secret-not-returned`)
+                .digest('hex'),
+        );
+        const directCall = request.mock.calls.find(([url, options]) => (
+            url.endsWith(`/${PAGE_ID}`) && options.params.fields === 'id,name'
+        ));
+        expect(directCall[1].params.access_token).toBe('user-token-not-returned');
+        expect(directCall[1].params.appsecret_proof).toBe(expectedProof);
     });
 
     test('records Graph error 100 safely and skips Business discovery without a grant', async () => {
@@ -170,5 +188,38 @@ describe('progressive Meta Page discovery probe', () => {
         });
         expect(result.probes.meAccountsMinimal).toBeDefined();
         expect(result.probes.directMinimal).toBeDefined();
+    });
+
+    test('rejects inherited test credential overrides and redacts Graph error messages', async () => {
+        const { validateExplicitTestEnvironment } = require('../meta-page-discovery-probe');
+        expect(() => validateExplicitTestEnvironment({
+            META_APP_ID: '4064125980563451',
+            META_APP_SECRET: 'secret-not-returned',
+            META_GRAPH_API_VERSION: 'v22.0',
+        }, 'secret-not-returned', { META_APP_SECRET: 'inherited-secret' })).toThrow(
+            'TEST_ENV_INHERITED_OVERRIDE_META_APP_SECRET',
+        );
+        expect(() => validateExplicitTestEnvironment({
+            META_APP_ID: '4064125980563451',
+            META_APP_SECRET: 'secret-not-returned',
+            META_GRAPH_API_VERSION: 'v22.0',
+        }, '"secret-not-returned"', {})).toThrow('TEST_ENV_APP_SECRET_FORMAT_INVALID');
+
+        const request = jest.fn(async (url) => {
+            throw errorResponse(190, null, 'trace-redaction', 'Invalid access_token=raw-token appsecret_proof=raw-proof');
+        });
+        const result = await runProgressiveProbe({
+            request,
+            graphBase: 'https://graph.test/v22.0',
+            userToken: 'user-token-not-returned',
+            appId: APP_ID,
+            appSecret: 'app-secret-not-returned',
+            expectedPageId: PAGE_ID,
+            configuration: 'A',
+        });
+        const message = result.debugToken.graphError.message;
+        expect(message).not.toContain('raw-token');
+        expect(message).not.toContain('raw-proof');
+        expect(message).toContain('[REDACTED]');
     });
 });

@@ -18,9 +18,15 @@ require('dotenv').config();
 
 const axios = require('axios');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
 
+const INHERITED_PROCESS_ENV = { ...process.env };
+dotenv.config();
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const TEST_ENV_FILE = path.resolve(__dirname, '../.env.test.meta.local');
 const MINIMAL_PAGE_FIELDS = 'id,name';
 const PAGE_TOKEN_FIELDS = 'id,name,access_token';
 const PAGE_FIELDS = 'id,name,category,access_token,picture{data{url}},tasks';
@@ -36,6 +42,43 @@ function safeGraphErrorMessage(value) {
     return value
         .replace(/(access_token|appsecret_proof)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
         .slice(0, 300);
+}
+
+function validateExplicitTestEnvironment(values, rawSecret, inherited = process.env) {
+    if (values.META_APP_ID !== '4064125980563451') {
+        throw new Error('TEST_ENV_APP_ID_INVALID');
+    }
+    if (values.META_GRAPH_API_VERSION !== 'v22.0') {
+        throw new Error('TEST_ENV_GRAPH_VERSION_INVALID');
+    }
+    if (typeof values.META_APP_SECRET !== 'string' || values.META_APP_SECRET.length === 0) {
+        throw new Error('TEST_ENV_APP_SECRET_MISSING');
+    }
+    if (rawSecret !== values.META_APP_SECRET
+        || rawSecret !== rawSecret.trim()
+        || rawSecret.includes('\r')
+        || rawSecret.includes('\n')
+        || rawSecret.startsWith('"')
+        || rawSecret.endsWith('"')
+        || rawSecret.startsWith("'")
+        || rawSecret.endsWith("'")) {
+        throw new Error('TEST_ENV_APP_SECRET_FORMAT_INVALID');
+    }
+    for (const name of ['META_APP_ID', 'META_APP_SECRET', 'META_GRAPH_API_VERSION']) {
+        if (Object.prototype.hasOwnProperty.call(inherited, name)) {
+            throw new Error(`TEST_ENV_INHERITED_OVERRIDE_${name}`);
+        }
+    }
+    return values;
+}
+
+function loadExplicitTestEnvironment(filePath = TEST_ENV_FILE, inherited = INHERITED_PROCESS_ENV) {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (raw.charCodeAt(0) === 0xfeff) throw new Error('TEST_ENV_BOM_INVALID');
+    const values = dotenv.parse(raw);
+    const secretLine = raw.split(/\r?\n/).find((line) => line.startsWith('META_APP_SECRET='));
+    const rawSecret = secretLine?.slice('META_APP_SECRET='.length) ?? '';
+    return validateExplicitTestEnvironment(values, rawSecret, inherited);
 }
 
 function graphErrorDetails(error) {
@@ -441,6 +484,7 @@ function rootCause({ grantedCount, missingCount, hydrationFailureCount, hydratio
 }
 
 async function main() {
+    dotenv.config();
     const userToken = USER_TOKEN_ENV_NAMES
         .map((name) => process.env[name])
         .find((value) => typeof value === 'string' && value.trim().length > 0);
@@ -591,11 +635,20 @@ function printProgressiveResult(result) {
 }
 
 async function progressiveMain() {
+    let testEnvironment;
+    try {
+        testEnvironment = loadExplicitTestEnvironment();
+    } catch (error) {
+        line(`PROGRESSIVE_PROBE_STATUS=FAIL reason=${error.message || 'TEST_ENV_INVALID'}`);
+        process.exitCode = 1;
+        return;
+    }
+
     const userToken = USER_TOKEN_ENV_NAMES
         .map((name) => process.env[name])
         .find((value) => typeof value === 'string' && value.trim().length > 0);
-    const appId = process.env.META_APP_ID;
-    const appSecret = process.env.META_APP_SECRET;
+    const appId = testEnvironment.META_APP_ID;
+    const appSecret = testEnvironment.META_APP_SECRET;
     const expectedPageId = process.env.META_PAGE_DISCOVERY_PAGE_ID || process.env.META_PROBE_PAGE_ID;
     const businessId = process.env.META_PAGE_DISCOVERY_BUSINESS_ID || process.env.META_PROBE_BUSINESS_ID || null;
     const configuration = process.env.META_PAGE_DISCOVERY_CONFIGURATION || 'UNSPECIFIED';
@@ -614,6 +667,7 @@ async function progressiveMain() {
         expectedPageId,
         businessId,
         configuration,
+        graphBase: `https://graph.facebook.com/${testEnvironment.META_GRAPH_API_VERSION}`,
     });
     printProgressiveResult(result);
     if (result.status === 'FAIL') process.exitCode = 1;
@@ -635,8 +689,10 @@ module.exports = {
     appsecretProof,
     graphErrorClassification,
     hasNonEmptyAccessToken,
+    loadExplicitTestEnvironment,
     paginateGraphCollection,
     runProgressiveProbe,
     safeScopeEvidence,
     targetIdsForScope,
+    validateExplicitTestEnvironment,
 };
