@@ -1,7 +1,9 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const workflowPath = path.resolve(
     __dirname,
@@ -121,6 +123,55 @@ describe('production workflow branch safety', () => {
         expect(dryRunBlock).toContain(enabledLine);
         expect(workflow.match(/META_DISCOVERY_CANARY_ENABLED:/g)).toHaveLength(2);
         expect(workflow).not.toContain('META_DISCOVERY_CANARY_ENABLED: ${{ vars.META_DISCOVERY_CANARY_ENABLED }}');
+    });
+
+    test('validates selected Growth metadata without requiring Node.js on the SSH host', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const growthStart = deployBlock.indexOf('growth_image_source=running');
+        const backendValidationStart = deployBlock.indexOf('# Validate the rendered environment with the candidate backend image');
+        const growthBlock = deployBlock.slice(growthStart, backendValidationStart);
+
+        expect(growthStart).toBeGreaterThan(-1);
+        expect(backendValidationStart).toBeGreaterThan(growthStart);
+        expect(growthBlock).toContain('growth_image_source=override');
+        expect(growthBlock).toContain('growth_image_source=bootstrap');
+        expect(growthBlock).toContain('if [ "$growth_image_source" != "running" ]; then');
+        expect(growthBlock).toContain('command -v jq');
+        expect(growthBlock).toContain('jq --version');
+        expect(growthBlock).toContain("jq -er '.commit | select(type == \"string\" and length > 0)'");
+        expect(growthBlock).toContain('Growth image build-info.json is missing or empty');
+        expect(growthBlock).toContain('Growth image build-info.json is malformed or has no non-empty commit');
+        expect(growthBlock).not.toContain('node -e');
+        expect(growthBlock).not.toContain('| node');
+
+        // Simulate the SSH host's available command set for this parser. The
+        // Linux CI runner supplies jq, while the restricted PATH deliberately
+        // omits Node.js; container-side Node commands are outside this block.
+        if (process.platform === 'win32') return;
+        const jqLookup = spawnSync('/bin/sh', ['-c', 'command -v jq'], { encoding: 'utf8' });
+        const jqPath = jqLookup.stdout.trim();
+        expect(jqLookup.status).toBe(0);
+        expect(jqPath).not.toBe('');
+
+        const parserBin = fs.mkdtempSync(path.join(os.tmpdir(), 'easymod-jq-'));
+        try {
+            fs.symlinkSync(jqPath, path.join(parserBin, 'jq'));
+            const probe = spawnSync('/bin/sh', ['-c', [
+                'set -eu',
+                'if command -v node >/dev/null 2>&1; then exit 10; fi',
+                'command -v jq >/dev/null 2>&1',
+                'jq --version >/dev/null 2>&1',
+                'growth_build_info=\'{"commit":"expected"}\'',
+                'growth_build_commit=$(printf \'%s\' "$growth_build_info" | jq -er \'.commit | select(type == "string" and length > 0)\')',
+                '[ "$growth_build_commit" = expected ]',
+            ].join('\n')], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: parserBin },
+            });
+            expect(probe.status).toBe(0);
+        } finally {
+            fs.rmSync(parserBin, { recursive: true, force: true });
+        }
     });
 
     test('pull requests can run tests but cannot build deployable images', () => {
