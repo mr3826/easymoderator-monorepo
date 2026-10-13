@@ -13,7 +13,11 @@ ENV BUILD_TIME=${BUILD_TIME}
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN apk upgrade --no-cache \
+  && npm ci --omit=dev \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 COPY . .
 

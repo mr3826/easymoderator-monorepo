@@ -20,6 +20,8 @@ const backendDockerfilePath = path.resolve(__dirname, '../../../Dockerfile');
 const backendDockerfile = fs.readFileSync(backendDockerfilePath, 'utf8');
 const backendDockerignorePath = path.resolve(__dirname, '../../../.dockerignore');
 const backendDockerignore = fs.readFileSync(backendDockerignorePath, 'utf8');
+const frontendDockerfilePath = path.resolve(__dirname, '../../../../EasyMod-frontend/Dockerfile');
+const frontendDockerfile = fs.readFileSync(frontendDockerfilePath, 'utf8');
 const securityWorkflowPath = path.resolve(
     __dirname,
     '../../../../.github/workflows/security-scan.yml',
@@ -51,6 +53,10 @@ describe('production workflow branch safety', () => {
         expect(backendDockerfile).toContain('USER node');
         expect(backendDockerfile).toContain('chown node:node /app/uploads');
         expect(backendDockerfile).not.toContain('chown -R node:node /app');
+        expect(backendDockerfile).toContain('apk upgrade --no-cache');
+        expect(backendDockerfile).toContain('/usr/local/lib/node_modules/npm');
+        expect(frontendDockerfile).toContain('FROM nginx:1.29-alpine AS production');
+        expect(frontendDockerfile).toContain('apk upgrade --no-cache');
         expect(backendDockerignore).toContain('coverage');
         expect(backendDockerignore).toContain('.test-uploads');
     });
