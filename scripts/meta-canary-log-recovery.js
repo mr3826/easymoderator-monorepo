@@ -14,8 +14,9 @@ function pick(source, keys) {
 }
 
 function sanitizeDiagnostics(event) {
+    const eventName = event.event || event.message;
     const diagnostics = {
-        event: event.message,
+        event: eventName,
         timestamp: event.timestamp,
         service: event.service,
         environment: event.environment,
@@ -56,19 +57,51 @@ function sanitizeDiagnostics(event) {
 function parseRecoveryLines(input, { shopId, pageId, from, to }) {
     const events = [];
     for (const line of String(input || '').split(/\r?\n/)) {
-        if (!line.startsWith('EVENT=')) continue;
+        const payload = line.startsWith('EVENT=') ? line.slice('EVENT='.length) : line;
+        if (!payload.trim()) continue;
         let event;
         try {
-            event = JSON.parse(line.slice('EVENT='.length));
+            event = JSON.parse(payload);
         } catch {
             continue;
         }
-        if (!EVENT_NAMES.has(event.message)) continue;
+        if (!event || typeof event !== 'object' || Array.isArray(event)) continue;
+        if (!EVENT_NAMES.has(event.event || event.message)) continue;
         if (String(event.shopId) !== String(shopId) || String(event.expectedPageId) !== String(pageId)) continue;
         if (String(event.timestamp) < from || String(event.timestamp) > to) continue;
         events.push(sanitizeDiagnostics(event));
     }
     return events;
+}
+
+function summarizeRecoveryOutput(input, scope) {
+    const raw = String(input || '');
+    const events = parseRecoveryLines(raw, scope);
+    const hasDiscoveryError = /^CONTAINER_DISCOVERY_ERROR=/m.test(raw);
+    const logReadErrorCount = (raw.match(/^LOG_READ_ERROR=/gm) || []).length;
+    const logFilterErrorCount = (raw.match(/^LOG_FILTER_ERROR=/gm) || []).length;
+    const containerInspectErrorCount = (raw.match(/^CONTAINER_INSPECT_ERROR=/gm) || []).length;
+    const originalContainerAvailable = /^ORIGINAL_CONTAINER_AVAILABLE=YES$/m.test(raw)
+        ? true
+        : /^ORIGINAL_CONTAINER_AVAILABLE=NO$/m.test(raw) ? false : null;
+    const hasExtractionErrors = hasDiscoveryError || logReadErrorCount > 0 || logFilterErrorCount > 0 || containerInspectErrorCount > 0;
+    let extractionStatus = 'NO_MATCHES';
+    if (hasDiscoveryError) extractionStatus = 'ERROR';
+    else if (hasExtractionErrors) extractionStatus = 'PARTIAL';
+    else if (events.length > 0) extractionStatus = 'RECOVERED';
+    else if (originalContainerAvailable === false) extractionStatus = 'NO_CONTAINER';
+
+    return {
+        ...scope,
+        extractionStatus,
+        originalContainerAvailable,
+        containerInfoCount: (raw.match(/^CONTAINER_INFO=/gm) || []).length,
+        logReadErrorCount,
+        logFilterErrorCount,
+        containerInspectErrorCount,
+        eventCount: events.length,
+        events,
+    };
 }
 
 function parseArgs(argv) {
@@ -91,12 +124,11 @@ function parseArgs(argv) {
 if (require.main === module) {
     try {
         const scope = parseArgs(process.argv.slice(2));
-        const events = parseRecoveryLines(fs.readFileSync(0, 'utf8'), scope);
-        process.stdout.write(`${JSON.stringify({ ...scope, eventCount: events.length, events })}\n`);
+        process.stdout.write(`${JSON.stringify(summarizeRecoveryOutput(fs.readFileSync(0, 'utf8'), scope))}\n`);
     } catch (error) {
         console.error(error.message);
         process.exitCode = 2;
     }
 }
 
-module.exports = { parseArgs, parseRecoveryLines, sanitizeDiagnostics };
+module.exports = { parseArgs, parseRecoveryLines, sanitizeDiagnostics, summarizeRecoveryOutput };

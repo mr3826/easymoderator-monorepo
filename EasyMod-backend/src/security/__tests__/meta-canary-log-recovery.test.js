@@ -1,4 +1,8 @@
-const { parseArgs, parseRecoveryLines } = require('../../../../scripts/meta-canary-log-recovery');
+const {
+    parseArgs,
+    parseRecoveryLines,
+    summarizeRecoveryOutput,
+} = require('../../../../scripts/meta-canary-log-recovery');
 
 const scope = {
     shopId: '458b6a78-d409-4740-9fbd-c48875d67155',
@@ -20,14 +24,21 @@ describe('Meta canary log recovery', () => {
         };
         const ignoredShop = { ...matching, shopId: 'other-shop' };
         const ignoredTime = { ...matching, timestamp: '2026-10-13T12:20:00.000Z' };
-        const result = parseRecoveryLines(
-            [matching, ignoredShop, ignoredTime].map((event) => `EVENT=${JSON.stringify(event)}`).join('\n'),
-            scope,
-        );
+        const eventField = { ...matching, message: undefined, event: 'metaDiscoveryCanaryCompleted' };
+        const mixedInput = [
+            'ordinary docker text',
+            '{not-json',
+            JSON.stringify(matching),
+            `EVENT=${JSON.stringify(ignoredShop)}`,
+            JSON.stringify(ignoredTime),
+            `EVENT=${JSON.stringify(eventField)}`,
+        ].join('\n');
+        const result = parseRecoveryLines(mixedInput, scope);
 
-        expect(result).toHaveLength(1);
+        expect(result).toHaveLength(2);
+        expect(result.map((event) => event.event)).toEqual(['metaDiscoveryCanaryFailed', 'metaDiscoveryCanaryCompleted']);
         expect(result[0].lastGraphError).toEqual({ stage: 'me_accounts', metaCode: 100, metaSubcode: 200 });
-        expect(JSON.stringify(result[0])).not.toContain('must-not-survive');
+        expect(JSON.stringify(result)).not.toContain('must-not-survive');
     });
 
     test('allowlists nested diagnostic fields and excludes raw tokens', () => {
@@ -52,5 +63,16 @@ describe('Meta canary log recovery', () => {
             '--from=2026-10-12T00:00:00Z',
             '--to=2026-10-13T00:00:01Z',
         ])).toThrow('no longer than 24 hours');
+    });
+
+    test('distinguishes no matches, missing containers, and extraction errors', () => {
+        expect(summarizeRecoveryOutput('ORIGINAL_CONTAINER_AVAILABLE=YES\n', scope).extractionStatus)
+            .toBe('NO_MATCHES');
+        expect(summarizeRecoveryOutput('ORIGINAL_CONTAINER_AVAILABLE=NO\n', scope).extractionStatus)
+            .toBe('NO_CONTAINER');
+        expect(summarizeRecoveryOutput('ORIGINAL_CONTAINER_AVAILABLE=YES\nLOG_READ_ERROR=easymod-backend-1\n', scope))
+            .toMatchObject({ extractionStatus: 'PARTIAL', logReadErrorCount: 1 });
+        expect(summarizeRecoveryOutput('CONTAINER_DISCOVERY_ERROR=DOCKER_PS_FAILED\n', scope).extractionStatus)
+            .toBe('ERROR');
     });
 });
