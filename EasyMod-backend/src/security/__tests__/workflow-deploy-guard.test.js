@@ -22,6 +22,8 @@ const backendDockerignorePath = path.resolve(__dirname, '../../../.dockerignore'
 const backendDockerignore = fs.readFileSync(backendDockerignorePath, 'utf8');
 const frontendDockerfilePath = path.resolve(__dirname, '../../../../EasyMod-frontend/Dockerfile');
 const frontendDockerfile = fs.readFileSync(frontendDockerfilePath, 'utf8');
+const workerPath = path.resolve(__dirname, '../../jobs/worker.js');
+const workerSource = fs.readFileSync(workerPath, 'utf8');
 const securityWorkflowPath = path.resolve(
     __dirname,
     '../../../../.github/workflows/security-scan.yml',
@@ -322,15 +324,13 @@ describe('production workflow branch safety', () => {
         expect(workflow).toContain('config --images');
     });
 
-    test('production Compose keeps the canary API-only and workers fail-closed', () => {
+    test('production Compose keeps the canary API-only and workers do not load OAuth canary code', () => {
         const backendBlock = compose.match(/\r?\n  backend:\r?\n([\s\S]*?)\r?\n  # ── Worker:/)?.[1];
         const workerBlock = compose.match(/\r?\n  worker:\r?\n([\s\S]*?)\r?\n  # ── Frontend:/)?.[1];
 
         expect(backendBlock).toContain('env_file:');
-        expect(workerBlock).toContain('META_DISCOVERY_CANARY_ENABLED=false');
-        expect(workerBlock).toContain('META_DISCOVERY_CANARY_SHOP_ID=');
-        expect(workerBlock).toContain('META_DISCOVERY_CANARY_PAGE_ID=');
-        expect(workerBlock).toContain('META_DISCOVERY_CANARY_EXPIRES_AT=');
+        expect(workerBlock).toContain('command: ["node", "src/jobs/worker.js"]');
+        expect(workerSource).not.toContain('meta-discovery-canary');
     });
 
     // BUILD_TIME lands in the image as ENV and is read back by /health, /version
