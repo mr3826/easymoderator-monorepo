@@ -458,6 +458,22 @@ describe('production workflow branch safety', () => {
         expect(backupWorkflow).not.toContain('&& npm run migrate');
     });
 
+    test('starts candidate services before Caddy and diagnoses backend health failures', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const appStartIndex = deployBlock.indexOf('up -d --no-build --remove-orphans backend worker frontend growth-frontend');
+        const backendHealthIndex = deployBlock.indexOf('candidate_backend_healthy=false');
+        const caddyStartIndex = deployBlock.indexOf('up -d --no-build --remove-orphans caddy');
+        const caddyReloadIndex = deployBlock.indexOf('caddy reload --config /etc/caddy/Caddyfile');
+
+        expect(appStartIndex).toBeGreaterThan(-1);
+        expect(backendHealthIndex).toBeGreaterThan(appStartIndex);
+        expect(caddyStartIndex).toBeGreaterThan(backendHealthIndex);
+        expect(caddyReloadIndex).toBeGreaterThan(caddyStartIndex);
+        expect(deployBlock).toContain('Candidate backend health details: {{json .State.Health}}');
+        expect(deployBlock).toContain('docker logs --tail 100 easymod-backend-1');
+        expect(deployBlock).toContain('docker logs --tail 100 easymod-caddy-1');
+    });
+
     test('the pre-migration schema-drift probe is opt-in per dispatch, not hardcoded', () => {
         expect(workflow).toContain(
             "description: 'One-shot: require the 3 repair columns ABSENT before migrating. Type DRIFT to confirm.'",
