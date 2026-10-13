@@ -1,0 +1,141 @@
+name: Meta canary log recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      shop_id:
+        description: Exact EasyModerator shop UUID
+        required: true
+        type: string
+      page_id:
+        description: Exact Facebook Page ID
+        required: true
+        type: string
+      from_utc:
+        description: Inclusive UTC start, ISO-8601
+        required: true
+        type: string
+      to_utc:
+        description: Inclusive UTC end, ISO-8601; max 24 hours
+        required: true
+        type: string
+      confirmation:
+        description: Type META-CANARY-READONLY
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-canary-log-recovery-production
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Filtered production canary evidence
+    if: vars.PRODUCTION_DEPLOY_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout sanitizer
+        uses: actions/checkout@v4
+
+      - name: Validate bounded recovery scope
+        env:
+          SHOP_ID: ${{ inputs.shop_id }}
+          PAGE_ID: ${{ inputs.page_id }}
+          FROM_UTC: ${{ inputs.from_utc }}
+          TO_UTC: ${{ inputs.to_utc }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'META-CANARY-READONLY'
+          node scripts/meta-canary-log-recovery.js --shop="$SHOP_ID" --page="$PAGE_ID" --from="$FROM_UTC" --to="$TO_UTC" </dev/null >/dev/null
+
+      - name: Extract filtered events over pinned SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+          SHOP_ID: ${{ inputs.shop_id }}
+          PAGE_ID: ${{ inputs.page_id }}
+          FROM_UTC: ${{ inputs.from_utc }}
+          TO_UTC: ${{ inputs.to_utc }}
+        run: |
+          set -euo pipefail
+          mkdir -p _tmp ~/.ssh
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/meta_canary_recovery_key
+          chmod 600 ~/.ssh/meta_canary_recovery_key
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          printf '%s\n' "$SHOP_ID" > _tmp/meta-canary-scope.txt
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -i ~/.ssh/meta_canary_recovery_key \
+            root@"$DEPLOY_HOST" bash -s -- "$SHOP_ID" "$PAGE_ID" "$FROM_UTC" "$TO_UTC" > _tmp/meta-canary-filtered.ndjson <<'REMOTE'
+          set -euo pipefail
+          shop_id=$1
+          page_id=$2
+          from_utc=$3
+          to_utc=$4
+          test -n "$shop_id" -a -n "$page_id" -a -n "$from_utc" -a -n "$to_utc"
+          command -v jq >/dev/null 2>&1 || { echo 'RECOVERY_ERROR=JQ_UNAVAILABLE'; exit 2; }
+          names=$(docker ps -a --filter name=easymod-backend --format '{{.Names}}' || true)
+          if [ -z "$names" ]; then
+            echo 'ORIGINAL_CONTAINER_AVAILABLE=NO'
+            exit 0
+          fi
+          echo 'ORIGINAL_CONTAINER_AVAILABLE=YES'
+          for name in $names; do
+            status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo unknown)
+            created=$(docker inspect -f '{{.Created}}' "$name" 2>/dev/null || echo unknown)
+            printf 'CONTAINER_INFO=%s\n' "$(jq -cn --arg name "$name" --arg status "$status" --arg created "$created" '{name:$name,status:$status,created:$created}')"
+            docker logs --since "$from_utc" --until "$to_utc" "$name" 2>/dev/null \
+              | jq -c --arg shop "$shop_id" --arg page "$page_id" --arg from "$from_utc" --arg to "$to_utc" '
+                select((.message == "metaDiscoveryCanaryCompleted" or .message == "metaDiscoveryCanaryFailed")
+                  and (.shopId|tostring) == $shop
+                  and (.expectedPageId|tostring) == $page
+                  and (.timestamp >= $from and .timestamp <= $to))
+                | {event:.message,timestamp,service,environment,correlationId,initiateRequestId,callbackRequestId,shopId,expectedPageId,expiresAt,retentionExpiresAt,tokenValid,tokenAppIdMatches,tokenExpirationStatus,granularScopes,meAccounts,hydration,expectedPageTasks,expectedPageEligible,portfolioFallbackAttempted,portfolioFallbackRecovered,callbackPageCount,callbackConnectablePageCount,metaIdentityAvailable,lastGraphError,applicationErrorCode}
+              ' 2>/dev/null | sed 's/^/EVENT=/'
+          done
+          REMOTE
+          rm -f ~/.ssh/meta_canary_recovery_key
+
+      - name: Sanitize and write audit receipt
+        env:
+          SHOP_ID: ${{ inputs.shop_id }}
+          PAGE_ID: ${{ inputs.page_id }}
+          FROM_UTC: ${{ inputs.from_utc }}
+          TO_UTC: ${{ inputs.to_utc }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          node scripts/meta-canary-log-recovery.js --shop="$SHOP_ID" --page="$PAGE_ID" --from="$FROM_UTC" --to="$TO_UTC" < _tmp/meta-canary-filtered.ndjson > _tmp/meta-canary-events.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const output = JSON.parse(fs.readFileSync('_tmp/meta-canary-events.json', 'utf8'));
+          const audit = {
+            runId: process.env.RUN_ID,
+            actor: process.env.ACTOR,
+            shopId: process.env.SHOP_ID,
+            pageId: process.env.PAGE_ID,
+            fromUtc: process.env.FROM_UTC,
+            toUtc: process.env.TO_UTC,
+            eventCount: output.eventCount,
+            originalContainerAvailable: fs.readFileSync('_tmp/meta-canary-filtered.ndjson', 'utf8').includes('ORIGINAL_CONTAINER_AVAILABLE=YES'),
+          };
+          fs.writeFileSync('_tmp/meta-canary-audit.json', `${JSON.stringify(audit, null, 2)}\n`);
+          console.log(JSON.stringify(audit));
+          NODE
+
+      - name: Upload sanitized evidence with one-day retention
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-canary-recovery-${{ github.run_id }}
+          path: |
+            _tmp/meta-canary-events.json
+            _tmp/meta-canary-audit.json
+          retention-days: 1
+          if-no-files-found: error
