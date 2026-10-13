@@ -1611,8 +1611,45 @@ jobs:
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
               -e RUN_MIGRATIONS_ON_STARTUP=false backend node scripts/schema-drift-audit.js
 
-            # Restart services with immutable image references
-            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
+            # Start application services before the edge. Starting Caddy in the
+            # same Compose transaction makes its dependency wait abort before
+            # the candidate backend's 60-second health start period elapses.
+            echo "==> Starting candidate application services"
+            if ! docker compose --env-file .env.prod -f docker-compose.prod.yml \
+              up -d --no-build --remove-orphans backend worker frontend growth-frontend; then
+              echo "ERROR: candidate application services failed to start"
+              docker inspect easymod-backend-1 \
+                --format 'Candidate backend health details: {{json .State.Health}}' 2>/dev/null || true
+              docker logs --tail 100 easymod-backend-1 2>/dev/null || true
+              exit 1
+            fi
+
+            candidate_backend_healthy=false
+            for i in $(seq 1 20); do
+              candidate_backend_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' easymod-backend-1 2>/dev/null || echo missing)
+              if [ "$candidate_backend_status" = "healthy" ]; then
+                echo "Candidate backend health check passed on attempt $i"
+                candidate_backend_healthy=true
+                break
+              fi
+              echo "Candidate backend health attempt $i: status=$candidate_backend_status — retrying in 5s..."
+              sleep 5
+            done
+            if [ "$candidate_backend_healthy" != "true" ]; then
+              echo "ERROR: candidate backend health check failed after 100s"
+              docker inspect easymod-backend-1 \
+                --format 'Candidate backend health details: {{json .State.Health}}' 2>/dev/null || true
+              docker logs --tail 100 easymod-backend-1 2>/dev/null || true
+              exit 1
+            fi
+
+            echo "==> Starting Caddy after candidate backend health passed"
+            if ! docker compose --env-file .env.prod -f docker-compose.prod.yml \
+              up -d --no-build --remove-orphans caddy; then
+              echo "ERROR: candidate Caddy failed to start"
+              docker logs --tail 100 easymod-caddy-1 2>/dev/null || true
+              exit 1
+            fi
 
             # The Caddyfile is bind-mounted read-only, so `up -d` will NOT restart
             # Caddy just because the file's contents changed. Reload it explicitly
