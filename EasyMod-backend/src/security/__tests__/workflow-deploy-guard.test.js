@@ -448,6 +448,9 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain('backend node src/utils/database/sync.js');
         expect(deployBlock).toContain('backend node src/database/migrate.js seed-as-executed');
         expect(deployBlock).toContain('backend node src/scripts/seed-admin.js');
+        expect(deployBlock).toContain('Candidate backend startup preflight failed:');
+        expect(deployBlock).toContain('Candidate backend database connection passed');
+        expect(deployBlock).toContain('Candidate backend Redis connection passed');
         expect(deployBlock).not.toMatch(/backend\s+(?:npm|npx)\b/);
         expect(deployBlock).toContain('Rollback Growth health details: {{json .State.Health}}');
         expect(deployBlock).toContain('docker logs --tail 50 easymod-growth-frontend-1');

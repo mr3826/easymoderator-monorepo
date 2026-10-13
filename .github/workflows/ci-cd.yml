@@ -1611,6 +1611,42 @@ jobs:
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
               -e RUN_MIGRATIONS_ON_STARTUP=false backend node scripts/schema-drift-audit.js
 
+            # Exercise the same startup dependencies as server.js while the
+            # candidate image is still disposable. This exposes production-only
+            # DB, active-integration, Redis, or app-module failures before any
+            # long-lived container is replaced.
+            echo "==> Preflighting candidate backend startup dependencies"
+            if ! docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -e RUN_MIGRATIONS_ON_STARTUP=false backend node - <<'NODE'
+            require('module-alias/register');
+            (async () => {
+              const { sequelize } = require('src/utils/database/database-setup');
+              const { getRedisClient, closeRedis } = require('src/utils/redis-client');
+              try {
+                require('src/app');
+                await sequelize.authenticate();
+                console.log('Candidate backend database connection passed');
+                await require('src/config/production-integration.validator').assertProductionIntegrations();
+                const redis = getRedisClient();
+                if (redis) {
+                  await new Promise((resolve) => setTimeout(resolve, 500));
+                  await redis.ping();
+                  console.log('Candidate backend Redis connection passed');
+                }
+              } catch (error) {
+                console.error('Candidate backend startup preflight failed:', error);
+                process.exitCode = 1;
+              } finally {
+                await sequelize.close().catch(() => {});
+                await closeRedis().catch(() => {});
+              }
+            })();
+            NODE
+            then
+              echo "ERROR: candidate backend startup preflight failed"
+              exit 1
+            fi
+
             # Start application services before the edge. Starting Caddy in the
             # same Compose transaction makes its dependency wait abort before
             # the candidate backend's 60-second health start period elapses.
