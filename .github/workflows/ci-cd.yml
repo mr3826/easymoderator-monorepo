@@ -1233,13 +1233,16 @@ jobs:
             # make the deploy non-reproducible and the rollback meaningless.
             # GROWTH_BOOTSTRAP_DIGEST remains the fallback for the first rollout
             # when growth-frontend is not running at all.
+            growth_image_source=running
             candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1 2>/dev/null || true)
             if [ -n "${GROWTH_IMAGE_OVERRIDE:-}" ]; then
               echo "growth_image_override set; swapping growth-frontend to the pinned digest"
               candidate_growth_image="${GHCR_GROWTH}@${GROWTH_IMAGE_OVERRIDE}"
+              growth_image_source=override
             elif [ -z "$candidate_growth_image" ] && [ -n "${GROWTH_BOOTSTRAP_DIGEST:-}" ]; then
               echo "growth-frontend is not running; bootstrapping from pinned GROWTH_BOOTSTRAP_DIGEST"
               candidate_growth_image="${GHCR_GROWTH}@${GROWTH_BOOTSTRAP_DIGEST}"
+              growth_image_source=bootstrap
             fi
             if [ -z "$candidate_growth_image" ]; then
               echo "ERROR: growth-frontend is not running from a content-addressed image and"
@@ -1336,12 +1339,23 @@ jobs:
               docker pull "$GHCR_IMAGE_FRONTEND"
             fi
 
-            if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ] || [ -n "$GROWTH_IMAGE_OVERRIDE" ]; then
+            if [ "$growth_image_source" != "running" ]; then
+              if ! command -v jq >/dev/null 2>&1 || ! jq --version >/dev/null 2>&1; then
+                echo "ERROR: jq is required on the deployment host to validate Growth build metadata"
+                exit 1
+              fi
               echo "Pulling Growth digest: $GHCR_IMAGE_GROWTH"
               docker pull "$GHCR_IMAGE_GROWTH"
               growth_build_info=$(docker run --rm "$GHCR_IMAGE_GROWTH" \
                 cat /usr/share/nginx/html/build-info.json 2>/dev/null || true)
-              growth_build_commit=$(printf '%s' "$growth_build_info" | node -e "let data=''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { try { process.stdout.write(String(JSON.parse(data).commit || '')); } catch (_) { process.exit(1); } });")
+              if [ -z "$growth_build_info" ]; then
+                echo "ERROR: Growth image build-info.json is missing or empty"
+                exit 1
+              fi
+              if ! growth_build_commit=$(printf '%s' "$growth_build_info" | jq -er '.commit | select(type == "string" and length > 0)'); then
+                echo "ERROR: Growth image build-info.json is malformed or has no non-empty commit"
+                exit 1
+              fi
               if [ "$growth_build_commit" != "$DEPLOYED_COMMIT" ]; then
                 echo "ERROR: Growth image build-info commit '$growth_build_commit' does not match deployed commit '$DEPLOYED_COMMIT'"
                 exit 1
