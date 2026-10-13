@@ -57,6 +57,8 @@ describe('production workflow branch safety', () => {
         expect(backendDockerfile).toContain('/usr/local/lib/node_modules/npm');
         expect(frontendDockerfile).toContain('FROM nginx:1.29-alpine AS production');
         expect(frontendDockerfile).toContain('apk upgrade --no-cache');
+        expect(frontendDockerfile).toContain('ARG VITE_META_APP_ID');
+        expect(frontendDockerfile).toContain('VITE_META_APP_ID=$VITE_META_APP_ID');
         expect(backendDockerignore).toContain('coverage');
         expect(backendDockerignore).toContain('.test-uploads');
     });
