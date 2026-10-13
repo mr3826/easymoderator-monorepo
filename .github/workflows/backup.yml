@@ -591,7 +591,7 @@ jobs:
             # DATABASE_URL override. The container re-checks that override
             # itself and exits before the first statement unless it names this
             # drill's isolated container.
-            docker run --rm --network "$RESTORE_NETWORK" --env-file /opt/easymod/.env.prod -e RUN_MIGRATIONS_ON_STARTUP=false -e DB_SSL=false -e DATABASE_URL="$DRILL_DATABASE_URL" -e EXPECTED_DB_HOST="$RESTORE_CONTAINER" "$MIGRATION_IMAGE" sh -c "node -e 'if (new URL(process.env.DATABASE_URL).hostname !== process.env.EXPECTED_DB_HOST) { console.error(process.env.EXPECTED_DB_HOST); process.exit(1); }' && npm run migrate"
+            docker run --rm --network "$RESTORE_NETWORK" --env-file /opt/easymod/.env.prod -e RUN_MIGRATIONS_ON_STARTUP=false -e DB_SSL=false -e DATABASE_URL="$DRILL_DATABASE_URL" -e EXPECTED_DB_HOST="$RESTORE_CONTAINER" "$MIGRATION_IMAGE" sh -c "node -e 'if (new URL(process.env.DATABASE_URL).hostname !== process.env.EXPECTED_DB_HOST) { console.error(process.env.EXPECTED_DB_HOST); process.exit(1); }' && node src/database/migrate.js up"
 
             RESTORED_LEDGER_AFTER=$(migration_count "$RESTORE_CONTAINER")
             echo "RESTORED_FORWARD_MIGRATIONS_APPLIED=$((RESTORED_LEDGER_AFTER - RESTORED_LEDGER_BEFORE))"

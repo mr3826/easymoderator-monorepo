@@ -1421,6 +1421,9 @@ jobs:
                 done
                 if [ "$growth_status" != "healthy" ]; then
                   echo "ERROR: rollback Growth health check failed after 100s"
+                  docker inspect easymod-growth-frontend-1 \
+                    --format 'Rollback Growth health details: {{json .State.Health}}' 2>/dev/null || true
+                  docker logs --tail 50 easymod-growth-frontend-1 2>/dev/null || true
                   return 1
                 fi
               fi
@@ -1530,10 +1533,10 @@ jobs:
                 process.exit(1);
               });
             NODE
-              echo "==> Bootstrapping entity tables via npm run db:sync"
-              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run db:sync
+              echo "==> Bootstrapping entity tables via node src/utils/database/sync.js"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend node src/utils/database/sync.js
               echo "==> Seeding migrations table so the runner skips already-applied DDL"
-              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate:seed-executed
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend node src/database/migrate.js seed-as-executed
               echo "==> DB wiped, synced, and migration history primed"
 
               # Full reset: a true first-time state must also clear the other
@@ -1567,7 +1570,7 @@ jobs:
               echo "MIGRATION_START=$migration_started_at"
               echo "Running database migrations before service replacement..."
               docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
-                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate
+                -e RUN_MIGRATIONS_ON_STARTUP=false backend node src/database/migrate.js up
               threshold_snapshot_after=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
                 sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*)::text || chr(58) || COALESCE(SUM(threshold_conversations), 0)::text || chr(58) || COALESCE(MIN(threshold_conversations), 0)::text || chr(58) || COALESCE(MAX(threshold_conversations), 0)::text FROM public.subscriptions"' \
                 | tr -d '\r\n')
@@ -1606,7 +1609,7 @@ jobs:
             # service replacement; a missing entity column must fail closed.
             echo "Auditing production schema before service replacement..."
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
-              -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run schema:audit
+              -e RUN_MIGRATIONS_ON_STARTUP=false backend node scripts/schema-drift-audit.js
 
             # Restart services with immutable image references
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
@@ -1624,7 +1627,7 @@ jobs:
             # so normal deploys do not reset credentials or grant admin access.
             if [ "$SEED_ADMIN" = "SEED" ]; then
               echo "==> Seeding production admin review account"
-              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend npm run seed:admin
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend node src/scripts/seed-admin.js
             fi
 
             # Health check

@@ -16,6 +16,10 @@ const releaseWorkflowPath = path.resolve(
     '../../../../.github/workflows/release.yml',
 );
 const releaseWorkflow = fs.readFileSync(releaseWorkflowPath, 'utf8');
+const backupWorkflow = fs.readFileSync(
+    path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
+    'utf8',
+);
 const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
 const compose = fs.readFileSync(composePath, 'utf8');
 const backendDockerfilePath = path.resolve(__dirname, '../../../Dockerfile');
@@ -397,9 +401,9 @@ describe('production workflow branch safety', () => {
     test('migrates the candidate backend image before replacing running services', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
         const candidateMigration =
-            'run --rm --no-deps -T \\\n                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate';
+            'run --rm --no-deps -T \\\n                -e RUN_MIGRATIONS_ON_STARTUP=false backend node src/database/migrate.js up';
         const migrationIndex = deployBlock.indexOf(candidateMigration);
-        const schemaAuditIndex = deployBlock.indexOf('npm run schema:audit');
+        const schemaAuditIndex = deployBlock.indexOf('node scripts/schema-drift-audit.js');
         const replacementIndex = deployBlock.indexOf(
             'up -d --no-build --remove-orphans',
         );
@@ -413,12 +417,12 @@ describe('production workflow branch safety', () => {
     test('stamps MIGRATION_START before the candidate migration runs, and proves exactly one repair ledger row before the schema audit', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
         const candidateMigration =
-            'run --rm --no-deps -T \\\n                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate';
+            'run --rm --no-deps -T \\\n                -e RUN_MIGRATIONS_ON_STARTUP=false backend node src/database/migrate.js up';
 
         const migrationStartIndex = deployBlock.indexOf('echo "MIGRATION_START=$migration_started_at"');
         const migrationIndex = deployBlock.indexOf(candidateMigration);
         const ledgerCheckIndex = deployBlock.indexOf('REPAIR_LEDGER_ENTRY_COUNT=1');
-        const schemaAuditIndex = deployBlock.indexOf('npm run schema:audit');
+        const schemaAuditIndex = deployBlock.indexOf('node scripts/schema-drift-audit.js');
 
         expect(migrationStartIndex).toBeGreaterThan(-1);
         expect(migrationIndex).toBeGreaterThan(-1);
@@ -434,6 +438,24 @@ describe('production workflow branch safety', () => {
         // MIGRATION_START must be stamped even when the migration block is
         // skipped (WIPE path), since Step 17's log bound cannot be conditional.
         expect(deployBlock.match(/echo "MIGRATION_START=\$migration_started_at"/g)).toHaveLength(2);
+    });
+
+    test('production image database commands do not depend on removed npm binaries', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain('backend node src/database/migrate.js up');
+        expect(deployBlock).toContain('backend node scripts/schema-drift-audit.js');
+        expect(deployBlock).toContain('backend node src/utils/database/sync.js');
+        expect(deployBlock).toContain('backend node src/database/migrate.js seed-as-executed');
+        expect(deployBlock).toContain('backend node src/scripts/seed-admin.js');
+        expect(deployBlock).not.toMatch(/backend\s+(?:npm|npx)\b/);
+        expect(deployBlock).toContain('Rollback Growth health details: {{json .State.Health}}');
+        expect(deployBlock).toContain('docker logs --tail 50 easymod-growth-frontend-1');
+
+        // The backup restore drill uses the same lean production image and must
+        // keep its isolated forward-migration proof on the direct Node entrypoint.
+        expect(backupWorkflow).toContain('&& node src/database/migrate.js up');
+        expect(backupWorkflow).not.toContain('&& npm run migrate');
     });
 
     test('the pre-migration schema-drift probe is opt-in per dispatch, not hardcoded', () => {
