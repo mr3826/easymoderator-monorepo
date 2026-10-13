@@ -1616,12 +1616,32 @@ jobs:
             # DB, active-integration, Redis, or app-module failures before any
             # long-lived container is replaced.
             echo "==> Preflighting candidate backend startup dependencies"
-            if ! docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
-              -e RUN_MIGRATIONS_ON_STARTUP=false backend node - <<'NODE'
+            preflight_container_name="easymod-backend-preflight-${WORKFLOW_RUN_ID:-unknown}"
+            docker rm -f "$preflight_container_name" >/dev/null 2>&1 || true
+            if ! command -v timeout >/dev/null 2>&1; then
+              echo "ERROR: timeout is required on the deployment host for bounded startup preflight"
+              exit 1
+            fi
+            preflight_rc=0
+            if ! timeout --signal=TERM --kill-after=10s 120s \
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -e RUN_MIGRATIONS_ON_STARTUP=false --name "$preflight_container_name" backend node - <<'NODE'
             require('module-alias/register');
+            const closeWithTimeout = async (label, close) => {
+              try {
+                await Promise.race([
+                  Promise.resolve().then(close),
+                  new Promise((resolve) => setTimeout(resolve, 5000)),
+                ]);
+              } catch (error) {
+                console.warn(`Candidate backend ${label} cleanup failed:`, error.message);
+              }
+            };
+
             (async () => {
               const { sequelize } = require('src/utils/database/database-setup');
               const { getRedisClient, closeRedis } = require('src/utils/redis-client');
+              let exitCode = 0;
               try {
                 require('src/app');
                 await sequelize.authenticate();
@@ -1635,16 +1655,21 @@ jobs:
                 }
               } catch (error) {
                 console.error('Candidate backend startup preflight failed:', error);
-                process.exitCode = 1;
+                exitCode = 1;
               } finally {
-                await sequelize.close().catch(() => {});
-                await closeRedis().catch(() => {});
+                await closeWithTimeout('database', () => sequelize.close());
+                await closeWithTimeout('Redis', () => closeRedis());
+                process.exit(exitCode);
               }
             })();
             NODE
             then
               echo "ERROR: candidate backend startup preflight failed"
-              exit 1
+              preflight_rc=1
+            fi
+            docker rm -f "$preflight_container_name" >/dev/null 2>&1 || true
+            if [ "$preflight_rc" -ne 0 ]; then
+              exit "$preflight_rc"
             fi
 
             # Start application services before the edge. Starting Caddy in the
