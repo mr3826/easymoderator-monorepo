@@ -18,9 +18,17 @@ require('dotenv').config();
 
 const axios = require('axios');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
 
+const INHERITED_PROCESS_ENV = { ...process.env };
+dotenv.config();
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const TEST_ENV_FILE = path.resolve(__dirname, '../.env.test.meta.local');
+const MINIMAL_PAGE_FIELDS = 'id,name';
+const PAGE_TOKEN_FIELDS = 'id,name,access_token';
 const PAGE_FIELDS = 'id,name,category,access_token,picture{data{url}},tasks';
 const PAGE_HYDRATION_FIELDS = 'id,name,category,picture{data{url}},tasks,access_token';
 const GRANULAR_SCOPES = ['pages_messaging', 'pages_manage_metadata', 'pages_show_list'];
@@ -29,11 +37,68 @@ const USER_TOKEN_ENV_NAMES = ['META_PAGE_DISCOVERY_USER_TOKEN', 'META_DISCOVERY_
 
 const line = (value) => process.stdout.write(`${value}\n`);
 
+function safeGraphErrorMessage(value) {
+    if (typeof value !== 'string' || value.trim() === '') return 'NONE';
+    return value
+        .replace(/(access_token|appsecret_proof)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+        .slice(0, 300);
+}
+
+function validateExplicitTestEnvironment(values, rawSecret, inherited = process.env) {
+    if (values.META_APP_ID !== '4064125980563451') {
+        throw new Error('TEST_ENV_APP_ID_INVALID');
+    }
+    if (values.META_GRAPH_API_VERSION !== 'v22.0') {
+        throw new Error('TEST_ENV_GRAPH_VERSION_INVALID');
+    }
+    if (typeof values.META_APP_SECRET !== 'string' || values.META_APP_SECRET.length === 0) {
+        throw new Error('TEST_ENV_APP_SECRET_MISSING');
+    }
+    if (rawSecret !== values.META_APP_SECRET
+        || rawSecret !== rawSecret.trim()
+        || rawSecret.includes('\r')
+        || rawSecret.includes('\n')
+        || rawSecret.startsWith('"')
+        || rawSecret.endsWith('"')
+        || rawSecret.startsWith("'")
+        || rawSecret.endsWith("'")) {
+        throw new Error('TEST_ENV_APP_SECRET_FORMAT_INVALID');
+    }
+    for (const name of ['META_APP_ID', 'META_APP_SECRET', 'META_GRAPH_API_VERSION']) {
+        if (Object.prototype.hasOwnProperty.call(inherited, name)) {
+            throw new Error(`TEST_ENV_INHERITED_OVERRIDE_${name}`);
+        }
+    }
+    return values;
+}
+
+function loadExplicitTestEnvironment(filePath = TEST_ENV_FILE, inherited = INHERITED_PROCESS_ENV) {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (raw.charCodeAt(0) === 0xfeff) throw new Error('TEST_ENV_BOM_INVALID');
+    const values = dotenv.parse(raw);
+    const secretLine = raw.split(/\r?\n/).find((line) => line.startsWith('META_APP_SECRET='));
+    const rawSecret = secretLine?.slice('META_APP_SECRET='.length) ?? '';
+    return validateExplicitTestEnvironment(values, rawSecret, inherited);
+}
+
 function graphErrorDetails(error) {
     return {
+        httpStatus: error?.response?.status || 'UNKNOWN',
         code: error?.response?.data?.error?.code || 'UNKNOWN',
         subcode: error?.response?.data?.error?.error_subcode || 'NONE',
+        fbtraceId: error?.response?.data?.error?.fbtrace_id || 'NONE',
+        type: error?.response?.data?.error?.type || 'NONE',
+        message: safeGraphErrorMessage(error?.response?.data?.error?.message),
     };
+}
+
+function graphErrorClassification(code, httpStatus) {
+    if (String(code) === '100') return 'INVALID_PARAMETER_OR_REQUEST';
+    if (String(code) === '190') return 'INVALID_OR_EXPIRED_TOKEN';
+    if (String(code) === '200') return 'PERMISSION_OR_ROLE_REQUIRED';
+    if (Number(httpStatus) >= 500) return 'GRAPH_SERVER_ERROR';
+    if (Number(httpStatus) >= 400) return 'GRAPH_REQUEST_REJECTED';
+    return 'UNKNOWN';
 }
 
 function appsecretProof(token, appSecret) {
@@ -56,6 +121,306 @@ function targetIdsForScope(granularScopes, scope) {
             .map(pageId)
             .filter(Boolean),
     );
+}
+
+function safeScopeEvidence(debugData, appId, expectedPageId) {
+    const granularScopes = Array.isArray(debugData?.granular_scopes)
+        ? debugData.granular_scopes
+        : [];
+    const scopeTargetIds = Object.fromEntries(
+        GRANULAR_SCOPES.map((scope) => [scope, targetIdsForScope(granularScopes, scope)]),
+    );
+    const grantedScopes = Array.isArray(debugData?.scopes)
+        ? debugData.scopes.filter((scope) => typeof scope === 'string').sort()
+        : [];
+
+    return {
+        tokenValid: debugData?.is_valid === true ? 'YES' : 'NO',
+        tokenAppIdMatches: String(debugData?.app_id || '') === String(appId) ? 'YES' : 'NO',
+        tokenType: typeof debugData?.type === 'string' ? debugData.type : 'UNKNOWN',
+        grantedScopes,
+        businessManagementGranted: grantedScopes.includes('business_management') ? 'YES' : 'NO',
+        granularTargets: Object.fromEntries(
+            GRANULAR_SCOPES.map((scope) => [scope, {
+                granted: scopeTargetIds[scope].size > 0 ? 'YES' : 'NO',
+                expectedPage: expectedPageId && scopeTargetIds[scope].has(String(expectedPageId))
+                    ? 'YES'
+                    : 'NO',
+            }]),
+        ),
+        scopeTargetIds,
+    };
+}
+
+function summarizeRows(rows, expectedPageId, tokenRequested) {
+    const expectedId = pageId(expectedPageId);
+    const expectedPage = rows.find((row) => pageId(row?.id) === expectedId);
+    return {
+        pageCount: rows.length,
+        expectedPageVisible: expectedPage ? 'YES' : 'NO',
+        pageTokenAvailable: tokenRequested
+            ? (expectedPage ? (hasNonEmptyAccessToken(expectedPage) ? 'YES' : 'NO') : 'NO')
+            : 'NOT_REQUESTED',
+        tasks: expectedPage && Array.isArray(expectedPage.tasks)
+            ? expectedPage.tasks.filter((task) => typeof task === 'string').sort()
+            : [],
+    };
+}
+
+async function requestCollection({ request, url, params, expectedPageId, tokenRequested }) {
+    const rows = [];
+    let after = null;
+    let httpStatus = 'UNKNOWN';
+    const seenCursors = new Set();
+
+    try {
+        while (true) {
+            const response = await request(url, {
+                params: after ? { ...params, after } : { ...params },
+            });
+            httpStatus = response.status || 200;
+            rows.push(...(Array.isArray(response.data?.data) ? response.data.data : []));
+            const nextAfter = response.data?.paging?.cursors?.after;
+            if (!nextAfter || seenCursors.has(String(nextAfter))) break;
+            seenCursors.add(String(nextAfter));
+            after = nextAfter;
+        }
+        return {
+            status: 'PASS',
+            httpStatus,
+            ...summarizeRows(rows, expectedPageId, tokenRequested),
+            graphError: null,
+        };
+    } catch (error) {
+        const details = graphErrorDetails(error);
+        return {
+            status: 'FAIL',
+            httpStatus: details.httpStatus,
+            ...summarizeRows(rows, expectedPageId, tokenRequested),
+            graphError: {
+                code: details.code,
+                subcode: details.subcode,
+                fbtraceId: details.fbtraceId,
+                type: details.type,
+                message: details.message,
+                classification: graphErrorClassification(details.code, details.httpStatus),
+            },
+        };
+    }
+}
+
+async function requestPage({ request, url, fields, userToken, proof, expectedPageId }) {
+    try {
+        const response = await request(url, {
+            params: {
+                fields,
+                access_token: userToken,
+                appsecret_proof: proof,
+            },
+        });
+        const page = response.data;
+        const visible = pageId(page?.id) === pageId(expectedPageId);
+        return {
+            status: visible ? 'PASS' : 'FAIL',
+            httpStatus: response.status || 200,
+            expectedPageVisible: visible ? 'YES' : 'NO',
+            pageTokenAvailable: fields.includes('access_token')
+                ? (visible && hasNonEmptyAccessToken(page) ? 'YES' : 'NO')
+                : 'NOT_REQUESTED',
+            tasks: Array.isArray(page?.tasks)
+                ? page.tasks.filter((task) => typeof task === 'string').sort()
+                : [],
+            graphError: visible ? null : {
+                code: 'ID_MISMATCH',
+                subcode: 'NONE',
+                fbtraceId: 'NONE',
+                classification: 'UNEXPECTED_PAGE_OBJECT',
+            },
+        };
+    } catch (error) {
+        const details = graphErrorDetails(error);
+        return {
+            status: 'FAIL',
+            httpStatus: details.httpStatus,
+            expectedPageVisible: 'NO',
+            pageTokenAvailable: fields.includes('access_token') ? 'NO' : 'NOT_REQUESTED',
+            tasks: [],
+            graphError: {
+                code: details.code,
+                subcode: details.subcode,
+                fbtraceId: details.fbtraceId,
+                type: details.type,
+                message: details.message,
+                classification: graphErrorClassification(details.code, details.httpStatus),
+            },
+        };
+    }
+}
+
+function printProgressiveProbe(label, result) {
+    const error = result.graphError;
+    line([
+        `PROBE=${label}`,
+        `status=${result.status}`,
+        `http_status=${result.httpStatus}`,
+        `page_visible=${result.expectedPageVisible}`,
+        `page_token=${result.pageTokenAvailable}`,
+        `graph_code=${error?.code || 'NONE'}`,
+        `graph_subcode=${error?.subcode || 'NONE'}`,
+        `error_class=${error?.classification || 'NONE'}`,
+        `error_type=${error?.type || 'NONE'}`,
+        `fbtrace_id=${error?.fbtraceId || 'NONE'}`,
+    ].join(' '));
+    line(`PROBE_ERROR_MESSAGE=${JSON.stringify(error?.message || 'NONE')} probe=${label}`);
+    line(`PROBE_TASKS=${JSON.stringify(result.tasks || [])} probe=${label}`);
+}
+
+/**
+ * Run the progressive, read-only A/B probe without returning raw Graph data.
+ * The request function is injectable so the complete sequence can be tested
+ * without creating tokens or making live Graph calls.
+ */
+async function runProgressiveProbe({
+    request = axios.get,
+    graphBase = GRAPH_BASE,
+    userToken,
+    appId,
+    appSecret,
+    expectedPageId,
+    businessId = null,
+    configuration = 'UNSPECIFIED',
+    includeFieldProbes = false,
+}) {
+    const proof = appsecretProof(userToken, appSecret);
+    const appAccessToken = `${appId}|${appSecret}`;
+    let debugData;
+    let debugTokenFailure = null;
+    try {
+        const response = await request(`${graphBase}/debug_token`, {
+            params: {
+                input_token: userToken,
+                access_token: appAccessToken,
+                appsecret_proof: appsecretProof(appAccessToken, appSecret),
+            },
+        });
+        debugData = response.data?.data || {};
+    } catch (error) {
+        const details = graphErrorDetails(error);
+        debugData = {};
+        debugTokenFailure = {
+            status: 'FAIL',
+            httpStatus: details.httpStatus,
+            graphError: {
+                code: details.code,
+                subcode: details.subcode,
+                fbtraceId: details.fbtraceId,
+                type: details.type,
+                message: details.message,
+                classification: graphErrorClassification(details.code, details.httpStatus),
+            },
+        };
+    }
+
+    const scopeEvidence = safeScopeEvidence(debugData, appId, expectedPageId);
+    const commonParams = {
+        access_token: userToken,
+        appsecret_proof: proof,
+        limit: 100,
+    };
+    const probes = {};
+    const collectionDefinitions = [
+        ['meAccountsMinimal', MINIMAL_PAGE_FIELDS, false],
+        ['meAccountsWithPageToken', PAGE_TOKEN_FIELDS, true],
+        ['meAccountsRich', PAGE_FIELDS, true],
+    ];
+    for (const [label, fields, tokenRequested] of collectionDefinitions) {
+        probes[label] = await requestCollection({
+            request,
+            url: `${graphBase}/me/accounts`,
+            params: { ...commonParams, fields },
+            expectedPageId,
+            tokenRequested,
+        });
+    }
+
+    const pageDefinitions = [
+        ['directMinimal', MINIMAL_PAGE_FIELDS],
+        ['directWithPageToken', PAGE_TOKEN_FIELDS],
+        ['directRich', PAGE_HYDRATION_FIELDS],
+    ];
+    for (const [label, fields] of pageDefinitions) {
+        probes[label] = await requestPage({
+            request,
+            url: `${graphBase}/${encodeURIComponent(expectedPageId)}`,
+            fields,
+            userToken,
+            proof,
+            expectedPageId,
+        });
+    }
+
+    if (includeFieldProbes) {
+        const fieldDefinitions = [
+            ['category', 'id,name,category'],
+            ['picture', 'id,name,picture{data{url}}'],
+            ['tasks', 'id,name,tasks'],
+            ['accessToken', 'id,name,access_token'],
+            ['categoryPicture', 'id,name,category,picture{data{url}}'],
+            ['categoryTasks', 'id,name,category,tasks'],
+            ['pictureTasks', 'id,name,picture{data{url}},tasks'],
+            ['tasksAccessToken', 'id,name,tasks,access_token'],
+        ];
+        probes.fieldProbes = {};
+        for (const [label, fields] of fieldDefinitions) {
+            probes.fieldProbes[label] = await requestPage({
+                request,
+                url: `${graphBase}/${encodeURIComponent(expectedPageId)}`,
+                fields,
+                userToken,
+                proof,
+                expectedPageId,
+            });
+        }
+    }
+
+    if (scopeEvidence.businessManagementGranted === 'YES' && businessId) {
+        probes.businessOwnedPages = await requestCollection({
+            request,
+            url: `${graphBase}/${encodeURIComponent(businessId)}/owned_pages`,
+            params: { ...commonParams, fields: MINIMAL_PAGE_FIELDS },
+            expectedPageId,
+            tokenRequested: false,
+        });
+    } else {
+        probes.businessOwnedPages = {
+            status: 'SKIPPED',
+            reason: scopeEvidence.businessManagementGranted !== 'YES'
+                ? 'BUSINESS_MANAGEMENT_NOT_GRANTED'
+                : 'BUSINESS_ID_MISSING',
+        };
+    }
+
+    const fieldProbeFailures = Object.values(probes.fieldProbes || {})
+        .some((probe) => probe.status === 'FAIL');
+    const failedProbe = debugTokenFailure
+        || Object.entries(probes)
+            .filter(([label]) => label !== 'fieldProbes')
+            .some(([, probe]) => probe.status === 'FAIL')
+        || fieldProbeFailures;
+    return {
+        configuration,
+        status: failedProbe ? 'FAIL' : 'PASS',
+        debugToken: debugTokenFailure || {
+            status: 'PASS',
+            tokenValid: scopeEvidence.tokenValid,
+            tokenAppIdMatches: scopeEvidence.tokenAppIdMatches,
+            tokenType: scopeEvidence.tokenType,
+            grantedScopes: scopeEvidence.grantedScopes,
+            businessManagementGranted: scopeEvidence.businessManagementGranted,
+            granularTargets: scopeEvidence.granularTargets,
+        },
+        probes,
+    };
 }
 
 /**
@@ -150,6 +515,7 @@ function rootCause({ grantedCount, missingCount, hydrationFailureCount, hydratio
 }
 
 async function main() {
+    dotenv.config();
     const userToken = USER_TOKEN_ENV_NAMES
         .map((name) => process.env[name])
         .find((value) => typeof value === 'string' && value.trim().length > 0);
@@ -263,8 +629,86 @@ async function main() {
     if (hydrationFailures > 0) process.exitCode = 1;
 }
 
+function printProgressiveResult(result) {
+    line(`CONFIGURATION=${result.configuration}`);
+    line(`PROGRESSIVE_PROBE_STATUS=${result.status}`);
+    if (result.debugToken?.status === 'FAIL') {
+        const error = result.debugToken.graphError;
+        line([
+            'DEBUG_TOKEN=FAIL',
+            `http_status=${result.debugToken.httpStatus}`,
+            `graph_code=${error?.code || 'NONE'}`,
+            `graph_subcode=${error?.subcode || 'NONE'}`,
+            `error_class=${error?.classification || 'NONE'}`,
+            `error_type=${error?.type || 'NONE'}`,
+            `fbtrace_id=${error?.fbtraceId || 'NONE'}`,
+        ].join(' '));
+        line(`DEBUG_TOKEN_ERROR_MESSAGE=${JSON.stringify(error?.message || 'NONE')}`);
+        return;
+    }
+
+    line(`TOKEN_VALID=${result.debugToken.tokenValid}`);
+    line(`TOKEN_APP_ID_MATCH=${result.debugToken.tokenAppIdMatches}`);
+    line(`TOKEN_TYPE=${result.debugToken.tokenType}`);
+    line(`GRANTED_SCOPES=${JSON.stringify(result.debugToken.grantedScopes)}`);
+    line(`BUSINESS_MANAGEMENT_GRANTED=${result.debugToken.businessManagementGranted}`);
+    for (const [scope, evidence] of Object.entries(result.debugToken.granularTargets)) {
+        line(`GRANULAR_TARGET scope=${scope} granted=${evidence.granted} expected_page=${evidence.expectedPage}`);
+    }
+
+    for (const [label, probe] of Object.entries(result.probes)) {
+        if (probe.status === 'SKIPPED') {
+            line(`PROBE=${label} status=SKIPPED reason=${probe.reason}`);
+            continue;
+        }
+        printProgressiveProbe(label, probe);
+    }
+}
+
+async function progressiveMain() {
+    let testEnvironment;
+    try {
+        testEnvironment = loadExplicitTestEnvironment();
+    } catch (error) {
+        line(`PROGRESSIVE_PROBE_STATUS=FAIL reason=${error.message || 'TEST_ENV_INVALID'}`);
+        process.exitCode = 1;
+        return;
+    }
+
+    const userToken = USER_TOKEN_ENV_NAMES
+        .map((name) => process.env[name])
+        .find((value) => typeof value === 'string' && value.trim().length > 0);
+    const appId = testEnvironment.META_APP_ID;
+    const appSecret = testEnvironment.META_APP_SECRET;
+    const expectedPageId = process.env.META_PAGE_DISCOVERY_PAGE_ID || process.env.META_PROBE_PAGE_ID;
+    const businessId = process.env.META_PAGE_DISCOVERY_BUSINESS_ID || process.env.META_PROBE_BUSINESS_ID || null;
+    const configuration = process.env.META_PAGE_DISCOVERY_CONFIGURATION || 'UNSPECIFIED';
+
+    if (!userToken || !appId || !appSecret || !expectedPageId) {
+        line('PROGRESSIVE_PROBE_STATUS=FAIL reason=MISSING_ENV');
+        line('REQUIRED_ENV=META_PAGE_DISCOVERY_USER_TOKEN,META_APP_ID,META_APP_SECRET,META_PAGE_DISCOVERY_PAGE_ID');
+        process.exitCode = 1;
+        return;
+    }
+
+    const result = await runProgressiveProbe({
+        userToken,
+        appId,
+        appSecret,
+        expectedPageId,
+        businessId,
+        configuration,
+        graphBase: `https://graph.facebook.com/${testEnvironment.META_GRAPH_API_VERSION}`,
+    });
+    printProgressiveResult(result);
+    if (result.status === 'FAIL') process.exitCode = 1;
+}
+
 if (require.main === module) {
-    main().catch(() => {
+    const runner = process.env.META_PAGE_DISCOVERY_PROGRESSIVE === 'true'
+        ? progressiveMain
+        : main;
+    runner().catch(() => {
         // Do not print an arbitrary exception: request/config details can carry
         // credentials. The per-call paths above already emit safe diagnostics.
         line('PROBE_STATUS=FAIL reason=UNEXPECTED_PROBE_FAILURE');
@@ -274,7 +718,12 @@ if (require.main === module) {
 
 module.exports = {
     appsecretProof,
+    graphErrorClassification,
     hasNonEmptyAccessToken,
+    loadExplicitTestEnvironment,
     paginateGraphCollection,
+    runProgressiveProbe,
+    safeScopeEvidence,
     targetIdsForScope,
+    validateExplicitTestEnvironment,
 };

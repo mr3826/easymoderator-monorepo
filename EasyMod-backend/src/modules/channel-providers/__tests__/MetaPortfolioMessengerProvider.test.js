@@ -157,6 +157,24 @@ describe('MetaPortfolioMessengerProvider', () => {
         ]);
     });
 
+    test('fails closed when the production-style Page hydration returns Graph error 100', async () => {
+        baseListSpy.mockResolvedValue([]);
+        axios.get
+            .mockResolvedValueOnce(debugToken(['P_PORTFOLIO'], ['P_PORTFOLIO']))
+            .mockRejectedValueOnce({
+                response: {
+                    status: 400,
+                    data: { error: { code: 100, error_subcode: 33, fbtrace_id: 'trace-100' } },
+                },
+            });
+
+        await expect(provider.listManagedAssets({ userToken: 'user-token' })).resolves.toEqual([]);
+
+        expect(axios.get).toHaveBeenCalledTimes(2);
+        expect(axios.get.mock.calls[1][0]).toContain('/P_PORTFOLIO');
+        expect(axios.get.mock.calls[1][1].params.fields).toBe('id,name,access_token');
+    });
+
     test('does not expose the Page access token returned by minimal hydration', async () => {
         baseListSpy.mockResolvedValue([]);
         axios.get
