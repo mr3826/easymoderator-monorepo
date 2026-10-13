@@ -470,6 +470,8 @@ describe('production workflow branch safety', () => {
         expect(caddyStartIndex).toBeGreaterThan(backendHealthIndex);
         expect(caddyReloadIndex).toBeGreaterThan(caddyStartIndex);
         expect(deployBlock).toContain('Candidate backend health details: {{json .State.Health}}');
+        expect(deployBlock).toContain('Candidate backend state: status={{.State.Status}} exit={{.State.ExitCode}} restart={{.RestartCount}} oom={{.State.OOMKilled}} error={{.State.Error}}');
+        expect(deployBlock).toContain('docker ps -a --filter name=easymod-backend-1 --no-trunc');
         expect(deployBlock).toContain('docker logs --tail 100 easymod-backend-1');
         expect(deployBlock).toContain('docker logs --tail 100 easymod-caddy-1');
     });

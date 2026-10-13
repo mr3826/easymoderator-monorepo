@@ -1619,7 +1619,10 @@ jobs:
               up -d --no-build --remove-orphans backend worker frontend growth-frontend; then
               echo "ERROR: candidate application services failed to start"
               docker inspect easymod-backend-1 \
+                --format 'Candidate backend state: status={{.State.Status}} exit={{.State.ExitCode}} restart={{.RestartCount}} oom={{.State.OOMKilled}} error={{.State.Error}}' 2>/dev/null || true
+              docker inspect easymod-backend-1 \
                 --format 'Candidate backend health details: {{json .State.Health}}' 2>/dev/null || true
+              docker ps -a --filter name=easymod-backend-1 --no-trunc 2>/dev/null || true
               docker logs --tail 100 easymod-backend-1 2>/dev/null || true
               exit 1
             fi
@@ -1638,7 +1641,10 @@ jobs:
             if [ "$candidate_backend_healthy" != "true" ]; then
               echo "ERROR: candidate backend health check failed after 100s"
               docker inspect easymod-backend-1 \
+                --format 'Candidate backend state: status={{.State.Status}} exit={{.State.ExitCode}} restart={{.RestartCount}} oom={{.State.OOMKilled}} error={{.State.Error}}' 2>/dev/null || true
+              docker inspect easymod-backend-1 \
                 --format 'Candidate backend health details: {{json .State.Health}}' 2>/dev/null || true
+              docker ps -a --filter name=easymod-backend-1 --no-trunc 2>/dev/null || true
               docker logs --tail 100 easymod-backend-1 2>/dev/null || true
               exit 1
             fi
