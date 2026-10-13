@@ -90,7 +90,11 @@ jobs:
             status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo unknown)
             created=$(docker inspect -f '{{.Created}}' "$name" 2>/dev/null || echo unknown)
             printf 'CONTAINER_INFO=%s\n' "$(jq -cn --arg name "$name" --arg status "$status" --arg created "$created" '{name:$name,status:$status,created:$created}')"
-            docker logs --since "$from_utc" --until "$to_utc" "$name" 2>/dev/null \
+            if ! log_output=$(docker logs --since "$from_utc" --until "$to_utc" "$name" 2>/dev/null); then
+              printf 'LOG_READ_ERROR=%s\n' "$name"
+              continue
+            fi
+            printf '%s\n' "$log_output" \
               | jq -c --arg shop "$shop_id" --arg page "$page_id" --arg from "$from_utc" --arg to "$to_utc" '
                 select((.message == "metaDiscoveryCanaryCompleted" or .message == "metaDiscoveryCanaryFailed")
                   and (.shopId|tostring) == $shop
@@ -116,6 +120,7 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const output = JSON.parse(fs.readFileSync('_tmp/meta-canary-events.json', 'utf8'));
+          const raw = fs.readFileSync('_tmp/meta-canary-filtered.ndjson', 'utf8');
           const audit = {
             runId: process.env.RUN_ID,
             actor: process.env.ACTOR,
@@ -124,7 +129,9 @@ jobs:
             fromUtc: process.env.FROM_UTC,
             toUtc: process.env.TO_UTC,
             eventCount: output.eventCount,
-            originalContainerAvailable: fs.readFileSync('_tmp/meta-canary-filtered.ndjson', 'utf8').includes('ORIGINAL_CONTAINER_AVAILABLE=YES'),
+            originalContainerAvailable: raw.includes('ORIGINAL_CONTAINER_AVAILABLE=YES'),
+            containerInfoCount: (raw.match(/^CONTAINER_INFO=/gm) || []).length,
+            logReadErrorCount: (raw.match(/^LOG_READ_ERROR=/gm) || []).length,
           };
           fs.writeFileSync('_tmp/meta-canary-audit.json', `${JSON.stringify(audit, null, 2)}\n`);
           console.log(JSON.stringify(audit));
