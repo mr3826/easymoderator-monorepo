@@ -12,6 +12,7 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const mockRecoverInvalidToken = jest.fn();
+const config = require('../../../config/config');
 
 jest.mock('../meta-authorization-recovery.service', () => ({
     recoverInvalidToken: mockRecoverInvalidToken,
@@ -19,6 +20,7 @@ jest.mock('../meta-authorization-recovery.service', () => ({
 
 const MetaMessengerProvider = require('../providers/MetaMessengerProvider');
 const ChannelProvider = require('../ChannelProvider');
+const { createDiagnostics } = require('../meta-discovery-canary');
 
 jest.mock('axios');
 
@@ -27,6 +29,9 @@ describe('MetaMessengerProvider', () => {
 
     beforeEach(() => {
         process.env.META_APP_SECRET = 'test-webhook-secret';
+        process.env.META_APP_ID = 'test-app-id';
+        config.metaAppSecret = 'test-secret';
+        config.metaAppId = 'test-app-id';
         provider = new MetaMessengerProvider();
     });
 
@@ -46,13 +51,21 @@ describe('MetaMessengerProvider', () => {
     });
 
     function debugTokenResponse(targetIds, manageTargetIds = targetIds, showListTargetIds = targetIds) {
+        const granularEntry = (scope, ids) => {
+            const entry = { scope };
+            if (ids !== undefined) entry.target_ids = ids;
+            return entry;
+        };
         return {
             data: {
                 data: {
+                    is_valid: true,
+                    app_id: 'test-app-id',
+                    scopes: ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'],
                     granular_scopes: [
-                        { scope: 'pages_messaging', target_ids: targetIds },
-                        { scope: 'pages_manage_metadata', target_ids: manageTargetIds },
-                        { scope: 'pages_show_list', target_ids: showListTargetIds },
+                        granularEntry('pages_messaging', targetIds),
+                        granularEntry('pages_manage_metadata', manageTargetIds),
+                        granularEntry('pages_show_list', showListTargetIds),
                     ],
                 },
             },
@@ -1083,6 +1096,16 @@ describe('MetaMessengerProvider', () => {
             expect(result[0]).toMatchObject({ name: 'Empty Edge Page', connectable: true });
         });
 
+        test('does not invent Page IDs when an ALL grant has no discoverable Pages', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [], paging: {} } }],
+                debug: debugTokenResponse(undefined, undefined, undefined),
+            });
+
+            await expect(provider.listManagedAssets({ userToken: 'tok_all_empty' })).resolves.toEqual([]);
+            expect(axios.get).toHaveBeenCalledTimes(2);
+        });
+
         test.each([
             ['missing', undefined],
             ['null', null],
@@ -1183,7 +1206,7 @@ describe('MetaMessengerProvider', () => {
             expect(result.map((asset) => asset.id)).toEqual(['P_SELECTED']);
         });
 
-        test('uses pages_messaging as the grant boundary and keeps valid tasks around invalid values', async () => {
+        test('uses the combined Messenger and metadata grant boundary and keeps valid tasks around invalid values', async () => {
             configureGraph({
                 accountPages: [{
                     data: {
@@ -1196,7 +1219,7 @@ describe('MetaMessengerProvider', () => {
                     },
                 }],
                 targetIds: ['P_SCOPE', 'P_TASKS', 'P_INELIGIBLE'],
-                debug: debugTokenResponse(['P_SCOPE', 'P_TASKS', 'P_INELIGIBLE'], []),
+                debug: debugTokenResponse(['P_SCOPE', 'P_TASKS', 'P_INELIGIBLE']),
             });
 
             const result = await provider.listManagedAssets({ userToken: 'tok_tasks' });
@@ -1204,8 +1227,8 @@ describe('MetaMessengerProvider', () => {
             expect(result).toHaveLength(3);
             expect(result.find((asset) => asset.id === 'P_SCOPE')).toMatchObject({
                 tasks: ['MESSAGING'],
-                connectable: false,
-                reason: 'META_PAGE_TASKS_REQUIRED',
+                connectable: true,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
             });
             expect(result.find((asset) => asset.id === 'P_TASKS')).toMatchObject({
                 tasks: ['MESSAGING', 'MANAGE'],
@@ -1213,8 +1236,8 @@ describe('MetaMessengerProvider', () => {
             });
             expect(result.find((asset) => asset.id === 'P_INELIGIBLE')).toMatchObject({
                 tasks: ['CREATE_CONTENT'],
-                connectable: false,
-                reason: 'META_PAGE_TASKS_REQUIRED',
+                connectable: true,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
             });
         });
 
@@ -1259,15 +1282,151 @@ describe('MetaMessengerProvider', () => {
             }
         });
 
-        test('returns no Pages when Meta provides no pages_messaging target IDs', async () => {
+        test('discovers Pages for a verified all-assets grant when target_ids are omitted', async () => {
             configureGraph({
                 accountPages: [{ data: { data: [page('P1'), page('P2')], paging: {} } }],
-                debug: { data: { data: { granular_scopes: [{ scope: 'pages_messaging' }] } } },
+                debug: debugTokenResponse(undefined, undefined, undefined),
+            });
+            const canary = createDiagnostics({ expectedPageId: 'P1' });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_all_pages', diagnostics: canary });
+
+            expect(result.map((asset) => asset.id)).toEqual(['P1', 'P2']);
+            expect(result.every((asset) => asset.connectable)).toBe(true);
+            expect(canary.pageGrantMode).toBe('ALL');
+            expect(canary.granularScopes.pages_messaging.expectedPage).toBe('ALL');
+            expect(canary.expectedPageEligible).toBe('YES');
+            expect(canary.expectedPageEligibilitySource).toBe('META_TASKS');
+        });
+
+        test('falls back to minimal /me/accounts fields after a rich tasks-field error', async () => {
+            const pageId = 'P_MINIMAL_RECOVERY';
+            axios.get.mockImplementation((url, request = {}) => {
+                const requestUrl = String(url);
+                if (requestUrl.includes('/debug_token')) {
+                    return Promise.resolve(debugTokenResponse([pageId]));
+                }
+                if (requestUrl.includes('/me/accounts')) {
+                    if (request.params?.fields?.includes('tasks')) {
+                        return Promise.reject({
+                            response: {
+                                status: 400,
+                                data: { error: { code: 100, message: 'Tried accessing nonexisting field (tasks)' } },
+                            },
+                        });
+                    }
+                    return Promise.resolve({
+                        status: 200,
+                        data: { data: [{ id: pageId, name: 'Minimal Page', access_token: 'page-token-minimal' }], paging: {} },
+                    });
+                }
+                return Promise.reject(new Error('unexpected Graph request'));
             });
 
-            const result = await provider.listManagedAssets({ userToken: 'tok_no_targets' });
+            const pageCredentials = {};
+            const result = await provider.listManagedAssets({ userToken: 'tok_minimal_recovery', pageCredentials });
 
-            expect(result).toEqual([]);
+            expect(result).toEqual([expect.objectContaining({
+                id: pageId,
+                tasks: [],
+                connectable: true,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
+            })]);
+            expect(pageCredentials[pageId]).toEqual({
+                pageId,
+                token: 'page-token-minimal',
+                expiresAt: null,
+            });
+            expect(axios.get.mock.calls.filter(([url]) => String(url).includes('/me/accounts'))).toHaveLength(2);
+        });
+
+        test('does not mask non-task Graph failures with a minimal retry', async () => {
+            const pageId = 'P_NON_TASK_ERROR';
+            axios.get.mockImplementation((url, request = {}) => {
+                if (String(url).includes('/debug_token')) return Promise.resolve(debugTokenResponse([pageId]));
+                if (String(url).includes('/me/accounts') && request.params?.fields?.includes('tasks')) {
+                    return Promise.reject({
+                        response: {
+                            status: 190,
+                            data: { error: { code: 190, message: 'Invalid OAuth access token' } },
+                        },
+                    });
+                }
+                return Promise.reject(new Error('minimal retry must not run'));
+            });
+
+            await expect(provider.listManagedAssets({ userToken: 'tok_non_task_error' }))
+                .rejects.toThrow('listManagedAssets:me/accounts');
+            expect(axios.get.mock.calls.filter(([url]) => String(url).includes('/me/accounts'))).toHaveLength(1);
+        });
+
+        test('fails closed when a permission scope has no granular entry', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P1')], paging: {} } }],
+                debug: {
+                    data: {
+                        data: {
+                            is_valid: true,
+                            app_id: 'test-app-id',
+                            scopes: ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'],
+                            granular_scopes: [
+                                { scope: 'pages_messaging' },
+                                { scope: 'pages_show_list' },
+                            ],
+                        },
+                    },
+                },
+            });
+
+            const canary = createDiagnostics({ expectedPageId: 'P1' });
+            await expect(provider.listManagedAssets({ userToken: 'tok_missing_entry', diagnostics: canary })).resolves.toEqual([]);
+            expect(canary.pageGrantMode).toBe('UNKNOWN');
+            expect(canary.granularScopes.pages_manage_metadata.expectedPage).toBe('UNKNOWN');
+        });
+
+        test('fails closed when pages_messaging is absent from verified scopes', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P1')], paging: {} } }],
+                debug: {
+                    data: {
+                        data: {
+                            is_valid: true,
+                            app_id: 'test-app-id',
+                            scopes: ['pages_show_list', 'pages_manage_metadata'],
+                            granular_scopes: [
+                                { scope: 'pages_show_list' },
+                                { scope: 'pages_manage_metadata' },
+                            ],
+                        },
+                    },
+                },
+            });
+
+            await expect(provider.listManagedAssets({ userToken: 'tok_missing_messaging' })).resolves.toEqual([]);
+            expect(axios.get).toHaveBeenCalledTimes(1);
+        });
+
+        test('does not bypass an explicit pages_show_list boundary', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P2')], paging: {} } }],
+                debug: debugTokenResponse(['P2'], ['P2'], ['P1']),
+            });
+
+            await expect(provider.listManagedAssets({ userToken: 'tok_show_list_boundary' })).resolves.toEqual([]);
+            expect(axios.get).toHaveBeenCalledTimes(1);
+        });
+
+        test.each([
+            ['empty', []],
+            ['malformed', ['P1', { id: 'P2' }]],
+            ['null', null],
+        ])('fails closed for %s target_ids rather than treating it as ALL', async (_label, targetIds) => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P1')], paging: {} } }],
+                debug: debugTokenResponse(targetIds, targetIds, targetIds),
+            });
+
+            await expect(provider.listManagedAssets({ userToken: `tok_${_label}_targets` })).resolves.toEqual([]);
         });
 
         test('does not expose Page access tokens or source metadata in the response', async () => {

@@ -1,6 +1,7 @@
 'use strict';
 
 const axios = require('axios');
+const config = require('../../../config/config');
 
 jest.mock('axios');
 
@@ -14,6 +15,8 @@ describe('MetaPortfolioMessengerProvider', () => {
     beforeEach(() => {
         process.env.META_APP_ID = 'test-app-id';
         process.env.META_APP_SECRET = 'test-app-secret';
+        config.metaAppId = 'test-app-id';
+        config.metaAppSecret = 'test-app-secret';
         provider = new MetaPortfolioMessengerProvider();
         baseListSpy = jest.spyOn(MetaMessengerProvider.prototype, 'listManagedAssets');
     });
@@ -23,13 +26,21 @@ describe('MetaPortfolioMessengerProvider', () => {
         jest.resetAllMocks();
     });
 
-    function debugToken(messagingIds, metadataIds) {
+    function debugToken(messagingIds, metadataIds, showListIds = messagingIds) {
+        const entry = (scope, targetIds) => ({
+            scope,
+            ...(targetIds === undefined ? {} : { target_ids: targetIds }),
+        });
         return {
             data: {
                 data: {
+                    is_valid: true,
+                    app_id: 'test-app-id',
+                    scopes: ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'],
                     granular_scopes: [
-                        { scope: 'pages_messaging', target_ids: messagingIds },
-                        { scope: 'pages_manage_metadata', target_ids: metadataIds },
+                        entry('pages_messaging', messagingIds),
+                        entry('pages_manage_metadata', metadataIds),
+                        entry('pages_show_list', showListIds),
                     ],
                 },
             },
@@ -72,10 +83,45 @@ describe('MetaPortfolioMessengerProvider', () => {
         expect(result.map((asset) => asset.id)).toEqual(['P_DIRECT', 'P_PORTFOLIO']);
         expect(result.find((asset) => asset.id === 'P_PORTFOLIO')).toMatchObject({
             name: 'Portfolio Page',
-            tasks: ['MESSAGING', 'MANAGE'],
+            tasks: [],
             connectable: true,
             reason: null,
+            eligibilitySource: 'GRANULAR_PERMISSIONS',
         });
+    });
+
+    test('preserves Pages from the base discovery when both required grants are ALL', async () => {
+        const basePage = { id: 'P_ALL', name: 'All Pages result', connectable: true, tasks: ['MESSAGING', 'MANAGE'] };
+        baseListSpy.mockResolvedValue([basePage]);
+        axios.get.mockResolvedValueOnce(debugToken(undefined, undefined, undefined));
+
+        await expect(provider.listManagedAssets({ userToken: 'user-token' })).resolves.toEqual([basePage]);
+        expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+        ['ALL + EXPLICIT', undefined, ['P_EXPLICIT']],
+        ['EXPLICIT + ALL', ['P_EXPLICIT'], undefined],
+    ])('recovers the intersection for %s without broadening it', async (_label, messagingIds, metadataIds) => {
+        baseListSpy.mockResolvedValue([]);
+        axios.get
+            .mockResolvedValueOnce(debugToken(messagingIds, metadataIds, undefined))
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'P_EXPLICIT',
+                    name: 'Explicit Page',
+                    access_token: 'explicit-page-token',
+                },
+            });
+
+        const result = await provider.listManagedAssets({ userToken: 'user-token' });
+
+        expect(result).toEqual([expect.objectContaining({
+            id: 'P_EXPLICIT',
+            connectable: true,
+            eligibilitySource: 'GRANULAR_PERMISSIONS',
+        })]);
+        expect(axios.get.mock.calls[1][1].params.fields).toBe('id,name,access_token');
     });
 
     test('retains minimal-hydration credentials in the server-only sink', async () => {
@@ -114,6 +160,26 @@ describe('MetaPortfolioMessengerProvider', () => {
         expect(axios.get.mock.calls[0][0]).toContain('/debug_token');
     });
 
+    test('fails closed when pages_manage_metadata is absent from verified scopes', async () => {
+        baseListSpy.mockResolvedValue([]);
+        axios.get.mockResolvedValueOnce({
+            data: {
+                data: {
+                    is_valid: true,
+                    app_id: 'test-app-id',
+                    scopes: ['pages_show_list', 'pages_messaging'],
+                    granular_scopes: [
+                        { scope: 'pages_show_list' },
+                        { scope: 'pages_messaging' },
+                    ],
+                },
+            },
+        });
+
+        await expect(provider.listManagedAssets({ userToken: 'user-token' })).resolves.toEqual([]);
+        expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+
     test('replaces a non-connectable rich hydration with verified minimal hydration', async () => {
         baseListSpy.mockResolvedValue([
             {
@@ -140,7 +206,8 @@ describe('MetaPortfolioMessengerProvider', () => {
         expect(result[0]).toMatchObject({
             id: 'P_PORTFOLIO',
             connectable: true,
-            tasks: ['MESSAGING', 'MANAGE'],
+            tasks: [],
+            eligibilitySource: 'GRANULAR_PERMISSIONS',
         });
     });
 
@@ -148,12 +215,35 @@ describe('MetaPortfolioMessengerProvider', () => {
         baseListSpy.mockResolvedValue([
             { id: 'P_DIRECT', name: 'Direct Page', connectable: true, tasks: ['MESSAGING', 'MANAGE'] },
         ]);
-        axios.get.mockRejectedValueOnce({
-            response: { data: { error: { code: 10, error_subcode: 200 } } },
-        });
+        const networkError = new Error('temporary network failure');
+        networkError.code = 'ECONNRESET';
+        axios.get.mockRejectedValueOnce(networkError);
 
         await expect(provider.listManagedAssets({ userToken: 'user-token' })).resolves.toEqual([
             { id: 'P_DIRECT', name: 'Direct Page', connectable: true, tasks: ['MESSAGING', 'MANAGE'] },
+        ]);
+    });
+
+    test('fails closed when the strict grant probe returns an authentication error', async () => {
+        baseListSpy.mockResolvedValue([
+            { id: 'P_DIRECT', name: 'Direct Page', connectable: true, tasks: ['MESSAGING', 'MANAGE'] },
+        ]);
+        axios.get.mockRejectedValueOnce({
+            response: { status: 400, data: { error: { code: 190, error_subcode: 463, message: 'Invalid OAuth access token' } } },
+        });
+
+        await expect(provider.listManagedAssets({ userToken: 'user-token' })).resolves.toEqual([]);
+    });
+
+    test('filters base assets through a later narrowed strict grant', async () => {
+        baseListSpy.mockResolvedValue([
+            { id: 'P_ALLOWED', name: 'Allowed', connectable: true, tasks: ['MESSAGING', 'MANAGE'] },
+            { id: 'P_REVOKED', name: 'Revoked', connectable: true, tasks: ['MESSAGING', 'MANAGE'] },
+        ]);
+        axios.get.mockResolvedValueOnce(debugToken(['P_ALLOWED'], ['P_ALLOWED'], ['P_ALLOWED']));
+
+        await expect(provider.listManagedAssets({ userToken: 'user-token' })).resolves.toEqual([
+            { id: 'P_ALLOWED', name: 'Allowed', connectable: true, tasks: ['MESSAGING', 'MANAGE'] },
         ]);
     });
 

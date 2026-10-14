@@ -59,15 +59,25 @@ function findAuthorizedPageCredential(pageCredentials, assetId) {
 function sanitizeManagedAssets(pages) {
     return (Array.isArray(pages) ? pages : [])
         .filter((page) => page && page.id !== null && page.id !== undefined)
-        .map((page) => ({
-            id: String(page.id),
-            name: typeof page.name === 'string' ? page.name : '',
-            category: typeof page.category === 'string' ? page.category : null,
-            pictureUrl: typeof page.pictureUrl === 'string' ? page.pictureUrl : null,
-            tasks: Array.isArray(page.tasks) ? page.tasks.filter((task) => typeof task === 'string') : [],
-            connectable: page.connectable === true,
-            reason: typeof page.reason === 'string' ? page.reason : null,
-        }));
+        .map((page) => {
+            const sanitized = {
+                id: String(page.id),
+                name: typeof page.name === 'string' ? page.name : '',
+                category: typeof page.category === 'string' ? page.category : null,
+                pictureUrl: typeof page.pictureUrl === 'string' ? page.pictureUrl : null,
+                tasks: Array.isArray(page.tasks) ? page.tasks.filter((task) => typeof task === 'string') : [],
+                connectable: page.connectable === true,
+                reason: typeof page.reason === 'string' ? page.reason : null,
+            };
+            // This is provenance, not authorization input from the browser:
+            // GRANULAR_PERMISSIONS means the provider used verified Page
+            // grants plus the exact Page token because optional task metadata
+            // was unavailable.
+            if (['META_TASKS', 'GRANULAR_PERMISSIONS'].includes(page.eligibilitySource)) {
+                sanitized.eligibilitySource = page.eligibilitySource;
+            }
+            return sanitized;
+        });
 }
 
 /**
@@ -173,7 +183,6 @@ async function handleCallback(code, state, userId, shopId, requestId = null) {
         // against the exact pages returned by this callback.
         const tempToken = crypto.randomBytes(32).toString('hex');
         await stateStore.put(callbackKey(shopId, platform, tempToken), {
-            userToken,
             platform,
             pages,
             pageCredentials,
@@ -257,7 +266,9 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     }
 
     const eligibility = evaluatePageEligibility(authorizedPage.tasks);
-    if (!eligibility.connectable) {
+    const hasVerifiedGranularPermissionEvidence = authorizedPage.connectable === true
+        && authorizedPage.eligibilitySource === 'GRANULAR_PERMISSIONS';
+    if (!eligibility.connectable && !hasVerifiedGranularPermissionEvidence) {
         throw new AppError(
             'This Facebook Page does not have the required Messenger and Page management tasks.',
             403,
