@@ -1206,7 +1206,7 @@ describe('MetaMessengerProvider', () => {
             expect(result.map((asset) => asset.id)).toEqual(['P_SELECTED']);
         });
 
-        test('uses the combined Messenger and metadata grant boundary and keeps valid tasks around invalid values', async () => {
+        test('uses returned Page tasks as authoritative eligibility evidence', async () => {
             configureGraph({
                 accountPages: [{
                     data: {
@@ -1227,17 +1227,21 @@ describe('MetaMessengerProvider', () => {
             expect(result).toHaveLength(3);
             expect(result.find((asset) => asset.id === 'P_SCOPE')).toMatchObject({
                 tasks: ['MESSAGING'],
-                connectable: true,
-                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                connectable: false,
+                eligibilitySource: 'META_TASKS',
+                taskAvailability: 'PRESENT',
             });
             expect(result.find((asset) => asset.id === 'P_TASKS')).toMatchObject({
                 tasks: ['MESSAGING', 'MANAGE'],
                 connectable: true,
+                eligibilitySource: 'META_TASKS',
+                taskAvailability: 'PRESENT',
             });
             expect(result.find((asset) => asset.id === 'P_INELIGIBLE')).toMatchObject({
                 tasks: ['CREATE_CONTENT'],
-                connectable: true,
-                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                connectable: false,
+                eligibilitySource: 'META_TASKS',
+                taskAvailability: 'PRESENT',
             });
         });
 
@@ -1299,6 +1303,28 @@ describe('MetaMessengerProvider', () => {
             expect(canary.expectedPageEligibilitySource).toBe('META_TASKS');
         });
 
+        test('uses verified grants when Meta omits tasks from an otherwise successful Page listing', async () => {
+            configureGraph({
+                accountPages: [{
+                    data: {
+                        data: [{ id: 'P_OMITTED_TASKS', name: 'Omitted Tasks Page', access_token: 'page-token-omitted-tasks' }],
+                        paging: {},
+                    },
+                }],
+                debug: debugTokenResponse(undefined, undefined, undefined),
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_omitted_tasks' });
+
+            expect(result).toEqual([expect.objectContaining({
+                id: 'P_OMITTED_TASKS',
+                tasks: [],
+                connectable: true,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: 'UNAVAILABLE',
+            })]);
+        });
+
         test('falls back to minimal /me/accounts fields after a rich tasks-field error', async () => {
             const pageId = 'P_MINIMAL_RECOVERY';
             axios.get.mockImplementation((url, request = {}) => {
@@ -1331,6 +1357,7 @@ describe('MetaMessengerProvider', () => {
                 tasks: [],
                 connectable: true,
                 eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: 'UNAVAILABLE',
             })]);
             expect(pageCredentials[pageId]).toEqual({
                 pageId,

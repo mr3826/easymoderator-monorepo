@@ -74,6 +74,7 @@ const PAGE_MINIMAL_FIELDS = 'id,name,access_token';
 const PAGE_HYDRATION_CONCURRENCY = 5;
 const GRANULAR_PERMISSION_ELIGIBILITY_SOURCE = 'GRANULAR_PERMISSIONS';
 const META_TASK_ELIGIBILITY_SOURCE = 'META_TASKS';
+const PAGE_TASK_AVAILABILITY = Object.freeze({ PRESENT: 'PRESENT', UNAVAILABLE: 'UNAVAILABLE' });
 
 // Meta accepts appsecret_proof on every Graph call and *requires* it once
 // "Require App Secret Proof for Server API calls" is switched on in the App
@@ -149,11 +150,13 @@ function hasNonEmptyAccessToken(page) {
 }
 
 function pageEligibility(page, pageGrant) {
+    const tasksReturned = Object.prototype.hasOwnProperty.call(page || {}, 'tasks');
     const eligibility = evaluatePageEligibility(page?.tasks);
-    if (eligibility.connectable) {
+    if (tasksReturned) {
         return {
             ...eligibility,
             eligibilitySource: META_TASK_ELIGIBILITY_SOURCE,
+            taskAvailability: PAGE_TASK_AVAILABILITY.PRESENT,
         };
     }
 
@@ -167,12 +170,13 @@ function pageEligibility(page, pageGrant) {
             connectable: true,
             reason: null,
             eligibilitySource: GRANULAR_PERMISSION_ELIGIBILITY_SOURCE,
+            taskAvailability: PAGE_TASK_AVAILABILITY.UNAVAILABLE,
         };
     }
 
     return {
         ...eligibility,
-        eligibilitySource: META_TASK_ELIGIBILITY_SOURCE,
+        taskAvailability: PAGE_TASK_AVAILABILITY.UNAVAILABLE,
     };
 }
 
@@ -714,7 +718,10 @@ class MetaMessengerProvider extends ChannelProvider {
                 tasks: eligibility.tasks,
                 connectable: eligibility.connectable,
                 reason: eligibility.reason,
-                eligibilitySource: eligibility.eligibilitySource,
+                ...(eligibility.eligibilitySource
+                    ? { eligibilitySource: eligibility.eligibilitySource }
+                    : {}),
+                taskAvailability: eligibility.taskAvailability,
             };
         });
 

@@ -87,6 +87,7 @@ describe('MetaPortfolioMessengerProvider', () => {
             connectable: true,
             reason: null,
             eligibilitySource: 'GRANULAR_PERMISSIONS',
+            taskAvailability: 'UNAVAILABLE',
         });
     });
 
@@ -120,6 +121,7 @@ describe('MetaPortfolioMessengerProvider', () => {
             id: 'P_EXPLICIT',
             connectable: true,
             eligibilitySource: 'GRANULAR_PERMISSIONS',
+            taskAvailability: 'UNAVAILABLE',
         })]);
         expect(axios.get.mock.calls[1][1].params.fields).toBe('id,name,access_token');
     });
@@ -180,35 +182,31 @@ describe('MetaPortfolioMessengerProvider', () => {
         expect(axios.get).toHaveBeenCalledTimes(1);
     });
 
-    test('replaces a non-connectable rich hydration with verified minimal hydration', async () => {
+    test('does not replace explicitly insufficient Page tasks with minimal hydration', async () => {
         baseListSpy.mockResolvedValue([
             {
                 id: 'P_PORTFOLIO',
                 name: 'Portfolio Page',
-                tasks: [],
+                tasks: ['CREATE_CONTENT'],
                 connectable: false,
                 reason: 'META_PAGE_TASKS_REQUIRED',
+                eligibilitySource: 'META_TASKS',
+                taskAvailability: 'PRESENT',
             },
         ]);
-        axios.get
-            .mockResolvedValueOnce(debugToken(['P_PORTFOLIO'], ['P_PORTFOLIO']))
-            .mockResolvedValueOnce({
-                data: {
-                    id: 'P_PORTFOLIO',
-                    name: 'Portfolio Page',
-                    access_token: 'portfolio-page-token',
-                },
-            });
+        axios.get.mockResolvedValueOnce(debugToken(['P_PORTFOLIO'], ['P_PORTFOLIO']));
 
         const result = await provider.listManagedAssets({ userToken: 'user-token' });
 
         expect(result).toHaveLength(1);
         expect(result[0]).toMatchObject({
             id: 'P_PORTFOLIO',
-            connectable: true,
-            tasks: [],
-            eligibilitySource: 'GRANULAR_PERMISSIONS',
+            connectable: false,
+            tasks: ['CREATE_CONTENT'],
+            eligibilitySource: 'META_TASKS',
+            taskAvailability: 'PRESENT',
         });
+        expect(axios.get).toHaveBeenCalledTimes(1);
     });
 
     test('preserves directly managed Pages when the portfolio fallback is unavailable', async () => {

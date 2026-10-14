@@ -484,6 +484,7 @@ describe('connectPage() webhook verify wiring', () => {
                 connectable: true,
                 reason: null,
                 eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: 'UNAVAILABLE',
             }],
             metaIdentity: {
                 appScopedUserId: 'app-user-1',
@@ -507,6 +508,31 @@ describe('connectPage() webhook verify wiring', () => {
             metaAssetId: ASSET_ID,
             pageAccessToken: PAGE_TOKEN_SENTINEL,
         }));
+    });
+
+    test('does not let granular-permission provenance override explicitly insufficient tasks', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            platform: 'facebook',
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: ['CREATE_CONTENT'],
+                connectable: true,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: 'PRESENT',
+            }],
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: { pageId: ASSET_ID, token: PAGE_TOKEN_SENTINEL, expiresAt: null },
+            },
+        });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({ status: 403, code: 'META_PAGE_TASKS_REQUIRED' });
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+        expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
 
     test('fails closed when the authorized Page has no server-side credential', async () => {

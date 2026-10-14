@@ -76,6 +76,9 @@ function sanitizeManagedAssets(pages) {
             if (['META_TASKS', 'GRANULAR_PERMISSIONS'].includes(page.eligibilitySource)) {
                 sanitized.eligibilitySource = page.eligibilitySource;
             }
+            if (['PRESENT', 'UNAVAILABLE'].includes(page.taskAvailability)) {
+                sanitized.taskAvailability = page.taskAvailability;
+            }
             return sanitized;
         });
 }
@@ -267,7 +270,8 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
 
     const eligibility = evaluatePageEligibility(authorizedPage.tasks);
     const hasVerifiedGranularPermissionEvidence = authorizedPage.connectable === true
-        && authorizedPage.eligibilitySource === 'GRANULAR_PERMISSIONS';
+        && authorizedPage.eligibilitySource === 'GRANULAR_PERMISSIONS'
+        && authorizedPage.taskAvailability === 'UNAVAILABLE';
     if (!eligibility.connectable && !hasVerifiedGranularPermissionEvidence) {
         throw new AppError(
             'This Facebook Page does not have the required Messenger and Page management tasks.',

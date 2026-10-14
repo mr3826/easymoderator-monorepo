@@ -29,6 +29,7 @@ const {
     grantAllowsPage,
     createGrant,
 } = require('../meta-page-grants');
+const PAGE_TASK_AVAILABILITY = Object.freeze({ PRESENT: 'PRESENT', UNAVAILABLE: 'UNAVAILABLE' });
 
 const logger = createLogger('MetaPortfolioMessengerProvider');
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
@@ -153,6 +154,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
                 connectable: true,
                 reason: null,
                 eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: PAGE_TASK_AVAILABILITY.UNAVAILABLE,
             };
         } catch (err) {
             if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
@@ -190,7 +192,15 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
 
         const fallbackIds = [...strictPageGrant.pageIds]
             .filter((pageId) => grantAllowsPage(strictPageGrant, pageId))
-            .filter((pageId) => !byId.has(pageId) || byId.get(pageId)?.connectable !== true);
+            .filter((pageId) => {
+                const baseAsset = byId.get(pageId);
+                if (!baseAsset) return true;
+                if (baseAsset.connectable === true) return false;
+                // A base result marked PRESENT is explicit eligibility
+                // evidence, including an empty task array. Never replace an
+                // explicit rejection with permission-only minimal hydration.
+                return baseAsset.taskAvailability === PAGE_TASK_AVAILABILITY.UNAVAILABLE;
+            });
         if (!fallbackIds.length) return [...byId.values()];
 
         if (diagnostics) diagnostics.portfolioFallbackAttempted = fallbackIds.length;
