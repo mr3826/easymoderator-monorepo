@@ -612,12 +612,19 @@ describe('production workflow branch safety', () => {
             'utf8',
         );
         const normalizedWorkflow = backupWorkflow.replace(/\r\n/g, '\n');
-        const restoreJob = normalizedWorkflow.split('\n  restore-drill:\n')[1];
+        const restoreJob = normalizedWorkflow.split('\n  restore-drill:\n')[1] || '';
+        const scriptMarker = 'script: |\n';
+        const scriptStart = restoreJob.indexOf(scriptMarker);
+        expect(scriptStart).toBeGreaterThanOrEqual(0);
 
-        expect(restoreJob).toContain(
+        const restoreScript = restoreJob.slice(scriptStart + scriptMarker.length);
+        const helperImageDeclaration = restoreScript.indexOf(
             "POSTGRES_HELPER_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'",
         );
-        expect(restoreJob).toContain('"$POSTGRES_HELPER_IMAGE" sh -c');
+        const helperImageUse = restoreScript.indexOf('"$POSTGRES_HELPER_IMAGE" sh -c');
+
+        expect(helperImageDeclaration).toBeGreaterThanOrEqual(0);
+        expect(helperImageUse).toBeGreaterThan(helperImageDeclaration);
     });
 
     test('backup validates the configured off-site retention policy', () => {
