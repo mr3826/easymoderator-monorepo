@@ -606,6 +606,20 @@ describe('production workflow branch safety', () => {
         expect(environmentMatches.length).toBeGreaterThanOrEqual(2);
     });
 
+    test('pins the PostgreSQL helper image inside the isolated restore job', () => {
+        const backupWorkflow = fs.readFileSync(
+            path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
+            'utf8',
+        );
+        const normalizedWorkflow = backupWorkflow.replace(/\r\n/g, '\n');
+        const restoreJob = normalizedWorkflow.split('\n  restore-drill:\n')[1];
+
+        expect(restoreJob).toContain(
+            "POSTGRES_HELPER_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'",
+        );
+        expect(restoreJob).toContain('"$POSTGRES_HELPER_IMAGE" sh -c');
+    });
+
     test('backup validates the configured off-site retention policy', () => {
         const backupWorkflow = fs.readFileSync(
             path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
