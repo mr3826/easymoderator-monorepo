@@ -21,6 +21,7 @@ describe('MetaMessengerProvider shop-scoped discovery diagnostics', () => {
         config.metaAppId = 'test-app-id';
         config.metaAppSecret = 'test-app-secret';
         jest.clearAllMocks();
+        axios.get.mockReset();
     });
 
     test('records sanitized token, granular grant, /me/accounts, task and callback evidence on success', async () => {
@@ -79,7 +80,7 @@ describe('MetaMessengerProvider shop-scoped discovery diagnostics', () => {
         expect(JSON.stringify(canary)).not.toContain('PAGE_TOKEN_SENTINEL');
     });
 
-    test('records rich and minimal hydration outcomes but keeps a rich failure fail-closed', async () => {
+    test('recovers an authorized Page when optional rich hydration fails', async () => {
         const canary = diagnostics();
         axios.get
             .mockResolvedValueOnce({
@@ -88,7 +89,12 @@ describe('MetaMessengerProvider shop-scoped discovery diagnostics', () => {
                     data: {
                         is_valid: true,
                         app_id: 'test-app-id',
-                        granular_scopes: [{ scope: 'pages_messaging', target_ids: ['1362174360316889'] }],
+                        scopes: ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'],
+                        granular_scopes: [
+                            { scope: 'pages_show_list', target_ids: ['1362174360316889'] },
+                            { scope: 'pages_messaging', target_ids: ['1362174360316889'] },
+                            { scope: 'pages_manage_metadata', target_ids: ['1362174360316889'] },
+                        ],
                     },
                 },
             })
@@ -97,7 +103,16 @@ describe('MetaMessengerProvider shop-scoped discovery diagnostics', () => {
                 data: { data: [], paging: {} },
             })
             .mockRejectedValueOnce({
-                response: { status: 400, data: { error: { code: 100, error_subcode: 33 } } },
+                response: {
+                    status: 400,
+                    data: {
+                        error: {
+                            code: 100,
+                            error_subcode: 33,
+                            message: 'Tried accessing nonexisting field (tasks)',
+                        },
+                    },
+                },
             })
             .mockResolvedValueOnce({
                 status: 200,
@@ -111,13 +126,25 @@ describe('MetaMessengerProvider shop-scoped discovery diagnostics', () => {
             diagnostics: canary,
         });
 
-        expect(result).toEqual([]);
+        expect(result).toEqual([expect.objectContaining({
+            id: '1362174360316889',
+            connectable: true,
+            eligibilitySource: 'GRANULAR_PERMISSIONS',
+        })]);
+        expect(canary.expectedPageEligible).toBe('YES');
+        expect(canary.expectedPageEligibilitySource).toBe('GRANULAR_PERMISSIONS');
         expect(canary.meAccounts.rich.expectedPage).toBe('NO');
         expect(canary.hydration).toMatchObject({
             rich: { status: 'FAIL' },
             minimal: { status: 'PASS', expectedPageToken: 'YES' },
         });
-        expect(pageCredentials).toEqual({});
+        expect(pageCredentials).toEqual({
+            '1362174360316889': {
+                pageId: '1362174360316889',
+                token: 'PAGE_TOKEN_SENTINEL',
+                expiresAt: null,
+            },
+        });
     });
 
     test('returns the unchanged production error contract when diagnostics are disabled', async () => {

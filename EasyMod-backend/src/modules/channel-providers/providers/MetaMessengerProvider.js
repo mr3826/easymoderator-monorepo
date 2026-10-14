@@ -28,6 +28,13 @@ const {
     recordGraphError,
     sanitizeTasks,
 } = require('../meta-discovery-canary');
+const {
+    PAGE_GRANT_MODE,
+    interpretPageGrants,
+    intersectPageGrants,
+    grantAllowsPage,
+    grantCanAuthorizePages,
+} = require('../meta-page-grants');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -63,7 +70,11 @@ const PAGE_FIELDS =
     'tasks';
 const PAGE_HYDRATION_FIELDS =
     'id,name,category,picture{data{url}},tasks,access_token';
+const PAGE_MINIMAL_FIELDS = 'id,name,access_token';
 const PAGE_HYDRATION_CONCURRENCY = 5;
+const GRANULAR_PERMISSION_ELIGIBILITY_SOURCE = 'GRANULAR_PERMISSIONS';
+const META_TASK_ELIGIBILITY_SOURCE = 'META_TASKS';
+const PAGE_TASK_AVAILABILITY = Object.freeze({ PRESENT: 'PRESENT', UNAVAILABLE: 'UNAVAILABLE' });
 
 // Meta accepts appsecret_proof on every Graph call and *requires* it once
 // "Require App Secret Proof for Server API calls" is switched on in the App
@@ -128,22 +139,62 @@ function metaError(err, context) {
     return appError;
 }
 
-function selectedPageIdsFromDebugToken(debugData) {
-    const granularScopes = Array.isArray(debugData?.granular_scopes)
-        ? debugData.granular_scopes
-        : [];
-    const messagingScope = granularScopes.find((entry) => entry?.scope === 'pages_messaging');
-    if (!Array.isArray(messagingScope?.target_ids)) return new Set();
-
-    return new Set(
-        messagingScope.target_ids
-            .filter((id) => id !== null && id !== undefined && String(id).trim())
-            .map(String),
-    );
+function isOptionalTasksFieldError(err) {
+    const graphError = err?.response?.data?.error || {};
+    const message = String(graphError.message || err?.message || '');
+    return Number(graphError.code) === 100 && /\btasks\b/i.test(message);
 }
 
 function hasNonEmptyAccessToken(page) {
     return typeof page?.access_token === 'string' && page.access_token.trim().length > 0;
+}
+
+function pageEligibility(page, pageGrant) {
+    const tasksReturned = Object.prototype.hasOwnProperty.call(page || {}, 'tasks');
+    const eligibility = evaluatePageEligibility(page?.tasks);
+    if (tasksReturned) {
+        return {
+            ...eligibility,
+            eligibilitySource: META_TASK_ELIGIBILITY_SOURCE,
+            taskAvailability: PAGE_TASK_AVAILABILITY.PRESENT,
+        };
+    }
+
+    // When Meta rejects the optional tasks field, the verified pair of
+    // Page-scoped permissions plus the exact Page access token is the same
+    // authorization evidence already used by the portfolio fallback. Keep
+    // that projection explicit instead of pretending Meta returned tasks.
+    if (hasNonEmptyAccessToken(page) && grantCanAuthorizePages(pageGrant)) {
+        return {
+            tasks: eligibility.tasks,
+            connectable: true,
+            reason: null,
+            eligibilitySource: GRANULAR_PERMISSION_ELIGIBILITY_SOURCE,
+            taskAvailability: PAGE_TASK_AVAILABILITY.UNAVAILABLE,
+        };
+    }
+
+    return {
+        ...eligibility,
+        taskAvailability: PAGE_TASK_AVAILABILITY.UNAVAILABLE,
+    };
+}
+
+function hasPageTaskEvidence(page) {
+    return Object.prototype.hasOwnProperty.call(page || {}, 'tasks');
+}
+
+function preservePageTaskEvidence(page, ...priorPages) {
+    const evidencePages = [...priorPages, page].filter(hasPageTaskEvidence);
+    if (evidencePages.length === 0) return page;
+
+    // Any explicit rejection wins over an unavailable or later-sufficient
+    // response. Credential retries may recover tokens, but cannot upgrade the
+    // Page's authorization evidence.
+    const rejectedEvidence = evidencePages.find((candidate) =>
+        !evaluatePageEligibility(candidate.tasks).connectable);
+    const selectedEvidence = rejectedEvidence || evidencePages[evidencePages.length - 1];
+    return { ...page, tasks: selectedEvidence.tasks };
 }
 
 function canaryDiscoveryError(err, context, diagnostics) {
@@ -160,7 +211,7 @@ function canaryDiscoveryError(err, context, diagnostics) {
     );
 }
 
-function recordDebugTokenDiagnostics(diagnostics, debugData, appId) {
+function recordDebugTokenDiagnostics(diagnostics, debugData, appId, pageGrants) {
     if (!diagnostics) return;
     const granularScopes = Array.isArray(debugData?.granular_scopes) ? debugData.granular_scopes : [];
     const scopes = new Set(Array.isArray(debugData?.scopes) ? debugData.scopes : []);
@@ -178,11 +229,34 @@ function recordDebugTokenDiagnostics(diagnostics, debugData, appId) {
     for (const scopeName of ['pages_show_list', 'pages_messaging', 'pages_manage_metadata']) {
         const entry = granularScopes.find((scope) => scope?.scope === scopeName);
         const targetIds = Array.isArray(entry?.target_ids) ? entry.target_ids.map(String) : [];
+        const grant = pageGrants?.[scopeName];
         diagnostics.granularScopes[scopeName] = {
-            granted: scopes.has(scopeName) || entry ? 'YES' : 'NO',
-            expectedPage: targetIds.includes(diagnostics.expectedPageId) ? 'YES' : 'NO',
+            granted: scopes.has(scopeName) ? 'YES' : entry ? 'UNKNOWN' : 'NO',
+            expectedPage: grant?.mode === PAGE_GRANT_MODE.ALL
+                ? 'ALL'
+                : grant?.mode === PAGE_GRANT_MODE.UNKNOWN
+                    ? 'UNKNOWN'
+                    : targetIds.includes(diagnostics.expectedPageId) ? 'YES' : 'NO',
             targetCount: targetIds.length,
+            mode: grant?.mode || PAGE_GRANT_MODE.UNKNOWN,
         };
+    }
+    diagnostics.messagingGrantMode = pageGrants?.pages_messaging?.mode || PAGE_GRANT_MODE.UNKNOWN;
+    diagnostics.metadataGrantMode = pageGrants?.pages_manage_metadata?.mode || PAGE_GRANT_MODE.UNKNOWN;
+    diagnostics.showListGranted = pageGrants?.pages_show_list?.mode || PAGE_GRANT_MODE.UNKNOWN;
+    if (pageGrants) {
+        const operationalGrant = intersectPageGrants(
+            pageGrants.pages_messaging,
+            pageGrants.pages_manage_metadata,
+        );
+        diagnostics.operationalGrantMode = operationalGrant.mode;
+        diagnostics.pageGrantMode = intersectPageGrants(
+            operationalGrant,
+            pageGrants.pages_show_list,
+        ).mode;
+    } else {
+        diagnostics.operationalGrantMode = PAGE_GRANT_MODE.UNKNOWN;
+        diagnostics.pageGrantMode = PAGE_GRANT_MODE.UNKNOWN;
     }
 }
 
@@ -199,7 +273,10 @@ function recordPageCollectionDiagnostics(diagnostics, stageName, pages) {
         : 'UNKNOWN';
     if (expectedPage) {
         diagnostics.expectedPageTasks = sanitizeTasks(expectedPage.tasks);
-        diagnostics.expectedPageEligible = evaluatePageEligibility(expectedPage.tasks).connectable ? 'YES' : 'NO';
+        diagnostics.expectedPageEligible = Array.isArray(expectedPage.tasks)
+            ? evaluatePageEligibility(expectedPage.tasks).connectable ? 'YES' : 'NO'
+            : 'UNKNOWN';
+        diagnostics.expectedPageEligibilitySource = Array.isArray(expectedPage.tasks) ? 'META_TASKS' : 'UNKNOWN';
     }
 }
 
@@ -277,30 +354,37 @@ async function mapWithConcurrency(values, concurrency, mapper) {
     return results;
 }
 
-async function hydratePageByIdMinimal(pageId, userToken, diagnostics) {
-    if (!diagnostics) return;
+async function hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics = null, priorPage = null) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
-                fields: 'id,name,access_token',
+                fields: PAGE_MINIMAL_FIELDS,
                 access_token: userToken,
                 appsecret_proof: appsecretProof(userToken),
             },
         });
-        const page = response.data;
-        diagnostics.hydration.minimal.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+        const page = preservePageTaskEvidence(response.data, priorPage);
         const pageIdMatches = String(page?.id) === String(pageId);
-        diagnostics.hydration.minimal.status = pageIdMatches ? 'PASS' : 'REJECTED';
-        diagnostics.hydration.minimal.expectedPageToken = pageIdMatches && hasNonEmptyAccessToken(page)
-            ? 'YES'
-            : 'NO';
+        const hasToken = pageIdMatches && hasNonEmptyAccessToken(page);
+        if (diagnostics) {
+            diagnostics.hydration.minimal.httpStatus = Number.isInteger(response.status) ? response.status : 200;
+            diagnostics.hydration.minimal.status = hasToken ? 'PASS' : 'REJECTED';
+            diagnostics.hydration.minimal.expectedPageToken = hasToken ? 'YES' : 'NO';
+        }
+        if (!hasToken) return { page: null, status: 'rejected' };
+
+        retainPageCredential(pageCredentials, page);
+        return { page, status: 'succeeded' };
     } catch (err) {
-        diagnostics.hydration.minimal.status = 'FAIL';
-        recordGraphError(diagnostics, 'minimal_hydration', err);
+        if (diagnostics) {
+            diagnostics.hydration.minimal.status = 'FAIL';
+            recordGraphError(diagnostics, 'minimal_hydration', err);
+        }
+        return { page: null, status: 'failed' };
     }
 }
 
-async function hydratePageById(pageId, userToken, pageCredentials, diagnostics = null) {
+async function hydratePageById(pageId, userToken, pageCredentials, diagnostics = null, sourcePage = null) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
@@ -309,7 +393,7 @@ async function hydratePageById(pageId, userToken, pageCredentials, diagnostics =
                 appsecret_proof: appsecretProof(userToken),
             },
         });
-        const page = response.data;
+        const page = preservePageTaskEvidence(response.data, sourcePage);
         const isExpectedPage = diagnostics && String(pageId) === diagnostics.expectedPageId;
         if (String(page?.id) !== String(pageId)) {
             logger.warn('metaPageHydrationRejected', { pageId, reason: 'ID_MISMATCH' });
@@ -331,7 +415,7 @@ async function hydratePageById(pageId, userToken, pageCredentials, diagnostics =
                 diagnostics.expectedPageTasks = sanitizeTasks(page.tasks);
                 diagnostics.expectedPageEligible = evaluatePageEligibility(page.tasks).connectable ? 'YES' : 'NO';
             }
-            return { page: null, status: 'rejected' };
+            return hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics, page);
         }
         retainPageCredential(pageCredentials, page);
         if (isExpectedPage) {
@@ -351,12 +435,18 @@ async function hydratePageById(pageId, userToken, pageCredentials, diagnostics =
             metaCode: err.response?.data?.error?.code || null,
             metaSubcode: err.response?.data?.error?.error_subcode || null,
         });
+        if (!isOptionalTasksFieldError(err)) {
+            if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
+                diagnostics.hydration.rich.status = 'FAIL';
+                recordGraphError(diagnostics, 'rich_hydration', err);
+            }
+            return { page: null, status: 'failed' };
+        }
         if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
             diagnostics.hydration.rich.status = 'FAIL';
             recordGraphError(diagnostics, 'rich_hydration', err);
-            await hydratePageByIdMinimal(pageId, userToken, diagnostics);
         }
-        return { page: null, status: 'failed' };
+        return hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics, sourcePage);
     }
 }
 
@@ -439,7 +529,7 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    async getSelectedPageIds({ userToken, diagnostics = null }) {
+    async getPageGrants({ userToken, diagnostics = null }) {
         const appId = config.metaAppId || process.env.META_APP_ID;
         const appSecret = config.metaAppSecret || process.env.META_APP_SECRET;
         const appAccessToken = `${appId}|${appSecret}`;
@@ -451,26 +541,86 @@ class MetaMessengerProvider extends ChannelProvider {
                     appsecret_proof: appsecretProof(appAccessToken),
                 },
             });
+            const debugData = resp.data?.data || {};
+            const pageGrants = interpretPageGrants(debugData, appId);
             if (diagnostics) {
                 diagnostics.debugTokenHttpStatus = Number.isInteger(resp.status) ? resp.status : 200;
-                recordDebugTokenDiagnostics(diagnostics, resp.data?.data || {}, appId);
+                recordDebugTokenDiagnostics(diagnostics, debugData, appId, pageGrants);
             }
-            const selectedPageIds = selectedPageIdsFromDebugToken(resp.data?.data || {});
-            if (!selectedPageIds.size) {
-                logger.warn('debugTokenGranularScopes missing Page target IDs; returning no connectable Pages');
-            }
-            return selectedPageIds;
+            return pageGrants;
         } catch (err) {
             if (diagnostics) throw canaryDiscoveryError(err, 'debug_token', diagnostics);
             throw metaError(err, 'debugTokenGranularScopes');
         }
     }
 
+    // Kept as a named provider method for callers that need the Messenger
+    // grant specifically. The return value is now an explicit PageGrant, not
+    // an ambiguous Set of target IDs.
+    async getSelectedPageIds({ userToken, diagnostics = null }) {
+        const pageGrants = await this.getPageGrants({ userToken, diagnostics });
+        return pageGrants.pages_messaging;
+    }
+
     async listManagedAssets({ userToken, pageCredentials, diagnostics = null }) {
-        // The pages granted for Messenger are the authorization boundary. This
-        // must run even when /me/accounts is empty so a Business Portfolio Page
-        // can be recovered through its exact granted target ID.
-        const selectedPageIds = await this.getSelectedPageIds({ userToken, diagnostics });
+        const pageGrants = await this.getPageGrants({ userToken, diagnostics });
+        const operationalPageGrant = intersectPageGrants(
+            pageGrants.pages_messaging,
+            pageGrants.pages_manage_metadata,
+        );
+        const showListGrant = pageGrants.pages_show_list;
+        const pageGrant = intersectPageGrants(operationalPageGrant, showListGrant);
+
+        if (diagnostics) {
+            diagnostics.operationalGrantMode = operationalPageGrant.mode;
+            diagnostics.pageGrantMode = pageGrant.mode;
+            diagnostics.messagingGrantMode = pageGrants.pages_messaging.mode;
+            diagnostics.metadataGrantMode = pageGrants.pages_manage_metadata.mode;
+            diagnostics.showListGranted = showListGrant.mode;
+        }
+
+        // /me/accounts is an authorized discovery edge only when the
+        // pages_show_list permission itself is verified. A successful listing
+        // never substitutes for the Messenger or Page-management grants.
+        if (!grantCanAuthorizePages(showListGrant)
+            || (showListGrant.mode === PAGE_GRANT_MODE.EXPLICIT && !showListGrant.pageIds.size)) {
+            if (diagnostics) diagnostics.discoveryFailureReason = 'SHOW_LIST_PERMISSION_MISSING_OR_AMBIGUOUS';
+            logger.info('metaAssetsListed', {
+                META_PAGE_GRANT_MODE: pageGrant.mode,
+                OPERATIONAL_PAGE_GRANT_MODE: operationalPageGrant.mode,
+                MESSAGING_GRANT_MODE: pageGrants.pages_messaging.mode,
+                METADATA_GRANT_MODE: pageGrants.pages_manage_metadata.mode,
+                SHOW_LIST_GRANTED: showListGrant.mode,
+                ME_ACCOUNTS_PAGE_COUNT: 0,
+                AUTHORIZED_PAGE_COUNT: 0,
+                PAGE_TOKEN_AVAILABLE_COUNT: 0,
+                CONNECTABLE_PAGE_COUNT: 0,
+                DISCOVERY_FAILURE_REASON: 'SHOW_LIST_PERMISSION_MISSING_OR_AMBIGUOUS',
+            });
+            return [];
+        }
+
+        if (!grantCanAuthorizePages(pageGrant)
+            || (pageGrant.mode === PAGE_GRANT_MODE.EXPLICIT && !pageGrant.pageIds.size)) {
+            if (diagnostics) {
+                diagnostics.discoveryFailureReason = pageGrant.mode === PAGE_GRANT_MODE.EXPLICIT
+                    ? 'REQUIRED_PAGE_GRANTS_HAVE_NO_INTERSECTION'
+                    : pageGrant.reason || 'PAGE_GRANT_MISSING_OR_AMBIGUOUS';
+            }
+            logger.info('metaAssetsListed', {
+                META_PAGE_GRANT_MODE: pageGrant.mode,
+                OPERATIONAL_PAGE_GRANT_MODE: operationalPageGrant.mode,
+                MESSAGING_GRANT_MODE: pageGrants.pages_messaging.mode,
+                METADATA_GRANT_MODE: pageGrants.pages_manage_metadata.mode,
+                SHOW_LIST_GRANTED: showListGrant.mode,
+                ME_ACCOUNTS_PAGE_COUNT: 0,
+                AUTHORIZED_PAGE_COUNT: 0,
+                PAGE_TOKEN_AVAILABLE_COUNT: 0,
+                CONNECTABLE_PAGE_COUNT: 0,
+                DISCOVERY_FAILURE_REASON: diagnostics?.discoveryFailureReason || 'PAGE_GRANT_MISSING_OR_AMBIGUOUS',
+            });
+            return [];
+        }
 
         // /me/accounts is the only discovery edge used in the Messenger-only
         // launch. Do not query Business Portfolio edges here: that requires the
@@ -488,21 +638,28 @@ class MetaMessengerProvider extends ChannelProvider {
             if (diagnostics) {
                 diagnostics.meAccounts.rich.status = 'FAIL';
                 recordGraphError(diagnostics, 'me_accounts_rich', err);
-                try {
-                    const minimalPages = await paginateGraphCollection(`${GRAPH_BASE}/me/accounts`, {
-                        fields: 'id,name,access_token',
-                        limit: 100,
-                        access_token: userToken,
-                        appsecret_proof: appsecretProof(userToken),
-                    }, diagnostics, 'minimal');
-                    recordPageCollectionDiagnostics(diagnostics, 'minimal', minimalPages);
-                } catch (minimalError) {
+            }
+            if (!isOptionalTasksFieldError(err)) {
+                if (diagnostics) throw canaryDiscoveryError(err, 'me_accounts_rich', diagnostics);
+                throw metaError(err, 'listManagedAssets:me/accounts');
+            }
+            try {
+                const minimalPages = await paginateGraphCollection(`${GRAPH_BASE}/me/accounts`, {
+                    fields: PAGE_MINIMAL_FIELDS,
+                    limit: 100,
+                    access_token: userToken,
+                    appsecret_proof: appsecretProof(userToken),
+                }, diagnostics, 'minimal');
+                meAccountsRaw.push(...minimalPages);
+                recordPageCollectionDiagnostics(diagnostics, 'minimal', minimalPages);
+            } catch (minimalError) {
+                if (diagnostics) {
                     recordGraphError(diagnostics, 'me_accounts_minimal', minimalError);
                     diagnostics.meAccounts.minimal.status = 'FAIL';
+                    throw canaryDiscoveryError(err, 'me_accounts_rich', diagnostics);
                 }
-                throw canaryDiscoveryError(err, 'me_accounts_rich', diagnostics);
+                throw metaError(err, 'listManagedAssets:me/accounts');
             }
-            throw metaError(err, 'listManagedAssets:me/accounts');
         }
 
         const meAccountsById = new Map();
@@ -510,26 +667,56 @@ class MetaMessengerProvider extends ChannelProvider {
             const pageId = page?.id === null || page?.id === undefined ? '' : String(page.id);
             if (!pageId) continue;
             const current = meAccountsById.get(pageId);
-            // Prefer a duplicate row that actually contains a Page token.
-            if (!current || (!hasNonEmptyAccessToken(current) && hasNonEmptyAccessToken(page))) {
+            if (!current) {
                 meAccountsById.set(pageId, page);
+                continue;
             }
+
+            // Prefer whichever duplicate carries the Page token, while
+            // retaining any explicit task rejection across both rows.
+            const preferredPage = !hasNonEmptyAccessToken(current) && hasNonEmptyAccessToken(page)
+                ? page
+                : current;
+            meAccountsById.set(
+                pageId,
+                preservePageTaskEvidence(preferredPage, current, page),
+            );
         }
 
         const pagesById = new Map();
-        const targetsNeedingHydration = [...selectedPageIds]
-            .filter((pageId) => !hasNonEmptyAccessToken(meAccountsById.get(pageId)));
+        const targetIdsNeedingHydration = new Set();
         for (const [pageId, page] of meAccountsById) {
-            if (selectedPageIds.has(pageId) && hasNonEmptyAccessToken(page)) {
+            if (!grantAllowsPage(pageGrant, pageId)) continue;
+            if (hasNonEmptyAccessToken(page)) {
                 retainPageCredential(pageCredentials, page);
                 pagesById.set(pageId, { ...page, source: 'ME_ACCOUNTS' });
+            } else {
+                targetIdsNeedingHydration.add(pageId);
             }
         }
+
+        // Only EXPLICIT grants provide additional IDs that can be hydrated.
+        // ALL is intentionally bounded by the Pages Meta actually returned by
+        // /me/accounts; it never turns into a guessed-ID scan.
+        if (pageGrant.mode === PAGE_GRANT_MODE.EXPLICIT) {
+            for (const pageId of pageGrant.pageIds) {
+                if (!hasNonEmptyAccessToken(meAccountsById.get(pageId))) {
+                    targetIdsNeedingHydration.add(pageId);
+                }
+            }
+        }
+        const targetsNeedingHydration = [...targetIdsNeedingHydration];
 
         const hydrationResults = await mapWithConcurrency(
             targetsNeedingHydration,
             PAGE_HYDRATION_CONCURRENCY,
-            (pageId) => hydratePageById(pageId, userToken, pageCredentials, diagnostics),
+            (pageId) => hydratePageById(
+                pageId,
+                userToken,
+                pageCredentials,
+                diagnostics,
+                meAccountsById.get(pageId),
+            ),
         );
         const hydrationStats = {
             attempted: targetsNeedingHydration.length,
@@ -552,10 +739,10 @@ class MetaMessengerProvider extends ChannelProvider {
         });
 
         const visiblePages = [...pagesById.values()]
-            .filter((page) => selectedPageIds.has(String(page.id)) && hasNonEmptyAccessToken(page));
+            .filter((page) => grantAllowsPage(pageGrant, page.id) && hasNonEmptyAccessToken(page));
 
         const result = visiblePages.map((p) => {
-            const eligibility = evaluatePageEligibility(p.tasks);
+            const eligibility = pageEligibility(p, pageGrant);
             return {
                 id: String(p.id),
                 name: p.name,
@@ -564,18 +751,65 @@ class MetaMessengerProvider extends ChannelProvider {
                 tasks: eligibility.tasks,
                 connectable: eligibility.connectable,
                 reason: eligibility.reason,
+                ...(eligibility.eligibilitySource
+                    ? { eligibilitySource: eligibility.eligibilitySource }
+                    : {}),
+                taskAvailability: eligibility.taskAvailability,
             };
         });
 
+        if (diagnostics) {
+            const expectedPage = visiblePages.find((page) => String(page.id) === diagnostics.expectedPageId);
+            const expectedAsset = result.find((page) => page.id === diagnostics.expectedPageId);
+            if (expectedPage) {
+                diagnostics.expectedPageTasks = sanitizeTasks(expectedPage.tasks);
+                diagnostics.expectedPageEligible = expectedAsset
+                    ? expectedAsset.connectable ? 'YES' : 'NO'
+                    : 'NO';
+                diagnostics.expectedPageEligibilitySource = expectedAsset?.eligibilitySource || 'UNKNOWN';
+            }
+        }
+
+        const pageTokenAvailableCount = visiblePages.filter((page) => hasNonEmptyAccessToken(page)).length;
+        const connectablePageCount = result.filter((page) => page.connectable === true).length;
+        const discoveryFailureReason = result.length > 0
+            ? null
+            : meAccountsRaw.length === 0
+                ? pageGrant.mode === PAGE_GRANT_MODE.ALL
+                    ? 'ALL_PAGES_GRANT_NO_DISCOVERABLE_PAGES'
+                    : 'NO_DISCOVERABLE_AUTHORIZED_PAGES'
+                : pageTokenAvailableCount === 0
+                    ? 'DISCOVERED_PAGES_HAVE_NO_PAGE_TOKEN'
+                    : connectablePageCount === 0
+                        ? 'DISCOVERED_PAGES_NOT_ELIGIBLE'
+                        : 'NO_AUTHORIZED_PAGES';
+        if (diagnostics) {
+            diagnostics.meAccountsPageCount = meAccountsRaw.length;
+            diagnostics.authorizedPageCount = visiblePages.length;
+            diagnostics.pageTokenAvailableCount = pageTokenAvailableCount;
+            diagnostics.connectablePageCount = connectablePageCount;
+            diagnostics.discoveryFailureReason = discoveryFailureReason;
+        }
+
         logger.info('metaAssetsListed', {
+            META_PAGE_GRANT_MODE: pageGrant.mode,
+            OPERATIONAL_PAGE_GRANT_MODE: operationalPageGrant.mode,
+            MESSAGING_GRANT_MODE: pageGrants.pages_messaging.mode,
+            METADATA_GRANT_MODE: pageGrants.pages_manage_metadata.mode,
+            SHOW_LIST_GRANTED: showListGrant.mode,
+            ME_ACCOUNTS_PAGE_COUNT: meAccountsRaw.length,
+            AUTHORIZED_PAGE_COUNT: visiblePages.length,
+            PAGE_TOKEN_AVAILABLE_COUNT: pageTokenAvailableCount,
+            CONNECTABLE_PAGE_COUNT: connectablePageCount,
+            DISCOVERY_FAILURE_REASON: discoveryFailureReason,
             source_me_accounts: meAccountsRaw.length,
             source_owned_pages: 0,
             source_client_pages: 0,
             portfolioAttempted: false,
             portfolioError: null,
             source_granular_target: hydrationStats.succeeded,
-            selected_target_ids: selectedPageIds.size,
-            filtered_unselected_pages: meAccountsRaw.filter((page) => !selectedPageIds.has(String(page?.id))).length,
+            selected_target_ids: pageGrant.mode === PAGE_GRANT_MODE.EXPLICIT ? pageGrant.pageIds.size : 0,
+            filtered_unselected_pages: meAccountsRaw.filter((page) => !grantAllowsPage(pageGrant, page?.id)).length,
             hydration_attempted: hydrationStats.attempted,
             hydration_succeeded: hydrationStats.succeeded,
             hydration_failed: hydrationStats.failed,
@@ -936,7 +1170,9 @@ class MetaMessengerProvider extends ChannelProvider {
 
 module.exports = MetaMessengerProvider;
 module.exports._private = {
-    selectedPageIdsFromDebugToken,
+    pageEligibility,
+    interpretPageGrants,
+    intersectPageGrants,
     // Exported so the App Review surface tests can assert the permission
     // set this integration declares, now that it is no longer observable
     // on the authorization URL.

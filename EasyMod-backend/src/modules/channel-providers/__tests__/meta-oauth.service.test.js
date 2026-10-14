@@ -243,7 +243,7 @@ describe('OAuth callback null-state guards', () => {
         });
     });
 
-    test('handleCallback returns an opaque callback token and stores the Meta user token server-side', async () => {
+    test('handleCallback returns an opaque callback token without retaining the Meta user token', async () => {
         const pages = [{
             id: 'PAGE_42',
             name: 'My Page',
@@ -265,13 +265,14 @@ describe('OAuth callback null-state guards', () => {
         expect(stateStore.put).toHaveBeenCalledWith(
             `callback:shop-abc:facebook:${result.tempToken}`,
             expect.objectContaining({
-                userToken: 'user-tok',
                 pages,
                 userId: 'user-xyz',
                 shopId: 'shop-abc',
                 platform: 'facebook',
             }),
         );
+        const callbackPayload = stateStore.put.mock.calls[0][1];
+        expect(callbackPayload).not.toHaveProperty('userToken');
         expect(mockExchangeCode).toHaveBeenCalledWith({
             code: 'auth-code',
             redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
@@ -470,6 +471,68 @@ describe('connectPage() webhook verify wiring', () => {
         expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
             pageAccessToken: PAGE_TOKEN_SENTINEL,
         }));
+    });
+
+    test('accepts verified granular-permission provenance when task metadata is omitted', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: [],
+                connectable: true,
+                reason: null,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: 'UNAVAILABLE',
+            }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: {
+                    pageId: ASSET_ID,
+                    token: PAGE_TOKEN_SENTINEL,
+                    expiresAt: null,
+                },
+            },
+        });
+        mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages'] });
+
+        await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
+
+        expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
+            metaAssetId: ASSET_ID,
+            pageAccessToken: PAGE_TOKEN_SENTINEL,
+        }));
+    });
+
+    test('does not let granular-permission provenance override explicitly insufficient tasks', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            platform: 'facebook',
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: ['CREATE_CONTENT'],
+                connectable: true,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: 'PRESENT',
+            }],
+            userId: USER_ID,
+            shopId: SHOP_ID,
+            pageCredentials: {
+                [ASSET_ID]: { pageId: ASSET_ID, token: PAGE_TOKEN_SENTINEL, expiresAt: null },
+            },
+        });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({ status: 403, code: 'META_PAGE_TASKS_REQUIRED' });
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+        expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
 
     test('fails closed when the authorized Page has no server-side credential', async () => {

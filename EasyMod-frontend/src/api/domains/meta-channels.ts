@@ -65,6 +65,10 @@ export interface MetaOAuthAsset {
   connectable: boolean;
   /** Stable reason code when this asset is not connectable. */
   reason: string | null;
+  /** Provenance for eligibility when Meta's optional task field was unavailable. */
+  eligibilitySource?: 'META_TASKS' | 'GRANULAR_PERMISSIONS' | null;
+  /** Whether Meta returned the Page's tasks or omitted the optional field. */
+  taskAvailability?: 'PRESENT' | 'UNAVAILABLE';
 }
 
 export interface MetaOAuthCallbackResult {

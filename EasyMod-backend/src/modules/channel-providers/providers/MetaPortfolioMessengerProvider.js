@@ -22,6 +22,14 @@ const MetaMessengerProvider = require('./MetaMessengerProvider');
 const config = require('../../../config/config');
 const { createLogger } = require('../../../utils/structured-logger');
 const { recordGraphError } = require('../meta-discovery-canary');
+const {
+    PAGE_GRANT_MODE,
+    interpretPageGrants,
+    intersectPageGrants,
+    grantAllowsPage,
+    createGrant,
+} = require('../meta-page-grants');
+const PAGE_TASK_AVAILABILITY = Object.freeze({ PRESENT: 'PRESENT', UNAVAILABLE: 'UNAVAILABLE' });
 
 const logger = createLogger('MetaPortfolioMessengerProvider');
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v22.0';
@@ -33,21 +41,22 @@ function appsecretProof(token) {
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
 
-function targetSet(debugData, scope) {
-    const granularScopes = Array.isArray(debugData?.granular_scopes)
-        ? debugData.granular_scopes
-        : [];
-    const entry = granularScopes.find((candidate) => candidate?.scope === scope);
-    if (!Array.isArray(entry?.target_ids)) return new Set();
-    return new Set(
-        entry.target_ids
-            .filter((id) => id !== null && id !== undefined && String(id).trim())
-            .map(String),
-    );
-}
-
-function intersect(left, right) {
-    return new Set([...left].filter((id) => right.has(id)));
+function canPreserveBaseAfterStrictProbeFailure(err) {
+    const status = Number(err?.response?.status);
+    const graphError = err?.response?.data?.error || {};
+    if (graphError.is_transient === true || status === 429 || status >= 500) return true;
+    if (err?.response) return false;
+    return [
+        'ECONNABORTED',
+        'ECONNRESET',
+        'ECONNREFUSED',
+        'EHOSTUNREACH',
+        'ETIMEDOUT',
+        'EAI_AGAIN',
+        'ENETUNREACH',
+        'ENOTFOUND',
+        'ERR_NETWORK',
+    ].includes(err?.code);
 }
 
 function retainPageCredential(pageCredentials, page) {
@@ -78,10 +87,22 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
                 },
             });
             const debugData = response.data?.data || {};
-            return intersect(
-                targetSet(debugData, 'pages_messaging'),
-                targetSet(debugData, 'pages_manage_metadata'),
+            const pageGrants = interpretPageGrants(debugData, appId);
+            const operationalPageGrant = intersectPageGrants(
+                pageGrants.pages_messaging,
+                pageGrants.pages_manage_metadata,
             );
+            const strictPageGrant = intersectPageGrants(
+                operationalPageGrant,
+                pageGrants.pages_show_list,
+            );
+            if (diagnostics) {
+                diagnostics.portfolioGrantMode = strictPageGrant.mode;
+                diagnostics.portfolioOperationalGrantMode = operationalPageGrant.mode;
+                diagnostics.portfolioMessagingGrantMode = pageGrants.pages_messaging.mode;
+                diagnostics.portfolioMetadataGrantMode = pageGrants.pages_manage_metadata.mode;
+            }
+            return strictPageGrant;
         } catch (err) {
             if (diagnostics) recordGraphError(diagnostics, 'portfolio_strict_debug_token', err);
             // The base provider has already completed its normal discovery. A
@@ -91,7 +112,13 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
                 metaCode: err.response?.data?.error?.code || null,
                 metaSubcode: err.response?.data?.error?.error_subcode || null,
             });
-            return new Set();
+            return createGrant(
+                PAGE_GRANT_MODE.UNKNOWN,
+                [],
+                canPreserveBaseAfterStrictProbeFailure(err)
+                    ? 'DEBUG_TOKEN_UNAVAILABLE'
+                    : 'STRICT_PROBE_FAILED_CLOSED',
+            );
         }
     }
 
@@ -114,19 +141,20 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
                 diagnostics.hydration.minimal.expectedPageToken = 'YES';
             }
 
-            // These normalized task values are an authorization projection for
-            // the existing connectPage guard. They are not copied from Meta's
-            // Page `tasks` field: the stronger proof here is (a) exact granular
-            // targeting for pages_messaging + pages_manage_metadata and (b) a
-            // Page access token returned for this exact Page ID.
+            // Tasks are unavailable in the minimal request. The provider
+            // returns explicit provenance so connectPage can use the verified
+            // granular permissions and exact Page token without fabricating a
+            // Meta `tasks` response.
             return {
                 id: String(page.id),
                 name: page.name || `Facebook Page ${page.id}`,
                 category: null,
                 pictureUrl: null,
-                tasks: ['MESSAGING', 'MANAGE'],
+                tasks: [],
                 connectable: true,
                 reason: null,
+                eligibilitySource: 'GRANULAR_PERMISSIONS',
+                taskAvailability: PAGE_TASK_AVAILABILITY.UNAVAILABLE,
             };
         } catch (err) {
             if (diagnostics && String(pageId) === diagnostics.expectedPageId) {
@@ -144,17 +172,35 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
 
     async listManagedAssets({ userToken, pageCredentials, diagnostics = null }) {
         const baseAssets = await super.listManagedAssets({ userToken, pageCredentials, diagnostics });
-        const strictGrantedPageIds = await this.getStrictGrantedPageIds({ userToken, diagnostics });
-        if (!strictGrantedPageIds.size) return baseAssets;
+        const strictPageGrant = await this.getStrictGrantedPageIds({ userToken, diagnostics });
+        // ALL is already bounded by the base provider's authorized
+        // /me/accounts response. Only EXPLICIT grants can add exact IDs that
+        // were omitted from that response through direct hydration.
+        if (strictPageGrant.mode === PAGE_GRANT_MODE.UNKNOWN
+            && strictPageGrant.reason === 'DEBUG_TOKEN_UNAVAILABLE') {
+            return baseAssets;
+        }
+        if (strictPageGrant.mode === PAGE_GRANT_MODE.ALL) return baseAssets;
+        if (strictPageGrant.mode !== PAGE_GRANT_MODE.EXPLICIT) return [];
 
         const byId = new Map(
             (Array.isArray(baseAssets) ? baseAssets : [])
                 .filter((asset) => asset?.id !== null && asset?.id !== undefined)
+                .filter((asset) => grantAllowsPage(strictPageGrant, asset.id))
                 .map((asset) => [String(asset.id), asset]),
         );
 
-        const fallbackIds = [...strictGrantedPageIds]
-            .filter((pageId) => !byId.has(pageId) || byId.get(pageId)?.connectable !== true);
+        const fallbackIds = [...strictPageGrant.pageIds]
+            .filter((pageId) => grantAllowsPage(strictPageGrant, pageId))
+            .filter((pageId) => {
+                const baseAsset = byId.get(pageId);
+                if (!baseAsset) return true;
+                if (baseAsset.connectable === true) return false;
+                // A base result marked PRESENT is explicit eligibility
+                // evidence, including an empty task array. Never replace an
+                // explicit rejection with permission-only minimal hydration.
+                return baseAsset.taskAvailability === PAGE_TASK_AVAILABILITY.UNAVAILABLE;
+            });
         if (!fallbackIds.length) return [...byId.values()];
 
         if (diagnostics) diagnostics.portfolioFallbackAttempted = fallbackIds.length;
@@ -171,7 +217,7 @@ class MetaPortfolioMessengerProvider extends MetaMessengerProvider {
         if (diagnostics) diagnostics.portfolioFallbackRecovered = recovered;
 
         logger.info('metaPortfolioPagesRecovered', {
-            strict_granted_pages: strictGrantedPageIds.size,
+            strict_granted_pages: strictPageGrant.pageIds.size,
             fallback_attempted: fallbackIds.length,
             fallback_recovered: recovered,
             total_pages: byId.size,
