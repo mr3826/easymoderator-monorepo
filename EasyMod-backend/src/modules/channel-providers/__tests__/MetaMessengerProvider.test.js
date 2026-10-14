@@ -1124,6 +1124,106 @@ describe('MetaMessengerProvider', () => {
             expect(axios.get.mock.calls.filter(([url]) => String(url).endsWith('/P_TOKEN'))).toHaveLength(1);
         });
 
+        test.each([
+            ['insufficient', ['CREATE_CONTENT']],
+            ['empty', []],
+        ])('preserves explicitly %s rich tasks when minimal hydration recovers the Page token', async (_label, richTasks) => {
+            const pageId = _label === 'empty' ? 'P_EMPTY_TASKS_TOKEN_RECOVERY' : 'P_TASKS_TOKEN_RECOVERY';
+            axios.get.mockImplementation((url, request = {}) => {
+                const requestUrl = String(url);
+                if (requestUrl.includes('/debug_token')) {
+                    return Promise.resolve(debugTokenResponse([pageId]));
+                }
+                if (requestUrl.includes('/me/accounts')) {
+                    return Promise.resolve({
+                        status: 200,
+                        data: {
+                            data: [page(pageId, {
+                                tasks: ['MESSAGING', 'MANAGE'],
+                                access_token: null,
+                            })],
+                            paging: {},
+                        },
+                    });
+                }
+                if (requestUrl.endsWith(`/${pageId}`) && request.params?.fields?.includes('tasks')) {
+                    return Promise.resolve({
+                        status: 200,
+                        data: page(pageId, {
+                            tasks: richTasks,
+                            access_token: null,
+                        }),
+                    });
+                }
+                if (requestUrl.endsWith(`/${pageId}`) && request.params?.fields === 'id,name,access_token') {
+                    return Promise.resolve({
+                        status: 200,
+                        data: { id: pageId, name: 'Recovered Page', access_token: 'recovered-page-token' },
+                    });
+                }
+                return Promise.reject(new Error('unexpected Graph request'));
+            });
+
+            const pageCredentials = {};
+            const result = await provider.listManagedAssets({
+                userToken: 'tok_task_evidence',
+                pageCredentials,
+            });
+
+            expect(result).toEqual([expect.objectContaining({
+                id: pageId,
+                tasks: richTasks,
+                connectable: false,
+                eligibilitySource: 'META_TASKS',
+                taskAvailability: 'PRESENT',
+            })]);
+            expect(pageCredentials[pageId]).toEqual({
+                pageId,
+                token: 'recovered-page-token',
+                expiresAt: null,
+            });
+            const hydrationCalls = axios.get.mock.calls.filter(([url]) => String(url).endsWith(`/${pageId}`));
+            expect(hydrationCalls.map(([, request]) => request.params.fields)).toEqual([
+                'id,name,category,picture{data{url}},tasks,access_token',
+                'id,name,access_token',
+            ]);
+        });
+
+        test('retains rejected task evidence when a token-bearing duplicate Page row replaces it', async () => {
+            const pageId = 'P_DUPLICATE_TASK_EVIDENCE';
+            configureGraph({
+                accountPages: [{
+                    data: {
+                        data: [
+                            { id: pageId, name: 'Duplicate Page', tasks: [], access_token: null },
+                            { id: pageId, name: 'Duplicate Page', access_token: 'duplicate-page-token' },
+                        ],
+                        paging: {},
+                    },
+                }],
+                debug: debugTokenResponse([pageId]),
+            });
+
+            const pageCredentials = {};
+            const result = await provider.listManagedAssets({
+                userToken: 'tok_duplicate_evidence',
+                pageCredentials,
+            });
+
+            expect(result).toEqual([expect.objectContaining({
+                id: pageId,
+                tasks: [],
+                connectable: false,
+                eligibilitySource: 'META_TASKS',
+                taskAvailability: 'PRESENT',
+            })]);
+            expect(pageCredentials[pageId]).toEqual({
+                pageId,
+                token: 'duplicate-page-token',
+                expiresAt: null,
+            });
+        });
+
         test('excludes a matching hydration response without a Page token and counts it', async () => {
             const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
             try {

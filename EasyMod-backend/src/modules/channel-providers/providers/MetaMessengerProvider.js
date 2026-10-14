@@ -180,6 +180,23 @@ function pageEligibility(page, pageGrant) {
     };
 }
 
+function hasPageTaskEvidence(page) {
+    return Object.prototype.hasOwnProperty.call(page || {}, 'tasks');
+}
+
+function preservePageTaskEvidence(page, ...priorPages) {
+    const evidencePages = [...priorPages, page].filter(hasPageTaskEvidence);
+    if (evidencePages.length === 0) return page;
+
+    // Any explicit rejection wins over an unavailable or later-sufficient
+    // response. Credential retries may recover tokens, but cannot upgrade the
+    // Page's authorization evidence.
+    const rejectedEvidence = evidencePages.find((candidate) =>
+        !evaluatePageEligibility(candidate.tasks).connectable);
+    const selectedEvidence = rejectedEvidence || evidencePages[evidencePages.length - 1];
+    return { ...page, tasks: selectedEvidence.tasks };
+}
+
 function canaryDiscoveryError(err, context, diagnostics) {
     recordGraphError(diagnostics, context, err);
     const graphError = err?.response?.data?.error || {};
@@ -337,7 +354,7 @@ async function mapWithConcurrency(values, concurrency, mapper) {
     return results;
 }
 
-async function hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics = null) {
+async function hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics = null, priorPage = null) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
@@ -346,7 +363,7 @@ async function hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagno
                 appsecret_proof: appsecretProof(userToken),
             },
         });
-        const page = response.data;
+        const page = preservePageTaskEvidence(response.data, priorPage);
         const pageIdMatches = String(page?.id) === String(pageId);
         const hasToken = pageIdMatches && hasNonEmptyAccessToken(page);
         if (diagnostics) {
@@ -367,7 +384,7 @@ async function hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagno
     }
 }
 
-async function hydratePageById(pageId, userToken, pageCredentials, diagnostics = null) {
+async function hydratePageById(pageId, userToken, pageCredentials, diagnostics = null, sourcePage = null) {
     try {
         const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
             params: {
@@ -376,7 +393,7 @@ async function hydratePageById(pageId, userToken, pageCredentials, diagnostics =
                 appsecret_proof: appsecretProof(userToken),
             },
         });
-        const page = response.data;
+        const page = preservePageTaskEvidence(response.data, sourcePage);
         const isExpectedPage = diagnostics && String(pageId) === diagnostics.expectedPageId;
         if (String(page?.id) !== String(pageId)) {
             logger.warn('metaPageHydrationRejected', { pageId, reason: 'ID_MISMATCH' });
@@ -398,7 +415,7 @@ async function hydratePageById(pageId, userToken, pageCredentials, diagnostics =
                 diagnostics.expectedPageTasks = sanitizeTasks(page.tasks);
                 diagnostics.expectedPageEligible = evaluatePageEligibility(page.tasks).connectable ? 'YES' : 'NO';
             }
-            return hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics);
+            return hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics, page);
         }
         retainPageCredential(pageCredentials, page);
         if (isExpectedPage) {
@@ -429,7 +446,7 @@ async function hydratePageById(pageId, userToken, pageCredentials, diagnostics =
             diagnostics.hydration.rich.status = 'FAIL';
             recordGraphError(diagnostics, 'rich_hydration', err);
         }
-        return hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics);
+        return hydratePageByIdMinimal(pageId, userToken, pageCredentials, diagnostics, sourcePage);
     }
 }
 
@@ -650,10 +667,20 @@ class MetaMessengerProvider extends ChannelProvider {
             const pageId = page?.id === null || page?.id === undefined ? '' : String(page.id);
             if (!pageId) continue;
             const current = meAccountsById.get(pageId);
-            // Prefer a duplicate row that actually contains a Page token.
-            if (!current || (!hasNonEmptyAccessToken(current) && hasNonEmptyAccessToken(page))) {
+            if (!current) {
                 meAccountsById.set(pageId, page);
+                continue;
             }
+
+            // Prefer whichever duplicate carries the Page token, while
+            // retaining any explicit task rejection across both rows.
+            const preferredPage = !hasNonEmptyAccessToken(current) && hasNonEmptyAccessToken(page)
+                ? page
+                : current;
+            meAccountsById.set(
+                pageId,
+                preservePageTaskEvidence(preferredPage, current, page),
+            );
         }
 
         const pagesById = new Map();
@@ -683,7 +710,13 @@ class MetaMessengerProvider extends ChannelProvider {
         const hydrationResults = await mapWithConcurrency(
             targetsNeedingHydration,
             PAGE_HYDRATION_CONCURRENCY,
-            (pageId) => hydratePageById(pageId, userToken, pageCredentials, diagnostics),
+            (pageId) => hydratePageById(
+                pageId,
+                userToken,
+                pageCredentials,
+                diagnostics,
+                meAccountsById.get(pageId),
+            ),
         );
         const hydrationStats = {
             attempted: targetsNeedingHydration.length,
