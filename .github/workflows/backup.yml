@@ -445,6 +445,7 @@ jobs:
             RESTORE_VOLUME="${RESTORE_CONTAINER}-data"
             RESTORE_UPLOADS_VOLUME="${RESTORE_CONTAINER}-uploads"
             POSTGRES_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'
+            POSTGRES_HELPER_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'
 
             cleanup() {
               docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
