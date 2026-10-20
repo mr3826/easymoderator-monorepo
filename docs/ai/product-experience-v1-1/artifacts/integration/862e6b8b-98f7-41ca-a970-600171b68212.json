@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "runId": "862e6b8b-98f7-41ca-a970-600171b68212",
+  "status": "PASS",
+  "startedAt": "2026-10-20T12:51:31.015Z",
+  "completedAt": "2026-10-20T12:53:08.057Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-24124-774fd4",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 5119,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 5120,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 5955
+  },
+  "testPaths": [
+    "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+    "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+    "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+  ],
+  "jest": {
+    "exitCode": 0,
+    "timedOut": false,
+    "suites": "3 passed, 3 total",
+    "tests": "12 passed, 12 total",
+    "duration": "44.055 s"
+  },
+  "egress": {
+    "mode": "host integration runner denies non-loopback DNS/TCP/HTTP/fetch; service bridge disables Docker IP masquerading",
+    "externalProvidersConfigured": false,
+    "externalCalls": 0
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 5955,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 0,
+      "durationMs": 67070,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-24124-774fd4"
+    }
+  ],
+  "failure": null,
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

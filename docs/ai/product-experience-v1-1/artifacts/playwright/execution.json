@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "startedAt": "2026-10-20T13:58:31.057Z",
+  "completedAt": "2026-10-20T13:59:25.938Z",
+  "localUrl": "http://127.0.0.1:3771",
+  "browsersAvailable": [
+    "chromium"
+  ],
+  "browserLimitations": [
+    "Firefox or WebKit are included only when their local browser binary is installed."
+  ],
+  "playwrightExitCode": 0,
+  "playwrightSignal": null,
+  "htmlReport": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\html-report\\index.html",
+  "traceDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\test-results",
+  "screenshotsDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\screenshots",
+  "failure": null
+}

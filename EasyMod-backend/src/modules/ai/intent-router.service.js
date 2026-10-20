@@ -81,6 +81,64 @@ const shouldSearchProducts = (message) => {
     return !NON_PRODUCT_CHATTER.test(trimmed);
 };
 
+const normalizeCatalogName = (value) => String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+const hasExplicitCatalogName = (message, candidate) => {
+    const normalizedMessage = normalizeCatalogName(message);
+    if (!normalizedMessage) return false;
+    const labels = [candidate?.name, candidate?.name_bn, ...(Array.isArray(candidate?.aliases) ? candidate.aliases : [])];
+    return labels.some(label => {
+        const normalizedLabel = normalizeCatalogName(label);
+        if (normalizedLabel.length < 4) return false;
+        return ` ${normalizedMessage} `.includes(` ${normalizedLabel} `);
+    });
+};
+
+const uniqueExplicitCatalogCandidate = ({ shopId, message, candidates = [] }) => {
+    if (!shopId || !message || !Array.isArray(candidates)) return null;
+    const namedCandidates = candidates.filter(candidate => {
+        const candidateShopId = candidate?.shop_id || candidate?.shopId;
+        return candidateShopId
+            && String(candidateShopId) === String(shopId)
+            && hasExplicitCatalogName(message, candidate);
+    });
+    return namedCandidates.length === 1 ? namedCandidates[0] : null;
+};
+
+const hasFactRequestOutsideExplicitCatalogName = ({ message, candidate }) => {
+    const normalizedMessage = ` ${normalizeCatalogName(message)} `;
+    if (!normalizedMessage.trim() || !candidate) return false;
+    const labels = [candidate?.name, candidate?.name_bn, ...(Array.isArray(candidate?.aliases) ? candidate.aliases : [])];
+    const withoutCatalogName = labels.reduce((remaining, label) => {
+        const normalizedLabel = normalizeCatalogName(label);
+        if (normalizedLabel.length < 4) return remaining;
+        return remaining.split(` ${normalizedLabel} `).join(' ');
+    }, normalizedMessage);
+    return grounding.askedAttributes(withoutCatalogName).length > 0
+        || /\b(?:price|cost|dam|daam|koto|how\s+much|stock|available|availability|ache|achhe|ase|ashe)\b|দাম|মূল্য|কত|স্টক|আছে/i.test(withoutCatalogName);
+};
+
+const resolveExplicitProductEvidence = ({ shopId, candidate }) => {
+    if (!shopId || !candidate) return null;
+    // Product evidence normally requires every identifying word to match a
+    // catalog field. An exact, unique merchant name remains a valid identity
+    // when the question adds context words such as an occasion or request cue.
+    const resolved = grounding.resolveProductEvidence({
+        shopId,
+        message: candidate.name,
+        candidates: [candidate],
+    });
+    return resolved.productStatus === grounding.ProductEvidenceStatus.VERIFIED
+        && resolved.verifiedProducts.length === 1
+        ? resolved.verifiedProducts[0]
+        : null;
+};
+
 const CONTEXT_PRODUCT_QUESTION = /\b(?:price|cost|dam|daam|koto|stock|available|availability|size|sizes|color|colour|material|fabric)\b|দাম|মূল্য|কত|স্টক|আছে|সাইজ|মাপ|রং|রঙ|উপাদান|কাপড়|কাপড়/i;
 
 // ---------------------------------------------------------------------------
@@ -928,6 +986,25 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             candidates,
             retrievalFailed,
         });
+    const explicitNameCandidate = !imageUrls.length
+        && !useContextProducts
+        && !grounding.isMediaRequest(message)
+        ? uniqueExplicitCatalogCandidate({ shopId, message: groundingQuery, candidates })
+        : null;
+    if (evidence.productStatus === grounding.ProductEvidenceStatus.NOT_FOUND && explicitNameCandidate) {
+        const explicitProduct = resolveExplicitProductEvidence({ shopId, candidate: explicitNameCandidate });
+        if (explicitProduct) {
+            evidence.productStatus = grounding.ProductEvidenceStatus.VERIFIED;
+            evidence.verifiedProducts = [explicitProduct];
+            evidence.relatedProducts = [];
+            evidence.unmatchedTerms = [];
+        }
+    }
+    const explicitCatalogIdentity = Boolean(explicitNameCandidate
+        && evidence.verifiedProducts.length === 1
+        && String(evidence.verifiedProducts[0].id) === String(explicitNameCandidate.id));
+    const explicitCatalogIdentityWithoutFactRequest = explicitCatalogIdentity
+        && !hasFactRequestOutsideExplicitCatalogName({ message, candidate: explicitNameCandidate });
     evidence.knowledgeIds = knowledge.knowledgeIds;
     evidence.knowledgeSnapshots = knowledge.knowledgeSnapshots || [];
     evidence.knowledgeFound = Boolean(knowledge.snippets);
@@ -955,17 +1032,24 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // the item exists, and the outbound gate still polices prices and URLs.
     const productQuestion = !imageUrls.length && !knowledge.snippets && (
         evidence.relatedProducts.length > 0
+        || explicitCatalogIdentity
         || hasProductIntent(groundingQuery)
+        || /\b(?:how\s+much|current\s+price|tell\s+me\s+about|describe|details?\s+of|information\s+about)\b/i.test(groundingQuery)
         || attributeFollowUp
         || contextProductFollowUp
         || grounding.isMediaRequest(message)
     );
+    const productIdentityQuestion = !imageUrls.length && !knowledge.snippets
+        && /\b(?:tell\s+me\s+about|describe|details?\s+of|information\s+about)\b/i.test(groundingQuery);
 
     const deterministic = _deterministicProductReply(evidence, language, {
         attributeFollowUp,
         contextProductFollowUp,
         selectedVariants,
         productQuestion,
+        productIdentityQuestion,
+        explicitCatalogIdentity,
+        explicitCatalogIdentityWithoutFactRequest,
         message,
     });
     if (deterministic) {
@@ -1089,6 +1173,9 @@ const _deterministicProductReply = (evidence, language, {
     contextProductFollowUp = false,
     selectedVariants = {},
     productQuestion = true,
+    productIdentityQuestion = false,
+    explicitCatalogIdentity = false,
+    explicitCatalogIdentityWithoutFactRequest = false,
     message = '',
 } = {}) => {
     const { ProductEvidenceStatus, MediaStatus } = grounding;
@@ -1144,7 +1231,7 @@ const _deterministicProductReply = (evidence, language, {
     if (evidence.productStatus === ProductEvidenceStatus.VERIFIED
         && evidence.verifiedProducts.length === 1
         && productQuestion) {
-        const asksPrice = /\b(?:price|cost|dam|daam|koto)\b|দাম|মূল্য|কত\s*টাকা/i.test(message)
+        const asksPrice = /\b(?:price|cost|dam|daam|koto|how\s+much|current\s+price)\b|দাম|মূল্য|কত\s*টাকা/i.test(message)
             && !/\b(?:delivery|shipping|courier|charge|fee)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার/i.test(message);
         const asksAvailability = /\b(?:stock|available|availability)\b|স্টক|আছে/i.test(message);
         const presentation = buildProductPresentation(evidence, { message, language, selectedVariants });
@@ -1171,6 +1258,24 @@ const _deterministicProductReply = (evidence, language, {
             }
         }
 
+        if (asksAvailability && !selectedVariant) {
+            const stock = presentation.products[0]?.attributes?.stock;
+            if (stock?.state === 'KNOWN' && ['IN_STOCK', 'OUT_OF_STOCK'].includes(stock.value)) {
+                const responseLanguage = presentation.language;
+                const status = stock.value === 'IN_STOCK'
+                    ? (responseLanguage === 'bn' ? 'স্টকে আছে।' : responseLanguage === 'en' ? 'In stock.' : 'Stock-e ache.')
+                    : (responseLanguage === 'bn' ? 'স্টকে নেই।' : responseLanguage === 'en' ? 'Out of stock.' : 'Stock-e nei.');
+                const rendered = renderMessengerProductPresentation(presentation, language);
+                if (rendered.text) {
+                    return {
+                        response: `${rendered.text}\n${status}`,
+                        confidence: 1.0,
+                        source: 'grounding_product_presentation',
+                    };
+                }
+            }
+        }
+
         if (grounding.isMediaRequest(message)) {
             if (evidence.mediaStatus === MediaStatus.UNAVAILABLE) {
                 return {
@@ -1189,6 +1294,23 @@ const _deterministicProductReply = (evidence, language, {
                         source: 'grounding_product_presentation',
                     };
                 }
+            }
+        }
+
+        const asksPolicyOrTransaction = /\b(?:delivery|shipping|courier|charge|fee|order|checkout|payment|pay|refund|return|exchange|cancel|tracking|dispatch)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার|চার্জ|পেমেন্ট|অর্ডার|রিফান্ড|বাতিল/i.test(message);
+        if ((productIdentityQuestion || explicitCatalogIdentity) && !asksAvailability && !asksPrice
+            && (explicitCatalogIdentity
+                ? explicitCatalogIdentityWithoutFactRequest
+                : !evidence.askedAttributes?.length)
+            && !asksPolicyOrTransaction
+            && !grounding.isMediaRequest(message)) {
+            const rendered = renderMessengerProductPresentation(presentation, language);
+            if (rendered.text) {
+                return {
+                    response: rendered.text,
+                    confidence: 1.0,
+                    source: 'grounding_product_presentation',
+                };
             }
         }
     }

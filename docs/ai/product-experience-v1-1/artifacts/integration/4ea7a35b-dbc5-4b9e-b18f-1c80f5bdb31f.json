@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "runId": "4ea7a35b-dbc5-4b9e-b18f-1c80f5bdb31f",
+  "status": "PASS",
+  "startedAt": "2026-10-20T13:37:41.311Z",
+  "completedAt": "2026-10-20T13:38:25.171Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-19364-d47915",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": false,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 9616,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 9617,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 10262
+  },
+  "testPaths": [
+    "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+    "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+    "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+  ],
+  "jest": {
+    "exitCode": 0,
+    "timedOut": false,
+    "suites": "3 passed, 3 total",
+    "tests": "12 passed, 12 total",
+    "duration": "14.043 s, estimated 30 s"
+  },
+  "egress": {
+    "mode": "Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; loopback ports are published only on 127.0.0.1; the host Node runner restricts DNS/TCP/UDP/HTTP/fetch APIs to loopback",
+    "externalProvidersConfigured": false,
+    "externalCalls": 0
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 10262,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 0,
+      "durationMs": 14651,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-19364-d47915"
+    }
+  ],
+  "failure": null,
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

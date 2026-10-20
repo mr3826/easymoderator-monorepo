@@ -114,6 +114,96 @@ describe('B — Bengali product-intent gate', () => {
         expect(llm.chat).not.toHaveBeenCalled();
     });
 
+    test('an English how-much question renders the verified price without asking the model', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'tee-1', shop_id: SHOP, name: 'Test Everyday Shirt', price: 900,
+            quantity: 7, track_quantity: true, variants: [],
+        }]);
+        const result = await route({ shopId: SHOP, message: 'How much is the Test Everyday Shirt?', systemPrompt: 'BASE', language: 'English' });
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('৳900');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('an exact catalog name stays grounded when a product question adds unrelated wording', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'jacket-1', shop_id: SHOP, name: 'Classic Blue Denim Jacket', price: 3200,
+            variants: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Could you tell me the price of the Classic Blue Denim Jacket for Eid?',
+            systemPrompt: 'BASE',
+            language: 'English',
+        });
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.grounding.verifiedProducts.map(product => product.id)).toEqual(['jacket-1']);
+        expect(result.response).toContain('৳3,200');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a verified product identity request returns its safe catalog presentation', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'tee-1', shop_id: SHOP, name: 'Test Everyday Shirt', price: 900,
+            quantity: 7, track_quantity: true, variants: [],
+        }]);
+        const result = await route({ shopId: SHOP, message: 'Tell me about the Test Everyday Shirt.', systemPrompt: 'BASE', language: 'English' });
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Test Everyday Shirt');
+        expect(result.response).toContain('৳900');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('an unambiguous product question without a fact request returns the catalog card', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'jacket-1', shop_id: SHOP, name: 'Classic Blue Denim Jacket', price: 3200,
+            variants: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Is the Classic Blue Denim Jacket a good choice for Eid?',
+            systemPrompt: 'BASE',
+            language: 'English',
+        });
+
+        expect(result.grounding.verifiedProducts.map(product => product.id)).toEqual(['jacket-1']);
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Classic Blue Denim Jacket');
+        expect(result.response).toContain('৳3,200');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a named product does not treat an attribute asked outside its title as an identity request', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'jacket-1', shop_id: SHOP, name: 'Classic Blue Denim Jacket', price: 3200,
+            variants: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Is the Classic Blue Denim Jacket cotton?',
+            systemPrompt: 'BASE',
+            language: 'English',
+        });
+
+        expect(result.source).not.toBe('grounding_product_presentation');
+        expect(llm.chat).toHaveBeenCalled();
+    });
+
+    test('a tracked parent stock request returns the current catalog state', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'tee-1', shop_id: SHOP, name: 'Test Everyday Shirt', price: 900,
+            quantity: 0, track_quantity: true, variants: [],
+        }]);
+        const result = await route({ shopId: SHOP, message: 'Is the Test Everyday Shirt in stock?', systemPrompt: 'BASE', language: 'English' });
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toMatch(/out of stock/i);
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
     test('a follow-up price uses the customer-selected variant from grounded history', async () => {
         const productPresentation = {
             schemaVersion: '1',

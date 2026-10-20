@@ -1,0 +1,691 @@
+{
+  "schemaVersion": 2,
+  "runId": "00000000-0000-4000-8000-000000000017",
+  "scope": "persona",
+  "personaId": "P17",
+  "mode": "candidate",
+  "status": "completed",
+  "executionMode": "production-intent-router-with-controlled-local-collaborators",
+  "sourceRevision": "unknown",
+  "engineSourceRevision": "c8981c4df9ea84d47c35f2541884fd55afd64bae",
+  "runnerRevision": "working-tree",
+  "dataset": {
+    "sha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+    "sourceTurns": 200,
+    "sourcePersonas": 20,
+    "executedTurns": 10,
+    "completeDatasetExecuted": false,
+    "sequentialPerPersona": true,
+    "rawSourceMessagesPersisted": false
+  },
+  "provenance": {
+    "sourceAnswersUsedAsGroundTruth": false,
+    "catalogSource": "synthetic-fixture-snapshot",
+    "modelProvider": "mock-adversarial-provider",
+    "vision": "disabled; attachments are metadata-only",
+    "realPostgres": false,
+    "realRedis": false,
+    "realWorker": false,
+    "realMeta": false,
+    "realProvider": false,
+    "outboundNetworkCalls": 0
+  },
+  "summary": {
+    "answerableProductTurns": 0,
+    "correctVerifiedProductTurns": 0,
+    "eligibleProductFactSlots": 0,
+    "correctVerifiedProductAnswers": 0,
+    "unnecessaryRefusalSlots": 0,
+    "unsupportedClaimsSent": 2,
+    "blockedMockUnsupportedCandidates": 3,
+    "safeFallbacks": 3,
+    "dispositions": {
+      "SAFE_FALLBACK": 3,
+      "SEND": 7
+    },
+    "routerSources": {
+      "llm": 3,
+      "grounding_not_found": 6,
+      "grounding_product_presentation": 1
+    },
+    "oracleDomains": {
+      "image_dependent": 1,
+      "product_identity_unresolved": 5,
+      "outside_product": 3,
+      "merchant_policy": 1
+    },
+    "oracleEligibility": {
+      "NOT_ANSWERABLE": 10
+    },
+    "presentationContractsValid": 10,
+    "tenantScopeViolations": 0,
+    "unscopedCatalogReads": 0,
+    "realModelCalls": 0,
+    "mockModelCalls": 3,
+    "realVisionCalls": 0,
+    "businessMutations": 0,
+    "messengerSends": 0
+  },
+  "performance": {
+    "measuredLayer": "in-process intent-router call only; controlled mock adapters",
+    "p50Ms": 1.163,
+    "p95Ms": 30.488,
+    "meanMs": 5.222,
+    "sampleCount": 10,
+    "wallMs": 154.33,
+    "costUsd": null,
+    "costStatus": "NOT_MEASURED_NO_REAL_PROVIDER_CALLS",
+    "actualProviderUsageRecords": 0
+  },
+  "turns": [
+    {
+      "scenarioId": "scenario-17-01",
+      "personaId": "P17",
+      "turn": 1,
+      "inputType": "IMAGE_TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "manual_review_required"
+      ],
+      "oracle": {
+        "domain": "image_dependent",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": "fixture-shop-a-denim-jacket",
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-denim-jacket"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 10.993,
+      "traceId": "scenario-17-01",
+      "attachmentEvidence": "METADATA_ONLY_NO_VISION",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-02",
+      "personaId": "P17",
+      "turn": 2,
+      "inputType": "TEXT",
+      "language": "english",
+      "classificationTags": [
+        "manual_review_required"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-denim-jacket"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 1
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 3.557,
+      "traceId": "scenario-17-02",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-03",
+      "personaId": "P17",
+      "turn": 3,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "manual_review_required"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_product_presentation",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "VERIFIED",
+        "productIds": [
+          "fixture-shop-a-denim-jacket"
+        ],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "READY",
+        "selection": "SINGLE",
+        "contractValid": true,
+        "products": [
+          {
+            "id": "fixture-shop-a-denim-jacket",
+            "price": {
+              "state": "KNOWN",
+              "amount": 3200,
+              "currency": "BDT"
+            },
+            "attributes": {
+              "material": {
+                "state": "UNCERTAIN",
+                "value": "cotton"
+              },
+              "color": {
+                "state": "UNCERTAIN",
+                "value": "blue"
+              },
+              "size": {
+                "state": "KNOWN",
+                "value": "M, XL"
+              },
+              "stock": {
+                "state": "KNOWN",
+                "value": "IN_STOCK"
+              }
+            },
+            "selectedVariant": null,
+            "variants": [
+              {
+                "id": "fixture-a-jacket-m",
+                "option": "Size",
+                "value": "M",
+                "price": {
+                  "state": "KNOWN",
+                  "amount": 3200,
+                  "currency": "BDT"
+                },
+                "availability": {
+                  "state": "KNOWN",
+                  "value": "IN_STOCK"
+                }
+              },
+              {
+                "id": "fixture-a-jacket-xl",
+                "option": "Size",
+                "value": "XL",
+                "price": {
+                  "state": "KNOWN",
+                  "amount": 3200,
+                  "currency": "BDT"
+                },
+                "availability": {
+                  "state": "KNOWN",
+                  "value": "OUT_OF_STOCK"
+                }
+              }
+            ],
+            "image": "UNKNOWN"
+          }
+        ]
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 30.488,
+      "traceId": "scenario-17-03",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-04",
+      "personaId": "P17",
+      "turn": 4,
+      "inputType": "TEXT",
+      "language": "english",
+      "classificationTags": [
+        "outside_product_module"
+      ],
+      "oracle": {
+        "domain": "outside_product",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.276,
+      "traceId": "scenario-17-04",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-05",
+      "personaId": "P17",
+      "turn": 5,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "manual_review_required"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.163,
+      "traceId": "scenario-17-05",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-06",
+      "personaId": "P17",
+      "turn": 6,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "should_remain_unknown_without_merchant_evidence"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.632,
+      "traceId": "scenario-17-06",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-07",
+      "personaId": "P17",
+      "turn": 7,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy_fixture_required"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.6,
+      "traceId": "scenario-17-07",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-08",
+      "personaId": "P17",
+      "turn": 8,
+      "inputType": "TEXT",
+      "language": "english",
+      "classificationTags": [
+        "outside_product_module"
+      ],
+      "oracle": {
+        "domain": "outside_product",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.74,
+      "traceId": "scenario-17-08",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-09",
+      "personaId": "P17",
+      "turn": 9,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "outside_product_module"
+      ],
+      "oracle": {
+        "domain": "outside_product",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-denim-jacket"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 1
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.785,
+      "traceId": "scenario-17-09",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-17-10",
+      "personaId": "P17",
+      "turn": 10,
+      "inputType": "TEXT",
+      "language": "english",
+      "classificationTags": [
+        "manual_review_required"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.986,
+      "traceId": "scenario-17-10",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    }
+  ],
+  "startedAt": "2026-10-20T12:04:38.012Z",
+  "completedAt": "2026-10-20T12:04:38.166Z"
+}

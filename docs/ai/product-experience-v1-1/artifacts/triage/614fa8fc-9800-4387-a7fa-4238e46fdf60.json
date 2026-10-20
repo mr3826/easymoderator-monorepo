@@ -1,0 +1,34 @@
+{
+  "runId": "614fa8fc-9800-4387-a7fa-4238e46fdf60",
+  "fixtureId": "unsafe-price-claim",
+  "status": "completed",
+  "sourceRevision": "c8981c4df9ea84d47c35f2541884fd55afd64bae",
+  "engineSourceRevision": "c8981c4df9ea84d47c35f2541884fd55afd64bae+intent-router-sha256:780bd86ecca3abd3d845c5d7dcba4be8802bc8d64f74092d696c3ee80530fa77",
+  "engineSourceSha256": "780bd86ecca3abd3d845c5d7dcba4be8802bc8d64f74092d696c3ee80530fa77",
+  "runnerRevision": "c8981c4df9ea84d47c35f2541884fd55afd64bae+runner-sha256:e348e68ac0bef9a255d630781478b1048a26b8bacbe2e6877cb1ba5e14d82fc8",
+  "runnerSourceSha256": "e348e68ac0bef9a255d630781478b1048a26b8bacbe2e6877cb1ba5e14d82fc8",
+  "candidate": {
+    "fixtureId": "unsafe-price-claim",
+    "severity": "P1",
+    "status": "BLOCKED_BY_GROUNDING",
+    "blocked": true,
+    "disposition": "SAFE_FALLBACK",
+    "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+    "evidenceProductIds": [
+      "fixture-shop-a-cotton-tee"
+    ],
+    "evidenceFields": [
+      "price",
+      "stock",
+      "merchant policy"
+    ],
+    "providerMode": "mock-adversarial-candidate",
+    "externalCalls": 0
+  },
+  "provenance": {
+    "execution": "production-router-and-grounding-gate",
+    "modelProvider": "mock",
+    "externalCalls": 0,
+    "rawCandidatePersisted": false
+  }
+}

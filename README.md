@@ -78,6 +78,9 @@ npm run build:all
 [Monorepo Architecture](docs/infrastructure/MONOREPO_ARCHITECTURE.md) for the
 boundary and rollback rules.
 
+The isolated Product Engine V1.1 Test Lab, rerun commands, and local QA evidence
+are documented in [Product Engine V1.1 Test Lab](docs/ai/product-experience-v1-1/README.md).
+
 ### Backend test suites
 
 Backend tests belong to exactly one suite, chosen by filename, and
