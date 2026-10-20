@@ -1,0 +1,96 @@
+# Local founder-review stack for Growth OS Action-First V1.
+# Always run through scripts/growth-review/run-growth-review.js with a unique
+# -p project. Never reuse this file with production settings or volumes.
+name: em-growth-review-default
+
+x-review-labels: &review-labels
+  com.easymod.growth-review: "owned"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    labels: *review-labels
+    environment:
+      POSTGRES_DB: ${REVIEW_PG_DB:?set by the review runner}
+      POSTGRES_USER: ${REVIEW_PG_USER:?set by the review runner}
+      POSTGRES_PASSWORD: ${REVIEW_PG_PASSWORD:?set by the review runner}
+    volumes:
+      - review_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    labels: *review-labels
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../../../../../EasyMod-backend
+    image: em-growth-review-backend:local
+    labels: *review-labels
+    environment:
+      NODE_ENV: test
+      GROWTH_OS_ENABLED: "true"
+      GROWTH_REVIEW_MODE: "true"
+      RUN_MIGRATIONS_ON_STARTUP: "false"
+      START_EMBEDDED_WORKERS: "false"
+      PORT: "3000"
+      DB_SSL: "false"
+      DATABASE_URL: postgres://${REVIEW_PG_USER}:${REVIEW_PG_PASSWORD}@postgres:5432/${REVIEW_PG_DB}
+      REDIS_URL: redis://redis:6379
+      REDIS_SESSION_DB: "0"
+      REDIS_CACHE_DB: "1"
+      REDIS_RATELIMIT_DB: "2"
+      APP_SECRET: ${REVIEW_APP_SECRET:?set by the review runner}
+      JWT_ACCESS_SECRET: ${REVIEW_JWT_ACCESS_SECRET:?set by the review runner}
+      JWT_REFRESH_SECRET: ${REVIEW_JWT_REFRESH_SECRET:?set by the review runner}
+      SESSION_SECRET: ${REVIEW_SESSION_SECRET:?set by the review runner}
+      CSRF_SECRET: ${REVIEW_CSRF_SECRET:?set by the review runner}
+      CHANNEL_ENCRYPTION_KEY: ${REVIEW_CHANNEL_KEY:?set by the review runner}
+      PAYMENT_ENCRYPTION_KEY: ${REVIEW_PAYMENT_KEY:?set by the review runner}
+      DELIVERY_ENCRYPTION_KEY: ${REVIEW_DELIVERY_KEY:?set by the review runner}
+      CORS_ORIGINS: http://127.0.0.1:${REVIEW_FRONTEND_PORT:?set by the review runner}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health/ready',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../../../../EasyMod-growth
+      args:
+        VITE_API_BASE_URL: ""
+        VITE_ENV: development
+        VITE_BUILD_SHA: growth-review-local
+    image: em-growth-review-frontend:local
+    labels: *review-labels
+    volumes:
+      - ./nginx.review.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:${REVIEW_FRONTEND_PORT}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  review_postgres_data:

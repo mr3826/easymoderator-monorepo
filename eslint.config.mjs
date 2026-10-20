@@ -11,6 +11,8 @@ const growthFiles = [
   'EasyMod-backend/src/database/migrations/20261007_001_growth_os_prospect_integrity.js',
   'EasyMod-backend/src/utils/database/sync.js',
   'scripts/run-growth-image-smoke.js',
+  'scripts/growth-review/**/*.js',
+  'EasyMod-backend/src/scripts/seed-growth-review.js',
 ];
 
 export default tseslint.config(

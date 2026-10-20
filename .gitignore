@@ -109,3 +109,6 @@ graphify-out/
 .code-review-graph/
 # Local screenshots / scratch captures
 partner-card-live.png
+
+# Local Growth OS founder-review stack state (ports, secrets, receipts) — never commit
+.growth-review/

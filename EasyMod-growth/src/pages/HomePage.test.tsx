@@ -123,13 +123,13 @@ function makeProspectList(overrides: Partial<ProspectListResponse> = {}): Prospe
 
 function mockWorkspaceReads() {
   vi.spyOn(workspaceApi, 'home').mockResolvedValue(makeHome());
-  vi.spyOn(workspaceApi, 'listFollowups').mockImplementation(async ({ state }) => (
-    state === 'overdue'
+  vi.spyOn(workspaceApi, 'listFollowups').mockImplementation(async (filters) => (
+    filters?.state === 'overdue'
       ? makeFollowupList()
       : makeFollowupList({ items: [], total: 0 })
   ));
   vi.spyOn(growthApi, 'getProspects').mockImplementation(async (filters) => {
-    if (filters.status === 'qualified') return makeProspectList();
+    if (filters?.status === 'qualified') return makeProspectList();
     return makeProspectList({ items: [], total: 0 });
   });
 }
@@ -238,8 +238,8 @@ describe('HomePage action queue', () => {
 
   it('recovers one failed segment without discarding the rest of the queue', async () => {
     mockWorkspaceReads();
-    vi.mocked(workspaceApi.listFollowups).mockImplementation(async ({ state }) => {
-      if (state === 'overdue') throw new ApiError('Segment unavailable', 500);
+    vi.mocked(workspaceApi.listFollowups).mockImplementation(async (filters) => {
+      if (filters?.state === 'overdue') throw new ApiError('Segment unavailable', 500);
       return makeFollowupList({ items: [], total: 0 });
     });
 

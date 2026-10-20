@@ -18,9 +18,11 @@ test.describe('Growth user journey', () => {
 
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'My Work' })).toBeVisible();
-    await expect(page.getByText('overdue follow-ups assigned to you', { exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Growth attention' })).toBeVisible();
+    const actionQueue = page.getByRole('region', { name: 'Action queue' });
+    await expect(actionQueue.getByRole('heading', { name: 'Overdue follow-ups' })).toBeVisible();
+    await expect(actionQueue.getByRole('link', { name: 'Follow-up Studio' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'This week' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Growth Performance' })).toHaveAttribute('href', '/performance');
 
     await page.goto('/quick-add');
     await expect(page.getByRole('heading', { name: 'Quick add' })).toBeVisible();
@@ -91,6 +93,8 @@ test.describe('Growth user journey', () => {
       && response.status() === 200
     ));
     await seededOverdue.getByRole('button', { name: 'Complete' }).click();
+    await seededOverdue.getByLabel('Outcome (required)').selectOption('reached');
+    await seededOverdue.getByRole('button', { name: 'Record and complete' }).click();
     await completedTransition;
     await expect(page.locator('tr', { hasText: 'E2E seeded overdue follow-up' })).toHaveCount(0);
     await page.getByRole('group', { name: 'Follow-up state filters' }).getByRole('button', { name: 'Completed', exact: true }).click();
