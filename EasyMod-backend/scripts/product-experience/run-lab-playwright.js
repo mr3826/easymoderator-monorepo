@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { randomUUID } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium, firefox, webkit } = require(path.resolve(__dirname, '../../../node_modules/playwright'));
 
@@ -88,13 +89,14 @@ const waitForExit = (child, timeoutMs = 15000) => new Promise(resolve => {
     child.once('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal, timedOut: false }); });
 });
 
-const runPlaywright = (baseURL, browsers) => new Promise((resolve, reject) => {
+const runPlaywright = (baseURL, browsers, axeReportPath) => new Promise((resolve, reject) => {
     const cli = require.resolve('@playwright/test/cli', { paths: [FRONTEND_ROOT] });
     const env = {
         ...childEnv(),
         NODE_ENV: 'test',
         LAB_BASE_URL: baseURL,
         LAB_BROWSER_ENGINES: browsers.join(','),
+        LAB_AXE_REPORT_PATH: axeReportPath,
     };
     const child = spawn(process.execPath, [cli, 'test', '--config', CONFIG_PATH], { cwd: FRONTEND_ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -131,13 +133,15 @@ const main = async () => {
     const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     const browsers = availableBrowsers();
     const startedAt = new Date().toISOString();
+    const runId = randomUUID();
+    const axeReportPath = path.join(ARTIFACT_ROOT, `axe-accessibility-report-${runId}.json`);
     let lab;
     let execution;
     let failure = null;
     try {
         if (!browsers.includes('chromium')) throw new Error('Chromium is not installed; install it before running the browser gate.');
         lab = await startLab();
-        execution = await runPlaywright(lab.url, browsers);
+        execution = await runPlaywright(lab.url, browsers, axeReportPath);
         if (execution.code !== 0) failure = 'One or more actual Test Lab Playwright journeys failed.';
     } catch (error) {
         failure = error.message;
@@ -150,6 +154,7 @@ const main = async () => {
     }
     const receipt = {
         schemaVersion: 1,
+        runId,
         status: failure ? 'FAIL' : 'PASS',
         startedAt,
         completedAt: new Date().toISOString(),
@@ -162,12 +167,12 @@ const main = async () => {
         tests: playwrightSummary(execution?.stdout),
         accessibility: (() => {
             try {
-                const axe = JSON.parse(fs.readFileSync(path.join(ARTIFACT_ROOT, 'axe-accessibility-report.json'), 'utf8'));
+                const axe = JSON.parse(fs.readFileSync(axeReportPath, 'utf8'));
                 return {
                     status: axe.status,
                     criticalOrSeriousViolationCount: axe.criticalOrSeriousViolationCount,
                     scannedSections: (axe.scannedSections || []).map(section => section.section),
-                    report: 'axe-accessibility-report.json',
+                    report: path.relative(ARTIFACT_ROOT, axeReportPath).replace(/\\/g, '/'),
                 };
             } catch (_) {
                 return { status: 'NOT_RUN' };

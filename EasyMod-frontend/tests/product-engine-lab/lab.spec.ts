@@ -267,7 +267,10 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     criticalOrSeriousViolationCount: accessibilitySections.reduce((count, section) =>
       count + section.violations.filter(violation => ['critical', 'serious'].includes(violation.impact || '')).length, 0),
   };
-  writeFileSync(resolve(screenshotRoot, '../axe-accessibility-report.json'), `${JSON.stringify(accessibilityReport, null, 2)}\n`);
+  const axeReportPath = process.env.LAB_AXE_REPORT_PATH
+    ? resolve(process.env.LAB_AXE_REPORT_PATH)
+    : resolve(screenshotRoot, '../axe-accessibility-report.json');
+  writeFileSync(axeReportPath, `${JSON.stringify(accessibilityReport, null, 2)}\n`);
   expect(accessibilityReport.criticalOrSeriousViolationCount).toBe(0);
 });
 
