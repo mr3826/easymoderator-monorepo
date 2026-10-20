@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "run": "critical product grounding baseline",
+  "baselineSha": "07168f49066e4dc4a8e2a756621ac577a13c12bd",
+  "runtime": {
+    "node": "v25.6.1",
+    "repositoryNodeVersion": "20"
+  },
+  "command": "npm exec -- jest --runInBand --silent --forceExit --coverage=false src/modules/ai/grounding/__tests__/grounding-boundary.test.js src/modules/ai/__tests__/intent-router.test.js src/jobs/__tests__/message-worker.grounding.test.js src/modules/product/__tests__/retrieval-behaviour.test.js",
+  "status": "PASS",
+  "suiteCount": 4,
+  "testCount": 126,
+  "suites": [
+    "src/modules/ai/grounding/__tests__/grounding-boundary.test.js",
+    "src/modules/ai/__tests__/intent-router.test.js",
+    "src/jobs/__tests__/message-worker.grounding.test.js",
+    "src/modules/product/__tests__/retrieval-behaviour.test.js"
+  ],
+  "externalServices": {
+    "database": false,
+    "redis": false,
+    "llmProvider": false,
+    "messenger": false
+  },
+  "sourceCustomerTextPersisted": false
+}

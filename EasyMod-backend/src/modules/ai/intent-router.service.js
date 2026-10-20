@@ -25,7 +25,13 @@ const bertClient = require('./bert-client.service');
 const geminiCache = require('./gemini-cache.service');
 const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
 const grounding = require('./grounding');
+const {
+    buildProductPresentation,
+    renderMessengerProductPresentation,
+} = require('./product-experience/product-presentation');
 const { withEvidenceSnapshot } = require('./contracts/evidence.contract');
+const { faqContent, faqSnapshot } = require('./knowledge-snapshot');
+const { hashOperatingContext } = require('./shop-operating-context.service');
 const { recordReadAction } = require('./action-gate');
 const {
     GREETING_PATTERN,
@@ -75,6 +81,8 @@ const shouldSearchProducts = (message) => {
     return !NON_PRODUCT_CHATTER.test(trimmed);
 };
 
+const CONTEXT_PRODUCT_QUESTION = /\b(?:price|cost|dam|daam|koto|stock|available|availability|size|sizes|color|colour|material|fabric)\b|দাম|মূল্য|কত|স্টক|আছে|সাইজ|মাপ|রং|রঙ|উপাদান|কাপড়|কাপড়/i;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -82,6 +90,12 @@ const shouldSearchProducts = (message) => {
 const normalisedKey = (shopId, generation, message, replyProviderMessageId = null) =>
     `intent:${shopId}:v${generation}:${message.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200)}`
     + (replyProviderMessageId ? `:reply:${replyProviderMessageId}` : '');
+
+const operatingContextFromPrompt = (systemPrompt) => {
+    const prompt = String(systemPrompt || '');
+    const start = prompt.indexOf('--- SHOP PAYMENT & DELIVERY');
+    return start < 0 ? '' : prompt.slice(start).split('\n\n')[0];
+};
 
 const normalizeReplyContext = (replyContext) => {
     if (!replyContext || typeof replyContext !== 'object') return null;
@@ -97,6 +111,9 @@ const normalizeReplyContext = (replyContext) => {
     const referencedType = typeof replyContext.message_type === 'string'
         ? replyContext.message_type.slice(0, 1000)
         : null;
+    const scrubbedQuotedText = quotedText ? scrubPII(quotedText) : null;
+    const scrubbedFileName = referencedFileName ? scrubPII(referencedFileName) : null;
+    const scrubbedType = referencedType ? scrubPII(referencedType) : null;
     const quotedSafety = typeof sanitizePromptInput === 'function' && quotedText
         ? sanitizePromptInput(quotedText)
         : null;
@@ -115,13 +132,13 @@ const normalizeReplyContext = (replyContext) => {
                 : 'merchant',
         referenced_text: quotedSafety?.clean === false
             ? '[quoted text omitted: instruction-like content]'
-            : quotedText,
+            : scrubbedQuotedText,
         referenced_type: typeSafety?.clean === false
             ? '[referenced type omitted: instruction-like content]'
-            : referencedType,
+            : scrubbedType,
         referenced_file_name: fileNameSafety?.clean === false
             ? '[file name omitted: instruction-like content]'
-            : referencedFileName,
+            : scrubbedFileName,
         status: replyContext.status === 'resolved' ? 'resolved' : 'unavailable',
     };
 };
@@ -143,21 +160,48 @@ const renderReplyContext = (replyContext) => {
  * figure with no source and rejects a reply that was perfectly grounded when it
  * was generated. Stored as JSON; a legacy plain-string entry still reads fine.
  */
-const encodeCacheEntry = (response, sourceText) =>
-    JSON.stringify({ r: response, s: sourceText || '' });
+const encodeCacheEntry = (response, sourceText, policyText = '', knowledgeId = null, operatingHash = null) =>
+    JSON.stringify({ r: response, s: sourceText || '', p: policyText || '', k: knowledgeId || null, oh: operatingHash || null });
 
 const decodeCacheEntry = (raw) => {
     if (typeof raw !== 'string') return null;
     try {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.r === 'string') return { response: parsed.r, sourceText: parsed.s || '' };
+        if (parsed && typeof parsed.r === 'string') return {
+            response: parsed.r,
+            sourceText: parsed.s || '',
+            policyText: parsed.p || '',
+            knowledgeId: parsed.k || null,
+            operatingContextHash: parsed.oh || null,
+        };
     } catch { /* legacy entry — plain response text */ }
-    return { response: raw, sourceText: '' };
+    return { response: raw, sourceText: '', policyText: '', knowledgeId: null, operatingContextHash: null };
 };
 
 /** Evidence for a reply built entirely from one authoritative string. */
-const evidenceFromSource = (shopId, sourceText) =>
-    grounding.withSourceText(grounding.emptyEvidence(shopId), sourceText);
+const evidenceFromSource = (shopId, sourceText, policyText = '', knowledgeIds = [], knowledgeSnapshots = [], operatingContextHash = null) => {
+    const evidence = grounding.withSourceText(grounding.emptyEvidence(shopId), sourceText);
+    if (policyText) grounding.withPolicyText(evidence, policyText);
+    evidence.knowledgeIds = knowledgeIds;
+    evidence.knowledgeSnapshots = knowledgeSnapshots;
+    evidence.operatingContextHash = operatingContextHash;
+    evidence.knowledgeFound = knowledgeIds.length > 0;
+    return withEvidenceSnapshot(evidence);
+};
+
+const withOperatingContextEvidence = (evidence, systemPrompt) => {
+    const operatingContext = operatingContextFromPrompt(systemPrompt);
+    if (operatingContext) {
+        if (!String(evidence.sourceText || '').includes(operatingContext)) {
+            grounding.withSourceText(evidence, operatingContext);
+        }
+        if (!String(evidence.policyText || '').includes(operatingContext)) {
+            grounding.withPolicyText(evidence, operatingContext);
+        }
+        evidence.operatingContextHash = hashOperatingContext(operatingContext);
+    }
+    return withEvidenceSnapshot(evidence);
+};
 
 const buildOrderStatusHandoff = (shopId, language = 'mixed') => {
     const response = language === 'en'
@@ -179,7 +223,8 @@ const buildOrderStatusHandoff = (shopId, language = 'mixed') => {
  * and a NOT_FOUND answer must be re-derived once the merchant adds the product.
  */
 const isCacheable = (evidence) =>
-    evidence.productStatus === grounding.ProductEvidenceStatus.NONE;
+    evidence.productStatus === grounding.ProductEvidenceStatus.NONE
+    && !evidence.knowledgeFound;
 
 // Warm BD-market greeting responses (no LLM needed for simple hellos)
 const GREETING_REPLIES = {
@@ -224,6 +269,7 @@ const route = async ({
     confidenceThreshold,
     replyContext = null,
 }) => {
+    const currentOperatingContextHash = hashOperatingContext(operatingContextFromPrompt(systemPrompt));
     const inputSafety = typeof sanitizePromptInput === 'function'
         ? sanitizePromptInput(message)
         : { clean: true };
@@ -336,14 +382,55 @@ const route = async ({
             normalizeReplyContext(replyContext)?.provider_message_id,
         );
     if (cacheKey) {
-        const cached = decodeCacheEntry(await intentCache.get(cacheKey));
+        let cached = decodeCacheEntry(await intentCache.get(cacheKey));
+        if (cached
+            && (cached.sourceText || cached.policyText || cached.knowledgeId)
+            && cached.operatingContextHash !== currentOperatingContextHash) {
+            await intentCache.del(cacheKey);
+            cached = null;
+        }
         if (cached) {
-            return {
-                response: cached.response,
-                confidence: 1.0,
-                source: 'cache',
-                grounding: evidenceFromSource(shopId, cached.sourceText),
-            };
+            let cachedEvidence = null;
+            if (cached.knowledgeId) {
+                try {
+                    const { FaqResponse } = require('../entities');
+                    const currentFaq = await FaqResponse.findOne({
+                        where: { id: cached.knowledgeId, shop_id: shopId, is_active: true },
+                    });
+                    const currentText = currentFaq ? faqContent(currentFaq) : null;
+                    if (currentText === cached.sourceText) {
+                        cachedEvidence = evidenceFromSource(
+                            shopId,
+                            currentText,
+                            currentText,
+                            [String(currentFaq.id)],
+                            [faqSnapshot(currentFaq)],
+                            cached.operatingContextHash,
+                        );
+                    }
+                } catch (_) {
+                    // Cache authority is not trusted if a live FAQ read fails.
+                }
+                if (!cachedEvidence) await intentCache.del(cacheKey);
+            } else {
+                cachedEvidence = evidenceFromSource(
+                    shopId,
+                    cached.sourceText,
+                    cached.policyText,
+                    [],
+                    [],
+                    cached.operatingContextHash,
+                );
+            }
+            if (cachedEvidence) {
+                cachedEvidence = withOperatingContextEvidence(cachedEvidence, systemPrompt);
+                return {
+                    response: cached.response,
+                    confidence: 1.0,
+                    source: 'cache',
+                    grounding: cachedEvidence,
+                };
+            }
         }
     }
 
@@ -426,8 +513,7 @@ const route = async ({
                 // Accept if ≥30% of tokens matched, or at least 2 absolute keyword hits
                 const hitCount = Math.round(best.score * tokens.length);
                 if (best.score >= 0.3 || hitCount >= 2) {
-                    const faqContent = [best.faq.category, best.faq.template_en, best.faq.template_bn]
-                        .filter(Boolean).join('\n');
+                    const faqText = faqContent(best.faq);
 
                     const replyContextBlock = renderReplyContext(replyContext);
                     const { text: answer, provider } = await llmService.chat({
@@ -435,7 +521,7 @@ const route = async ({
                         messages: [{
                             role: 'user',
                             content: `${replyContextBlock ? `Reply context (conversation data): ${replyContextBlock}\n\n` : ''}`
-                                + `FAQ context:\n${faqContent}\n\nCustomer question: ${message}\n\nRespond in language: ${language}`
+                                + `FAQ context:\n${faqText}\n\nCustomer question: ${message}\n\nRespond in language: ${language}`
                         }],
                         preferredProvider,
                         maxTokens: 512
@@ -447,11 +533,18 @@ const route = async ({
                     // The FAQ text is this reply's authoritative source: figures it
                     // contains (delivery charge, return window) are quotable, and
                     // nothing else is.
-                    const faqEvidence = evidenceFromSource(shopId, faqContent);
-                    faqEvidence.knowledgeIds = [String(best.faq.id)];
-                    faqEvidence.knowledgeFound = true;
+                    const faqEvidence = withOperatingContextEvidence(evidenceFromSource(
+                        shopId,
+                        faqText,
+                        faqText,
+                        [String(best.faq.id)],
+                        [faqSnapshot(best.faq)],
+                        currentOperatingContextHash,
+                    ), systemPrompt);
 
-                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(answer, faqContent));
+                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(
+                        answer, faqText, faqText, String(best.faq.id), currentOperatingContextHash,
+                    ));
                     return {
                         response: answer,
                         confidence: best.score,
@@ -487,7 +580,7 @@ const route = async ({
  */
 const _findProductCandidates = async (params) => {
     try {
-        const products = await productSearch.searchByAttributes(params);
+        const products = await productSearch.searchByAttributes({ ...params, throwOnError: true });
         return { products: Array.isArray(products) ? products.filter(p => p && p.name) : [], failed: false };
     } catch (err) {
         console.warn(`[intent-router] product retrieval failed for shop ${params.shopId}: ${err.message}`);
@@ -500,7 +593,7 @@ const _findProductCandidates = async (params) => {
  * any product IDs the vector store matched (which are candidates, never facts).
  */
 const _retrieveKnowledge = async (shopId, message) => {
-    const empty = { snippets: '', references: [], productIds: [], knowledgeIds: [] };
+    const empty = { snippets: '', references: [], productIds: [], knowledgeIds: [], knowledgeSnapshots: [] };
     try {
         const { queryData } = require('../rag/rag.service');
         const ragResult = await queryData({ query: message, limit: 4, shopId });
@@ -532,7 +625,7 @@ const _retrieveKnowledge = async (shopId, message) => {
                 || (typeof rawId === 'string' && rawId.startsWith('faq-'));
         };
         const faqIds = [...new Set(usedResults.map(faqIdForResult).filter(Boolean))];
-        let activeFaqIds = null;
+        let activeFaqsById = null;
         if (faqIds.length > 0) {
             try {
                 const { FaqResponse } = require('../entities');
@@ -542,11 +635,11 @@ const _retrieveKnowledge = async (shopId, message) => {
                         is_active: true,
                         id: { [require('sequelize').Op.in]: faqIds }
                     },
-                    attributes: ['id']
+                    attributes: ['id', 'category', 'template_en', 'template_bn']
                 });
-                activeFaqIds = new Set(activeFaqs.map(faq => String(faq.id)));
+                activeFaqsById = new Map(activeFaqs.map(faq => [String(faq.id), faq]));
             } catch (_) {
-                activeFaqIds = new Set();
+                activeFaqsById = new Map();
             }
         }
 
@@ -559,10 +652,23 @@ const _retrieveKnowledge = async (shopId, message) => {
         const semanticEmbeddings = embeddingSemantic();
         const productIds = [];
         const knowledgeResults = [];
+        const knowledgeSnapshots = [];
         for (const r of usedResults) {
             const md = r.metadata || {};
             const faqId = faqIdForResult(r);
-            if (isFaqResult(r) && (!faqId || !activeFaqIds || !activeFaqIds.has(faqId))) continue;
+            if (isFaqResult(r)) {
+                const currentFaq = faqId && activeFaqsById?.get(faqId);
+                if (!currentFaq) continue;
+                const currentText = faqContent(currentFaq);
+                if (!currentText) continue;
+                knowledgeResults.push({
+                    ...r,
+                    content: currentText,
+                    metadata: { ...md, faq_id: faqId },
+                });
+                knowledgeSnapshots.push(faqSnapshot(currentFaq));
+                continue;
+            }
             if (md.type === 'product' && md.product_id) {
                 if (semanticEmbeddings) productIds.push(String(md.product_id));
             } else if (md.type !== 'business_info' && r.content) {
@@ -583,13 +689,16 @@ const _retrieveKnowledge = async (shopId, message) => {
                 };
             }),
             productIds,
-            knowledgeIds: knowledgeResults
+            knowledgeIds: [...new Set(knowledgeResults
                 .map(r => {
                     const md = r.metadata || {};
-                    return md.documentId || md.faq_id || md.id;
+                    return faqIdForResult(r) || md.documentId || md.faq_id || md.id;
                 })
                 .filter(Boolean)
-                .map(String),
+                .map(String))],
+            knowledgeSnapshots: [...new Map(knowledgeSnapshots
+                .filter(Boolean)
+                .map(snapshot => [snapshot.id, snapshot])).values()],
         };
     } catch (err) {
         // Knowledge is additive context. Its absence weakens the answer but does
@@ -605,11 +714,11 @@ const _retrieveKnowledge = async (shopId, message) => {
  * or stock may have moved since. Scoping matters more — it is what makes a
  * conversation carried across shops (or a tampered reference) impossible.
  */
-const _loadContextProducts = async (shopId, history) => {
-    const ids = grounding.contextProductIds(history);
+const _loadContextProducts = async (shopId, history, activeProductIds = null) => {
+    const ids = Array.isArray(activeProductIds) ? activeProductIds : grounding.contextProductIds(history);
     if (!ids.length) return { products: [], failed: false };
     try {
-        const products = await productSearch.getProductsByIds(ids, shopId);
+        const products = await productSearch.getProductsByIds(ids, shopId, { throwOnError: true });
         return { products: (products || []).filter(p => p && p.name), failed: false };
     } catch (err) {
         console.warn(`[intent-router] context product lookup failed for shop ${shopId}: ${err.message}`);
@@ -621,13 +730,19 @@ const _loadContextProducts = async (shopId, history) => {
 const _mergeVectorProductCandidates = async (candidates, productIds, shopId) => {
     const seen = new Set(candidates.map(p => String(p.id)));
     const missing = productIds.filter(id => !seen.has(id));
-    if (!missing.length) return candidates;
+    if (!missing.length) return { products: candidates, failed: false };
 
-    const live = await productSearch.getProductsByIds(missing, shopId).catch(() => []);
-    return [...candidates, ...live.filter(p => p && p.name)];
+    try {
+        const live = await productSearch.getProductsByIds(missing, shopId, { throwOnError: true });
+        return { products: [...candidates, ...live.filter(p => p && p.name)], failed: false };
+    } catch (err) {
+        console.warn(`[intent-router] vector product reread failed for shop ${shopId}: ${err.message}`);
+        return { products: candidates, failed: true };
+    }
 };
 
 const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [], replyContext = null }) => {
+    const currentOperatingContextHash = hashOperatingContext(operatingContextFromPrompt(systemPrompt));
     const recentTurns = history.slice(-CONTEXT_WINDOW);
 
     const llmMessages = [];
@@ -639,7 +754,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     for (const turn of recentTurns) {
         llmMessages.push({
             role: turn.role === 'user' || turn.role === 'customer' ? 'user' : 'assistant',
-            content: turn.content || turn.message || ''
+            content: scrubPII(turn.content || turn.message || '')
         });
     }
 
@@ -673,6 +788,9 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     let knowledge = { snippets: '', references: [], productIds: [], knowledgeIds: [] };
     let groundingQuery = message;
     let attributeFollowUp = false;
+    const activeContextProductIds = !imageUrls.length && shopId
+        ? grounding.contextProductIds(history)
+        : [];
 
     if (imageUrls.length > 0) {
         // Only the first photo is examined. A burst of photos is one shopping
@@ -755,13 +873,19 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         // An attribute follow-up ("eta chiffon?") names no product — the noun is
         // in the previous turn — so it is resolved against the products this
         // conversation already grounded, not by searching the catalog again.
-        attributeFollowUp = shopId && grounding.isAttributeOnlyQuery(message);
+        attributeFollowUp = Boolean(shopId && grounding.isAttributeOnlyQuery(message));
+        const hasActiveProductContext = activeContextProductIds.length > 0;
+        const contextProductFollowUp = hasActiveProductContext
+            && shouldSearchProducts(message)
+            && CONTEXT_PRODUCT_QUESTION.test(message)
+            && grounding.identifyingTerms(message).length === 0;
+        const useContextProducts = attributeFollowUp || contextProductFollowUp;
 
         // Product search and knowledge retrieval are independent reads — running
         // them together keeps the added grounding work off the critical path.
         [searchOutcome, knowledge] = await Promise.all([
-            attributeFollowUp
-                ? _loadContextProducts(shopId, history)
+            useContextProducts
+                ? _loadContextProducts(shopId, history, activeContextProductIds)
                 : (shopId && shouldSearchProducts(message)
                     ? _findProductCandidates({ shopId, query: message, limit: 5 })
                     : Promise.resolve({ products: [], failed: false })),
@@ -774,24 +898,38 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // every candidate source, so SQL search and vector search cannot disagree
     // about whether a product exists.
     // -----------------------------------------------------------------------
-    const candidates = knowledge.productIds.length
+    const candidateResult = knowledge.productIds.length
         ? await _mergeVectorProductCandidates(searchOutcome.products, knowledge.productIds, shopId)
-        : searchOutcome.products;
+        : { products: searchOutcome.products, failed: false };
+    const candidates = candidateResult.products;
+    const retrievalFailed = Boolean(searchOutcome.failed || candidateResult.failed);
 
-    const evidence = attributeFollowUp
+    const contextProductFollowUp = Boolean(!imageUrls.length
+        && shopId
+        && activeContextProductIds.length
+        && CONTEXT_PRODUCT_QUESTION.test(message)
+        && grounding.identifyingTerms(message).length === 0);
+    const useContextProducts = attributeFollowUp || contextProductFollowUp;
+    const selectedVariants = grounding.contextSelectedVariants(history, {
+        shopId,
+        activeProductIds: activeContextProductIds,
+    });
+
+    const evidence = useContextProducts
         ? grounding.resolveContextualAttributeEvidence({
             shopId,
             message,
             contextProducts: candidates,
-            retrievalFailed: searchOutcome.failed,
+            retrievalFailed,
         })
         : grounding.resolveProductEvidence({
             shopId,
             message: groundingQuery,
             candidates,
-            retrievalFailed: searchOutcome.failed,
+            retrievalFailed,
         });
     evidence.knowledgeIds = knowledge.knowledgeIds;
+    evidence.knowledgeSnapshots = knowledge.knowledgeSnapshots || [];
     evidence.knowledgeFound = Boolean(knowledge.snippets);
     Object.assign(evidence, withEvidenceSnapshot(evidence));
 
@@ -818,12 +956,17 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     const productQuestion = !imageUrls.length && !knowledge.snippets && (
         evidence.relatedProducts.length > 0
         || hasProductIntent(groundingQuery)
+        || attributeFollowUp
+        || contextProductFollowUp
         || grounding.isMediaRequest(message)
     );
 
     const deterministic = _deterministicProductReply(evidence, language, {
         attributeFollowUp,
+        contextProductFollowUp,
+        selectedVariants,
         productQuestion,
+        message,
     });
     if (deterministic) {
         return {
@@ -848,6 +991,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             `information and offer to check with the shop — never invent a shop policy, charge or timeline.`
         );
         grounding.withSourceText(evidence, knowledge.snippets);
+        grounding.withPolicyText(evidence, knowledge.snippets);
     }
 
     groundedSystemPrompt = [systemPrompt, ...notes].filter(Boolean).join('\n\n');
@@ -856,6 +1000,12 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // already inside systemPrompt via shop-operating-context; record them so the
     // outbound gate recognises the figures they contain as sourced.
     grounding.withSourceText(evidence, systemPrompt);
+    const operatingContextStart = systemPrompt.indexOf('--- SHOP PAYMENT & DELIVERY');
+    if (operatingContextStart >= 0) {
+        const operatingContext = systemPrompt.slice(operatingContextStart).split('\n\n')[0];
+        grounding.withPolicyText(evidence, operatingContext);
+        evidence.operatingContextHash = currentOperatingContextHash;
+    }
 
     // Links the merchant configured (shop page, socials) are authoritative and may
     // be shared — but never as a stand-in for a product photo. Once a photo has
@@ -910,7 +1060,9 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     });
 
     if (cacheKey && isCacheable(evidence)) {
-        await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(response, evidence.sourceText));
+        await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(
+            response, evidence.sourceText, evidence.policyText, null, evidence.operatingContextHash,
+        ));
     }
 
     return {
@@ -932,7 +1084,13 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
  * pressure ("are you sure?", "abar check koren") re-enters this same code path
  * and gets the same answer, which is exactly the property the incident lacked.
  */
-const _deterministicProductReply = (evidence, language, { attributeFollowUp = false, productQuestion = true } = {}) => {
+const _deterministicProductReply = (evidence, language, {
+    attributeFollowUp = false,
+    contextProductFollowUp = false,
+    selectedVariants = {},
+    productQuestion = true,
+    message = '',
+} = {}) => {
     const { ProductEvidenceStatus, MediaStatus } = grounding;
 
     if (attributeFollowUp && evidence.productStatus === ProductEvidenceStatus.NONE) {
@@ -958,6 +1116,18 @@ const _deterministicProductReply = (evidence, language, { attributeFollowUp = fa
         };
     }
 
+    if (evidence.productStatus === ProductEvidenceStatus.VERIFIED
+        && evidence.verifiedProducts.length > 1
+        && (attributeFollowUp || contextProductFollowUp || productQuestion)) {
+        const presentation = buildProductPresentation(evidence, { message, language, selectedVariants });
+        const rendered = renderMessengerProductPresentation(presentation, language);
+        return {
+            response: rendered.text || grounding.whichProductReply(language),
+            confidence: 1.0,
+            source: 'grounding_ambiguous_products',
+        };
+    }
+
     if (evidence.productStatus === ProductEvidenceStatus.NOT_FOUND && productQuestion) {
         const base = evidence.mediaStatus === MediaStatus.NO_PRODUCT
             ? grounding.productImageNoProductReply(language)
@@ -969,6 +1139,58 @@ const _deterministicProductReply = (evidence, language, { attributeFollowUp = fa
             confidence: 1.0,
             source: 'grounding_not_found',
         };
+    }
+
+    if (evidence.productStatus === ProductEvidenceStatus.VERIFIED
+        && evidence.verifiedProducts.length === 1
+        && productQuestion) {
+        const asksPrice = /\b(?:price|cost|dam|daam|koto)\b|দাম|মূল্য|কত\s*টাকা/i.test(message)
+            && !/\b(?:delivery|shipping|courier|charge|fee)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার/i.test(message);
+        const asksAvailability = /\b(?:stock|available|availability)\b|স্টক|আছে/i.test(message);
+        const presentation = buildProductPresentation(evidence, { message, language, selectedVariants });
+        const selectedVariant = presentation.products[0]?.selectedVariant;
+        if (asksPrice) {
+            const rendered = renderMessengerProductPresentation(presentation, language);
+            if (rendered.text) {
+                return {
+                    response: rendered.text,
+                    confidence: 1.0,
+                    source: 'grounding_product_presentation',
+                };
+            }
+        }
+
+        if (selectedVariant && (asksAvailability || attributeFollowUp || contextProductFollowUp)) {
+            const rendered = renderMessengerProductPresentation(presentation, language);
+            if (rendered.text) {
+                return {
+                    response: rendered.text,
+                    confidence: 1.0,
+                    source: 'grounding_product_presentation',
+                };
+            }
+        }
+
+        if (grounding.isMediaRequest(message)) {
+            if (evidence.mediaStatus === MediaStatus.UNAVAILABLE) {
+                return {
+                    response: grounding.productImageUnavailableReply(language, evidence.verifiedProducts[0].name),
+                    confidence: 1.0,
+                    source: 'grounding_media_unavailable',
+                };
+            }
+            if (evidence.mediaStatus === MediaStatus.AVAILABLE) {
+                const presentation = buildProductPresentation(evidence, { message, language, selectedVariants });
+                const rendered = renderMessengerProductPresentation(presentation, language);
+                if (rendered.text) {
+                    return {
+                        response: rendered.text,
+                        confidence: 1.0,
+                        source: 'grounding_product_presentation',
+                    };
+                }
+            }
+        }
     }
 
     return null;

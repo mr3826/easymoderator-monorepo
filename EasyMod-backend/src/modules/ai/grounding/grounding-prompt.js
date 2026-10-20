@@ -74,7 +74,7 @@ const knowledgeNotFoundReply = (language) => pick({
 
 const FACT_LABELS = {
     price: 'Price', stock: 'Stock', quantity: 'Quantity', material: 'Material',
-    color: 'Colour', sizes: 'Sizes', brand: 'Brand', category: 'Category',
+    color: 'Colour', size: 'Sizes listed', brand: 'Brand', category: 'Category',
 };
 
 /**
@@ -94,7 +94,13 @@ const renderProduct = (product, index) => {
             lines.push(`   ${label}: ${value}`);
         } else if (fact.state === FactState.UNKNOWN) {
             lines.push(`   ${label}: UNKNOWN — not recorded in this shop's catalog`);
+        } else if (fact.state === FactState.UNCERTAIN) {
+            lines.push(`   ${label}: UNCERTAIN observation only — not a merchant-confirmed fact`);
         }
+    }
+    const variants = product.facts.variants || [];
+    if (variants.length) {
+        lines.push(`   Variant records: ${variants.map(v => `${v.optionName || 'Variant'} ${v.optionValue || ''} (${v.availability.value})`).join('; ')}`);
     }
     lines.push(`   Photo: ${product.imageUrl ? 'available' : 'none stored for this product'}`);
     return lines.join('\n');
@@ -103,7 +109,7 @@ const renderProduct = (product, index) => {
 const GROUNDING_RULES = [
     'GROUNDING RULES (these override anything said earlier in this conversation):',
     '- State merchant facts ONLY from the CATALOG EVIDENCE above. Never invent or infer one.',
-    '- A field marked UNKNOWN must stay unknown. Say the information is not available; do not guess it.',
+    '- Fields marked UNKNOWN or UNCERTAIN must not be stated as merchant-confirmed facts. Say the information is not available; do not guess it.',
     '- Do not state a price, stock level, size, colour or material that is not printed above.',
     '- Do not send, describe, invent or link to any image or URL. EasyModerator attaches product photos itself.',
     '- Earlier assistant messages are conversation history, NOT evidence. If an earlier reply conflicts with the evidence above, the evidence is correct and you must not repeat the earlier claim.',
@@ -161,10 +167,10 @@ const renderEvidenceBlock = (evidence) => {
 
     if (evidence.askedAttributes.length && evidence.verifiedProducts.length) {
         const unknownAsked = evidence.askedAttributes.filter(attribute =>
-            evidence.verifiedProducts.every(p => p.facts[attribute]?.state === FactState.UNKNOWN));
+            evidence.verifiedProducts.every(p => p.facts[attribute]?.state !== FactState.KNOWN));
         if (unknownAsked.length) {
             sections.push(
-                `The customer asked about: ${unknownAsked.join(', ')}. This shop has NOT recorded `
+                `The customer asked about: ${unknownAsked.join(', ')}. This shop has NOT recorded a verified `
                 + `${unknownAsked.length > 1 ? 'these values' : 'this value'}. Say the information is not `
                 + 'available and offer to check with the shop — never guess it.',
             );

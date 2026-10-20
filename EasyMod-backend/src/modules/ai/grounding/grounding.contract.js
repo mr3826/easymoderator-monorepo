@@ -35,6 +35,7 @@ const ProductEvidenceStatus = Object.freeze({
 /** State of a single attribute on a verified product. */
 const FactState = Object.freeze({
     KNOWN: 'KNOWN',
+    UNCERTAIN: 'UNCERTAIN',         // search metadata or model-derived observation; never an authoritative answer
     UNKNOWN: 'UNKNOWN',               // catalog column is NULL/empty — must stay unknown
     NOT_APPLICABLE: 'NOT_APPLICABLE', // attribute cannot apply to this product kind
 });
@@ -44,6 +45,7 @@ const MediaStatus = Object.freeze({
     NOT_REQUESTED: 'NOT_REQUESTED',
     AVAILABLE: 'AVAILABLE',       // verified product owns a usable image URL
     UNAVAILABLE: 'UNAVAILABLE',   // verified product exists but has no usable image
+    AMBIGUOUS: 'AMBIGUOUS',       // multiple products matched; do not choose an image arbitrarily
     NO_PRODUCT: 'NO_PRODUCT',     // image asked for, but no verified product to own it
 });
 
@@ -70,6 +72,7 @@ const ReasonCode = Object.freeze({
     MODEL_OUTPUT_UNGROUNDED: 'MODEL_OUTPUT_UNGROUNDED',
     UNSUPPORTED_PRICE_CLAIM: 'UNSUPPORTED_PRICE_CLAIM',
     UNSUPPORTED_URL_CLAIM: 'UNSUPPORTED_URL_CLAIM',
+    UNSUPPORTED_DOMAIN_CLAIM: 'UNSUPPORTED_DOMAIN_CLAIM',
 });
 
 /**
@@ -98,6 +101,8 @@ const ReasonCode = Object.freeze({
  * @property {string|null} mediaUrl            - provenance-checked product image
  * @property {string|null} mediaProductId
  * @property {string[]} knowledgeIds
+ * @property {{id: string, type: 'faq', contentHash: string}[]} knowledgeSnapshots
+ * @property {string|null} operatingContextHash - hash of payment/delivery settings used by the model
  * @property {boolean} knowledgeFound
  * @property {string} sourceText               - every authoritative string given to the model
  * @property {string[]} allowedUrls            - the only URLs a reply may contain
@@ -119,8 +124,11 @@ const emptyEvidence = (shopId = null) => ({
     mediaUrl: null,
     mediaProductId: null,
     knowledgeIds: [],
+    knowledgeSnapshots: [],
+    operatingContextHash: null,
     knowledgeFound: false,
     sourceText: '',
+    policyText: '',
     allowedUrls: [],
     failure: null,
     retrievedAt: null,
@@ -139,6 +147,13 @@ const emptyEvidence = (shopId = null) => ({
 const withSourceText = (evidence, text) => {
     if (!text) return evidence;
     evidence.sourceText = evidence.sourceText ? `${evidence.sourceText}\n${text}` : String(text);
+    return evidence;
+};
+
+/** Record only retrieved or live-configured shop policies for policy checks. */
+const withPolicyText = (evidence, text) => {
+    if (!text) return evidence;
+    evidence.policyText = evidence.policyText ? `${evidence.policyText}\n${text}` : String(text);
     return evidence;
 };
 
@@ -173,6 +188,7 @@ module.exports = {
     ReasonCode,
     emptyEvidence,
     withSourceText,
+    withPolicyText,
     askedAboutProduct,
     hasVerifiedProduct,
     MODEL_REPLY_SOURCES,

@@ -26,6 +26,7 @@ jest.mock('src/config/memory-cache', () => ({
     MemoryCache: class {
         async get(key) { return mockIntentEntries.get(key) || null; }
         async setex(...args) { return mockSetIntentEntry(...args); }
+        async del(key) { mockIntentEntries.delete(key); return 1; }
     }
 }));
 jest.mock('src/utils/shop-settings-cache', () => ({
@@ -35,7 +36,7 @@ jest.mock('src/modules/ai/llm.service', () => ({ chat: jest.fn() }));
 jest.mock('src/modules/ai/bert-client.service', () => ({ classify: jest.fn(async () => null) }));
 jest.mock('src/modules/ai/gemini-cache.service', () => ({ getOrCreate: jest.fn(async () => null) }));
 jest.mock('src/modules/ai/prompt-sanitizer.service', () => ({
-    scrubPII: (x) => x,
+    scrubPII: jest.requireActual('src/modules/ai/prompt-sanitizer.service').scrubPII,
     sanitize: (value) => ({
         clean: !/ignore\s+(all\s+)?previous\s+instructions?|reveal\s+(your\s+)?system\s+prompt/i.test(String(value || '')),
     }),
@@ -48,7 +49,7 @@ jest.mock('src/modules/product/product-search.service', () => ({
 jest.mock('src/modules/rag/rag.service', () => ({ queryData: jest.fn() }));
 jest.mock('src/modules/entities', () => ({
     Order: { findOne: jest.fn(async () => null) },
-    FaqResponse: { findAll: jest.fn(async () => []) },
+    FaqResponse: { findAll: jest.fn(async () => []), findOne: jest.fn(async () => null) },
 }));
 
 const { route } = require('src/modules/ai/intent-router.service');
@@ -56,6 +57,8 @@ const llm = require('src/modules/ai/llm.service');
 const productSearch = require('src/modules/product/product-search.service');
 const rag = require('src/modules/rag/rag.service');
 const { FaqResponse } = require('src/modules/entities');
+const grounding = require('src/modules/ai/grounding');
+const { faqSnapshot } = require('src/modules/ai/knowledge-snapshot');
 
 const SHOP = 'shop-1';
 const lastSystemPrompt = () => {
@@ -71,19 +74,85 @@ beforeEach(() => {
     rag.queryData.mockResolvedValue({ results: [] });
     productSearch.searchByAttributes.mockResolvedValue([]);
     productSearch.getProductsByIds.mockResolvedValue([]);
+    FaqResponse.findOne.mockResolvedValue(null);
 });
 
 describe('B — Bengali product-intent gate', () => {
     test('a pure Bengali-script price question reaches the live DB product search', async () => {
-        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p1', name: 'Cotton Panjabi', price: 1200 }]);
+        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p1', shop_id: SHOP, name: 'Cotton Panjabi', price: 1200 }]);
 
-        await route({ shopId: SHOP, message: 'এই পাঞ্জাবির দাম কত?', systemPrompt: 'BASE' });
+        const result = await route({ shopId: SHOP, message: 'এই পাঞ্জাবির দাম কত?', systemPrompt: 'BASE' });
 
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(expect.objectContaining({ shopId: SHOP }));
-        const sys = lastSystemPrompt();
-        expect(sys).toContain('CATALOG EVIDENCE — verified products');
-        expect(sys).toContain('৳1200');
-        expect(sys).toContain('GROUNDING RULES');
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('৳1,200');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('an explicit variant price request renders the selected variant price', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'jacket-1',
+            shop_id: SHOP,
+            name: 'Classic Blue Denim Jacket',
+            price: 3200,
+            variants: [
+                { id: 'jacket-m', option_name: 'Size', option_value: 'M', price: 3200, quantity: 2, is_active: true },
+                { id: 'jacket-xl', option_name: 'Size', option_value: 'XL', price: 3300, quantity: 1, is_active: true },
+            ],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Classic Blue Denim Jacket XL size price?',
+            systemPrompt: 'BASE',
+            language: 'English',
+        });
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('XL — ৳3,300');
+        expect(result.response).not.toContain('৳3,200');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a follow-up price uses the customer-selected variant from grounded history', async () => {
+        const productPresentation = {
+            schemaVersion: '1',
+            status: 'READY',
+            shopId: SHOP,
+            products: [{
+                id: 'jacket-1',
+                shopId: SHOP,
+                selectedVariant: { id: 'jacket-xl', option: 'Size', value: 'XL' },
+            }],
+        };
+        productSearch.getProductsByIds.mockResolvedValue([{
+            id: 'jacket-1',
+            shop_id: SHOP,
+            name: 'Classic Blue Denim Jacket',
+            price: 3200,
+            variants: [
+                { id: 'jacket-m', option_name: 'Size', option_value: 'M', price: 3200, quantity: 2, is_active: true },
+                { id: 'jacket-xl', option_name: 'Size', option_value: 'XL', price: 3300, quantity: 1, is_active: true },
+            ],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'price?',
+            systemPrompt: 'BASE',
+            language: 'English',
+            history: [{
+                role: 'assistant',
+                sourceReferences: [{ kind: 'product', id: 'jacket-1', title: 'Classic Blue Denim Jacket' }],
+                productPresentation,
+            }],
+        });
+
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['jacket-1'], SHOP, { throwOnError: true });
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('XL — ৳3,300');
+        expect(result.response).not.toContain('৳3,200');
+        expect(llm.chat).not.toHaveBeenCalled();
     });
 
     test('a plain greeting does NOT trigger the product search', async () => {
@@ -134,11 +203,11 @@ describe('C — RAG product hit re-fetched live', () => {
 
     test('semantic product hit is re-fetched by product_id, never quoted from embedding text', async () => {
         rag.queryData.mockResolvedValue(productHit);
-        productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', name: 'Red Silk Saree', price: 3200 }]);
+        productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', shop_id: SHOP, name: 'Red Silk Saree', price: 3200 }]);
 
         await route({ shopId: SHOP, message: 'red silk saree ache?', systemPrompt: 'BASE' });
 
-        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-saree'], SHOP);
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-saree'], SHOP, { throwOnError: true });
         const sys = lastSystemPrompt();
         // Live DB price, and the price-less embedding text is never knowledge.
         expect(sys).toContain('CATALOG EVIDENCE — verified products');
@@ -148,7 +217,7 @@ describe('C — RAG product hit re-fetched live', () => {
 
     test('a vector hit alone does not make a product verified for a vague follow-up', async () => {
         rag.queryData.mockResolvedValue(productHit);
-        productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', name: 'Red Silk Saree', price: 3200 }]);
+        productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', shop_id: SHOP, name: 'Red Silk Saree', price: 3200 }]);
 
         // "that one" identifies nothing. A 0.78 cosine against a vague sentence is
         // a search candidate, not proof that this is the product being discussed,
@@ -157,6 +226,17 @@ describe('C — RAG product hit re-fetched live', () => {
 
         expect(res.grounding.verifiedProducts).toHaveLength(0);
         expect(lastSystemPrompt()).not.toContain('৳3200');
+    });
+
+    test('a vector product reread failure remains RETRIEVAL_FAILED', async () => {
+        rag.queryData.mockResolvedValue(productHit);
+        productSearch.getProductsByIds.mockRejectedValue(new Error('live product reread unavailable'));
+
+        const result = await route({ shopId: SHOP, message: 'red silk saree ache?', systemPrompt: 'BASE' });
+
+        expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.RETRIEVAL_FAILED);
+        expect(result.source).toBe('grounding_retrieval_failed');
+        expect(result.confidence).toBe(0);
     });
 
     test('a non-product knowledge hit is still injected as KNOWLEDGE BASE CONTEXT', async () => {
@@ -171,7 +251,12 @@ describe('C — RAG product hit re-fetched live', () => {
 
         FaqResponse.findAll
             .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([{ id: '7' }]);
+            .mockResolvedValueOnce([{
+                id: '7',
+                category: 'Delivery',
+                template_en: 'We deliver to Dhaka in 1-2 days.',
+                template_bn: null,
+            }]);
 
         await route({ shopId: SHOP, message: 'tell me about delivery time', systemPrompt: 'BASE' });
 
@@ -286,7 +371,7 @@ describe('D — customer photo → product matching', () => {
     });
 
     test('a match grounds the reply on live DB facts and records the source', async () => {
-        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p9', name: 'Red Cotton Saree', price: 2500 }]);
+        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p9', shop_id: SHOP, name: 'Red Cotton Saree', price: 2500 }]);
 
         const res = await route({ shopId: SHOP, message: 'dam koto?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
 
@@ -351,6 +436,25 @@ describe('D — customer photo → product matching', () => {
 });
 
 describe('settings generation and inactive FAQ cache boundaries', () => {
+    test('full LLM routing records the shop operating-context hash', async () => {
+        const operatingContext = '--- SHOP PAYMENT & DELIVERY (current settings) ---\nAccepted payment: COD ONLY.';
+        const systemPrompt = `BASE\n\n${operatingContext}`;
+
+        FaqResponse.findAll.mockResolvedValue([]);
+        llm.chat.mockResolvedValue({ text: 'I can help with questions about the shop.', provider: 'gemini-lite' });
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'What should I know?',
+            systemPrompt,
+            language: 'en',
+        });
+
+        expect(result.source).toBe('llm');
+        expect(result.grounding.operatingContextHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(llm.chat).toHaveBeenCalledTimes(1);
+    });
+
     test('passes quoted Messenger reply context as bounded untrusted conversation data', async () => {
         await route({
             shopId: SHOP,
@@ -414,6 +518,28 @@ describe('settings generation and inactive FAQ cache boundaries', () => {
         expect(JSON.stringify(messages)).toContain('file name omitted');
     });
 
+    test('scrubs phone numbers and email addresses from quoted text and file names', async () => {
+        await route({
+            shopId: SHOP,
+            message: 'L',
+            systemPrompt: 'BASE',
+            replyContext: {
+                provider_message_id: 'mid-pii',
+                sender: 'customer',
+                content: 'Please call 01712345678 or email customer@example.com about this size.',
+                message_type: 'file',
+                file_name: '01712345678-customer@example.com-size-guide.pdf',
+                status: 'resolved',
+            },
+        });
+
+        const prompt = JSON.stringify(llm.chat.mock.calls.at(-1)[0].messages);
+        expect(prompt).not.toContain('01712345678');
+        expect(prompt).not.toContain('customer@example.com');
+        expect(prompt).toContain('[PHONE]');
+        expect(prompt).toContain('[EMAIL]');
+    });
+
     test('blocks instruction-like customer input before routing to the model', async () => {
         const result = await route({
             shopId: SHOP,
@@ -452,12 +578,12 @@ describe('settings generation and inactive FAQ cache boundaries', () => {
         expect(mockSetIntentEntry).not.toHaveBeenCalled();
     });
 
-    test('vector FAQ content is admitted only after active shop-scoped verification', async () => {
+    test('vector FAQ content comes from the current active shop-scoped row', async () => {
         rag.queryData.mockResolvedValue({
             success: true,
             results: [{
                 score: 0.9,
-                content: 'FAQ answer',
+                content: 'Stale vector FAQ answer',
                 metadata: { type: 'faq', faq_id: 'faq-7' },
             }],
         });
@@ -466,8 +592,104 @@ describe('settings generation and inactive FAQ cache boundaries', () => {
         await expect(require('src/modules/ai/intent-router.service')._private.retrieveKnowledge(SHOP, 'faq'))
             .resolves.toEqual(expect.objectContaining({ snippets: '', knowledgeIds: [] }));
 
-        FaqResponse.findAll.mockResolvedValueOnce([{ id: '7' }]);
+        const activeFaq = {
+            id: '7', shop_id: SHOP, is_active: true, category: 'Delivery fee',
+            template_en: 'Current FAQ answer', template_bn: null,
+        };
+        FaqResponse.findAll.mockResolvedValueOnce([activeFaq]);
         await expect(require('src/modules/ai/intent-router.service')._private.retrieveKnowledge(SHOP, 'faq'))
-            .resolves.toEqual(expect.objectContaining({ snippets: 'FAQ answer', knowledgeIds: ['faq-7'] }));
+            .resolves.toEqual(expect.objectContaining({
+                snippets: 'Delivery fee\nCurrent FAQ answer',
+                knowledgeIds: ['7'],
+                knowledgeSnapshots: [faqSnapshot(activeFaq)],
+            }));
+    });
+
+    test('FAQ policy authority survives the first answer and a live-validated cache hit', async () => {
+        const operatingContext = '--- SHOP PAYMENT & DELIVERY (current settings) ---\nAccepted payment: COD ONLY.';
+        const systemPrompt = `BASE\n\n${operatingContext}`;
+        const faq = {
+            id: 'faq-delivery-1',
+            shop_id: SHOP,
+            is_active: true,
+            category: 'Delivery fee',
+            template_en: 'Dhaka delivery charge is 60 taka.',
+            template_bn: null,
+        };
+        FaqResponse.findAll.mockResolvedValue([faq]);
+        FaqResponse.findOne.mockResolvedValue(faq);
+        llm.chat.mockResolvedValue({ text: 'Dhaka delivery charge is 60 taka.', provider: 'gemini-lite' });
+
+        const first = await route({ shopId: SHOP, message: 'delivery charge koto?', systemPrompt, language: 'en' });
+        const firstVerdict = grounding.evaluateCandidate({
+            candidate: first.response,
+            evidence: first.grounding,
+            language: 'en',
+            modelGenerated: true,
+        });
+        const cached = await route({ shopId: SHOP, message: 'delivery charge koto?', systemPrompt, language: 'en' });
+        const cachedVerdict = grounding.evaluateCandidate({
+            candidate: cached.response,
+            evidence: cached.grounding,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(first.source).toBe('faq');
+        expect(first.grounding.policyText).toContain('60 taka');
+        expect(first.grounding.policyText).toContain('Accepted payment: COD ONLY.');
+        expect(first.grounding.knowledgeSnapshots).toEqual([faqSnapshot(faq)]);
+        expect(first.grounding.operatingContextHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(firstVerdict.decision).toBe(grounding.GroundingDecision.SEND);
+        expect(cached.source).toBe('cache');
+        expect(cached.grounding.knowledgeIds).toEqual(['faq-delivery-1']);
+        expect(cached.grounding.policyText).toContain('60 taka');
+        expect(cached.grounding.policyText).toContain('Accepted payment: COD ONLY.');
+        expect(cached.grounding.knowledgeSnapshots).toEqual([faqSnapshot(faq)]);
+        expect(cached.grounding.operatingContextHash).toBe(first.grounding.operatingContextHash);
+        expect(cachedVerdict.decision).toBe(grounding.GroundingDecision.SEND);
+        expect(FaqResponse.findOne).toHaveBeenCalledWith({
+            where: { id: 'faq-delivery-1', shop_id: SHOP, is_active: true },
+        });
+    });
+
+    test('changed operating settings invalidate a cached FAQ response', async () => {
+        const faq = {
+            id: 'faq-payment-1', shop_id: SHOP, is_active: true,
+            category: 'Payment', template_en: 'Advance payment details are available.', template_bn: null,
+        };
+        const firstPrompt = 'BASE\n\n--- SHOP PAYMENT & DELIVERY (current settings) ---\nCOD ONLY.';
+        const changedPrompt = 'BASE\n\n--- SHOP PAYMENT & DELIVERY (current settings) ---\nNagad only.';
+        FaqResponse.findAll.mockResolvedValue([faq]);
+        FaqResponse.findOne.mockResolvedValue(faq);
+        llm.chat.mockResolvedValue({ text: 'Our payment method is COD.', provider: 'gemini-lite' });
+
+        const first = await route({ shopId: SHOP, message: 'payment method?', systemPrompt: firstPrompt, language: 'en' });
+        const current = await route({ shopId: SHOP, message: 'payment method?', systemPrompt: changedPrompt, language: 'en' });
+
+        expect(first.source).toBe('faq');
+        expect(current.source).toBe('faq');
+        expect(first.grounding.operatingContextHash).not.toBe(current.grounding.operatingContextHash);
+        expect(llm.chat).toHaveBeenCalledTimes(2);
+        expect(FaqResponse.findAll).toHaveBeenCalledTimes(2);
+    });
+
+    test('a changed FAQ invalidates its cached answer before routing again', async () => {
+        const oldFaq = {
+            id: 'faq-delivery-2', shop_id: SHOP, is_active: true,
+            category: 'Delivery fee', template_en: 'Dhaka delivery charge is 60 taka.', template_bn: null,
+        };
+        const newFaq = { ...oldFaq, template_en: 'Dhaka delivery charge is 80 taka.' };
+        FaqResponse.findAll.mockResolvedValueOnce([oldFaq]).mockResolvedValue([newFaq]);
+        FaqResponse.findOne.mockResolvedValueOnce(newFaq);
+        llm.chat.mockResolvedValueOnce({ text: 'Dhaka delivery charge is 60 taka.', provider: 'gemini-lite' })
+            .mockResolvedValueOnce({ text: 'Dhaka delivery charge is 80 taka.', provider: 'gemini-lite' });
+
+        await route({ shopId: SHOP, message: 'delivery charge koto?', systemPrompt: 'BASE', language: 'en' });
+        const result = await route({ shopId: SHOP, message: 'delivery charge koto?', systemPrompt: 'BASE', language: 'en' });
+
+        expect(FaqResponse.findOne).toHaveBeenCalledTimes(1);
+        expect(result.source).toBe('faq');
+        expect(FaqResponse.findAll).toHaveBeenCalledTimes(2);
     });
 });

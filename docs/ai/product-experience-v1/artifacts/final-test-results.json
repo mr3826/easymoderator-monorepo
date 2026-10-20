@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "run": "final critical product-experience regression",
+  "baselineSha": "07168f49066e4dc4a8e2a756621ac577a13c12bd",
+  "branch": "feature/ai-product-experience-v1",
+  "runtime": {
+    "node": "v25.6.1",
+    "repositoryNodeVersion": "20",
+    "jestElapsedMs": 190243
+  },
+  "command": "npm exec -- jest --runInBand --silent --forceExit --coverage=false --testTimeout=30000 src/modules/ai/grounding/__tests__/grounding-boundary.test.js src/modules/ai/grounding/__tests__/product-evidence-hardening.test.js src/modules/ai/grounding/__tests__/product-presentation.contract.test.js src/modules/ai/__tests__/intent-router.test.js src/jobs/__tests__/message-worker.grounding.test.js src/modules/product/__tests__/retrieval-behaviour.test.js src/modules/product/__tests__/product-search-retrieval-failure.test.js src/modules/ai/product-experience/__tests__/dataset-replay.test.js src/modules/ai/product-experience/__tests__/media-fixtures.test.js src/modules/ai/product-experience/__tests__/production-router-replay.test.js src/modules/ai/__tests__/action-gate.contract.test.js src/modules/ai/__tests__/intent-router.order-lookup.security.test.js src/security/__tests__/ai-mutation-boundary.security.test.js src/security/__tests__/ai-read-action-tenant.security.test.js src/security/__tests__/shop-tenant-scope.security.test.js src/modules/order/__tests__/courier-dispatch-idempotency.test.js src/modules/order/__tests__/order.dispatch.contract.test.js src/modules/order/__tests__/order.controller.confidence-hold.test.js src/modules/product/__tests__/product-media.persistence.test.js src/modules/product/__tests__/product-media.service.test.js src/modules/conversation/__tests__/ai-chatbot.routing.test.js",
+  "status": "PASS",
+  "suiteCount": 21,
+  "testCount": 275,
+  "suites": [
+    "src/modules/ai/grounding/__tests__/grounding-boundary.test.js",
+    "src/modules/ai/grounding/__tests__/product-evidence-hardening.test.js",
+    "src/modules/ai/grounding/__tests__/product-presentation.contract.test.js",
+    "src/modules/ai/__tests__/intent-router.test.js",
+    "src/jobs/__tests__/message-worker.grounding.test.js",
+    "src/modules/product/__tests__/retrieval-behaviour.test.js",
+    "src/modules/product/__tests__/product-search-retrieval-failure.test.js",
+    "src/modules/ai/product-experience/__tests__/dataset-replay.test.js",
+    "src/modules/ai/product-experience/__tests__/media-fixtures.test.js",
+    "src/modules/ai/product-experience/__tests__/production-router-replay.test.js",
+    "src/modules/ai/__tests__/action-gate.contract.test.js",
+    "src/modules/ai/__tests__/intent-router.order-lookup.security.test.js",
+    "src/security/__tests__/ai-mutation-boundary.security.test.js",
+    "src/security/__tests__/ai-read-action-tenant.security.test.js",
+    "src/security/__tests__/shop-tenant-scope.security.test.js",
+    "src/modules/order/__tests__/courier-dispatch-idempotency.test.js",
+    "src/modules/order/__tests__/order.dispatch.contract.test.js",
+    "src/modules/order/__tests__/order.controller.confidence-hold.test.js",
+    "src/modules/product/__tests__/product-media.persistence.test.js",
+    "src/modules/product/__tests__/product-media.service.test.js",
+    "src/modules/conversation/__tests__/ai-chatbot.routing.test.js"
+  ],
+  "replayEvidence": {
+    "contractScenariosPerPass": 200,
+    "contractReplayPasses": 2,
+    "contractReplayReproducible": true,
+    "productionRouteScenariosPerPass": 200,
+    "productionRoutePasses": 2,
+    "productionRouteReplayReproducible": true,
+    "presentationContractsValid": 200,
+    "unsupportedFakeModelCandidatesBlockedPerPass": 60,
+    "unsupportedFakeModelCandidatesSentPerPass": 0,
+    "detectedPhoneOrEmailPatternsInFakePromptsPerPass": 0,
+    "tenantScopeViolations": 0,
+    "unscopedCatalogReads": 0,
+    "productionRouteLatencyMs": {
+      "p50": 1.015,
+      "p95": 2.837,
+      "mean": 1.301,
+      "sampleCount": 200
+    },
+    "productionRouteHarnessWallMs": 591.1,
+    "productionRouteReproducible": true,
+    "productionRouteSourceSha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6"
+  },
+  "integrationTests": {
+    "status": "NOT_RUN",
+    "reason": "No DATABASE_URL or TEST_DATABASE_URL was configured; integration config requires disposable Postgres and Redis."
+  },
+  "testDiscovery": {
+    "status": "PASS",
+    "trackedTestFiles": 307,
+    "eachHasExactlyOneExecutionHome": true
+  },
+  "externalServices": {
+    "database": false,
+    "redis": false,
+    "realLlmProvider": false,
+    "realVisionProvider": false,
+    "messenger": false
+  },
+  "warnings": [
+    "Node v25.6.1 was used although repository .nvmrc specifies Node 20.",
+    "Jest emitted an invalid --localstorage-file path warning and a Force-exit open-handle notice; all selected suites passed."
+  ],
+  "sourceCustomerTextPersisted": false
+}

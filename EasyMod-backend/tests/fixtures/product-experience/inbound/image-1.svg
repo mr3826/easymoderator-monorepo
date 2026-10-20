@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+  <rect width="640" height="480" fill="#e8eef5"/>
+  <circle cx="320" cy="190" r="92" fill="#a8b8ca"/>
+  <path d="M160 360h320" stroke="#52677f" stroke-width="18" stroke-linecap="round"/>
+  <text x="320" y="430" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#203044">TEST SUBSTITUTE 1 · NOT A PRODUCT PHOTO</text>
+</svg>

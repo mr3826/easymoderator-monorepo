@@ -28,6 +28,7 @@ const {
     withSourceText,
 } = require('./grounding.contract');
 const { withEvidenceSnapshot } = require('../contracts/evidence.contract');
+const { getOrigins } = require('../../../config/origins');
 
 /**
  * Terms that express *intent*, not product identity. Removing them is what
@@ -43,6 +44,7 @@ const INTENT_STOPWORDS = new Set([
     'available', 'availability', 'buy', 'order', 'purchase', 'want', 'need', 'looking',
     'show', 'send', 'give', 'please', 'picture', 'pictures', 'photo', 'photos', 'pic',
     'pics', 'image', 'images', 'there', 'got', 'can', 'could', 'would', 'will', 'be',
+    'tell', 'about', 'describe', 'detail', 'details', 'info', 'information', 'more',
     'ok', 'okay', 'yes', 'no', 'sure', 'again', 'check', 'try', 'really', 'still',
     'delivery', 'shipping', 'discount', 'offer', 'product', 'products', 'item', 'items',
     // Attribute NAMES. Asking "what colour is it?" names the question, not the
@@ -96,12 +98,14 @@ const TERM_EQUIVALENTS = new Map(Object.entries({
  */
 const ATTRIBUTE_VOCABULARY = Object.freeze({
     material: [
+        'material', 'fabric', 'kapor', 'kapod', 'উপাদান', 'কাপড়', 'কাপড়',
         'chiffon', 'silk', 'cotton', 'georgette', 'muslin', 'jamdani', 'linen',
         'polyester', 'velvet', 'satin', 'denim', 'rayon', 'viscose', 'khadi',
         'organza', 'net', 'crepe', 'tissue', 'katan', 'half-silk', 'halfsilk',
         'শিফন', 'সিল্ক', 'সুতি', 'জর্জেট', 'মসলিন', 'জামদানি', 'কাতান',
     ],
     color: [
+        'color', 'colour', 'rong', 'rang', 'রং', 'রঙ',
         'black', 'white', 'red', 'blue', 'green', 'yellow', 'pink', 'purple',
         'orange', 'brown', 'grey', 'gray', 'maroon', 'navy', 'beige', 'golden',
         'কালো', 'সাদা', 'লাল', 'নীল', 'সবুজ', 'হলুদ', 'গোলাপি', 'খয়েরি',
@@ -109,9 +113,20 @@ const ATTRIBUTE_VOCABULARY = Object.freeze({
     size: ['size', 'sizes', 'small', 'medium', 'large', 'xl', 'xxl', 'সাইজ', 'মাপ'],
 });
 
+const ATTRIBUTE_LABELS = Object.freeze({
+    material: ['material', 'fabric', 'kapor', 'kapod', 'উপাদান', 'কাপড়', 'কাপড়'],
+    color: ['color', 'colour', 'rong', 'rang', 'রং', 'রঙ'],
+    size: ['size', 'sizes', 'সাইজ', 'মাপ'],
+});
+
 /** Does the customer's message request a product photo? */
 const MEDIA_REQUEST_PATTERN =
     /\b(picture|pictures|photo|photos|pic|pics|image|images|chobi|chobita|snap)\b|ছবি|পিক/i;
+
+// Product references are conversational convenience, not durable authority.
+// They only identify which current catalog rows to re-read; mutable facts are
+// fetched again on each turn. Expire the pointer after a day of inactivity.
+const PRODUCT_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
 
 const isMediaRequest = (message) =>
     typeof message === 'string' && MEDIA_REQUEST_PATTERN.test(message);
@@ -174,17 +189,24 @@ const identifyingTerms = (message) => {
  */
 const identityText = (product) => {
     const variantValues = Array.isArray(product.variants)
-        ? product.variants.flatMap(v => [v?.size, v?.color, v?.value, v?.option]).filter(Boolean)
+        ? product.variants.flatMap(v => [
+            v?.size,
+            v?.color,
+            v?.value,
+            v?.option_value,
+            v?.option,
+            String(v?.option_name || '').toLowerCase() === 'size' || String(v?.option_name || '').toLowerCase() === 'color'
+                ? v?.option_value
+                : null,
+        ]).filter(Boolean)
         : [];
     return [
         product.name,
         product.name_bn,
         product.category,
         product.brand,
-        product.ai_color,
-        product.ai_material,
+        ...(Array.isArray(product.aliases) ? product.aliases : []),
         ...(Array.isArray(product.tags) ? product.tags : []),
-        ...(Array.isArray(product.ai_tags) ? product.ai_tags : []),
         ...variantValues,
     ].filter(Boolean).join(' ').toLowerCase();
 };
@@ -212,8 +234,22 @@ const matchTerms = (product, terms) => {
 const askedAttributes = (message) => {
     if (!message || typeof message !== 'string') return [];
     const lower = message.toLowerCase();
+    const asksPriceOrAvailability = /\b(?:price|cost|dam|daam|koto|taka|stock|available|availability|ache|ase|delivery|shipping|charge)\b|দাম|মূল্য|কত|টাকা|স্টক|ডেলিভারি/i.test(lower);
+    const hasAttributeQuestionCue = /\b(?:what|which|is|are|it|this|that|eta|eita|otar|tar|made|ki|kina)\b|কি|কী|এর/i.test(lower);
     return Object.entries(ATTRIBUTE_VOCABULARY)
-        .filter(([, words]) => words.some(w => lower.includes(w)))
+        .filter(([attribute, words]) => {
+            const labels = ATTRIBUTE_LABELS[attribute] || [];
+            const values = words.filter(word => !labels.includes(word));
+            const explicitName = labels.some(word => lower.includes(word));
+            const valueQuestion = !asksPriceOrAvailability
+                && hasAttributeQuestionCue
+                && values.some(word => lower.includes(word));
+            const singleValueQuestion = !asksPriceOrAvailability
+                && /[?؟]\s*$/.test(lower)
+                && identifyingTerms(message).length === 1
+                && values.some(word => lower.includes(word));
+            return explicitName || valueQuestion || singleValueQuestion;
+        })
         .map(([attribute]) => attribute);
 };
 
@@ -223,14 +259,27 @@ const askedAttributes = (message) => {
  * omission is what the model read as "free to infer".
  */
 const buildFacts = (product) => {
-    const sizes = Array.isArray(product.variants)
-        ? [...new Set(product.variants.map(v => v?.size || (v?.option === 'Size' ? v.value : null)).filter(Boolean))]
-        : [];
-    const colors = Array.isArray(product.variants)
-        ? [...new Set(product.variants.map(v => v?.color || (v?.option === 'Color' ? v.value : null)).filter(Boolean))]
-        : [];
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const activeVariants = variants.filter(v => v?.is_active !== false);
+    const sizes = [...new Set(activeVariants.map(v =>
+        v?.size || (String(v?.option_name || v?.option || '').toLowerCase() === 'size'
+            ? (v?.option_value || v?.value)
+            : null),
+    ).filter(Boolean))];
+    const colors = [...new Set(activeVariants.map(v =>
+        v?.color || (String(v?.option_name || v?.option || '').toLowerCase() === 'color'
+            ? (v?.option_value || v?.value)
+            : null),
+    ).filter(Boolean))];
     const known = (value) => ({ state: FactState.KNOWN, value });
     const unknown = () => ({ state: FactState.UNKNOWN, value: null });
+    const uncertain = (value) => ({ state: FactState.UNCERTAIN, value: value || null });
+    const parentStockValue = product.is_active === false
+        ? 'DISCONTINUED'
+        : product.in_stock === false
+            || (product.track_quantity === true && Number(product.quantity) === 0)
+            ? 'OUT_OF_STOCK'
+            : 'IN_STOCK';
 
     return {
         name: known(product.name),
@@ -239,22 +288,37 @@ const buildFacts = (product) => {
         // shops add products without ever setting a count, which leaves
         // quantity at 0 with track_quantity false — reading that as "sold out"
         // told real customers every in-stock product was unavailable.
-        stock: product.is_active === false
-            ? known('DISCONTINUED')
-            : known(
-                product.in_stock === false
-                || (product.track_quantity === true && Number(product.quantity) === 0)
-                    ? 'OUT_OF_STOCK'
-                    : 'IN_STOCK',
-            ),
+        stock: known(parentStockValue),
         // An untracked count is not a count. Printing "Quantity: 0" into the
         // prompt is what the model was reasoning from.
         quantity: product.track_quantity === true && Number.isFinite(product.quantity)
             ? known(product.quantity)
             : unknown(),
-        material: product.ai_material ? known(product.ai_material) : unknown(),
-        color: product.ai_color ? known(product.ai_color) : (colors.length ? known(colors.join(', ')) : unknown()),
+        // ai_* columns are retrieval metadata and may come from image analysis.
+        // They can help locate a candidate, but cannot prove merchant claims.
+        material: product.ai_material ? uncertain(product.ai_material) : unknown(),
+        color: colors.length
+            ? known(colors.join(', '))
+            : (product.ai_color ? uncertain(product.ai_color) : unknown()),
+        size: sizes.length ? known(sizes.join(', ')) : unknown(),
         sizes: sizes.length ? known(sizes.join(', ')) : unknown(),
+        variants: activeVariants.map(v => {
+            const optionName = v?.option_name || v?.option || (v?.size ? 'Size' : v?.color ? 'Color' : null);
+            const optionValue = v?.option_value || v?.value || v?.size || v?.color || null;
+            const rawPrice = v?.price == null ? product.price : v.price;
+            const price = rawPrice == null || rawPrice === '' ? NaN : Number(rawPrice);
+            const quantity = v?.quantity == null || v?.quantity === '' ? NaN : Number(v.quantity);
+            return {
+                id: v?.id ? String(v.id) : null,
+                optionName,
+                optionValue,
+                price: Number.isFinite(price) ? known(price) : unknown(),
+                availability: Number.isFinite(quantity)
+                    ? known(parentStockValue !== 'IN_STOCK' || quantity <= 0 ? 'OUT_OF_STOCK' : 'IN_STOCK')
+                    : unknown(),
+                imageUrl: productMediaUrl({ images: [v?.attributes?.image_url].filter(Boolean) }, product.shop_id || product.shopId),
+            };
+        }),
         brand: product.brand ? known(product.brand) : unknown(),
         category: product.category ? known(product.category) : unknown(),
     };
@@ -276,27 +340,67 @@ const isUsableMediaUrl = (url) => {
     }
 };
 
-/** First provenance-valid image stored on THIS product row. */
-const productMediaUrl = (product) => {
+/**
+ * Product media must be stored in the authenticated tenant's product-image
+ * bucket. A URL copied from another shop's EasyModerator upload is not made
+ * safe merely by storing it on this product row.
+ */
+const isTenantOwnedMediaUrl = (url, shopId) => {
+    if (!shopId || !isUsableMediaUrl(url)) return false;
+    try {
+        const parsed = new URL(url.trim());
+        if (parsed.username || parsed.password) return false;
+
+        // A tenant-shaped path on an arbitrary HTTPS host is not proof that
+        // EasyModerator owns the bytes. Only configured asset/API origins may
+        // serve product uploads.
+        const { api, publicAssets } = getOrigins();
+        const trustedOrigins = new Set([api, publicAssets]
+            .filter((origin) => {
+                try {
+                    return new URL(origin).protocol === 'https:';
+                } catch {
+                    return false;
+                }
+            }));
+        if (!trustedOrigins.has(parsed.origin)) return false;
+
+        const pathname = parsed.pathname;
+        const expected = `/uploads/product-images/${encodeURIComponent(String(shopId))}/`;
+        if (!pathname.startsWith('/uploads/')) return false;
+        if (!pathname.startsWith(expected)) return false;
+        const fileName = pathname.slice(expected.length);
+        return Boolean(fileName)
+            && !fileName.includes('/')
+            && !fileName.includes('..')
+            && !/%2f|%5c/i.test(fileName);
+    } catch {
+        return false;
+    }
+};
+
+/** First tenant-owned image stored on THIS product row. */
+const productMediaUrl = (product, shopId = product?.shop_id || product?.shopId) => {
     const candidates = [
         ...(Array.isArray(product.images) ? product.images : []),
         product.image_url,
     ];
     for (const candidate of candidates) {
         const url = typeof candidate === 'string' ? candidate : candidate?.url;
-        if (isUsableMediaUrl(url)) return url.trim();
+        if (isTenantOwnedMediaUrl(url, shopId)) return url.trim();
     }
     return null;
 };
 
 const toVerifiedProduct = (product, shopId, matched) => ({
     id: String(product.id),
-    shopId,
+    shopId: String(product.shop_id || product.shopId || shopId),
     name: product.name,
+    nameBn: product.name_bn || null,
     price: product.price,
     facts: buildFacts(product),
     matchedTerms: matched,
-    imageUrl: productMediaUrl(product),
+    imageUrl: productMediaUrl(product, product.shop_id || product.shopId || shopId),
 });
 
 /**
@@ -341,6 +445,8 @@ const resolveProductEvidence = ({ shopId, message, candidates = [], retrievalFai
     const related = [];
     for (const candidate of candidates) {
         if (!candidate || !candidate.id || !candidate.name) continue;
+        const candidateShopId = candidate.shop_id || candidate.shopId;
+        if (!candidateShopId || String(candidateShopId) !== String(shopId)) continue;
         const matched = matchTerms(candidate, terms);
         if (matched.length === terms.length) {
             verified.push(toVerifiedProduct(candidate, shopId, matched));
@@ -362,6 +468,8 @@ const resolveProductEvidence = ({ shopId, message, candidates = [], retrievalFai
         evidence.mediaStatus = MediaStatus.NOT_REQUESTED;
     } else if (!verified.length) {
         evidence.mediaStatus = MediaStatus.NO_PRODUCT;
+    } else if (verified.length > 1) {
+        evidence.mediaStatus = MediaStatus.AMBIGUOUS;
     } else {
         const withMedia = verified.find(p => p.imageUrl);
         if (withMedia) {
@@ -426,7 +534,8 @@ const resolveContextualAttributeEvidence = ({ shopId, message, contextProducts =
     if (!contextProducts.length) return withEvidenceSnapshot(evidence); // NONE — ask which product
 
     evidence.verifiedProducts = contextProducts
-        .filter(p => p && p.id && p.name)
+        .filter(p => p && p.id && p.name && (p.shop_id || p.shopId)
+            && String(p.shop_id || p.shopId) === String(shopId))
         .map(p => toVerifiedProduct(p, shopId, terms));
     if (!evidence.verifiedProducts.length) return withEvidenceSnapshot(evidence);
     evidence.productStatus = ProductEvidenceStatus.VERIFIED;
@@ -452,8 +561,36 @@ const resolveContextualAttributeEvidence = ({ shopId, message, contextProducts =
     return withEvidenceSnapshot(evidence);
 };
 
+/**
+ * Compare the evidence used to draft a response with a fresh, shop-scoped read.
+ * The caller runs this directly before provider delivery; any changed factual
+ * field or missing/inactive product requires a new answer or human review.
+ */
+const revalidateEvidenceProducts = (evidence, liveProducts = []) => {
+    const referenced = [
+        ...(evidence?.verifiedProducts || []),
+        ...(evidence?.relatedProducts || []),
+    ];
+    if (!referenced.length) return { valid: true, changedProductIds: [] };
+    const liveById = new Map((liveProducts || [])
+        .filter(product => product && product.id && (product.shop_id || product.shopId)
+            && String(product.shop_id || product.shopId) === String(evidence.shopId))
+        .map(product => [String(product.id), product]));
+    const changedProductIds = [];
+    for (const previous of referenced) {
+        const currentRow = liveById.get(String(previous.id));
+        if (!currentRow) {
+            changedProductIds.push(String(previous.id));
+            continue;
+        }
+        const current = toVerifiedProduct(currentRow, evidence.shopId, previous.matchedTerms || []);
+        if (JSON.stringify(current) !== JSON.stringify(previous)) changedProductIds.push(String(previous.id));
+    }
+    return { valid: changedProductIds.length === 0, changedProductIds };
+};
+
 /** Product IDs this conversation has already grounded, newest turn first. */
-const contextProductIds = (history = []) => {
+const contextProductIds = (history = [], { now = Date.now(), ttlMs = PRODUCT_CONTEXT_TTL_MS } = {}) => {
     for (let i = history.length - 1; i >= 0; i -= 1) {
         const turn = history[i] || {};
         if (turn.role === 'user' || turn.role === 'customer') continue;
@@ -461,9 +598,69 @@ const contextProductIds = (history = []) => {
         const ids = (Array.isArray(references) ? references : [])
             .filter(r => r && r.kind === 'product' && r.id)
             .map(r => String(r.id));
-        if (ids.length) return ids;
+        // The newest assistant turn is the active context boundary. A reply
+        // with no product references clears an older selection; do not revive
+        // a product mentioned several customer turns ago.
+        if (!ids.length) return [];
+        const createdAt = turn.createdAt || turn.created_at;
+        if (createdAt != null) {
+            const timestamp = new Date(createdAt).getTime();
+            if (!Number.isFinite(timestamp) || timestamp > now + 5 * 60 * 1000 || now - timestamp > ttlMs) {
+                return [];
+            }
+        }
+        return ids;
     }
     return [];
+};
+
+/**
+ * Active customer-selected variants from the latest grounded assistant turn.
+ * The presentation is only a pointer: callers must match the variant ID
+ * against a fresh, tenant-scoped catalog read before using it.
+ */
+const contextSelectedVariants = (history = [], {
+    shopId,
+    now = Date.now(),
+    ttlMs = PRODUCT_CONTEXT_TTL_MS,
+    activeProductIds: suppliedActiveProductIds,
+} = {}) => {
+    if (!shopId) return {};
+    const activeProductIds = new Set(Array.isArray(suppliedActiveProductIds)
+        ? suppliedActiveProductIds
+        : contextProductIds(history, { now, ttlMs }));
+    if (!activeProductIds.size) return {};
+
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+        const turn = history[i] || {};
+        if (turn.role === 'user' || turn.role === 'customer') continue;
+        const references = turn.sourceReferences || turn.source_references || [];
+        const referencedIds = (Array.isArray(references) ? references : [])
+            .filter(reference => reference && reference.kind === 'product' && reference.id)
+            .map(reference => String(reference.id));
+        if (!referencedIds.length) return {};
+
+        const presentation = turn.productPresentation || turn.product_presentation;
+        if (!presentation || String(presentation.shopId || '') !== String(shopId)) return {};
+        const result = {};
+        for (const product of presentation.products || []) {
+            const id = String(product?.id || '');
+            const selected = product?.selectedVariant;
+            if (activeProductIds.has(id)
+                && referencedIds.includes(id)
+                && selected?.id
+                && selected?.value
+                && selected?.option) {
+                result[id] = {
+                    id: String(selected.id),
+                    option: String(selected.option),
+                    value: String(selected.value),
+                };
+            }
+        }
+        return result;
+    }
+    return {};
 };
 
 module.exports = {
@@ -471,13 +668,18 @@ module.exports = {
     resolveContextualAttributeEvidence,
     isAttributeOnlyQuery,
     contextProductIds,
+    contextSelectedVariants,
     satisfiesAttributeTerms,
     identifyingTerms,
     askedAttributes,
     isMediaRequest,
+    PRODUCT_CONTEXT_TTL_MS,
     isUsableMediaUrl,
+    isTenantOwnedMediaUrl,
     productMediaUrl,
     buildFacts,
+    revalidateEvidenceProducts,
     withSourceText,
     ATTRIBUTE_VOCABULARY,
+    ATTRIBUTE_LABELS,
 };

@@ -24,7 +24,7 @@ jest.mock('src/modules/delivery/delivery-integration.entity', () => ({
 
 const bd = require('src/modules/shop/shop-bd-settings');
 const DeliveryIntegration = require('src/modules/delivery/delivery-integration.entity');
-const { getOperatingContext } = require('src/modules/ai/shop-operating-context.service');
+const { getOperatingContext, hashOperatingContext } = require('src/modules/ai/shop-operating-context.service');
 
 const COD_DEFAULTS = {
     mfs_mode: null, mfs_type: null, mfs_number: null,
@@ -86,4 +86,21 @@ test('DB failure degrades to the safe COD-only block, never throws', async () =>
     const ctx = await getOperatingContext('shop-1');
     expect(ctx).toContain('Cash on Delivery (COD) ONLY');
     expect(ctx).not.toMatch(/bKash|Nagad/);
+});
+
+test('strict send-time reads propagate setting store failures', async () => {
+    bd.getBdSettings.mockRejectedValue(new Error('db down'));
+    DeliveryIntegration.findOne.mockRejectedValue(new Error('db down'));
+
+    await expect(getOperatingContext('shop-1', { strict: true }))
+        .rejects.toThrow('db down');
+});
+
+test('operating context fingerprints contain no source settings text', () => {
+    const context = 'bKash personal number 01711111111';
+    const fingerprint = hashOperatingContext(context);
+
+    expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(fingerprint).not.toContain('01711111111');
+    expect(hashOperatingContext('')).toBeNull();
 });

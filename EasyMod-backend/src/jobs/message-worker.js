@@ -34,6 +34,7 @@ const metaChannelService = require('../modules/channel-providers/meta-channel.se
 const conversationLockService = require('../modules/conversation/conversation-lock.service');
 const Customer = require('../modules/customer/customer.entity');
 const grounding = require('../modules/ai/grounding');
+const { faqContentHash, normalizeKnowledgeId } = require('../modules/ai/knowledge-snapshot');
 const { Op, literal } = require('sequelize');
 const { sequelize } = require('../utils/database/database-setup');
 const {
@@ -70,6 +71,88 @@ const asRetryableDependencyError = (error, code) => {
 const providerSendSucceeded = hasProviderAcknowledgement;
 const DELIVERY_LOCK_TIMEOUT_MS = 300_000;
 const DELIVERY_LOCK_WAIT_MS = 10_000;
+
+const revalidateProductEvidenceBeforeSend = async (evidence) => {
+    const ids = [...new Set([
+        ...(evidence?.verifiedProducts || []),
+        ...(evidence?.relatedProducts || []),
+    ].map(product => product?.id).filter(Boolean).map(String))];
+    if (!ids.length) return { valid: true, changedProductIds: [] };
+    try {
+        const productSearch = require('../modules/product/product-search.service');
+        const liveProducts = await productSearch.getProductsByIds(ids, evidence.shopId, { throwOnError: true });
+        return grounding.revalidateEvidenceProducts(evidence, liveProducts);
+    } catch (error) {
+        error.code = error.code || 'PRODUCT_EVIDENCE_REVALIDATION_FAILED';
+        error.retryable = true;
+        throw error;
+    }
+};
+
+const revalidateKnowledgeEvidenceBeforeSend = async (evidence) => {
+    const knowledgeIds = [...new Set((evidence?.knowledgeIds || [])
+        .filter(Boolean).map(normalizeKnowledgeId))];
+    if (!evidence?.knowledgeFound && knowledgeIds.length === 0) {
+        return { valid: true, changedKnowledgeIds: [] };
+    }
+
+    const snapshots = new Map((evidence?.knowledgeSnapshots || [])
+        .filter(snapshot => snapshot?.type === 'faq' && snapshot.id && snapshot.contentHash)
+        .map(snapshot => [normalizeKnowledgeId(snapshot.id), snapshot]));
+    const untrackedIds = knowledgeIds.filter(id => !snapshots.has(id));
+    if (untrackedIds.length || (evidence?.knowledgeFound && knowledgeIds.length === 0)) {
+        return {
+            valid: false,
+            changedKnowledgeIds: untrackedIds.length ? untrackedIds : ['unattributed_knowledge'],
+        };
+    }
+
+    try {
+        const { FaqResponse } = require('../modules/entities');
+        const currentFaqs = await FaqResponse.findAll({
+            where: {
+                id: { [Op.in]: knowledgeIds },
+                shop_id: evidence.shopId,
+                is_active: true,
+            },
+            attributes: ['id', 'category', 'template_en', 'template_bn'],
+        });
+        const currentById = new Map(currentFaqs.map(faq => [normalizeKnowledgeId(faq.id), faq]));
+        const changedKnowledgeIds = knowledgeIds.filter(id => {
+            const current = currentById.get(id);
+            const snapshot = snapshots.get(id);
+            return !current || faqContentHash(current) !== snapshot.contentHash;
+        });
+        return { valid: changedKnowledgeIds.length === 0, changedKnowledgeIds };
+    } catch (error) {
+        error.code = error.code || 'KNOWLEDGE_EVIDENCE_REVALIDATION_FAILED';
+        error.retryable = true;
+        throw error;
+    }
+};
+
+const revalidateOperatingContextBeforeSend = async (evidence) => {
+    if (!evidence?.operatingContextHash) {
+        const hasKnowledgeEvidence = Boolean(evidence?.knowledgeFound)
+            || (Array.isArray(evidence?.knowledgeIds) && evidence.knowledgeIds.length > 0);
+        const hasOperatingPolicyEvidence = /\b(?:payment|delivery|shipping|courier|fee|charge)\b|পেমেন্ট|ডেলিভারি|চার্জ/i
+            .test(String(evidence?.policyText || ''));
+        return hasKnowledgeEvidence || hasOperatingPolicyEvidence
+            ? { valid: false, changed: true }
+            : { valid: true, changed: false };
+    }
+    try {
+        const { getOperatingContext, hashOperatingContext } = require('../modules/ai/shop-operating-context.service');
+        const currentContext = await getOperatingContext(evidence.shopId, { strict: true });
+        const currentHash = hashOperatingContext(currentContext);
+        return {
+            valid: currentHash === evidence.operatingContextHash,
+            changed: currentHash !== evidence.operatingContextHash,
+        };
+    } catch (error) {
+        throw asRetryableDependencyError(error, 'OPERATING_CONTEXT_REVALIDATION_FAILED');
+    }
+};
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -349,11 +432,17 @@ async function loadConversationHistory(conversationId, excludeIds) {
         .filter(m => m.sender !== 'ai' || isProviderConfirmed(m) || !hasExplicitDeliveryLifecycle(m))
         .slice(0, 10)
         .reverse()
-        .map(m => ({
-            role: m.sender === 'customer' ? 'user' : 'assistant',
-            content: m.content,
-            message: m.content,
-        }));
+        .map(m => {
+            const metadata = messageMetadata(m);
+            return {
+                role: m.sender === 'customer' ? 'user' : 'assistant',
+                content: m.content,
+                message: m.content,
+                createdAt: m.created_at || m.createdAt || null,
+                sourceReferences: metadata.sourceReferences || metadata.source_references || null,
+                productPresentation: metadata.product_presentation || metadata.productPresentation || null,
+            };
+        });
 }
 
 /**
@@ -2236,7 +2325,7 @@ async function processMessageJob(job) {
     // captured reliably and an Order row is actually created on confirmation.
     // (Without this, the bot collects name/phone/address as chat but never makes
     // an order — see order-flow.service.js.)
-    let rawResponse, confidence, sourceReferences;
+    let rawResponse, confidence, sourceReferences, productPresentation = null;
     let groundingEvidence = grounding.emptyEvidence(shopId);
     let replySource = null;
     let replyProvider = null;
@@ -2320,7 +2409,7 @@ async function processMessageJob(job) {
                 effImageUrls,
                 replyContext,
             );
-            ({ response: rawResponse, confidence, sourceReferences, humanRequired = false } = intentResult);
+            ({ response: rawResponse, confidence, sourceReferences, humanRequired = false, productPresentation = null } = intentResult);
             groundingEvidence = intentResult.grounding || groundingEvidence;
             replySource = intentResult.source || null;
             replyProvider = intentResult.provider || null;
@@ -2435,6 +2524,7 @@ async function processMessageJob(job) {
             ai_disclosure_applied: aiDisclosureApplied,
             order_flow: orderFlow.meta || null,
             sourceReferences: sourceReferences || null,
+            product_presentation: productPresentation || null,
             grounding_decision: groundingVerdict?.decision || null,
             grounding_reason: groundingVerdict?.reasonCode || null,
             grounding_product_status: groundingEvidence.productStatus,
@@ -3046,6 +3136,80 @@ async function processMessageJob(job) {
                 reason: providerBoundary.reason,
             };
         }
+        const currentProductEvidence = await revalidateProductEvidenceBeforeSend(groundingEvidence);
+        if (!currentProductEvidence.valid) {
+            await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey);
+            lifecycleLogger.warn('ai_auto_send_blocked', {
+                shopId,
+                conversationId,
+                turnId,
+                heldReason: 'product_evidence_stale',
+                changedProductCount: currentProductEvidence.changedProductIds.length,
+            });
+            await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                delivered: false,
+                heldReason: 'product_evidence_stale',
+                deliveryState: MESSAGE_DELIVERY_STATES.HELD,
+                deliverySource: 'AUTO',
+                suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+            });
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: 'product_evidence_stale',
+            };
+        }
+        const currentKnowledgeEvidence = await revalidateKnowledgeEvidenceBeforeSend(groundingEvidence);
+        if (!currentKnowledgeEvidence.valid) {
+            await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey);
+            lifecycleLogger.warn('ai_auto_send_blocked', {
+                shopId,
+                conversationId,
+                turnId,
+                heldReason: 'knowledge_evidence_stale',
+                changedKnowledgeCount: currentKnowledgeEvidence.changedKnowledgeIds.length,
+            });
+            await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                delivered: false,
+                heldReason: 'knowledge_evidence_stale',
+                deliveryState: MESSAGE_DELIVERY_STATES.HELD,
+                deliverySource: 'AUTO',
+                suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+            });
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: 'knowledge_evidence_stale',
+            };
+        }
+        const currentOperatingContext = await revalidateOperatingContextBeforeSend(groundingEvidence);
+        if (!currentOperatingContext.valid) {
+            await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey);
+            lifecycleLogger.warn('ai_auto_send_blocked', {
+                shopId,
+                conversationId,
+                turnId,
+                heldReason: 'operating_context_stale',
+            });
+            await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                delivered: false,
+                heldReason: 'operating_context_stale',
+                deliveryState: MESSAGE_DELIVERY_STATES.HELD,
+                deliverySource: 'AUTO',
+                suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+            });
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: 'operating_context_stale',
+            };
+        }
         const provider = getProvider(policyChannelTypeForSend);
         providerSendAttempted = true;
         lifecycleLogger.info('ai_auto_send_attempt', {
@@ -3358,5 +3522,8 @@ module.exports = {
         resolveStaticConfigAvailability,
         finalizeAiMessage,
         getAutomaticSendGuard,
+        revalidateProductEvidenceBeforeSend,
+        revalidateKnowledgeEvidenceBeforeSend,
+        revalidateOperatingContextBeforeSend,
     },
 };

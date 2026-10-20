@@ -11,6 +11,21 @@
 const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
 
+const PRODUCT_VARIANT_LATERAL_JOIN = `
+    LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object(
+            'id', v.id,
+            'option_name', v.option_name,
+            'option_value', v.option_value,
+            'price', v.price,
+            'quantity', v.quantity,
+            'is_active', v.is_active,
+            'attributes', v.attributes
+        ) ORDER BY v.option_name, v.option_value) AS product_variants
+        FROM product_variants v
+        WHERE v.product_id = p.id AND v.is_active = true
+    ) product_variant_records ON TRUE`;
+
 /**
  * Builds full-text search query from all available signals
  * @param {Object} params - Search parameters
@@ -59,6 +74,7 @@ const buildQueryReplacements = ({ shopId, category, color, material, limit }, ts
 const getSearchSql = () => `
     SELECT
         p.id,
+        p.shop_id,
         p.name,
         p.name_bn,
         p.category,
@@ -72,6 +88,7 @@ const getSearchSql = () => `
         p.images,
         p.image_url,
         p.tags,
+        p.aliases,
         p.brand,
         p.description,
         p.ai_description,
@@ -80,6 +97,7 @@ const getSearchSql = () => `
         p.ai_color_primary,
         p.ai_material,
         p.ai_attributes,
+        product_variant_records.product_variants,
         -- relevance score
         (
             CASE WHEN p.ai_category ILIKE :category THEN 4 ELSE 0 END +
@@ -101,6 +119,7 @@ const getSearchSql = () => `
             ELSE 0 END
         ) AS relevance
     FROM products p
+    ${PRODUCT_VARIANT_LATERAL_JOIN}
     WHERE
         p.shop_id = :shopId
         AND p.deleted_at IS NULL
@@ -149,12 +168,12 @@ const getSearchSql = () => `
  * @returns {Promise<ProductResult[]>}
  */
 const searchByAttributes = async (params) => {
-    const { shopId, category, color, limit = 5 } = params;
+    const { shopId, category, color, limit = 5, throwOnError = false } = params;
 
     const tsQuery = buildSearchQuery(params);
 
     if (hasNoSearchAttributes(tsQuery, category, color)) {
-        return fallbackSearch(shopId, limit);
+        return fallbackSearch(shopId, limit, { throwOnError });
     }
 
     const results = await sequelize.query(
@@ -165,6 +184,7 @@ const searchByAttributes = async (params) => {
         }
     ).catch(err => {
         console.error('[ProductSearch] Query error:', err.message);
+        if (throwOnError) throw err;
         return [];
     });
 
@@ -176,11 +196,13 @@ const searchByAttributes = async (params) => {
  */
 const getProductLive = async (productId, shopId) => {
     const results = await sequelize.query(`
-        SELECT id, name, name_bn, price, compare_at_price,
-               quantity, track_quantity, in_stock, is_active, variants,
-               images, image_url, category, ai_category
-        FROM products
-        WHERE id = :productId AND shop_id = :shopId AND deleted_at IS NULL
+        SELECT p.id, p.shop_id, p.name, p.name_bn, p.price, p.compare_at_price,
+               p.quantity, p.track_quantity, p.in_stock, p.is_active, p.variants,
+               p.images, p.image_url, p.category, p.aliases, p.ai_category,
+               product_variant_records.product_variants
+        FROM products p
+        ${PRODUCT_VARIANT_LATERAL_JOIN}
+        WHERE p.id = :productId AND p.shop_id = :shopId AND p.deleted_at IS NULL
         LIMIT 1
     `, {
         replacements: { productId, shopId },
@@ -209,26 +231,37 @@ const checkStock = async (productId, shopId, requestedQty = 1) => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const fallbackSearch = async (shopId, limit) => {
+const fallbackSearch = async (shopId, limit, { throwOnError = false } = {}) => {
     const results = await sequelize.query(`
-        SELECT id, name, name_bn, price, compare_at_price,
-               quantity, track_quantity, in_stock, is_active, variants, images, image_url,
-               tags, brand, description, ai_description, ai_tags,
-               ai_category, ai_color_primary, ai_material, ai_attributes
-        FROM products
-        WHERE shop_id = :shopId AND deleted_at IS NULL AND is_active = true
-        ORDER BY quantity DESC, created_at DESC
+        SELECT p.id, p.shop_id, p.name, p.name_bn, p.price, p.compare_at_price,
+               p.quantity, p.track_quantity, p.in_stock, p.is_active, p.variants, p.images, p.image_url,
+               p.tags, p.aliases, p.brand, p.description, p.ai_description, p.ai_tags,
+               p.category, p.ai_category, p.ai_color_primary, p.ai_material, p.ai_attributes,
+               product_variant_records.product_variants
+        FROM products p
+        ${PRODUCT_VARIANT_LATERAL_JOIN}
+        WHERE p.shop_id = :shopId AND p.deleted_at IS NULL AND p.is_active = true
+        ORDER BY p.quantity DESC, p.created_at DESC
         LIMIT :limit
-    `, { replacements: { shopId, limit }, type: QueryTypes.SELECT });
+    `, { replacements: { shopId, limit }, type: QueryTypes.SELECT }).catch(err => {
+        console.error('[ProductSearch] Fallback query error:', err.message);
+        if (throwOnError) throw err;
+        return [];
+    });
     return results.map(formatProduct);
 };
 
-const formatProduct = (row) => ({
+const formatProduct = (row) => {
+    const relationalVariants = parseJson(row.product_variants, []);
+    const legacyVariants = parseJson(row.variants, []);
+    const price = row.price == null || row.price === '' ? null : Number.parseFloat(row.price);
+    return ({
     id:               row.id,
+    shop_id:          row.shop_id || null,
     name:             row.name,
     name_bn:          row.name_bn || null,
-    category:         row.ai_category || row.category || null,
-    price:            parseFloat(row.price) || 0,
+    category:         row.category || null,
+    price:            Number.isFinite(price) ? price : null,
     compare_at_price: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
     quantity:         row.quantity || 0,
     // Only meaningful when the merchant actually counts stock. Defaults to
@@ -237,10 +270,13 @@ const formatProduct = (row) => ({
     track_quantity:   row.track_quantity === true,
     in_stock:         row.in_stock !== false,
     is_active:        row.is_active !== false,
-    variants:         parseJson(row.variants, []),
+    variants:         Array.isArray(relationalVariants) && relationalVariants.length
+        ? relationalVariants
+        : legacyVariants,
     images:           parseJson(row.images, []),
     image_url:        row.image_url || null,
     tags:             parseJson(row.tags, []),
+    aliases:          parseJson(row.aliases, []),
     brand:            row.brand || null,
     description:      row.description || null,
     // AI fields (search-only — do NOT expose prices/stock from here)
@@ -249,7 +285,8 @@ const formatProduct = (row) => ({
     ai_color:         row.ai_color_primary || null,
     ai_material:      row.ai_material || null,
     ai_attributes:    parseJson(row.ai_attributes, {})
-});
+    });
+};
 
 const parseJson = (val, fallback) => {
     if (!val) return fallback;
@@ -280,25 +317,28 @@ const sanitizeTsQuery = (q) => {
  * @param {string} shopId
  * @returns {Promise<ProductResult[]>}
  */
-const getProductsByIds = async (productIds, shopId) => {
+const getProductsByIds = async (productIds, shopId, { throwOnError = false } = {}) => {
     if (!productIds.length) return [];
     const results = await sequelize.query(`
         SELECT
-            id, name, name_bn, category, price, compare_at_price,
-            quantity, track_quantity, in_stock, is_active, variants, images, image_url,
-            tags, brand, description, ai_description, ai_tags,
-            ai_category, ai_color_primary, ai_material, ai_attributes
-        FROM products
-        WHERE shop_id = :shopId
-          AND id IN (:productIds)
-          AND deleted_at IS NULL
-          AND is_active = true
+            p.id, p.shop_id, p.name, p.name_bn, p.category, p.price, p.compare_at_price,
+            p.quantity, p.track_quantity, p.in_stock, p.is_active, p.variants, p.images, p.image_url,
+            p.tags, p.aliases, p.brand, p.description, p.ai_description, p.ai_tags,
+            p.ai_category, p.ai_color_primary, p.ai_material, p.ai_attributes,
+            product_variant_records.product_variants
+        FROM products p
+        ${PRODUCT_VARIANT_LATERAL_JOIN}
+        WHERE p.shop_id = :shopId
+          AND p.id IN (:productIds)
+          AND p.deleted_at IS NULL
+          AND p.is_active = true
         LIMIT 10
     `, {
         replacements: { shopId, productIds },
         type: QueryTypes.SELECT
     }).catch(err => {
         console.error('[ProductSearch] getProductsByIds error:', err.message);
+        if (throwOnError) throw err;
         return [];
     });
     return results.map(formatProduct);
