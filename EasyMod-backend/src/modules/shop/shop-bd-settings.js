@@ -18,7 +18,7 @@
  * NOT here — that table is already per-shop and credential-aware.
  */
 
-const { Shop } = require('./shop.entity');
+const Shop = require('./shop.entity');
 const { AppError } = require('../../utils/AppError');
 const { bdMobileRegex: BD_PHONE_REGEX } = require('../../utils/validators/phone.validator');
 const { mergeAndSanitizeSettings } = require('./shop-settings.validator');

@@ -54,7 +54,9 @@ const installMetaTransport = () => {
     const realGet = axios.get;
 
     axios.post = async (url, body, config) => {
-        if (hostOf(url) !== GRAPH_HOST) return realPost(url, body, config);
+        if (hostOf(url) !== GRAPH_HOST) {
+            throw new Error(`meta-e2e: unexpected outbound axios POST to ${hostOf(url) || '[invalid host]'}`);
+        }
         if (!String(url).endsWith('/me/messages')) {
             // Any other Graph write would be a bypass of the send path.
             throw new Error(`meta-e2e: unexpected Graph POST to ${url}`);
@@ -66,7 +68,9 @@ const installMetaTransport = () => {
     };
 
     axios.get = async (url, config) => {
-        if (hostOf(url) !== GRAPH_HOST) return realGet(url, config);
+        if (hostOf(url) !== GRAPH_HOST) {
+            throw new Error(`meta-e2e: unexpected outbound axios GET to ${hostOf(url) || '[invalid host]'}`);
+        }
         graphGets.push(String(url));
         // Profile enrichment / ping. An empty object is the "Meta told us
         // nothing" branch, which the handler already degrades gracefully from.

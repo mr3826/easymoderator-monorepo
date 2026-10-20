@@ -4,13 +4,18 @@
   "scope": "Local V1.1 offline and disposable-stack QA",
   "baselineCommit": "c8981c4df9ea84d47c35f2541884fd55afd64bae",
   "branch": "feature/ai-product-experience-v1.1",
-  "overallStatus": "PASS_SCOPED",
+  "overallStatus": "PASS_SCOPED_LOCAL_QA",
   "independentReview": {
     "status": "PASS_SCOPED",
     "p0Findings": 0,
     "p1Findings": 0,
-    "p2Findings": 1,
-    "p2Summary": "An independent integration attempt exited at suite level although all assertions passed; the runner receipt lacks suite diagnostics. The retry passed."
+    "openP2Findings": 0,
+    "resolvedP2Findings": [
+      "Material/title ownership boundary for English and Bengali qualifiers"
+    ],
+    "historicalLimitations": [
+      "An earlier suite-level integration failure's root cause cannot be reconstructed; the final run passes and the current runner persists structured failure summaries."
+    ]
   },
   "dataset": {
     "sha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
@@ -18,26 +23,26 @@
     "turns": 200,
     "rawSourceMessagesPersisted": false,
     "freeTextResponsesPersisted": false,
-    "jsonArtifactScan": {
-      "files": 123,
-      "parseErrors": 0,
-      "deniedKeys": 0
-    },
-    "jsonExactTextScan": {
-      "distinctSimulatorMessageAndAnswerValuesChecked": 197,
+    "privacyScan": {
+      "status": "PASS",
+      "jsonArtifacts": 285,
+      "jsonParseErrors": 0,
+      "deniedPropertyKeys": 0,
+      "distinctLongCsvCellValuesChecked": 616,
+      "distinctSimulatorMessageAndTruthValuesChecked": 397,
       "minimumCharacterLength": 12,
-      "exactMatches": 0
-    },
-    "browserArchiveExactTextScan": {
-      "sourceMessageValuesChecked": 197,
-      "minimumCharacterLength": 12,
-      "archives": 4,
-      "exactMatches": 0
+      "exactSourceTextMatchesInJson": 0,
+      "playwrightZipArchives": 4,
+      "exactSourceTextMatchesInPlaywrightArchives": 0
     }
   },
   "evaluation": {
-    "baselineReplayId": "0d313a7a-3c41-42a1-a7bc-8dfb888c15d2",
-    "candidateReplayId": "a1c3fbd4-76a7-4e97-878b-e328fd5a11c0",
+    "baselineReplayId": "8bd67fb2-e29c-48b6-a6f0-6e4028ef7a9c",
+    "candidateReplayId": "ba2632ad-07f2-4899-bfbd-23c9c0f1629c",
+    "baselineEngineSourceSha256": "6bc6dfd460faa28841b0419a2daa822a263f13704fde4b3d269c492593354cb8",
+    "candidateEngineSourceSha256": "422d20f15cba2128e3fed628caafce6ac24ced803a76147f6830eb1622e66914",
+    "runnerSourceSha256": "f587f0301cd474b1f4ff85a2dc022b77c953ead811f6aa44bab0a0a1d0a2a452",
+    "baselineUsesPinnedV1RouterWithSharedCurrentBackendSrc": true,
     "eligibleSourceFactSlots": 2,
     "baselineCorrectSourceFactSlots": 0,
     "candidateCorrectSourceFactSlots": 2,
@@ -49,39 +54,45 @@
   },
   "deterministicRegression": {
     "status": "PASS",
-    "suites": 8,
-    "tests": 133
+    "suites": 282,
+    "tests": 3614,
+    "runtime": "Node v24.19.0",
+    "redis": "Task-owned disposable Redis 7 on 127.0.0.1:6379; container and anonymous data volume removed"
   },
   "localIntegration": {
     "status": "PASS_SELECTED_SUBSET",
-    "successfulRetryReceipt": "7464d6e3-713b-41e2-8516-ce5a93cdc9ab",
-    "successfulRetrySuites": 3,
-    "successfulRetryTests": 12,
-    "successfulRetryDurationSeconds": 13.711,
-    "priorFailureReceipt": "f9bd5277-be6f-437d-8fd1-e23f3ab7fdf9",
-    "priorFailureAssertionsPassed": 12,
-    "priorFailureExitCode": 1,
-    "priorFailureDiagnosticsPersisted": false
+    "latestReceipt": "2f3cf498-9164-46b9-8323-0c6208711213",
+    "selectedIntegrationSuites": 3,
+    "selectedIntegrationTests": 12,
+    "selectedIntegrationDurationSeconds": 15.543,
+    "webhookPipelineSuites": 1,
+    "webhookPipelineTests": 45,
+    "webhookPipelineDurationSeconds": 37.231,
+    "cleanupExitCode": 0,
+    "blockedNonLoopbackAttempts": 0,
+    "externalProvidersConfigured": false,
+    "historicalSuiteDiagnosticLimitation": "An earlier suite-level failure's root cause cannot be reconstructed; current runner persists structured failure summaries."
   },
   "playwright": {
     "status": "PASS",
+    "executionReceipt": "artifacts/playwright/execution.json",
     "tests": 2,
     "browser": "Chromium",
     "retries": 0,
-    "durationSeconds": 53.1,
-    "traceAndReportArchives": 4,
+    "durationSeconds": 70,
+    "localUrl": "http://127.0.0.1:13433",
     "firefox": "UNAVAILABLE",
     "webkit": "UNAVAILABLE",
     "axeCore": "NOT_RUN"
   },
   "measuredPerformance": {
-    "sample": "200 in-process calls with controlled mock adapters",
-    "baselineP50Ms": 0.781,
-    "candidateP50Ms": 0.939,
-    "baselineP95Ms": 1.497,
-    "candidateP95Ms": 1.872,
-    "baselineMeanMs": 1.081,
-    "candidateMeanMs": 1.264,
+    "sample": "200 in-process intent-router calls with controlled mock collaborators",
+    "baselineP50Ms": 0.751,
+    "candidateP50Ms": 0.911,
+    "baselineP95Ms": 1.546,
+    "candidateP95Ms": 1.988,
+    "baselineMeanMs": 1.059,
+    "candidateMeanMs": 1.39,
     "realProviderCost": null,
     "realProviderCostStatus": "NOT_MEASURED_NO_REAL_PROVIDER_CALLS"
   },
@@ -101,5 +112,12 @@
     "integrationReady": false,
     "productionReleaseAuthorized": false,
     "pushMergeDeploymentAuthorized": false
+  },
+  "checksumManifest": {
+    "entries": 363,
+    "invalidOrDuplicate": 0,
+    "missing": 0,
+    "mismatch": 0,
+    "outside": 0
   }
 }

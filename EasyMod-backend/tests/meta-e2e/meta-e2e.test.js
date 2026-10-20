@@ -6,11 +6,13 @@
  *   LLM output is a candidate response, not an authoritative response.
  *   — docs/ai-cost/AI_TRUST_BOUNDARY.md
  *
- * Every scenario enters through the real signed webhook route and asserts on
+ * Pipeline scenarios enter through the real signed webhook route and assert on
  * (a) what the Graph Send API would actually have received and (b) the grounding
- * decision EasyModerator recorded for that reply. Nothing between those two
- * points is mocked; see tests/meta-e2e/transport.js for the two stubs and
- * tests/meta-e2e/README.md for where automated transport ends.
+ * decision EasyModerator recorded for that reply. The suite also includes a
+ * direct outbound-gate attachment test and retrieval-spy outage cases; those
+ * exercise narrow boundaries without entering through the webhook. The Graph
+ * and model wire transports are captured by tests/meta-e2e/transport.js, and
+ * tests/meta-e2e/README.md documents where automated transport ends.
  */
 
 const harness = require('./harness');
@@ -232,11 +234,9 @@ describe('META-E2E-002 — the same conversation under repeated pressure', () =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('META-E2E-003 — a product this shop really sells', () => {
-    test('the verified price, attribute and photo all reach Meta', async () => {
+    test('the verified price and tenant-owned photo reach Meta', async () => {
         const result = await harness.deliver({
             text: 'black panjabi picture den',
-            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}, `
-                + `${EXPECTED.knownProductMaterial}. Ei nin chobi ta 😊`,
         });
 
         const decision = result.decision;
@@ -247,11 +247,14 @@ describe('META-E2E-003 — a product this shop really sells', () => {
         expect(decision.mediaStatus).toBe(MediaStatus.AVAILABLE);
         expect(decision.mediaProductId).toBe(IDS.knownProduct);
         expect(decision.violations).toEqual([]);
-        expect(decision.provider).toBe('gemini-lite');
+        // Product price plus media requests take the deterministic catalog
+        // presentation path; no model candidate is needed to state these facts.
+        expect(decision.provider).toBeNull();
+        expect(transport.llmProvidersCalled()).toEqual([]);
 
         const sent = body(result);
-        expect(sent).toContain(String(EXPECTED.knownProductPrice));
-        expect(sent).toContain(EXPECTED.knownProductMaterial);
+        expect(sent).toContain('৳1,847');
+        expect(sent).not.toContain(EXPECTED.aiSuggestedProductMaterial);
 
         // Exactly one attachment, and it is this product's own stored image.
         const attachments = harness.sentAttachments(result.sends);
@@ -275,6 +278,20 @@ describe('META-E2E-003 — a product this shop really sells', () => {
         expect(stored.source_references).toEqual(
             expect.arrayContaining([expect.objectContaining({ kind: 'product', id: IDS.knownProduct })]),
         );
+    });
+
+    test('AI-derived material remains uncertain in the customer reply', async () => {
+        const result = await harness.deliver({
+            text: 'black panjabi material?',
+            candidate: `${EXPECTED.knownProductName} material is ${EXPECTED.aiSuggestedProductMaterial}.`,
+        });
+
+        expect(transport.llmProvidersCalled()).toContain('gemini-lite');
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
+        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.reasonCode).toBe(ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+        expect(body(result)).not.toContain(EXPECTED.aiSuggestedProductMaterial);
+        expect(body(result)).toMatch(/catalog|record|confirm|তথ্য|নিশ্চিত/i);
     });
 
     test('a price the catalog does not hold is replaced even for a verified product', async () => {
@@ -305,6 +322,7 @@ describe('META-E2E-004 — an attribute the catalog does not record', () => {
         });
 
         const decision = result.decision;
+        expect(transport.llmProvidersCalled()).toContain('gemini-lite');
         expect(decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
         expect(decision.verifiedProductIds).toEqual([IDS.unknownMaterialProduct]);
         expect(decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
@@ -354,8 +372,6 @@ describe('META-E2E-005 — a verified product with no stored photo', () => {
     test('the reply says the photo is unavailable and attaches nothing', async () => {
         const result = await harness.deliver({
             text: 'green kurti picture den',
-            candidate: `${EXPECTED.noImageProductName} — ৳${EXPECTED.noImageProductPrice}. `
-                + 'Ei product er chobi ekhon amader kache nei.',
         });
 
         expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
@@ -363,17 +379,22 @@ describe('META-E2E-005 — a verified product with no stored photo', () => {
         expect(result.decision.mediaStatus).toBe(MediaStatus.UNAVAILABLE);
         expect(result.decision.mediaProductId).toBeNull();
         expect(harness.sentAttachments(result.sends)).toEqual([]);
-        expect(body(result)).toContain(String(EXPECTED.noImageProductPrice));
+        expect(body(result)).toContain('৳1,250');
+        expect(transport.llmProvidersCalled()).toEqual([]);
     });
 
-    test('no substitute media is allowed to stand in for the missing photo', async () => {
+    test('the deterministic image-less path sends no substitute media', async () => {
         const result = await harness.deliver({
             text: 'green kurti picture den',
             candidate: `Chobi ei link e dekhun: ${EXPECTED.knownProductImage}`,
         });
 
         const sent = body(result);
-        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.decision).toBe(GroundingDecision.SEND);
+        expect(result.decision.reasonCode).toBe(ReasonCode.GROUNDED);
+        expect(transport.llmProvidersCalled()).toEqual([]);
+        expect(result.decision.provider).toBeNull();
+        expect(transport.llmProvidersCalled()).toEqual([]);
         expect(sent).not.toContain(EXPECTED.knownProductImage);
         expect(sent).not.toContain('http');
         expect(harness.sentAttachments(result.sends)).toEqual([]);
@@ -738,8 +759,8 @@ describe('META-E2E-008 — merchant policy the shop never supplied', () => {
     test('a figure the merchant DID supply is quotable, and is attributed', async () => {
         const result = await harness.deliver({
             text: EXPECTED.faqQuery,
-            candidate: `Dhaka r vitore ${EXPECTED.faqDeliveryInsideDhaka} taka, `
-                + `Dhaka r baire ${EXPECTED.faqDeliveryOutsideDhaka} taka.`,
+            candidate: `Inside Dhaka delivery charge ${EXPECTED.faqDeliveryInsideDhaka} taka; `
+                + `outside Dhaka delivery charge ${EXPECTED.faqDeliveryOutsideDhaka} taka.`,
         });
 
         expect(result.decision.decision).toBe(GroundingDecision.SEND);
@@ -768,18 +789,20 @@ describe('META-E2E-009 — media provenance', () => {
         ['a product of another shop', () => EXPECTED.shopBProductImage],
         ['a generic URL', () => 'https://example.com/some-saree.jpg'],
         ['the shop Facebook Page', () => 'https://facebook.com/EasyModeratorE2E'],
-    ])('%s is never sent in place of the verified photo', async (_label, url) => {
+    ])('the deterministic product photo path uses only the verified image, even with %s scripted as output', async (_label, url) => {
         const result = await harness.deliver({
             text: 'black panjabi picture den',
             candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}. Chobi: ${url()}`,
         });
 
         const sent = body(result);
-        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
-        expect(result.decision.reasonCode).toBe(ReasonCode.UNSUPPORTED_URL_CLAIM);
+        expect(result.decision.decision).toBe(GroundingDecision.SEND);
+        expect(result.decision.reasonCode).toBe(ReasonCode.GROUNDED);
+        expect(result.decision.provider).toBeNull();
+        expect(transport.llmProvidersCalled()).toEqual([]);
         expect(sent).not.toContain(url());
-        // A rejected candidate forfeits its media too.
-        expect(harness.sentAttachments(result.sends)).toEqual([]);
+        // The direct route emits only the verified catalog attachment.
+        expect(harness.sentAttachmentUrls(result.sends)).toEqual([EXPECTED.knownProductImage]);
     });
 
     test('only the verified product URL survives attachment provenance', async () => {
@@ -809,6 +832,31 @@ describe('META-E2E-009 — media provenance', () => {
             { type: 'image', url: EXPECTED.knownProductImage, productId: IDS.knownProduct },
         ]);
         expect(verdict.violations).toContain('attachment_provenance_rejected');
+    });
+});
+
+describe('META-E2E-009B — model URL rejection', () => {
+    test('an unauthorized model URL is rejected before send and persisted as a grounding violation', async () => {
+        const unauthorizedUrl = 'https://example.com/unauthorized-product-photo.jpg';
+        const result = await harness.deliver({
+            text: 'chiffon kurti material?',
+            candidate: `The fabric is not recorded for this item. Details: ${unauthorizedUrl}`,
+        });
+
+        expect(transport.llmProvidersCalled()).toContain('gemini-lite');
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
+        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.reasonCode).toBe(ReasonCode.UNSUPPORTED_URL_CLAIM);
+        expect(result.decision.violations).toContain('unsupported_url:1');
+        expect(body(result)).not.toContain(unauthorizedUrl);
+        expect(harness.sentAttachments(result.sends)).toEqual([]);
+
+        const stored = await harness.lastStoredAiMessage(IDS.shopA);
+        expect(stored.content).not.toContain(unauthorizedUrl);
+        expect(stored.metadata.grounding_decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(stored.metadata.grounding_reason).toBe(ReasonCode.UNSUPPORTED_URL_CLAIM);
+        expect(stored.metadata.grounding_violations).toContain('unsupported_url:1');
+        expect(stored.metadata.grounding_attachment_urls).toEqual([]);
     });
 });
 

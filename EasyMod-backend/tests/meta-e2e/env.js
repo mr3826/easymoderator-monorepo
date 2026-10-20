@@ -25,6 +25,10 @@ const def = (key, value) => {
 };
 
 process.env.NODE_ENV = 'test';
+// Product media uses a test-only HTTPS origin so the production tenant-path
+// authorization contract is exercised without touching a real asset host.
+process.env.API_URL = 'https://api.product-engine.test.invalid';
+process.env.PUBLIC_ASSET_URL = 'https://assets.product-engine.test.invalid';
 
 // ── Infrastructure ───────────────────────────────────────────────────────────
 // Defaults target the Meta E2E wrapper's dedicated database and Redis endpoint,

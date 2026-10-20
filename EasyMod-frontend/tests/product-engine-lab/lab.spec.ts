@@ -89,6 +89,11 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(candidateReceipt.dataset.executedTurns).toBe(10);
   expect(candidateReceipt.turns[0].scenarioId).toBe('scenario-01-01');
   expect(candidateReceipt.turns[9].scenarioId).toBe('scenario-01-10');
+  expect(candidateReceipt.turns.map((turn: { scenarioId: string }) => turn.scenarioId)).toEqual(
+    Array.from({ length: 10 }, (_, index) => `scenario-01-${String(index + 1).padStart(2, '0')}`),
+  );
+  expect(candidateReceipt.turns.every((turn: { scenarioId: string; traceId: string }) => turn.traceId === turn.scenarioId)).toBe(true);
+  expect(new Set(candidateReceipt.turns.map((turn: { traceId: string }) => turn.traceId)).size).toBe(10);
   expect(candidateReceipt.turns.every((turn: { responseTextStored?: boolean }) => turn.responseTextStored === false)).toBe(true);
   expect(JSON.stringify(candidateReceipt)).not.toMatch(/responsePreview|responseDigest|customerMessage|sourceHash/i);
   await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-conversation-replay.png`), fullPage: true });
@@ -116,7 +121,8 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     return response.json();
   }, fullBaselineId);
   expect(fullBaselineReceipt).toMatchObject({ scope: 'full', mode: 'baseline', status: 'completed', dataset: { sourceTurns: 200, sourcePersonas: 20, executedTurns: 200, completeDatasetExecuted: true, rawSourceMessagesPersisted: false } });
-  expect(fullBaselineReceipt.engineSourceRevision).toBe('c8981c4df9ea84d47c35f2541884fd55afd64bae');
+  expect(fullBaselineReceipt.engineSourceRevision).toContain('c8981c4df9ea84d47c35f2541884fd55afd64bae+backend-src-sha256:');
+  expect(fullBaselineReceipt.engineSourceRevision).toContain(fullBaselineReceipt.engineSourceSha256);
   expect(fullBaselineReceipt.engineSourceSha256).toMatch(/^[a-f0-9]{64}$/i);
 
   await page.getByRole('tab', { name: /Overview/ }).click();
@@ -131,6 +137,11 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(fullReceipt.mode).toBe('candidate');
   expect(fullReceipt.turns).toHaveLength(200);
   expect(new Set(fullReceipt.turns.map((turn: { scenarioId: string }) => turn.scenarioId)).size).toBe(200);
+  expect(fullReceipt.turns.every((turn: { scenarioId: string; traceId: string; responseTextStored: boolean }) =>
+    turn.traceId === turn.scenarioId && turn.responseTextStored === false)).toBe(true);
+  expect(new Set(fullReceipt.turns.map((turn: { traceId: string }) => turn.traceId)).size).toBe(200);
+  expect(fullReceipt.summary.presentationContractsValid).toBe(200);
+  expect(fullReceipt.summary).toMatchObject({ businessMutations: 0, messengerSends: 0 });
   expect(fullReceipt.provenance).toMatchObject({ realProvider: false, realVision: false, realMeta: false, outboundNetworkCalls: 0 });
   expect(fullReceipt.dataset.sha256).toBe(fullBaselineReceipt.dataset.sha256);
   expect(fullReceipt.engineSourceSha256).not.toBe(fullBaselineReceipt.engineSourceSha256);
@@ -167,6 +178,8 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(JSON.stringify(exported)).not.toMatch(/sourceHash|customerMessage|simulatedAttachment|expectedAnswer/i);
 
   await page.getByRole('tab', { name: /Playground/ }).click();
+  const playgroundButtonLabels = await page.getByRole('button').allTextContents();
+  expect(playgroundButtonLabels.join(' ')).not.toMatch(/\b(?:purchase|place order|checkout|pay now|confirm order)\b/i);
   await page.locator('#tenant-id').fill('merchant-a');
   await page.locator('#session-id').fill('session-e2e-lab');
   await page.locator('#playground-message').fill('Test Everyday T-Shirt er dam koto?');

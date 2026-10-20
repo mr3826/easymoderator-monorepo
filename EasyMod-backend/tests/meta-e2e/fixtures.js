@@ -53,13 +53,16 @@ const RUNTIME = {};
 /** The customer PSID the automated suite pretends to be. */
 const CUSTOMER_PSID = '7000000000000001';
 const CUSTOMER_PSID_PAGE_A2 = '7000000000000003';
+const productMediaUrl = (shopId, filename) => (
+    `${process.env.PUBLIC_ASSET_URL}/uploads/product-images/${encodeURIComponent(shopId)}/${filename}`
+);
 
 /** Expected facts, asserted by name so a fixture edit cannot silently pass. */
 const EXPECTED = Object.freeze({
     knownProductName: 'EM E2E Black Panjabi',
     knownProductPrice: 1847,
-    knownProductMaterial: 'Cotton',
-    knownProductImage: 'https://cdn.easymod.tech/e2e/em-e2e-black-panjabi.jpg',
+    aiSuggestedProductMaterial: 'Cotton',
+    knownProductImage: productMediaUrl(IDS.shopA, 'em-e2e-black-panjabi.jpg'),
 
     unknownAttributeProductName: 'EM E2E Blue Shirt',
     unknownAttributeProductPrice: 990,
@@ -72,14 +75,14 @@ const EXPECTED = Object.freeze({
     // reply must admit the material is not recorded rather than assert it.
     unknownMaterialProductName: 'EM E2E Chiffon Kurti',
     unknownMaterialProductPrice: 1390,
-    unknownMaterialProductImage: 'https://cdn.easymod.tech/e2e/em-e2e-chiffon-kurti.jpg',
+    unknownMaterialProductImage: productMediaUrl(IDS.shopA, 'em-e2e-chiffon-kurti.jpg'),
 
     relatedProductName: 'EM E2E Cotton Saree',
     relatedProductPrice: 2100,
-    relatedProductImage: 'https://cdn.easymod.tech/e2e/em-e2e-cotton-saree.jpg',
+    relatedProductImage: productMediaUrl(IDS.shopA, 'em-e2e-cotton-saree.jpg'),
 
     shopBProductName: 'EM E2E Tote Bag',
-    shopBProductImage: 'https://cdn.easymod.tech/e2e/em-e2e-tote-bag.jpg',
+    shopBProductImage: productMediaUrl(IDS.shopB, 'em-e2e-tote-bag.jpg'),
 
     nonexistentProductQuery: 'chiffon saree ache?',
 
@@ -231,14 +234,14 @@ const seed = async () => {
             image_url: EXPECTED.knownProductImage,
             ai_category: 'panjabi',
             ai_color_primary: 'black',
-            ai_material: EXPECTED.knownProductMaterial,
+            ai_material: EXPECTED.aiSuggestedProductMaterial,
         }),
         product({
             id: IDS.unknownAttributeProduct,
             name: EXPECTED.unknownAttributeProductName,
             category: 'shirt',
             price: EXPECTED.unknownAttributeProductPrice,
-            image_url: 'https://cdn.easymod.tech/e2e/em-e2e-blue-shirt.jpg',
+            image_url: productMediaUrl(IDS.shopA, 'em-e2e-blue-shirt.jpg'),
             ai_category: 'shirt',
             ai_color_primary: 'blue',
             // Deliberately NULL: the catalog does not record this fabric, so the
@@ -293,8 +296,8 @@ const seed = async () => {
     const faq = await FaqResponse.create({
         shop_id: IDS.shopA,
         category: 'delivery charge',
-        template_en: `Delivery charge is ${EXPECTED.faqDeliveryInsideDhaka} taka inside Dhaka `
-            + `and ${EXPECTED.faqDeliveryOutsideDhaka} taka outside Dhaka.`,
+        template_en: `Delivery charge inside Dhaka is ${EXPECTED.faqDeliveryInsideDhaka} taka `
+            + `and delivery charge outside Dhaka is ${EXPECTED.faqDeliveryOutsideDhaka} taka.`,
         is_active: true,
         priority: 10,
     });

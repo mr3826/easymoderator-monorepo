@@ -1,0 +1,878 @@
+{
+  "schemaVersion": 2,
+  "runId": "e7ab3d71-deae-41c0-864d-d2500e60126e",
+  "scope": "persona",
+  "personaId": "P01",
+  "mode": "baseline",
+  "status": "completed",
+  "executionMode": "production-intent-router-with-controlled-local-collaborators",
+  "sourceRevision": "c8981c4df9ea84d47c35f2541884fd55afd64bae",
+  "engineSourceRevision": "c8981c4df9ea84d47c35f2541884fd55afd64bae",
+  "engineSourceSha256": "edb4f8f1cbcf7c652231de778e4d0d0a8fc96d3286751b34b18d509badf47173",
+  "runnerRevision": "ef91596301530797860738af939bd07825ef3a10+runner-sha256:e83540d19fd5ec8a46304df732a009a58961c6d98a12978a26fb028951f569ee",
+  "runnerSourceSha256": "e83540d19fd5ec8a46304df732a009a58961c6d98a12978a26fb028951f569ee",
+  "dataset": {
+    "sha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+    "sourceTurns": 200,
+    "sourcePersonas": 20,
+    "executedTurns": 10,
+    "completeDatasetExecuted": false,
+    "sequentialPerPersona": true,
+    "rawSourceMessagesPersisted": false
+  },
+  "provenance": {
+    "sourceAnswersUsedAsGroundTruth": false,
+    "catalogSource": "synthetic-fixture-snapshot",
+    "modelProvider": "mock-adversarial-provider",
+    "vision": "disabled; attachments are metadata-only",
+    "realPostgres": false,
+    "realRedis": false,
+    "realWorker": false,
+    "realMeta": false,
+    "realProvider": false,
+    "realVision": false,
+    "outboundNetworkCalls": 0
+  },
+  "summary": {
+    "answerableProductTurns": 1,
+    "correctVerifiedProductTurns": 0,
+    "eligibleProductFactSlots": 1,
+    "correctVerifiedProductAnswers": 0,
+    "unnecessaryRefusalSlots": 0,
+    "unsupportedClaimsSent": 0,
+    "blockedMockUnsupportedCandidates": 3,
+    "safeFallbacks": 3,
+    "dispositions": {
+      "SEND": 7,
+      "SAFE_FALLBACK": 3
+    },
+    "routerSources": {
+      "grounding_not_found": 7,
+      "llm": 3
+    },
+    "oracleDomains": {
+      "product": 1,
+      "image_dependent": 1,
+      "product_identity_unresolved": 4,
+      "outside_product": 1,
+      "merchant_policy": 3
+    },
+    "oracleEligibility": {
+      "ANSWERABLE": 1,
+      "NOT_ANSWERABLE": 9
+    },
+    "presentationContractsValid": 10,
+    "tenantScopeViolations": 0,
+    "unscopedCatalogReads": 0,
+    "realModelCalls": 0,
+    "mockModelCalls": 7,
+    "realVisionCalls": 0,
+    "businessMutations": 0,
+    "messengerSends": 0
+  },
+  "targetedEvaluation": {
+    "provenance": "fixed synthetic cases; independent evidence oracle; production router and grounding gate; mock provider; no external calls",
+    "caseCount": 7,
+    "answerableCaseCount": 6,
+    "eligibleFactSlots": 8,
+    "correctFactSlots": 5,
+    "factAccuracy": 0.625,
+    "tenantIsolationPass": true,
+    "presentationContractPass": true,
+    "allCases": [
+      {
+        "caseId": "identity",
+        "tenantId": "merchant-a",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SAFE_FALLBACK",
+        "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+        "routerSource": "llm",
+        "correctFactSlots": 0,
+        "factSlots": [
+          {
+            "field": "identity",
+            "expectedValue": "Test Everyday T-Shirt",
+            "actualValue": "Test Everyday T-Shirt",
+            "correct": true,
+            "presentInResponse": false
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 6.476
+      },
+      {
+        "caseId": "price-tenant-a",
+        "tenantId": "merchant-a",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SAFE_FALLBACK",
+        "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+        "routerSource": "llm",
+        "correctFactSlots": 0,
+        "factSlots": [
+          {
+            "field": "price",
+            "expectedValue": 900,
+            "actualValue": 900,
+            "correct": true,
+            "presentInResponse": false
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 3.39
+      },
+      {
+        "caseId": "stock-tenant-b",
+        "tenantId": "merchant-b",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SAFE_FALLBACK",
+        "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+        "routerSource": "llm",
+        "correctFactSlots": 0,
+        "factSlots": [
+          {
+            "field": "stock",
+            "expectedValue": "OUT_OF_STOCK",
+            "actualValue": "OUT_OF_STOCK",
+            "correct": true,
+            "presentInResponse": false
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 1.616
+      },
+      {
+        "caseId": "price-tenant-b",
+        "tenantId": "merchant-b",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 1,
+        "factSlots": [
+          {
+            "field": "price",
+            "expectedValue": 1050,
+            "actualValue": 1050,
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 24.736
+      },
+      {
+        "caseId": "variant-stock-tenant-a",
+        "tenantId": "merchant-a",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 2,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 2,
+        "factSlots": [
+          {
+            "field": "variant_stock",
+            "expectedValue": "OUT_OF_STOCK",
+            "actualValue": "OUT_OF_STOCK",
+            "correct": true,
+            "presentInResponse": true
+          },
+          {
+            "field": "variant",
+            "expectedValue": "XL",
+            "actualValue": "XL",
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-a-denim-jacket"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 5.686
+      },
+      {
+        "caseId": "variant-price-tenant-b",
+        "tenantId": "merchant-b",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 2,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 2,
+        "factSlots": [
+          {
+            "field": "price",
+            "expectedValue": 4350,
+            "actualValue": 4350,
+            "correct": true,
+            "presentInResponse": true
+          },
+          {
+            "field": "variant",
+            "expectedValue": "L",
+            "actualValue": "L",
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-denim-jacket"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 3.479
+      },
+      {
+        "caseId": "unknown-material",
+        "tenantId": "merchant-b",
+        "eligibility": "NOT_ANSWERABLE",
+        "answerableSlots": 0,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_not_found",
+        "correctFactSlots": 0,
+        "factSlots": [],
+        "unknownRequestedFields": [
+          "material"
+        ],
+        "evidenceStatus": "NOT_FOUND",
+        "evidenceProductIds": [],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 1.071
+      }
+    ]
+  },
+  "triageFixtures": [
+    {
+      "fixtureId": "unsafe-price-claim",
+      "severity": "P1",
+      "status": "BLOCKED_BY_GROUNDING",
+      "blocked": true,
+      "disposition": "SAFE_FALLBACK",
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "evidenceProductIds": [
+        "fixture-shop-a-cotton-tee"
+      ],
+      "evidenceFields": [
+        "price",
+        "stock",
+        "merchant policy"
+      ],
+      "providerMode": "mock-adversarial-candidate",
+      "externalCalls": 0
+    }
+  ],
+  "performance": {
+    "measuredLayer": "in-process intent-router call only; controlled mock adapters",
+    "p50Ms": 1.034,
+    "p95Ms": 16.699,
+    "meanMs": 2.795,
+    "sampleCount": 10,
+    "wallMs": 149.95,
+    "costUsd": null,
+    "costStatus": "NOT_MEASURED_NO_REAL_PROVIDER_CALLS",
+    "actualProviderUsageRecords": 0
+  },
+  "turns": [
+    {
+      "scenarioId": "scenario-01-01",
+      "personaId": "P01",
+      "turn": 1,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_identity_request"
+      ],
+      "oracle": {
+        "domain": "product",
+        "eligibility": "ANSWERABLE",
+        "productId": "fixture-shop-a-cargo-pant",
+        "selectedVariantId": null,
+        "eligibleSlots": [
+          {
+            "field": "identity",
+            "expectedValue": "Cargo Pant",
+            "evidenceId": "fixture-shop-a-cargo-pant:identity"
+          }
+        ]
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-kamiz-embroidered",
+          "fixture-shop-a-cargo-pant"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 1,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 1,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 16.699,
+      "traceId": "scenario-01-01",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-02",
+      "personaId": "P01",
+      "turn": 2,
+      "inputType": "IMAGE_TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_fact_request"
+      ],
+      "oracle": {
+        "domain": "image_dependent",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "responseTextStored": false,
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 2.633,
+      "traceId": "scenario-01-02",
+      "attachmentEvidence": "METADATA_ONLY_NO_VISION",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-03",
+      "personaId": "P01",
+      "turn": 3,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_identity_request"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.576,
+      "traceId": "scenario-01-03",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-04",
+      "personaId": "P01",
+      "turn": 4,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "intent_unresolved"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "responseTextStored": false,
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.342,
+      "traceId": "scenario-01-04",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-05",
+      "personaId": "P01",
+      "turn": 5,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "transaction_or_live_state"
+      ],
+      "oracle": {
+        "domain": "outside_product",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.818,
+      "traceId": "scenario-01-05",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-06",
+      "personaId": "P01",
+      "turn": 6,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.888,
+      "traceId": "scenario-01-06",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-07",
+      "personaId": "P01",
+      "turn": 7,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.034,
+      "traceId": "scenario-01-07",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-08",
+      "personaId": "P01",
+      "turn": 8,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_fact_request"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.83,
+      "traceId": "scenario-01-08",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-09",
+      "personaId": "P01",
+      "turn": 9,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "intent_unresolved"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "responseTextStored": false,
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 1.213,
+      "traceId": "scenario-01-09",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-10",
+      "personaId": "P01",
+      "turn": 10,
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "costUsd": null,
+        "actualProviderUsage": false
+      },
+      "latencyMs": 0.921,
+      "traceId": "scenario-01-10",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    }
+  ],
+  "startedAt": "2026-10-20T15:01:58.863Z",
+  "completedAt": "2026-10-20T15:01:59.013Z"
+}

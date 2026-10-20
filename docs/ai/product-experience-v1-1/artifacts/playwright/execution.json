@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "status": "PASS",
-  "startedAt": "2026-10-20T13:58:31.057Z",
-  "completedAt": "2026-10-20T13:59:25.938Z",
-  "localUrl": "http://127.0.0.1:3771",
+  "startedAt": "2026-10-20T16:43:34.879Z",
+  "completedAt": "2026-10-20T16:44:44.281Z",
+  "localUrl": "http://127.0.0.1:13433",
   "browsersAvailable": [
     "chromium"
   ],

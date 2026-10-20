@@ -44,6 +44,35 @@ const resolveRevision = () => {
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
+const hashBackendSourceTree = (routerOverrideBytes = null) => {
+    const sourceRoot = path.join(BACKEND_ROOT, 'src');
+    const routerRelativePath = 'modules/ai/intent-router.service.js';
+    const files = [];
+    const visit = directory => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+            const filePath = path.join(directory, entry.name);
+            if (entry.isDirectory()) visit(filePath);
+            else if (entry.isFile() && !entry.name.startsWith('intent-router.lab-baseline-')) files.push(filePath);
+        }
+    };
+    visit(sourceRoot);
+    const relativePathOf = filePath => path.relative(sourceRoot, filePath).replace(/\\/g, '/');
+    files.sort((left, right) => {
+        const a = relativePathOf(left);
+        const b = relativePathOf(right);
+        return a < b ? -1 : a > b ? 1 : 0;
+    });
+    const hash = crypto.createHash('sha256');
+    for (const filePath of files) {
+        const relativePath = relativePathOf(filePath);
+        const source = relativePath === routerRelativePath && routerOverrideBytes !== null
+            ? routerOverrideBytes
+            : fs.readFileSync(filePath);
+        hash.update(relativePath, 'utf8').update('\0').update(source).update('\0');
+    }
+    return hash.digest('hex');
+};
+
 const hashLabRunnerSources = () => {
     const files = [
         'EasyMod-backend/scripts/product-experience/lab-server.js',
@@ -73,7 +102,7 @@ const baselineRouterModule = (runId) => {
     return {
         filePath,
         moduleName: `src/modules/ai/${filename.slice(0, -3)}`,
-        sourceSha256: sha256(source),
+        sourceSha256: hashBackendSourceTree(source),
     };
 };
 
@@ -134,8 +163,8 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
         datasetError = error;
     }
     const currentRevision = resolveRevision();
-    const candidateRouterSourceSha256 = sha256(fs.readFileSync(path.join(BACKEND_ROOT, 'src', 'modules', 'ai', 'intent-router.service.js')));
-    const candidateEngineSourceRevision = `${currentRevision}+intent-router-sha256:${candidateRouterSourceSha256}`;
+    const candidateEngineSourceSha256 = hashBackendSourceTree();
+    const candidateEngineSourceRevision = `${currentRevision}+backend-src-sha256:${candidateEngineSourceSha256}`;
     const labRunnerSourceSha256 = hashLabRunnerSources();
     const labRunnerRevision = `${currentRevision}+runner-sha256:${labRunnerSourceSha256}`;
     const runs = new Map();
@@ -236,7 +265,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_DATASET_PATH: datasetPath,
             LAB_SOURCE_REVISION: run.mode === 'baseline' ? BASELINE_SHA : currentRevision,
             LAB_ENGINE_SOURCE_REVISION: run.mode === 'baseline' ? BASELINE_SHA : candidateEngineSourceRevision,
-            LAB_ENGINE_SOURCE_SHA256: run.mode === 'baseline' ? '' : candidateRouterSourceSha256,
+            LAB_ENGINE_SOURCE_SHA256: run.mode === 'baseline' ? '' : candidateEngineSourceSha256,
             LAB_RUNNER_REVISION: labRunnerRevision,
             LAB_RUNNER_SOURCE_SHA256: labRunnerSourceSha256,
         };
@@ -245,6 +274,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             baselineModule = baselineRouterModule(run.runId);
             env.LAB_ROUTER_MODULE = baselineModule.moduleName;
             env.LAB_ENGINE_SOURCE_SHA256 = baselineModule.sourceSha256;
+            env.LAB_ENGINE_SOURCE_REVISION = `${BASELINE_SHA}+backend-src-sha256:${baselineModule.sourceSha256}`;
         }
         for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
         let childResult;
@@ -303,7 +333,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_RUN_MODE: 'candidate',
             LAB_SOURCE_REVISION: currentRevision,
             LAB_ENGINE_SOURCE_REVISION: candidateEngineSourceRevision,
-            LAB_ENGINE_SOURCE_SHA256: candidateRouterSourceSha256,
+            LAB_ENGINE_SOURCE_SHA256: candidateEngineSourceSha256,
             LAB_RUNNER_REVISION: labRunnerRevision,
             LAB_RUNNER_SOURCE_SHA256: labRunnerSourceSha256,
         };
@@ -348,7 +378,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_RUN_MODE: 'candidate',
             LAB_SOURCE_REVISION: currentRevision,
             LAB_ENGINE_SOURCE_REVISION: candidateEngineSourceRevision,
-            LAB_ENGINE_SOURCE_SHA256: candidateRouterSourceSha256,
+            LAB_ENGINE_SOURCE_SHA256: candidateEngineSourceSha256,
             LAB_RUNNER_REVISION: labRunnerRevision,
             LAB_RUNNER_SOURCE_SHA256: labRunnerSourceSha256,
         };

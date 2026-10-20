@@ -590,11 +590,24 @@ describe('provider independence', () => {
         },
     );
 
-    test('a total provider outage never produces a merchant claim', async () => {
+    test('verified deterministic product facts remain available during a provider outage', async () => {
         productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
         llm.chat.mockRejectedValue(new Error('All LLM providers failed'));
 
-        await expect(routeMessage('tell me about cotton saree')).rejects.toThrow(/providers failed/);
+        const result = await routeMessage('tell me about cotton saree');
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Cotton Saree');
+        expect(result.response).toContain('৳990');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a total provider outage never produces a merchant claim for an unknown attribute', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
+        llm.chat.mockRejectedValue(new Error('All LLM providers failed'));
+
+        await expect(routeMessage('cotton saree material?')).rejects.toThrow(/providers failed/);
+        expect(llm.chat).toHaveBeenCalled();
     });
 });
 

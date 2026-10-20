@@ -431,7 +431,7 @@ const route = async ({
     const settingsGeneration = await getShopSettingsGeneration(shopId);
     // A generation read failure must not turn into generation zero: bypass the
     // local cache so a stale response cannot be replayed after a settings write.
-    const cacheKey = imageUrls.length > 0 || settingsGeneration === null
+    const cacheKey = CACHE_TTL <= 0 || imageUrls.length > 0 || settingsGeneration === null
         ? null
         : normalisedKey(
             shopId,
@@ -1278,8 +1278,10 @@ const _deterministicProductReply = (evidence, language, {
 
         if (grounding.isMediaRequest(message)) {
             if (evidence.mediaStatus === MediaStatus.UNAVAILABLE) {
+                const rendered = renderMessengerProductPresentation(presentation, language);
+                const photoUnavailable = grounding.productImageUnavailableReply(language);
                 return {
-                    response: grounding.productImageUnavailableReply(language, evidence.verifiedProducts[0].name),
+                    response: [rendered.text, photoUnavailable].filter(Boolean).join('\n'),
                     confidence: 1.0,
                     source: 'grounding_media_unavailable',
                 };
@@ -1497,7 +1499,10 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
         // Authoritative live config — must sit above FAQs/knowledge so the LLM
         // trusts the shop's CURRENT payment/delivery settings over any stale
         // seeded FAQ or persona example.
-        operatingContext || '',
+        // Keep the authoritative block on a boundary that can be recovered
+        // exactly for send-time revalidation. The sections are joined with one
+        // newline below, so this trailing newline creates a blank separator.
+        operatingContext ? `${operatingContext}\n` : '',
         langInstruction,
         imageInstruction,
         contextInstruction,

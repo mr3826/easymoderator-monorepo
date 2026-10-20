@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+
 /**
  * Meta-shaped E2E harness.
  *
@@ -180,7 +182,26 @@ const drainQueue = async ({ timeoutMs = 8000 } = {}) => {
 // document says every reply must carry.
 
 let groundingDecisions = [];
+const deliveryDiagnostics = [];
 let restoreGroundingObserver = null;
+const SAFE_VIOLATION_CODES = new Set([
+    'unsupported_product_identity',
+    'unsourced_variant_availability',
+    'unsupported_payment_destination',
+    'unsupported_payment_method',
+    'model_order_confirmation_claim',
+    'model_payment_confirmation_claim',
+    'unsupported_delivery_timeline',
+    'unsupported_delivery_commitment',
+    'empty_or_non_string_candidate',
+    'attachment_provenance_rejected',
+    'catalog_unreadable',
+    'availability_asserted_for_absent_product',
+    'unsupported_stock_claim',
+    'unsupported_price',
+    'unsupported_url',
+    'attribute_asserted_but_unknown',
+]);
 
 const installGroundingObserver = () => {
     const real = grounding.logGroundingDecision;
@@ -337,6 +358,7 @@ const deliver = async ({
 
     const sendsBefore = transport.capturedSends().length;
     const decisionsBefore = groundingDecisions.length;
+    const providersBefore = transport.llmProvidersCalled().length;
 
     const payload = messagePayload({ pageId, psid, text, mid, attachments, quickReply, replyTo });
     const eventId = payload.entry[0].messaging[0].message.mid;
@@ -347,7 +369,7 @@ const deliver = async ({
     // report null rather than silently re-asserting the previous turn's.
     const turnDecisions = groundingDecisions.slice(decisionsBefore);
 
-    return {
+    const result = {
         status: response.status,
         eventId,
         receipt: await receiptForEvent(eventId),
@@ -356,6 +378,49 @@ const deliver = async ({
         decision: turnDecisions[turnDecisions.length - 1] || null,
         decisions: turnDecisions,
     };
+
+    const decision = result.decision;
+    const safeEnum = (value) => typeof value === 'string' && /^[A-Z][A-Z0-9_-]{0,63}$/.test(value)
+        ? value
+        : null;
+    const safeId = (value) => typeof value === 'string' && /^[\w-]{1,80}$/.test(value)
+        ? value
+        : null;
+    const testName = global.expect?.getState?.().currentTestName;
+    const caseId = typeof testName === 'string'
+        ? crypto.createHash('sha256').update(testName).digest('hex').slice(0, 16)
+        : null;
+    const safeViolationCode = (value) => {
+        if (typeof value !== 'string') return null;
+        const code = value.split(':', 1)[0];
+        return SAFE_VIOLATION_CODES.has(code) ? code : null;
+    };
+    deliveryDiagnostics.push({
+        sequence: deliveryDiagnostics.length + 1,
+        caseId,
+        status: Number.isInteger(result.status) ? result.status : null,
+        receiptStatus: safeEnum(result.receipt?.status),
+        worker: result.jobResults.map((job) => ({
+            success: typeof job?.success === 'boolean' ? job.success : null,
+            sent: typeof job?.sent === 'boolean' ? job.sent : null,
+            reason: safeId(job?.reason),
+        })),
+        decision: decision ? {
+            decision: safeEnum(decision.decision),
+            reasonCode: safeEnum(decision.reasonCode),
+            productStatus: safeEnum(decision.productStatus),
+            mediaStatus: safeEnum(decision.mediaStatus),
+            verifiedProductIds: (decision.verifiedProductIds || []).map(safeId).filter(Boolean),
+            mediaProductId: safeId(decision.mediaProductId),
+            knowledgeIds: (decision.knowledgeIds || []).map(safeId).filter(Boolean),
+            violationCodes: [...new Set((decision.violations || [])
+                .map(safeViolationCode).filter(Boolean))],
+            provider: safeId(decision.provider),
+        } : null,
+        sendCount: result.sends.length,
+        providerCalls: transport.llmProvidersCalled().slice(providersBefore),
+    });
+    return result;
 };
 
 // ── Assertion helpers ────────────────────────────────────────────────────────
@@ -438,13 +503,22 @@ const teardownSuite = async () => {
     const { messageQueue } = require('../../src/jobs/message-queue');
     const redis = require('../../src/config/redis');
 
-    if (restoreGroundingObserver) restoreGroundingObserver();
-    if (restoreMeta) restoreMeta();
-    if (restoreLlm) restoreLlm();
-
-    await messageQueue.close().catch(() => {});
-    await sequelize.close().catch(() => {});
-    if (typeof redis.closeAllRedis === 'function') await redis.closeAllRedis().catch(() => {});
+    try {
+        if (process.env.META_E2E_DIAGNOSTICS_PATH) {
+            fs.writeFileSync(
+                process.env.META_E2E_DIAGNOSTICS_PATH,
+                `${JSON.stringify(deliveryDiagnostics, null, 2)}\n`,
+                { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+            );
+        }
+    } finally {
+        for (const restore of [restoreGroundingObserver, restoreMeta, restoreLlm]) {
+            try { if (restore) restore(); } catch (_) { /* always continue resource cleanup */ }
+        }
+        await messageQueue.close().catch(() => {});
+        await sequelize.close().catch(() => {});
+        if (typeof redis.closeAllRedis === 'function') await redis.closeAllRedis().catch(() => {});
+    }
 };
 
 module.exports = {

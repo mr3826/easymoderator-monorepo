@@ -38,7 +38,7 @@ const {
     retrievalFailedReply,
     knowledgeNotFoundReply,
 } = require('./grounding-prompt');
-const { ATTRIBUTE_VOCABULARY, identifyingTerms } = require('./product-evidence.service');
+const { ATTRIBUTE_VOCABULARY, ATTRIBUTE_LABELS, identifyingTerms } = require('./product-evidence.service');
 
 const BENGALI_DIGITS = '০১২৩৪৫৬৭৮৯';
 
@@ -590,6 +590,136 @@ const unknownAskedAttributes = (evidence) => {
         evidence.verifiedProducts.every(p => p.facts?.[attribute]?.state !== FactState.KNOWN));
 };
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const materialValueAppears = (text) => (ATTRIBUTE_VOCABULARY.material || [])
+    .filter(value => !(ATTRIBUTE_LABELS.material || []).includes(value))
+    .some((value) => {
+        const escaped = escapeRegex(value);
+        const pattern = /^[a-z0-9-]+$/i.test(value)
+            ? new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, 'iu')
+            : null;
+        return pattern ? pattern.test(text) : text.includes(value);
+    });
+
+const isUnverifiedMaterialAssertion = (text) => {
+    const normalized = String(text || '').toLowerCase();
+    if (!materialValueAppears(normalized) || UNAVAILABILITY_MARKER.test(normalized)) return false;
+    return /\b(?:material|fabric|kapor|kapod|pure|made\s+(?:from|of)|consists?\s+of|composed\s+of|is|are|it|this|that|eta|eita|otar|tar)\b|উপাদান|কাপড়|কাপড়|শিফন|সিল্ক|সুতি|জর্জেট|মসলিন|জামদানি/i
+        .test(normalized);
+};
+
+const MATERIAL_ASSERTION_QUALIFIER = '(?:pure|100\\s*%|১০০\\s*%|শতভাগ|খাঁটি|খাটি|বিশুদ্ধ)';
+const MATERIAL_TITLE_LINK = new RegExp(
+    `^\\s*(?:(?:is|are|হলো|হয়|হয়)\\s+)?(?:(?:${MATERIAL_ASSERTION_QUALIFIER})\\s+|made\\s+(?:from|of)\\s+|composed\\s+of\\s+|consists?\\s+of\\s+)*$`,
+    'iu',
+);
+const MATERIAL_TITLE_VALUES = (ATTRIBUTE_VOCABULARY.material || [])
+    .filter(value => !(ATTRIBUTE_LABELS.material || []).includes(value))
+    .map(escapeRegex)
+    .sort((left, right) => right.length - left.length)
+    .join('|');
+const MATERIAL_ASSERTION_PREFIX_WITHOUT_VALUE = new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${MATERIAL_ASSERTION_QUALIFIER}|made\\s+(?:from|of)|composed\\s+of|consists?\\s+of)\\s*$`,
+    'iu',
+);
+const MATERIAL_VALUE_AT_TITLE_START = new RegExp(`^\\s*(?:${MATERIAL_TITLE_VALUES})(?=\\s|$)`, 'iu');
+const MATERIAL_MODIFIER_BEFORE_TITLE = new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:(?:${MATERIAL_ASSERTION_QUALIFIER})\\s+|made\\s+(?:from|of)\\s+|composed\\s+of\\s+|consists?\\s+of\\s+)?(?:${MATERIAL_TITLE_VALUES})(?:\\s+(?:fabric|material))?$`,
+    'iu',
+);
+
+const materialModifierBeforeSubject = (text) => MATERIAL_MODIFIER_BEFORE_TITLE.test(String(text || '').trim());
+const materialAssertionCrossesTitleBoundary = (prefix, subjectTitle) => (
+    MATERIAL_ASSERTION_PREFIX_WITHOUT_VALUE.test(String(prefix || ''))
+    && MATERIAL_VALUE_AT_TITLE_START.test(String(subjectTitle || ''))
+);
+
+const productNameMatches = (clause, products) => {
+    const matches = [];
+    for (const product of products || []) {
+        for (const name of [product.name, product.nameBn]) {
+            const normalizedName = typeof name === 'string' ? name.trim() : '';
+            if (!normalizedName) continue;
+            const words = normalizedName.split(/\s+/).map(escapeRegex).join('\\s+');
+            const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, 'giu');
+            for (const match of clause.matchAll(pattern)) {
+                matches.push({
+                    start: match.index,
+                    end: match.index + match[0].length,
+                    product,
+                });
+            }
+        }
+    }
+
+    // Preserve every product sharing an exact span, then prefer the longest
+    // exact title when one name contains another ("Chiffon Kurti" / "Kurti").
+    const orderedMatches = matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+    const grouped = [];
+    for (const match of orderedMatches) {
+        const sameSpan = grouped.find(item => item.start === match.start && item.end === match.end);
+        if (sameSpan) {
+            if (!sameSpan.products.includes(match.product)) sameSpan.products.push(match.product);
+        } else {
+            grouped.push({ start: match.start, end: match.end, products: [match.product] });
+        }
+    }
+
+    // Prefer the longest exact title when one product name contains another,
+    // independent of catalog order.
+    const selected = [];
+    for (const match of grouped) {
+        if (selected.some(existing => match.start < existing.end && existing.start < match.end)) continue;
+        selected.push(match);
+    }
+    return selected;
+};
+
+/**
+ * Product names can contain a material word without making that word a
+ * merchant-recorded material fact. Inspect each named product's adjacent claim
+ * text independently so a known product earlier in the clause cannot hide an
+ * unverified assertion about a later product.
+ */
+const assertsUnverifiedMaterial = (candidate, evidence) => {
+    const unverifiedProducts = (evidence.verifiedProducts || [])
+        .filter(product => product.facts?.material?.state !== FactState.KNOWN);
+    if (!unverifiedProducts.length) return false;
+
+    return splitClaimClauses(candidate).some((clause) => {
+        const names = productNameMatches(clause, evidence.verifiedProducts);
+        if (!names.length) return isUnverifiedMaterialAssertion(clause);
+
+        return names.some((subject, index) => {
+            const subjectProducts = subject.products || [];
+            if (subjectProducts.length && subjectProducts.every(product => product.facts?.material?.state === FactState.KNOWN)) {
+                return false;
+            }
+
+            const previous = names[index - 1];
+            const next = names[index + 1];
+            // Only a material phrase directly adjacent to a later title can
+            // describe that subject; unrelated earlier text stays with the
+            // preceding product.
+            const prefixBeforeSubject = index === 0
+                ? clause.slice(0, subject.start)
+                : clause.slice(previous?.end || 0, subject.start);
+            const hasUnverifiedLeadingMaterial = index === 0
+                ? isUnverifiedMaterialAssertion(prefixBeforeSubject)
+                : materialModifierBeforeSubject(prefixBeforeSubject);
+            const subjectTitle = clause.slice(subject.start, subject.end);
+            const hasBoundarySplitMaterialAssertion = materialAssertionCrossesTitleBoundary(prefixBeforeSubject, subjectTitle);
+            let after = clause.slice(subject.end, next?.start ?? clause.length);
+            if (next && MATERIAL_TITLE_LINK.test(after)) {
+                after = `${after} ${clause.slice(next.start, next.end)}`;
+            }
+
+            return hasUnverifiedLeadingMaterial || hasBoundarySplitMaterialAssertion || isUnverifiedMaterialAssertion(after);
+        });
+    });
+};
+
 const variantValueAppears = (candidate, value) => {
     const normalizedValue = String(value || '').trim();
     if (!normalizedValue) return false;
@@ -966,10 +1096,10 @@ const evaluateCandidate = ({
 }) => {
     const violations = [];
 
-    const deny = (reasonCode) => ({
+    const deny = (reasonCode, fallbackEvidence = evidence) => ({
         decision: GroundingDecision.SAFE_FALLBACK,
         reasonCode,
-        text: buildSafeFallback(evidence, language, reasonCode),
+        text: buildSafeFallback(fallbackEvidence, language, reasonCode),
         // A rejected candidate forfeits its media too: the attachment was chosen
         // to accompany a claim we have just refused to make.
         attachments: [],
@@ -1069,6 +1199,9 @@ const evaluateCandidate = ({
     //    requirement rather than an attempt to enumerate every way a model could
     //    fabricate a fabric name — the reply must actually admit it does not know.
     const unknownAsked = unknownAskedAttributes(evidence);
+    if (assertsUnverifiedMaterial(candidate, evidence) && !unknownAsked.includes('material')) {
+        unknownAsked.push('material');
+    }
     if (unknownAsked.length) {
         const unsupportedUnknown = unknownAsked.some(attribute =>
             (ATTRIBUTE_VOCABULARY[attribute] || []).some(word =>
@@ -1077,7 +1210,11 @@ const evaluateCandidate = ({
                     && !UNAVAILABILITY_MARKER.test(clause))));
         if (unsupportedUnknown) {
             violations.push(`attribute_asserted_but_unknown:${unknownAsked.join(',')}`);
-            return deny(ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+            const fallbackEvidence = unknownAsked.includes('material')
+                && !(evidence.askedAttributes || []).includes('material')
+                ? { ...evidence, askedAttributes: [...(evidence.askedAttributes || []), 'material'] }
+                : evidence;
+            return deny(ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN, fallbackEvidence);
         }
     }
 

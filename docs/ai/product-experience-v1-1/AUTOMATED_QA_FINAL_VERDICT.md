@@ -2,26 +2,24 @@
 
 ## Scoped result
 
-**Automated QA status: PASS for the covered local offline and disposable-stack scope.** The independent reviewer found no P0 or P1 issue. One P2 integration-runner diagnostics limitation remains documented: a first independent run had a suite-level exit failure despite 12/12 passing assertions; the successful retry passed all three suites and 12 tests, but the runner did not preserve the first run's suite-level diagnostics.
-
-This verdict does not mean full integration readiness or production approval. Real provider, vision, and Meta checks were not run.
+**Automated QA status: PASS (scoped local QA).** The full backend Jest suite, paired product replay/evaluation, disposable-stack integration, Chromium journey, privacy scan, checksum manifest, and independent review passed for the local synthetic/mock scope. Real provider, vision, and Meta checks were not run. This does not establish full integration readiness or production approval.
 
 ## Gate status
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Workspace isolation | PASS | Dedicated V1.1 worktree and branch; baseline pinned; other worktrees untouched. |
+| Workspace isolation | PASS | Dedicated V1.1 worktree and branch; baseline router pinned; other worktrees untouched. |
 | Dataset integrity | PASS | 20 personas / 200 turns; CSV SHA-256 pinned; raw messages and free-text responses are not persisted. |
-| Product evaluation | PASS, narrow denominator | Full replay: 2/2 eligible fact slots versus baseline 0/2; synthetic suite: 8/8 versus 5/8. |
-| Safety | PASS, covered cases | 0 unsupported claims sent; 0 tenant leaks/unscoped reads; 0 business mutations or Messenger sends in replay. |
-| Deterministic regression | PASS | 8 suites / 133 tests. |
-| Local backend integration | PASS, selected subset | Independent retry: 3 suites / 12 tests against disposable Postgres, Redis, and worker. Earlier unexplained suite failure remains a P2 finding. |
-| Playwright | PASS | 2 Chromium tests; full Lab journey and shell smoke; report, traces, screenshots. |
-| Artifact privacy | PASS | Final scan: 123 JSON files, 0 parse errors, 0 denied keys, 0/197 exact source-text values in saved JSON, and 0/197 exact customer-message matches across four browser archives. |
-| Accessibility | PARTIAL | Input labels, tab keyboard path, and responsive overflow checks; no axe-core scan. |
+| Product evaluation | PASS, narrow denominator | Candidate 2/2 eligible CSV fact slots versus baseline 0/2; synthetic suite 8/8 versus 5/8. |
+| Safety | PASS, covered cases | 0 unsupported claims; 0 tenant leaks/unscoped reads; 0 business mutations or Messenger sends in replay. |
+| Full backend Jest | PASS | 282 suites / 3,614 tests with Node 24.19.0 and task-owned disposable Redis. |
+| Local backend integration | PASS, selected subset | Independently rerun receipt `2f3cf498-9164-46b9-8323-0c6208711213`: 3 suites / 12 tests and webhook pipeline 1 suite / 45 tests; disposable Postgres/Redis and worker. |
+| Playwright | PASS | Independent rerun: 2 Chromium tests, 0 retries, 70 seconds at `http://127.0.0.1:13433`; report, traces, and screenshots. |
+| Artifact privacy | PASS | 285 JSON artifacts: 0 parse errors, 0 denied keys, 0 exact source-text matches; 0/4 Playwright ZIP matches. The 363-entry manifest was verified with no duplicates, missing files, mismatches, or out-of-scope paths. |
+| Accessibility | PARTIAL | Input labels, keyboard path, and responsive overflow checked; no axe-core scan. |
 | Browser compatibility | PARTIAL | Chromium only; Firefox/WebKit binaries unavailable. |
 | Real provider / vision / Meta | NOT_RUN | No external requests; see `REAL_MODEL_AND_VISION_RESULTS.md`. |
-| Independent review | PASS, scoped | No P0/P1 findings; one P2 integration diagnostics limitation. See `INDEPENDENT_FINAL_REVIEW.md`. |
+| Independent review | PASS, scoped | Separate reviewer reran focused Jest, selected real-stack integration, and Chromium E2E; inspected current screenshots, recomputed source hashes, verified package counts and manifest; 0 P0 / 0 P1 / 0 open P2 findings in reviewed scope. |
 
 ## Final status fields
 
@@ -39,4 +37,4 @@ INTEGRATION_READY=NO
 PRODUCTION_RELEASE_NOT_AUTHORIZED=YES
 ```
 
-The product-evaluation status is limited to the explicit two-slot source denominator plus the eight-slot synthetic evaluation; it does not treat 200 source turns as 200 product questions. `INTEGRATION_READY=NO` because real provider, vision, Meta, and the full integration matrix remain unverified. Production release, merge, push, and deployment are not authorized.
+Product evaluation is limited to the two-slot CSV source denominator plus the eight-slot synthetic evaluation; the 200 source turns are not treated as 200 answerable product questions. The latest measured mock-router timing is slower for candidate (p95 1.988 ms) than baseline (p95 1.546 ms); no real provider cost was measured. `INTEGRATION_READY=NO` because real provider, vision, Meta, and the full integration matrix remain unverified. Production release, merge, push, and deployment are not authorized.

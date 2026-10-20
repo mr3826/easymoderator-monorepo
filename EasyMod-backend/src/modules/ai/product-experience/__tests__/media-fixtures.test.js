@@ -19,8 +19,11 @@ describe('synthetic inbound media fixtures', () => {
         expect(manifest.fixtures).toHaveLength(4);
         expect(manifest.handling.customerImagesAreNotMerchantProductMedia).toBe(true);
         for (const fixture of manifest.fixtures) {
-            const bytes = fs.readFileSync(path.join(repoRoot, fixture.path));
-            expect(crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase())
+            const source = fs.readFileSync(path.join(repoRoot, fixture.path), 'utf8');
+            // Git's Windows checkout may convert LF to CRLF. Hash the canonical
+            // UTF-8 text so the manifest continues to pin the committed fixture.
+            const canonicalBytes = Buffer.from(source.replace(/\r\n/g, '\n'), 'utf8');
+            expect(crypto.createHash('sha256').update(canonicalBytes).digest('hex').toUpperCase())
                 .toBe(fixture.sha256);
             expect(fixture.modelInvoked).toBe(false);
         }

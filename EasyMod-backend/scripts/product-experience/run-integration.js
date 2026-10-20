@@ -18,6 +18,7 @@ const TESTS = [
     'src/jobs/__tests__/message-worker.action-gate.integration.test.js',
     'src/jobs/__tests__/message-worker.recovery.integration.test.js',
 ];
+const META_E2E_TEST = 'tests/meta-e2e/meta-e2e.test.js';
 
 const freePort = () => new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -162,6 +163,67 @@ const parseJestSummary = (output) => {
     return { suites, tests, duration };
 };
 
+const summarizeJestReport = (reportPath) => {
+    try {
+        const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+        const failedSuites = (report.testResults || []).filter(result => result.status === 'failed');
+        return {
+            passedSuites: report.numPassedTestSuites ?? null,
+            failedSuites: report.numFailedTestSuites ?? null,
+            passedTests: report.numPassedTests ?? null,
+            failedTests: report.numFailedTests ?? null,
+            failedSuiteDiagnostics: failedSuites.map(result => {
+                const messages = [result.message, ...(result.assertionResults || []).flatMap(assertion => assertion.failureMessages || [])]
+                    .filter(Boolean).join('\n');
+                const errorType = messages.match(/\b(Sequelize[A-Za-z]+Error|[A-Za-z_$][\w$]*(?:Error|Exception))\b/)?.[1] || 'UNCLASSIFIED';
+                const kinds = [];
+                if (/Jest did not exit|open handles/i.test(messages)) kinds.push('OPEN_HANDLE');
+                if (/afterAll|afterEach|beforeAll|beforeEach/i.test(messages)) kinds.push('LIFECYCLE_HOOK');
+                if (/worker process/i.test(messages)) kinds.push('JEST_WORKER');
+                if (/Test suite failed to run/i.test(messages)) kinds.push('SUITE_SETUP');
+                if (/AssertionError|expect\(|Received:/i.test(messages)) kinds.push('ASSERTION');
+                if (kinds.length === 0) kinds.push('UNCLASSIFIED_SUITE_FAILURE');
+
+                const locations = [];
+                const framePattern = /\(([^\r\n]*?\.(?:js|cjs|mjs|ts)):(\d+):(\d+)\)/g;
+                for (const match of messages.matchAll(framePattern)) {
+                    const absolutePath = path.resolve(match[1]);
+                    const relativePath = path.relative(BACKEND_ROOT, absolutePath);
+                    if (relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+                        locations.push(`${relativePath.replace(/\\/g, '/')}:${match[2]}:${match[3]}`);
+                    }
+                    if (locations.length >= 8) break;
+                }
+                const failedAssertions = (result.assertionResults || [])
+                    .filter(assertion => assertion.status === 'failed')
+                    .map(assertion => {
+                        const failureText = (assertion.failureMessages || []).join('\n');
+                        const scalar = (value) => {
+                            const normalized = String(value || '').trim().replace(/^['"]|['"]$/g, '');
+                            return /^(?:true|false|null|undefined|-?\d+(?:\.\d+)?|SEND|SAFE_FALLBACK|BLOCKED|AVAILABLE|UNAVAILABLE|NOT_FOUND|ANSWERABLE|NOT_ANSWERABLE|VERIFIED|OPENAI|GEMINI(?:-LITE|-PRO)?|AUTO|DRAFT|MANUAL|HELD)$/i.test(normalized)
+                                ? normalized.slice(0, 64)
+                                : null;
+                        };
+                        const expected = failureText.match(/^\s*Expected:\s*(.+)$/m)?.[1]
+                            || failureText.match(/^\s*Expected substring:\s*(.+)$/m)?.[1];
+                        const received = failureText.match(/^\s*Received:\s*(.+)$/m)?.[1];
+                        const testTitle = assertion.fullName || assertion.title || 'unnamed assertion';
+                        return {
+                            caseId: crypto.createHash('sha256').update(testTitle).digest('hex').slice(0, 16),
+                            location: assertion.location || null,
+                            expected: scalar(expected),
+                            received: scalar(received),
+                            assertionKind: /Expected substring:/.test(failureText) ? 'MISSING_SUBSTRING' : 'VALUE_MISMATCH',
+                        };
+                    });
+                return { suite: path.relative(BACKEND_ROOT, result.name).replace(/\\/g, '/'), errorType, kinds, locations, failedAssertions };
+            }),
+        };
+    } catch (_) {
+        return null;
+    }
+};
+
 const ensureComposeBoundary = async (project, postgresPort, redisPort, networkSubnet, dockerEnv) => {
     const config = await run('docker-compose', ['-p', project, '-f', COMPOSE_FILE, 'config', '--format', 'json'], {
         cwd: SCRIPT_ROOT,
@@ -209,7 +271,15 @@ const main = async () => {
     let failure = null;
     let migration = null;
     let jest = null;
+    let metaE2eJest = null;
+    let jestStructured = null;
+    let metaE2eJestStructured = null;
+    let metaE2eDeliveryDiagnostics = [];
     let cleanup = null;
+    const temporaryJestReports = [];
+    const metaE2eDiagnosticsPath = path.join(os.tmpdir(), `${runId}-meta-e2e-diagnostics.json`);
+    temporaryJestReports.push(metaE2eDiagnosticsPath);
+    env.META_E2E_DIAGNOSTICS_PATH = metaE2eDiagnosticsPath;
 
     try {
         await ensureComposeBoundary(project, postgresPort, redisPort, networkSubnet, dockerEnv);
@@ -234,13 +304,32 @@ const main = async () => {
 
         const jestStart = Date.now();
         const jestPath = path.join(BACKEND_ROOT, 'node_modules', 'jest', 'bin', 'jest.js');
-        jest = await run(nodeExe, [jestPath, '--config', path.join(BACKEND_ROOT, 'jest.integration.config.js'), '--runInBand', '--forceExit', '--runTestsByPath', ...TESTS], {
+        const integrationReportPath = path.join(os.tmpdir(), `${runId}-integration-jest.json`);
+        temporaryJestReports.push(integrationReportPath);
+        jest = await run(nodeExe, [jestPath, '--config', path.join(BACKEND_ROOT, 'jest.integration.config.js'), '--runInBand', '--forceExit', '--json', `--outputFile=${integrationReportPath}`, '--runTestsByPath', ...TESTS], {
             cwd: BACKEND_ROOT,
             env,
             timeoutMs: 480000,
         });
+        jestStructured = summarizeJestReport(integrationReportPath);
         timeline.push({ stage: 'integration_jest', exitCode: jest.code, durationMs: Date.now() - jestStart, timedOut: jest.timedOut });
         if (jest.code !== 0) throw new Error('Selected real PostgreSQL/Redis integration suites failed.');
+
+        const metaE2eStart = Date.now();
+        const metaE2eReportPath = path.join(os.tmpdir(), `${runId}-webhook-e2e-jest.json`);
+        temporaryJestReports.push(metaE2eReportPath);
+        metaE2eJest = await run(nodeExe, [jestPath, '--config', path.join(BACKEND_ROOT, 'jest.meta-e2e.config.js'), '--runInBand', '--forceExit', '--json', `--outputFile=${metaE2eReportPath}`, '--runTestsByPath', META_E2E_TEST], {
+            cwd: BACKEND_ROOT,
+            env,
+            timeoutMs: 600000,
+        });
+        metaE2eJestStructured = summarizeJestReport(metaE2eReportPath);
+        try {
+            const diagnostics = JSON.parse(fs.readFileSync(metaE2eDiagnosticsPath, 'utf8'));
+            if (Array.isArray(diagnostics)) metaE2eDeliveryDiagnostics = diagnostics;
+        } catch (_) { }
+        timeline.push({ stage: 'webhook_pipeline_e2e_jest', exitCode: metaE2eJest.code, durationMs: Date.now() - metaE2eStart, timedOut: metaE2eJest.timedOut });
+        if (metaE2eJest.code !== 0) throw new Error('The real webhook-to-worker-to-outbound Meta-shaped suite failed.');
     } catch (error) {
         failure = error.message;
     } finally {
@@ -252,6 +341,9 @@ const main = async () => {
             });
             timeline.push({ stage: 'compose_down', exitCode: cleanup.code, timedOut: cleanup.timedOut, scope: project });
             if (cleanup.code !== 0 && !failure) failure = 'Disposable Compose cleanup failed for the isolated project.';
+        }
+        for (const reportPath of temporaryJestReports) {
+            try { fs.unlinkSync(reportPath); } catch (_) { }
         }
     }
 
@@ -280,8 +372,23 @@ const main = async () => {
             { name: 'redis', image: 'redis:7-alpine', host: '127.0.0.1', port: redisPort, storage: 'tmpfs', health: 'compose-healthcheck' },
         ],
         migrations: migration ? { exitCode: migration.code, durationMs: timeline.find(item => item.stage === 'migrations')?.durationMs } : { status: 'NOT_RUN' },
-        testPaths: TESTS,
-        jest: jest ? { exitCode: jest.code, timedOut: jest.timedOut, ...parseJestSummary(`${jest.stdout}\n${jest.stderr}`) } : { status: 'NOT_RUN' },
+        testPaths: { selectedIntegration: TESTS, webhookPipelineE2E: META_E2E_TEST },
+        jest: {
+            status: failure ? 'FAIL' : 'PASS',
+            selectedIntegration: jest ? {
+                exitCode: jest.code,
+                timedOut: jest.timedOut,
+                ...parseJestSummary(`${jest.stdout}\n${jest.stderr}`),
+                structured: jestStructured,
+            } : { status: 'NOT_RUN' },
+            webhookPipelineE2E: metaE2eJest ? {
+                exitCode: metaE2eJest.code,
+                timedOut: metaE2eJest.timedOut,
+                ...parseJestSummary(`${metaE2eJest.stdout}\n${metaE2eJest.stderr}`),
+                structured: metaE2eJestStructured,
+                deliveryDiagnostics: metaE2eDeliveryDiagnostics,
+            } : { status: 'NOT_RUN' },
+        },
         egress: { mode: 'Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch', guard: 'PASS', blockedNonLoopbackAttempts: blockedEgressAttempts, externalProvidersConfigured: false },
         timeline,
         failure: failure ? redact(failure) : null,
@@ -295,7 +402,8 @@ const main = async () => {
         `Compose project: ${project}`,
         `Services: PostgreSQL ${postgresPort}, Redis ${redisPort} (127.0.0.1 only, tmpfs)`,
         `Migrations: ${receipt.migrations.exitCode ?? receipt.migrations.status}`,
-        `Jest: ${receipt.jest.tests || receipt.jest.status}; suites=${receipt.jest.suites || 'not run'}; duration=${receipt.jest.duration || 'not run'}`,
+        `Selected integration Jest: ${receipt.jest.selectedIntegration.tests || receipt.jest.selectedIntegration.status}; suites=${receipt.jest.selectedIntegration.suites || 'not run'}; duration=${receipt.jest.selectedIntegration.duration || 'not run'}`,
+        `Webhook pipeline Jest: ${receipt.jest.webhookPipelineE2E.tests || receipt.jest.webhookPipelineE2E.status}; suites=${receipt.jest.webhookPipelineE2E.suites || 'not run'}; duration=${receipt.jest.webhookPipelineE2E.duration || 'not run'}`,
         `Egress fence: ${receipt.egress.mode}`,
         `Cleanup: ${receipt.cleanup.exitCode ?? receipt.cleanup.status}`,
         failure ? `Failure: ${redact(failure)}` : 'Failure: none',

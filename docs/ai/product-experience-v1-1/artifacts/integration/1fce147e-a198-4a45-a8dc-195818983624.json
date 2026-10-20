@@ -1,0 +1,1736 @@
+{
+  "schemaVersion": 1,
+  "runId": "1fce147e-a198-4a45-a8dc-195818983624",
+  "status": "PASS",
+  "startedAt": "2026-10-20T16:04:35.382Z",
+  "completedAt": "2026-10-20T16:06:30.005Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-3392-75e5d5",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": false,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 10179,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 10180,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 3366
+  },
+  "testPaths": {
+    "selectedIntegration": [
+      "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+      "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+      "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+    ],
+    "webhookPipelineE2E": "tests/meta-e2e/meta-e2e.test.js"
+  },
+  "jest": {
+    "status": "PASS",
+    "selectedIntegration": {
+      "exitCode": 0,
+      "timedOut": false,
+      "suites": "3 passed, 3 total",
+      "tests": "12 passed, 12 total",
+      "duration": "28.984 s",
+      "structured": {
+        "passedSuites": 3,
+        "failedSuites": 0,
+        "passedTests": 12,
+        "failedTests": 0,
+        "failedSuiteDiagnostics": []
+      }
+    },
+    "webhookPipelineE2E": {
+      "exitCode": 0,
+      "timedOut": false,
+      "suites": "1 passed, 1 total",
+      "tests": "45 passed, 45 total",
+      "duration": "63.728 s",
+      "structured": {
+        "passedSuites": 1,
+        "failedSuites": 0,
+        "passedTests": 45,
+        "failedTests": 0,
+        "failedSuiteDiagnostics": []
+      },
+      "deliveryDiagnostics": [
+        {
+          "sequence": 1,
+          "caseId": "390ec25a9cbc4c3d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 2,
+          "caseId": "390ec25a9cbc4c3d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 3,
+          "caseId": "56af1b449781067d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 4,
+          "caseId": "189e756f05c47b2c",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 5,
+          "caseId": "bd41e2d44cb2c35d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 6,
+          "caseId": "bd41e2d44cb2c35d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_NOT_FOUND",
+            "productStatus": "NONE",
+            "mediaStatus": "NO_PRODUCT",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_url"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 7,
+          "caseId": "bd41e2d44cb2c35d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 8,
+          "caseId": "bd41e2d44cb2c35d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_URL_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_url"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 9,
+          "caseId": "bd41e2d44cb2c35d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 10,
+          "caseId": "4bca87613ead4908",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 11,
+          "caseId": "4eef31dda0fbe4a4",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_ATTRIBUTE_UNKNOWN",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "attribute_asserted_but_unknown"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 12,
+          "caseId": "3e2b4bd8331888d6",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 13,
+          "caseId": "3d33f80122741eb6",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_ATTRIBUTE_UNKNOWN",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "77777777-0000-4000-8000-000000000007"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "attribute_asserted_but_unknown"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 14,
+          "caseId": "d111c91e393034e0",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "dddddddd-0000-4000-8000-00000000000d"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 15,
+          "caseId": "d111c91e393034e0",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 16,
+          "caseId": "4b9a9198bb9bfb95",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "UNAVAILABLE",
+            "verifiedProductIds": [
+              "eeeeeeee-0000-4000-8000-00000000000e"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 17,
+          "caseId": "5aad73a773d3bfcd",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "UNAVAILABLE",
+            "verifiedProductIds": [
+              "eeeeeeee-0000-4000-8000-00000000000e"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 18,
+          "caseId": "8a501c7e81a793fd",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 19,
+          "caseId": "bd5a6a69302e68e2",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "99999999-0000-4000-8000-000000000009"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 20,
+          "caseId": "b1d472b473caf4f6",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "MODEL_OUTPUT_INVALID",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "empty_or_non_string_candidate"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 21,
+          "caseId": "61ca87d0dd80878b",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "auto_escalated"
+            }
+          ],
+          "decision": null,
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 22,
+          "caseId": "2c2f7a89709e9da9",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 23,
+          "caseId": "f84f5f816ded23b3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "draft_mode"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 24,
+          "caseId": "a0dd14b6970585a0",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 25,
+          "caseId": "69bec3a632dd6116",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 26,
+          "caseId": "69bec3a632dd6116",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "99999999-0000-4000-8000-000000000009"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 27,
+          "caseId": "c361221aa64ecad3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 28,
+          "caseId": "c361221aa64ecad3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 29,
+          "caseId": "c361221aa64ecad3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "draft_mode"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 30,
+          "caseId": "c361221aa64ecad3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "draft_mode"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 31,
+          "caseId": "c361221aa64ecad3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 32,
+          "caseId": "c361221aa64ecad3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 33,
+          "caseId": "f0a543509975c8ba",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 34,
+          "caseId": "f0a543509975c8ba",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 35,
+          "caseId": "4147d0a71021ee5b",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 36,
+          "caseId": "4147d0a71021ee5b",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 37,
+          "caseId": "2c55ce09f047ae4f",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_NOT_FOUND",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 38,
+          "caseId": "03f78d5e08582fdb",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [
+              "29"
+            ],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 39,
+          "caseId": "ebb3bcc3fb70493d",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [
+              "30"
+            ],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 40,
+          "caseId": "196117dd4e88f251",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 41,
+          "caseId": "086c56637a857e0f",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 42,
+          "caseId": "8391a51fbc425685",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 43,
+          "caseId": "56e4ce46a0c85bf0",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 44,
+          "caseId": "bcaf341691c9d02e",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_URL_CLAIM",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "77777777-0000-4000-8000-000000000007"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_url"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 45,
+          "caseId": "5a664cffe821a98a",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "openai"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 46,
+          "caseId": "b967686d779e66ef",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "unsupported_price"
+            ],
+            "provider": "openai"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 47,
+          "caseId": "4f14eb716f28d13f",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 48,
+          "caseId": "f4aad19ea5acd3d7",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "RETRIEVAL_FAILED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 49,
+          "caseId": "1c9b7f219b9b2ce3",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "RETRIEVAL_FAILED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 50,
+          "caseId": "760b9a66636238c5",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "MODEL_OUTPUT_INVALID",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "empty_or_non_string_candidate"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 51,
+          "caseId": "993c8251aee0a3cf",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "grounding_suppressed"
+            }
+          ],
+          "decision": {
+            "decision": "SUPPRESS",
+            "reasonCode": "MODEL_OUTPUT_INVALID",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [
+              "empty_or_non_string_candidate"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 52,
+          "caseId": "7bf2eaebfffa025c",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 53,
+          "caseId": "6392de38ab41a8b4",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 54,
+          "caseId": "ceb6543cf8ca6100",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 55,
+          "caseId": "ceb6543cf8ca6100",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "hitl_active"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 56,
+          "caseId": "ceb6543cf8ca6100",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "hitl_active"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 57,
+          "caseId": "521808309b1e7109",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 58,
+          "caseId": "6319784be7e25b82",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 59,
+          "caseId": "6319784be7e25b82",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "dddddddd-0000-4000-8000-00000000000d"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violationCodes": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        }
+      ]
+    }
+  },
+  "egress": {
+    "mode": "Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch",
+    "guard": "PASS",
+    "blockedNonLoopbackAttempts": 0,
+    "externalProvidersConfigured": false
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 3366,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 0,
+      "durationMs": 29707,
+      "timedOut": false
+    },
+    {
+      "stage": "webhook_pipeline_e2e_jest",
+      "exitCode": 0,
+      "durationMs": 64825,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-3392-75e5d5"
+    }
+  ],
+  "failure": null,
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

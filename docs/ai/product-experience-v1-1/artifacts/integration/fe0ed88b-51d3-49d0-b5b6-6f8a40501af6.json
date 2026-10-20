@@ -1,0 +1,1835 @@
+{
+  "schemaVersion": 1,
+  "runId": "fe0ed88b-51d3-49d0-b5b6-6f8a40501af6",
+  "status": "FAIL",
+  "startedAt": "2026-10-20T14:34:43.823Z",
+  "completedAt": "2026-10-20T14:35:53.606Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-22228-59bb84",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": false,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 6379,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 6380,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 2609
+  },
+  "testPaths": {
+    "selectedIntegration": [
+      "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+      "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+      "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+    ],
+    "webhookPipelineE2E": "tests/meta-e2e/meta-e2e.test.js"
+  },
+  "jest": {
+    "status": "FAIL",
+    "selectedIntegration": {
+      "exitCode": 0,
+      "timedOut": false,
+      "suites": "3 passed, 3 total",
+      "tests": "12 passed, 12 total",
+      "duration": "14.221 s, estimated 15 s",
+      "structured": {
+        "passedSuites": 3,
+        "failedSuites": 0,
+        "passedTests": 12,
+        "failedTests": 0,
+        "failedSuiteDiagnostics": []
+      }
+    },
+    "webhookPipelineE2E": {
+      "exitCode": 1,
+      "timedOut": false,
+      "suites": "1 failed, 1 total",
+      "tests": "19 failed, 25 passed, 44 total",
+      "duration": "36.581 s",
+      "structured": {
+        "passedSuites": 0,
+        "failedSuites": 1,
+        "passedTests": 25,
+        "failedTests": 19,
+        "failedSuiteDiagnostics": [
+          {
+            "suite": "tests/meta-e2e/meta-e2e.test.js",
+            "errorType": "UNCLASSIFIED",
+            "kinds": [
+              "ASSERTION"
+            ],
+            "locations": [
+              "tests/meta-e2e/meta-e2e.test.js:101:29",
+              "tests/meta-e2e/meta-e2e.test.js:113:36",
+              "tests/meta-e2e/meta-e2e.test.js:249:35",
+              "tests/meta-e2e/meta-e2e.test.js:290:30",
+              "tests/meta-e2e/meta-e2e.test.js:333:22",
+              "tests/meta-e2e/meta-e2e.test.js:359:67",
+              "tests/meta-e2e/meta-e2e.test.js:380:30",
+              "tests/meta-e2e/meta-e2e.test.js:390:42"
+            ],
+            "failedAssertions": [
+              {
+                "title": "the webhook boundary itself a signed payload awaits a real BullMQ handoff with exact receipt and Page binding",
+                "location": null,
+                "expected": "true",
+                "received": "false",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "the webhook boundary itself a redelivered message id is deduplicated, not answered twice",
+                "location": null,
+                "expected": null,
+                "received": "0",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-003 — a product this shop really sells the verified price and tenant-owned photo reach Meta",
+                "location": null,
+                "expected": "gemini-lite",
+                "received": "null",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-003 — a product this shop really sells AI-derived material remains uncertain in the customer reply",
+                "location": null,
+                "expected": null,
+                "received": null,
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-004 — an attribute the catalog does not record a fabric asserted for a product with material = NULL is withdrawn",
+                "location": null,
+                "expected": "1390",
+                "received": null,
+                "assertionKind": "MISSING_SUBSTRING"
+              },
+              {
+                "title": "META-E2E-004 — an attribute the catalog does not record \"eta chiffon?\" with nothing grounded is answered by asking which product",
+                "location": null,
+                "expected": "true",
+                "received": "false",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-005 — a verified product with no stored photo the reply says the photo is unavailable and attaches nothing",
+                "location": null,
+                "expected": "1250",
+                "received": null,
+                "assertionKind": "MISSING_SUBSTRING"
+              },
+              {
+                "title": "META-E2E-005 — a verified product with no stored photo no substitute media is allowed to stand in for the missing photo",
+                "location": null,
+                "expected": "SAFE_FALLBACK",
+                "received": "SEND",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-006 — a Page that does not own the product Shop B still answers from its own catalog",
+                "location": null,
+                "expected": null,
+                "received": null,
+                "assertionKind": "MISSING_SUBSTRING"
+              },
+              {
+                "title": "META-E2E-REPLY-MODE — one business mode controls every automatic send AUTO sends exactly one automatic reply",
+                "location": null,
+                "expected": null,
+                "received": null,
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-REPLY-MODE — one business mode controls every automatic send mode changes are isolated by shop",
+                "location": null,
+                "expected": null,
+                "received": null,
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+                "location": null,
+                "expected": null,
+                "received": null,
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-008 — merchant policy the shop never supplied a figure the merchant DID supply is quotable, and is attributed",
+                "location": null,
+                "expected": "SEND",
+                "received": "SAFE_FALLBACK",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-009 — media provenance another product of this shop is never sent in place of the verified photo",
+                "location": null,
+                "expected": "SAFE_FALLBACK",
+                "received": "SEND",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-009 — media provenance a product of another shop is never sent in place of the verified photo",
+                "location": null,
+                "expected": "SAFE_FALLBACK",
+                "received": "SEND",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-009 — media provenance a generic URL is never sent in place of the verified photo",
+                "location": null,
+                "expected": "SAFE_FALLBACK",
+                "received": "SEND",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-009 — media provenance the shop Facebook Page is never sent in place of the verified photo",
+                "location": null,
+                "expected": "SAFE_FALLBACK",
+                "received": "SEND",
+                "assertionKind": "VALUE_MISMATCH"
+              },
+              {
+                "title": "META-E2E-010 — the fallback provider a primary-provider outage fails over, and the reply still passes the gate",
+                "location": null,
+                "expected": "1847",
+                "received": null,
+                "assertionKind": "MISSING_SUBSTRING"
+              },
+              {
+                "title": "META-E2E-012 — unusable model output an empty completion for a product question is replaced by written copy",
+                "location": null,
+                "expected": null,
+                "received": "0",
+                "assertionKind": "VALUE_MISMATCH"
+              }
+            ]
+          }
+        ]
+      },
+      "deliveryDiagnostics": [
+        {
+          "sequence": 1,
+          "testName": "the webhook boundary itself a redelivered message id is deduplicated, not answered twice",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 2,
+          "testName": "the webhook boundary itself a redelivered message id is deduplicated, not answered twice",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 3,
+          "testName": "META-E2E-001 — a product this catalog does not contain \"chiffon saree ache?\" is answered from the catalog, with no model call",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 4,
+          "testName": "META-E2E-001 — a product this catalog does not contain the stored reply carries the grounding stamps that explain it",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 5,
+          "testName": "META-E2E-002 — the same conversation under repeated pressure four escalating turns never produce a product, a price, a photo or a Page link",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 6,
+          "testName": "META-E2E-002 — the same conversation under repeated pressure four escalating turns never produce a product, a price, a photo or a Page link",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_NOT_FOUND",
+            "productStatus": "NONE",
+            "mediaStatus": "NO_PRODUCT",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 7,
+          "testName": "META-E2E-002 — the same conversation under repeated pressure four escalating turns never produce a product, a price, a photo or a Page link",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NO_PRODUCT",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 8,
+          "testName": "META-E2E-002 — the same conversation under repeated pressure four escalating turns never produce a product, a price, a photo or a Page link",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_NOT_FOUND",
+            "productStatus": "NONE",
+            "mediaStatus": "NO_PRODUCT",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 9,
+          "testName": "META-E2E-002 — the same conversation under repeated pressure four escalating turns never produce a product, a price, a photo or a Page link",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NO_PRODUCT",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 10,
+          "testName": "META-E2E-003 — a product this shop really sells the verified price and tenant-owned photo reach Meta",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 11,
+          "testName": "META-E2E-003 — a product this shop really sells AI-derived material remains uncertain in the customer reply",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_ATTRIBUTE_UNKNOWN",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 12,
+          "testName": "META-E2E-003 — a product this shop really sells a price the catalog does not hold is replaced even for a verified product",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 13,
+          "testName": "META-E2E-004 — an attribute the catalog does not record a fabric asserted for a product with material = NULL is withdrawn",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_ATTRIBUTE_UNKNOWN",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "77777777-0000-4000-8000-000000000007"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 14,
+          "testName": "META-E2E-004 — an attribute the catalog does not record \"eta chiffon?\" with nothing grounded is answered by asking which product",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "dddddddd-0000-4000-8000-00000000000d"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 15,
+          "testName": "META-E2E-004 — an attribute the catalog does not record \"eta chiffon?\" with nothing grounded is answered by asking which product",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 16,
+          "testName": "META-E2E-005 — a verified product with no stored photo the reply says the photo is unavailable and attaches nothing",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "UNAVAILABLE",
+            "verifiedProductIds": [
+              "eeeeeeee-0000-4000-8000-00000000000e"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 17,
+          "testName": "META-E2E-005 — a verified product with no stored photo no substitute media is allowed to stand in for the missing photo",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "UNAVAILABLE",
+            "verifiedProductIds": [
+              "eeeeeeee-0000-4000-8000-00000000000e"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 18,
+          "testName": "META-E2E-006 — a Page that does not own the product Shop A's product is NOT_FOUND when asked through Shop B's Page",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 19,
+          "testName": "META-E2E-006 — a Page that does not own the product Shop B still answers from its own catalog",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "99999999-0000-4000-8000-000000000009"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 20,
+          "testName": "META-E2E-INBOUND-IDENTITY — legacy adoption without Page leakage adopts a legacy customer and conversation instead of opening a second thread",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "MODEL_OUTPUT_INVALID",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [
+              "empty_or_non_string_candidate"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 21,
+          "testName": "META-E2E-INBOUND-IDENTITY — legacy adoption without Page leakage creates a separate customer and conversation when the existing row is pinned to another Page",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "auto_escalated"
+            }
+          ],
+          "decision": null,
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 22,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send MANUAL skips before the LLM and sends zero automatic messages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 23,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send DRAFT stores a suggestion without sending, then one explicit agent send succeeds",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "draft_mode"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 24,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send AUTO sends exactly one automatic reply",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 25,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send mode changes are isolated by shop",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 26,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send mode changes are isolated by shop",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "99999999-0000-4000-8000-000000000009"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 27,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 28,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "manual_mode"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 29,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "draft_mode"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 30,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "draft_mode"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 31,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 32,
+          "testName": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 33,
+          "testName": "META-E2E-007 — an earlier ungrounded assistant turn authoritative retrieval overrides what the assistant said before",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 34,
+          "testName": "META-E2E-007 — an earlier ungrounded assistant turn authoritative retrieval overrides what the assistant said before",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 35,
+          "testName": "META-E2E-007 — an earlier ungrounded assistant turn the model leaning on its own earlier claim is stopped at the gate",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 36,
+          "testName": "META-E2E-007 — an earlier ungrounded assistant turn the model leaning on its own earlier claim is stopped at the gate",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 37,
+          "testName": "META-E2E-008 — merchant policy the shop never supplied an invented return fee never reaches Meta",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "PRODUCT_NOT_FOUND",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 38,
+          "testName": "META-E2E-008 — merchant policy the shop never supplied a figure the merchant DID supply is quotable, and is attributed",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [
+              "29"
+            ],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 39,
+          "testName": "META-E2E-008 — merchant policy the shop never supplied a figure the merchant did NOT supply is rejected on the same knowledge path",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [
+              "30"
+            ],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 40,
+          "testName": "META-E2E-009 — media provenance another product of this shop is never sent in place of the verified photo",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 41,
+          "testName": "META-E2E-009 — media provenance a product of another shop is never sent in place of the verified photo",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 42,
+          "testName": "META-E2E-009 — media provenance a generic URL is never sent in place of the verified photo",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 43,
+          "testName": "META-E2E-009 — media provenance the shop Facebook Page is never sent in place of the verified photo",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "AVAILABLE",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": "cccccccc-0000-4000-8000-00000000000c",
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 2,
+          "providerCalls": []
+        },
+        {
+          "sequence": 44,
+          "testName": "META-E2E-010 — the fallback provider a primary-provider outage fails over, and the reply still passes the gate",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "openai"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 45,
+          "testName": "META-E2E-010 — the fallback provider the fallback provider is held to exactly the same boundary",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "UNSUPPORTED_PRICE_CLAIM",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "openai"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 46,
+          "testName": "META-E2E-010 — the fallback provider every provider failing sends the generic fallback and holds for a human",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 47,
+          "testName": "META-E2E-011 — the catalog cannot be read an outage becomes RETRIEVAL_FAILED, a human handoff and no answer",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "RETRIEVAL_FAILED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 48,
+          "testName": "META-E2E-011 — the catalog cannot be read an outage is never downgraded to \"we do not sell that\"",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "RETRIEVAL_FAILED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": []
+        },
+        {
+          "sequence": 49,
+          "testName": "META-E2E-012 — unusable model output an empty completion for a product question is replaced by written copy",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SAFE_FALLBACK",
+            "reasonCode": "MODEL_OUTPUT_INVALID",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [
+              "empty_or_non_string_candidate"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 50,
+          "testName": "META-E2E-012 — unusable model output an empty completion with nothing to answer sends nothing at all",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "grounding_suppressed"
+            }
+          ],
+          "decision": {
+            "decision": "SUPPRESS",
+            "reasonCode": "MODEL_OUTPUT_INVALID",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [
+              "empty_or_non_string_candidate"
+            ],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 51,
+          "testName": "META-E2E-013 — the first message on a conversation is metered a new conversation records exactly one committed usage event",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 52,
+          "testName": "META-E2E-013 — the first message on a conversation is metered the shop's counted usage moves with it",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 53,
+          "testName": "META-E2E-013 — the first message on a conversation is metered later messages in the same conversation are not re-metered",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "low_confidence_handoff"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NONE",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite",
+            "openai"
+          ]
+        },
+        {
+          "sequence": 54,
+          "testName": "META-E2E-013 — the first message on a conversation is metered later messages in the same conversation are not re-metered",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "hitl_active"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 55,
+          "testName": "META-E2E-013 — the first message on a conversation is metered later messages in the same conversation are not re-metered",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": null,
+              "sent": null,
+              "reason": "hitl_active"
+            }
+          ],
+          "decision": null,
+          "sendCount": 0,
+          "providerCalls": []
+        },
+        {
+          "sequence": 56,
+          "testName": "META-E2E-014 — resolve cannot strand a newer inbound turn an inbound committed before Resolve keeps the conversation open",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 57,
+          "testName": "META-E2E-014 — resolve cannot strand a newer inbound turn Resolve before a later inbound closes first, then the inbound reopens it",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": false,
+              "reason": "operating_context_stale"
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "VERIFIED",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [
+              "cccccccc-0000-4000-8000-00000000000c"
+            ],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": "gemini-lite"
+          },
+          "sendCount": 0,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        },
+        {
+          "sequence": 58,
+          "testName": "META-E2E-014 — resolve cannot strand a newer inbound turn Resolve before a later inbound closes first, then the inbound reopens it",
+          "status": 200,
+          "receiptStatus": "QUEUED",
+          "worker": [
+            {
+              "success": true,
+              "sent": true,
+              "reason": null
+            }
+          ],
+          "decision": {
+            "decision": "SEND",
+            "reasonCode": "GROUNDED",
+            "productStatus": "NOT_FOUND",
+            "mediaStatus": "NOT_REQUESTED",
+            "verifiedProductIds": [],
+            "mediaProductId": null,
+            "knowledgeIds": [],
+            "violations": [],
+            "provider": null
+          },
+          "sendCount": 1,
+          "providerCalls": [
+            "gemini-lite"
+          ]
+        }
+      ]
+    }
+  },
+  "egress": {
+    "mode": "Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch",
+    "guard": "PASS",
+    "blockedNonLoopbackAttempts": 0,
+    "externalProvidersConfigured": false
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 2609,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 0,
+      "durationMs": 14849,
+      "timedOut": false
+    },
+    {
+      "stage": "webhook_pipeline_e2e_jest",
+      "exitCode": 1,
+      "durationMs": 37312,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-22228-59bb84"
+    }
+  ],
+  "failure": "The real webhook-to-worker-to-outbound Meta-shaped suite failed.",
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

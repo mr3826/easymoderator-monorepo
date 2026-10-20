@@ -52,13 +52,14 @@ jest.mock('src/modules/entities', () => ({
     FaqResponse: { findAll: jest.fn(async () => []), findOne: jest.fn(async () => null) },
 }));
 
-const { route } = require('src/modules/ai/intent-router.service');
+const { route, buildSystemPrompt } = require('src/modules/ai/intent-router.service');
 const llm = require('src/modules/ai/llm.service');
 const productSearch = require('src/modules/product/product-search.service');
 const rag = require('src/modules/rag/rag.service');
 const { FaqResponse } = require('src/modules/entities');
 const grounding = require('src/modules/ai/grounding');
 const { faqSnapshot } = require('src/modules/ai/knowledge-snapshot');
+const { hashOperatingContext } = require('src/modules/ai/shop-operating-context.service');
 
 const SHOP = 'shop-1';
 const lastSystemPrompt = () => {
@@ -78,6 +79,32 @@ beforeEach(() => {
 });
 
 describe('B — Bengali product-intent gate', () => {
+    test('a photo request with no stored image still shares the verified product price', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'kurti-no-photo',
+            shop_id: SHOP,
+            name: 'Green Kurti',
+            price: 1250,
+            quantity: 4,
+            track_quantity: true,
+            variants: [],
+            image_url: null,
+            images: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'green kurti picture den',
+            systemPrompt: 'BASE',
+            language: 'en',
+        });
+
+        expect(result.source).toBe('grounding_media_unavailable');
+        expect(result.response).toContain('৳1,250');
+        expect(result.response).toMatch(/photo.*available/i);
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
     test('a pure Bengali-script price question reaches the live DB product search', async () => {
         productSearch.searchByAttributes.mockResolvedValue([{ id: 'p1', shop_id: SHOP, name: 'Cotton Panjabi', price: 1200 }]);
 
@@ -526,6 +553,74 @@ describe('D — customer photo → product matching', () => {
 });
 
 describe('settings generation and inactive FAQ cache boundaries', () => {
+    test('send evidence fingerprints only the authoritative operating context block', async () => {
+        const operatingContext = [
+            '--- SHOP PAYMENT & DELIVERY (authoritative: this shop current settings) ---',
+            'Accepted payment: Cash on Delivery (COD) ONLY.',
+            'Delivery: available nationwide across Bangladesh.',
+        ].join('\n');
+        const systemPrompt = buildSystemPrompt(
+            { businessInfo: { shopName: 'Fixture Shop' } },
+            'en',
+            false,
+            'friendly_bd',
+            [],
+            operatingContext,
+        );
+        llm.chat.mockResolvedValue({ text: 'We accept cash on delivery.', provider: 'gemini-lite' });
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'What payment method do you accept?',
+            systemPrompt,
+            language: 'en',
+        });
+
+        expect(result.grounding.operatingContextHash).toBe(hashOperatingContext(operatingContext));
+    });
+
+    test('a zero intent-cache TTL disables cache reads and writes', async () => {
+        const previousTtl = process.env.INTENT_CACHE_TTL_SECONDS;
+        process.env.INTENT_CACHE_TTL_SECONDS = '0';
+        let routeWithoutCache;
+        let isolatedLlm;
+        let isolatedFaq;
+        let isolatedRag;
+        let cacheGet;
+        let cacheSetex;
+        jest.isolateModules(() => {
+            ({ route: routeWithoutCache } = require('src/modules/ai/intent-router.service'));
+            isolatedLlm = require('src/modules/ai/llm.service');
+            isolatedFaq = require('src/modules/entities').FaqResponse;
+            isolatedRag = require('src/modules/rag/rag.service');
+            const { MemoryCache } = require('src/config/memory-cache');
+            cacheGet = jest.spyOn(MemoryCache.prototype, 'get');
+            cacheSetex = jest.spyOn(MemoryCache.prototype, 'setex');
+        });
+
+        try {
+            isolatedLlm.chat.mockResolvedValue({ text: 'Please ask the shop for details.', provider: 'gemini-lite' });
+            isolatedFaq.findAll.mockResolvedValue([]);
+            isolatedRag.queryData.mockResolvedValue({ results: [] });
+
+            const result = await routeWithoutCache({
+                shopId: SHOP,
+                message: 'Can you explain your return policy?',
+                systemPrompt: 'BASE',
+                language: 'en',
+            });
+
+            expect(result.source).toBe('llm');
+            expect(cacheGet).not.toHaveBeenCalled();
+            expect(cacheSetex).not.toHaveBeenCalled();
+        } finally {
+            cacheGet.mockRestore();
+            cacheSetex.mockRestore();
+            if (previousTtl === undefined) delete process.env.INTENT_CACHE_TTL_SECONDS;
+            else process.env.INTENT_CACHE_TTL_SECONDS = previousTtl;
+        }
+    });
+
     test('full LLM routing records the shop operating-context hash', async () => {
         const operatingContext = '--- SHOP PAYMENT & DELIVERY (current settings) ---\nAccepted payment: COD ONLY.';
         const systemPrompt = `BASE\n\n${operatingContext}`;

@@ -28,6 +28,24 @@ const catalogProduct = (overrides = {}) => ({
     ...overrides,
 });
 
+const evidenceForProducts = (products) => {
+    const evidence = grounding.emptyEvidence(SHOP);
+    evidence.productStatus = grounding.ProductEvidenceStatus.VERIFIED;
+    evidence.verifiedProducts = products.map(({ product, material }) => {
+        const facts = grounding.buildFacts(product);
+        if (material) facts.material = material;
+        return {
+            id: product.id,
+            shopId: SHOP,
+            name: product.name,
+            nameBn: product.name_bn || null,
+            facts,
+            imageUrl: null,
+        };
+    });
+    return evidence;
+};
+
 describe('product evidence trust boundaries', () => {
     test('a candidate explicitly owned by a different shop cannot verify here', () => {
         const evidence = grounding.resolveProductEvidence({
@@ -49,6 +67,315 @@ describe('product evidence trust boundaries', () => {
 
         expect(evidence.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
         expect(evidence.verifiedProducts).toEqual([]);
+    });
+
+    test('an unknown fabric claim is rejected when the material term also appears in the product name', () => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'chiffon kurti ache?',
+            candidates: [catalogProduct({
+                name: 'Chiffon Kurti',
+                category: 'kurti',
+                price: 1390,
+                ai_material: null,
+            })],
+        });
+        const verdict = evaluateCandidate({
+            candidate: 'Chiffon Kurti — ৳1390. Eta pure chiffon fabric.',
+            evidence,
+            language: 'mixed',
+        });
+
+        expect(evidence.askedAttributes).not.toContain('material');
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+        expect(verdict.text).toMatch(/material|fabric/i);
+        expect(verdict.text).not.toMatch(/pure chiffon fabric/i);
+    });
+
+    test('a product name containing an unrecorded material term is not rejected by itself', () => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'chiffon kurti ache?',
+            candidates: [catalogProduct({
+                name: 'Chiffon Kurti',
+                category: 'kurti',
+                price: 1390,
+                ai_material: null,
+            })],
+        });
+        const verdict = evaluateCandidate({
+            candidate: 'Chiffon Kurti ache — ৳1390.',
+            evidence,
+            language: 'mixed',
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+        expect(verdict.text).toBe('Chiffon Kurti ache — ৳1390.');
+    });
+
+    test('a different product title cannot authorize an unknown material claim', () => {
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const knownTitle = catalogProduct({ id: 'known-title', name: 'Pure Chiffon Fabric' });
+        const evidence = evidenceForProducts([
+            { product: unknown },
+            { product: knownTitle, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Blue Kurti is Pure Chiffon Fabric.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test('a known material claim about its named product is not blocked by another unknown product', () => {
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const evidence = evidenceForProducts([
+            { product: unknown },
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is cotton.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a known first product does not authorize an unknown material claim about a later product', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is listed alongside Blue Kurti made of pure chiffon.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test('a material modifier immediately before a later unknown product stays bound to that product', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is listed alongside our pure chiffon Blue Kurti.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test('an unsupported material modifier cannot hide inside the leading word of an unknown product title', () => {
+        const unknown = catalogProduct({ id: 'unknown', name: 'Chiffon Kurti', ai_material: null });
+        const evidence = evidenceForProducts([{ product: unknown }]);
+        const verdict = evaluateCandidate({
+            candidate: 'Pure Chiffon Kurti.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test('a known product assertion cannot hide an unsupported modifier split across the next product title', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Chiffon Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is made of cotton and Pure Chiffon Kurti.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test.each([
+        ['khanti', 'খাঁটি'],
+        ['bishuddho', 'বিশুদ্ধ'],
+        ['shatobhag', 'শতভাগ'],
+        ['Bengali digits 100 percent', '১০০%'],
+    ])('an unsupported Bengali material modifier cannot hide in an unknown title (%s)', (_label, modifier) => {
+        const unknown = catalogProduct({ id: 'unknown', name: 'শিফন কুর্তি', ai_material: null });
+        const evidence = evidenceForProducts([{ product: unknown }]);
+        const verdict = evaluateCandidate({
+            candidate: `${modifier} শিফন কুর্তি।`,
+            evidence,
+            language: 'bn',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test('a Bengali material word in an unknown product title alone remains allowed', () => {
+        const unknown = catalogProduct({ id: 'unknown', name: 'শিফন কুর্তি', ai_material: null });
+        const evidence = evidenceForProducts([{ product: unknown }]);
+        const verdict = evaluateCandidate({
+            candidate: 'শিফন কুর্তি আছে।',
+            evidence,
+            language: 'bn',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a supported material assertion does not transfer into a Bengali material title', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'শিফন কুর্তি', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is made of cotton and শিফন কুর্তি।',
+            evidence,
+            language: 'mixed',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a Bengali material modifier before a generic unknown title remains blocked', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is listed alongside our খাঁটি শিফন Blue Kurti.',
+            evidence,
+            language: 'mixed',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test('a supported material assertion before a later product name stays with the first product', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is made of cotton whereas Blue Kurti has no recorded material.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a completed material assertion ending with a product relation does not transfer to the next product', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is made of cotton next to Blue Kurti.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('another product title containing a material word alone is not an unsupported material assertion', () => {
+        const known = catalogProduct({ id: 'known', name: 'Cotton Shirt' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Chiffon Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Cotton Shirt is listed alongside Chiffon Kurti.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a duplicate product title remains unknown when one matching row has no material fact', () => {
+        const known = catalogProduct({ id: 'known', name: 'Blue Kurti' });
+        const unknown = catalogProduct({ id: 'unknown', name: 'Blue Kurti', ai_material: null });
+        const evidence = evidenceForProducts([
+            { product: known, material: { state: grounding.FactState.KNOWN, value: 'cotton' } },
+            { product: unknown },
+        ]);
+        const verdict = evaluateCandidate({
+            candidate: 'Blue Kurti is chiffon.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
+    test.each([
+        ['short title first', ['Kurti', 'Chiffon Kurti']],
+        ['long title first', ['Chiffon Kurti', 'Kurti']],
+    ])('longest exact product title is preserved when %s in evidence', (_order, names) => {
+        const products = names.map((name, index) => ({
+            product: catalogProduct({
+                id: `overlap-${index}`,
+                name,
+                ai_material: null,
+            }),
+            ...(name === 'Chiffon Kurti'
+                ? { material: { state: grounding.FactState.KNOWN, value: 'cotton' } }
+                : {}),
+        }));
+        const evidence = evidenceForProducts(products);
+        const verdict = evaluateCandidate({
+            candidate: 'Chiffon Kurti is available.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
     });
 
     test('context product rows are filtered by explicit tenant owner', () => {

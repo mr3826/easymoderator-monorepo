@@ -8,7 +8,8 @@ Proves that the production-shaped pipeline preserves the invariant in
 Run it:
 
 ```bash
-npm run test:meta:e2e     # needs PostgreSQL + Redis; see the setup doc
+node scripts/product-experience/run-integration.js  # recommended: disposable DB/Redis plus egress fence
+npm run test:meta:e2e                             # needs dedicated disposable PostgreSQL + Redis
 ```
 
 Setup, fixtures and the live-Meta procedure:
@@ -36,10 +37,20 @@ Setup, fixtures and the live-Meta procedure:
         └─ POST graph.facebook.com/me/messages  ← CAPTURED: the assertion target
 ```
 
-Two transports are replaced, both at the outermost network hop, both in
-[`transport.js`](./transport.js). Nothing between them is stubbed — in
-particular not shop scoping, product retrieval, knowledge retrieval, grounding,
-worker behaviour, conversation history or attachment provenance.
+The provider `fetch` and the Meta Graph `axios.get/post` hops are captured in
+[`transport.js`](./transport.js); unexpected outbound provider fetches and
+non-Graph `axios.get/post` calls throw. The standalone Jest command does not
+install an OS-wide network firewall. The recommended product integration
+runner starts disposable services and installs a Node API egress fence that
+allows loopback hosts while rejecting non-loopback network operations. It does
+not restrict loopback access to the disposable service ports, and it is not an
+OS-wide network firewall.
+
+Most scenarios cover the full signed-webhook pipeline. Two boundary cases are
+deliberate exceptions: one calls the outbound grounding gate directly with a
+proposed attachment vector, and retrieval-outage cases spy on product lookup to
+simulate a catalog read failure. These narrow tests are labeled in
+`meta-e2e.test.js`; they do not claim webhook-to-worker coverage.
 
 ## Assertions
 
