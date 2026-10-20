@@ -240,7 +240,7 @@ async function cmdSeed() {
   const stored = loadStackEnv(current.project);
   if (!stored) die('Missing stored stack environment for the current review project; run growth:review:down first.');
   const password = reviewPassword();
-  const seedEnv = { ...stored.env };
+  const seedEnv = { ...process.env, ...stored.env };
   delete seedEnv.GROWTH_REVIEW_PASSWORD;
 
   console.log('Running migrations inside the owned review backend...');

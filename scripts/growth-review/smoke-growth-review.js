@@ -183,7 +183,7 @@ async function main() {
     const row = merchants.payload.data.items.find((item) => /Chandke/.test(String(item.shopName || item.name || '')));
     if (!row) throw new Error('seeded F-commerce shop not found in admin merchant list');
     const detail = expectStatus(await admin.request('GET', `/api/internal/growth-os/merchants/${row.id}`), 200, 'merchant 360');
-    if (!detail.payload.data.billing) throw new Error('SUPER_ADMIN did not receive the full 360 shape');
+    if (!detail.payload.data.subscription) throw new Error('SUPER_ADMIN did not receive the full 360 shape');
     const channel = detail.payload.data.facebook?.channels?.[0];
     if (!channel) throw new Error('no channels in 360 facebook section');
     const reconnect = expectStatus(await admin.request('POST',
@@ -219,19 +219,24 @@ async function main() {
     }, { csrf: true }), 403, 'admin user creation');
   });
 
-  await check('sales completes a seeded follow-up with a typed outcome (persisted + audited)', async () => {
-    const list = expectStatus(await sales.request('GET', '/api/internal/growth-os/followups?state=overdue&owner=me'), 200, 'list');
-    const first = list.payload.data.items[0];
-    if (!first) throw new Error('no seeded overdue follow-up for the sales identity');
-    const done = expectStatus(await sales.request('POST', `/api/internal/growth-os/followups/${first.id}/status`, {
+  await check('sales creates and completes a follow-up with a typed outcome (persisted + audited)', async () => {
+    const prospects = expectStatus(await sales.request('GET', '/api/internal/growth-os/prospects?owner=me&pageSize=1'), 200, 'prospects');
+    const prospect = prospects.payload.data.items[0];
+    if (!prospect) throw new Error('no prospects assigned to the sales identity');
+    const created = expectStatus(await sales.request('POST', '/api/internal/growth-os/followups', {
+      prospectId: prospect.id,
+      dueAt: new Date(Date.now() + 3_600_000).toISOString(),
+      action: 'Local review smoke follow-up',
+    }, { csrf: true }), 201, 'followup create');
+    const done = expectStatus(await sales.request('POST', `/api/internal/growth-os/followups/${created.payload.data.id}/status`, {
       status: 'completed', outcome: 'reached', reason: 'smoke: reached owner',
     }, { csrf: true }), 200, 'transition');
     if (done.payload.data.status !== 'completed') throw new Error(`status ${done.payload.data.status}`);
     const timeline = expectStatus(await sales.request(
-      'GET', `/api/internal/growth-os/prospects/${first.prospectId}`,
-    ), 200, 'prospect');
+      'GET', `/api/internal/growth-os/prospects/${prospect.id}`,
+    ), 200, 'prospect detail');
     const completion = timeline.payload.data.timeline.find(
-      (event) => event.eventType === 'followup_completed' && event.metadata?.followup_id === first.id,
+      (event) => event.eventType === 'followup_completed' && event.metadata?.followup_id === created.payload.data.id,
     );
     if (!completion) throw new Error('completion event missing from timeline');
     if (completion.metadata?.outcome !== 'reached') throw new Error(`outcome ${completion.metadata?.outcome}`);
@@ -261,16 +266,18 @@ async function main() {
     }
   });
 
-  await check('masked Merchant insight never returns admin-only billing fields for sales', async () => {
+  await check('masked Merchant insight never returns admin-only 360 sections for sales', async () => {
     const merchants = expectStatus(await sales.request('GET', '/api/internal/growth-os/merchants'), 200, 'merchants');
-    const row = merchants.payload.data.items.find((item) => item.id);
+    const row = merchants.payload.data.items.find((item) => item.shopId || item.id);
     if (!row) throw new Error('no insight rows seeded');
-    const detail = expectStatus(await sales.request('GET', `/api/internal/growth-os/merchants/${row.id}`), 200, 'detail');
-    const shape = JSON.stringify(detail.payload.data);
-    if (/invoice|payment|token/i.test(shape)) {
-      // The masked insight shape must not carry billing/channel-token sections.
-      if (detail.payload.data.billing || detail.payload.data.messaging) throw new Error('admin-only sections leaked');
+    const targetId = row.shopId || row.id;
+    const detail = expectStatus(await sales.request('GET', `/api/internal/growth-os/merchants/${targetId}`), 200, 'detail');
+    const data = detail.payload.data;
+    if (data.subscription?.invoices || data.facebook?.channels || data.overview || data.billing || data.notes) {
+      throw new Error('admin-only 360 sections leaked into masked insight');
     }
+    const raw = JSON.stringify(data);
+    if (/token/i.test(raw)) throw new Error('token material present in insight payload');
   });
 
   const failed = results.filter((entry) => !entry.pass);
@@ -282,9 +289,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Review smoke crashed: ${error.message}`);
-  process.exitCode = process.exitCode || 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`Review smoke crashed: ${error.message}`);
+    process.exitCode = process.exitCode || 1;
+  });
+}
 
 module.exports = { runSmoke: main };

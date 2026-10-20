@@ -84,6 +84,7 @@ function dhakaNoonToday() {
 
 const now = () => new Date();
 const daysAgo = (days) => new Date(Date.now() - days * 86_400_000);
+const daysAhead = (days) => new Date(Date.now() + days * 86_400_000);
 
 const shopDefinitions = {
   // Growing operational merchant: suspended subscription and a payment stuck
@@ -336,6 +337,9 @@ async function ensureTenant() {
         plan_price: definition.subscription.planPrice,
         billing_cycle: 'monthly',
         status: definition.subscription.status,
+        current_period_start: daysAgo(12),
+        current_period_end: daysAhead(18),
+        next_billing_date: daysAhead(18),
       });
     }
 
@@ -532,12 +536,13 @@ async function seedWork(users, prospects) {
     author_user_id: users.admin.user.id,
     body: scenarioLabel('Dunning paused recurring invoice; suspended subscription signal is canonical.'),
   });
+  const hobbyShop = await Shop.findOne({ where: { unique_code: shopDefinitions.hobby.unique_code } });
   await AuditLog.create({
     user_id: users.admin.user.id,
-    shop_id: (await Shop.findOne({ where: { unique_code: shopDefinitions.hobby.unique_code } })).id,
+    shop_id: hobbyShop.id,
     action: 'growth_review_demo:seed_receipt',
     resource_type: 'GROWTH_OS_ADMIN_MERCHANT',
-    resource_id: null,
+    resource_id: hobbyShop.id,
     old_values: null,
     new_values: { seeded: true },
     metadata: { source: FIXTURE_VERSION },
