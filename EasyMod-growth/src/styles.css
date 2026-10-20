@@ -1325,3 +1325,163 @@ details.content-card {
     margin-right: 0;
   }
 }
+
+/* Action-First V1: workspace context switcher */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.context-switcher {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #cfd9d0;
+  border-radius: 999px;
+  background: #eef3ee;
+}
+
+.context-option {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #33423e;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.context-option[aria-pressed='true'] {
+  background: #1f5d57;
+  color: #ffffff;
+}
+
+.context-option:focus-visible {
+  outline: 2px solid #1f5d57;
+  outline-offset: 2px;
+}
+
+.add-prospect-action {
+  white-space: nowrap;
+}
+
+/* Action-First V1: prioritized sales queue */
+.action-queue {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.queue-segment {
+  display: grid;
+  gap: 10px;
+}
+
+.queue-list {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.queue-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid #d8e0da;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #fbfdfb;
+}
+
+.queue-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.queue-row-title {
+  font-weight: 700;
+  color: #1f5d57;
+  overflow-wrap: anywhere;
+}
+
+.why-badge {
+  color: #60716b;
+  font-style: italic;
+}
+
+.queue-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Admin Control landing signals */
+.signal-card {
+  align-content: start;
+  gap: 6px;
+}
+
+.signal-card p {
+  margin: 0;
+}
+
+/* Growth Performance tab shell */
+.tab-row .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.performance-embedded {
+  min-width: 0;
+}
+
+.performance-embedded .page-heading {
+  margin-top: 4px;
+}
+
+@media (max-width: 780px) {
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .queue-row > .secondary-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .loading-mark {
+    animation: none;
+    border-top-color: #1f5d57;
+  }
+
+  .skeleton-row {
+    animation: none;
+  }
+}
+

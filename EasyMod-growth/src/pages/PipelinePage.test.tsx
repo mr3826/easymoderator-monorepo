@@ -88,7 +88,7 @@ describe('PipelinePage', () => {
     expect(screen.getByText('Showing 1 of 37.')).toBeInTheDocument();
     expect(screen.getByText('Assigned')).toBeInTheDocument();
     expect(screen.getByText('Unassigned')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^Converted 0$/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^AI Activated 0$/ })).toBeInTheDocument();
   });
 
   it('keeps other columns rendered when one column request fails', async () => {

@@ -533,7 +533,7 @@ export function ProspectDetailPage() {
                   {busyAction === 'assign' ? 'Saving' : 'Save owner'}
                 </button>
               </form>
-            ) : <p className="state-copy">{isMerged ? 'Merged records cannot be changed.' : 'Only Growth Managers and Founders can change ownership.'}</p>}
+            ) : <p className="state-copy">{isMerged ? 'Merged records cannot be changed.' : 'Only Super Admins and Growth Users with full management scope can change ownership.'}</p>}
           </section>
 
           <section className="content-card" aria-labelledby="linkage-title">
@@ -600,7 +600,7 @@ export function ProspectDetailPage() {
                   </button>
                 ) : null}
               </form>
-            ) : <p className="state-copy">{isMerged ? 'Merged records cannot be changed.' : 'Shop and user linkage is available to Growth Managers and Founders.'}</p>}
+            ) : <p className="state-copy">{isMerged ? 'Merged records cannot be changed.' : 'Shop and user linkage is available to Super Admins and Growth Users with full management scope.'}</p>}
           </section>
 
           {canManage && !isMerged ? (

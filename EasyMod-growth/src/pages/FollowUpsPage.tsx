@@ -3,10 +3,13 @@ import { RefreshCw } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ApiError,
+  FOLLOWUP_OUTCOME_LABELS,
   workspaceApi,
   type Followup,
   type FollowupListResponse,
+  type FollowupOutcome,
   type FollowupState,
+  type FollowupTransitionPayload,
 } from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { fromBusinessDateTimeLocal, formatGrowthDateTime, toBusinessDateTimeLocal } from '@/growthTime';
@@ -61,6 +64,9 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [rescheduleDue, setRescheduleDue] = useState('');
+  const [outcomeId, setOutcomeId] = useState<string | null>(null);
+  const [outcomeChoice, setOutcomeChoice] = useState<FollowupOutcome | ''>('');
+  const [outcomeReason, setOutcomeReason] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -89,6 +95,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
 
   function reload() {
     setRescheduleId(null);
+    setOutcomeId(null);
     setActionError(null);
     setReloadToken((current) => current + 1);
   }
@@ -128,7 +135,7 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
     navigateView(nextState, 1);
   }
 
-  async function runAction(followup: Followup, kind: ActionKey['kind']) {
+  async function runAction(followup: Followup, kind: ActionKey['kind'], transition?: FollowupTransitionPayload) {
     setActionState({ id: followup.id, kind });
     setActionError(null);
     try {
@@ -140,9 +147,16 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
         }
         await workspaceApi.updateFollowup(followup.id, { dueAt: dueDate.toISOString() });
       } else {
-        await workspaceApi.transitionFollowup(followup.id, kind === 'complete' ? 'completed' : 'cancelled');
+        await workspaceApi.transitionFollowup(
+          followup.id,
+          kind === 'complete' ? 'completed' : 'cancelled',
+          transition ?? {},
+        );
       }
       setRescheduleId(null);
+      setOutcomeId(null);
+      setOutcomeChoice('');
+      setOutcomeReason('');
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -152,8 +166,26 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
     }
   }
 
+  function startComplete(followup: Followup) {
+    setActionError(null);
+    setRescheduleId(null);
+    setOutcomeId(followup.id);
+    setOutcomeChoice('');
+    setOutcomeReason('');
+  }
+
+  function submitComplete(event: FormEvent<HTMLFormElement>, followup: Followup) {
+    event.preventDefault();
+    if (!outcomeChoice) {
+      setActionError('Choose an outcome before completing this follow-up.');
+      return;
+    }
+    void runAction(followup, 'complete', { outcome: outcomeChoice, reason: outcomeReason || undefined });
+  }
+
   function startReschedule(followup: Followup) {
     setActionError(null);
+    setOutcomeId(null);
     setRescheduleId(followup.id);
     setRescheduleDue(toDateTimeLocal(followup.dueAt));
   }
@@ -285,15 +317,51 @@ export function FollowUpsPage({ scope }: { scope: 'mine' | 'all' }) {
                                 </button>
                               </div>
                             </form>
+                          ) : outcomeId === followup.id ? (
+                            <form className="action-form" aria-label={`Record outcome for ${followup.action}`} onSubmit={(event) => submitComplete(event, followup)}>
+                              <label htmlFor={`outcome-${followup.id}`}>
+                                Outcome (required)
+                                <select
+                                  id={`outcome-${followup.id}`}
+                                  value={outcomeChoice}
+                                  onChange={(event) => setOutcomeChoice(event.target.value as FollowupOutcome)}
+                                  required
+                                >
+                                  <option value="" disabled>Choose what happened…</option>
+                                  {(Object.keys(FOLLOWUP_OUTCOME_LABELS) as FollowupOutcome[]).map((outcome) => (
+                                    <option key={outcome} value={outcome}>{FOLLOWUP_OUTCOME_LABELS[outcome]}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label htmlFor={`outcome-reason-${followup.id}`}>
+                                Reason (optional, max 200 chars)
+                                <input
+                                  id={`outcome-reason-${followup.id}`}
+                                  type="text"
+                                  maxLength={200}
+                                  value={outcomeReason}
+                                  onChange={(event) => setOutcomeReason(event.target.value)}
+                                  placeholder="Short context recorded on the audited timeline"
+                                />
+                              </label>
+                              <div className="button-row">
+                                <button className="primary-button" type="submit" disabled={busy}>
+                                  {actionState?.id === followup.id && actionState.kind === 'complete' ? 'Completing' : 'Record and complete'}
+                                </button>
+                                <button className="secondary-button" type="button" disabled={busy} onClick={() => setOutcomeId(null)}>
+                                  Close
+                                </button>
+                              </div>
+                            </form>
                           ) : (
                             <div className="button-row">
                               <button
                                 className="secondary-button"
                                 type="button"
                                 disabled={busy}
-                                onClick={() => void runAction(followup, 'complete')}
+                                onClick={() => startComplete(followup)}
                               >
-                                {actionState?.id === followup.id && actionState.kind === 'complete' ? 'Completing' : 'Complete'}
+                                Complete
                               </button>
                               <button
                                 className="secondary-button"

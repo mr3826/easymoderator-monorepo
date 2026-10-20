@@ -14,6 +14,13 @@ const { getBusinessDayBounds } = require('./growth-os.time');
 const { isEligibleGrowthAssigneeRole } = require('./growth-os.permissions');
 
 const FOLLOWUP_STATUSES = Object.freeze(['open', 'completed', 'cancelled']);
+const FOLLOWUP_OUTCOMES = Object.freeze([
+  'reached',
+  'no_answer',
+  'not_interested',
+  'next_step_scheduled',
+  'other',
+]);
 const MAX_PAGE_SIZE = 100;
 
 function invalidInput(message, code = 'GROWTH_OS_WORK_INVALID_INPUT') {
@@ -251,7 +258,8 @@ async function listFollowups({
 }
 
 async function transitionFollowup({
-  actorUserId, access, actorIsSuperAdmin = false, followupId, toStatus, ipAddress, userAgent,
+  actorUserId, access, actorIsSuperAdmin = false, followupId, toStatus, outcome = null, reason = null,
+  ipAddress, userAgent,
 }) {
   const { canManageAny } = assertFollowupAccess({ access, actorUserId, actorIsSuperAdmin });
   // Only terminal targets are valid here. The HTTP validator already restricts
@@ -259,6 +267,14 @@ async function transitionFollowup({
   // row either; the source check below keeps every non-open row terminal.
   if (toStatus !== 'completed' && toStatus !== 'cancelled') {
     invalidInput('target status must be completed or cancelled.');
+  }
+  if (outcome !== null && !FOLLOWUP_OUTCOMES.includes(outcome)) {
+    invalidInput('outcome must be one of the allowed follow-up outcomes.');
+  }
+  if (reason !== null && reason !== undefined) {
+    if (typeof reason !== 'string' || reason.trim().length === 0 || reason.length > 200) {
+      invalidInput('reason must be 1..200 characters when provided.');
+    }
   }
   const db = getSequelize();
   return db.transaction(async (transaction) => {
@@ -291,7 +307,8 @@ async function transitionFollowup({
       resourceType: 'growth_os_followup',
       resourceId: row.id,
       oldValues: { status: oldStatus },
-      newValues: { status: toStatus },
+      newValues: { status: toStatus, outcome: outcome || undefined },
+      metadata: reason ? { reason } : {},
       ipAddress,
       userAgent,
     }, transaction);
@@ -299,7 +316,8 @@ async function transitionFollowup({
       prospect_id: row.prospect_id,
       actor_user_id: actorUserId,
       event_type: toStatus === 'completed' ? 'followup_completed' : 'followup_cancelled',
-      metadata: { followup_id: row.id },
+      reason: reason || null,
+      metadata: { followup_id: row.id, outcome: outcome || null },
     }, { transaction });
     return toApiFollowup(row);
   });
@@ -532,6 +550,7 @@ async function deleteNote({ actorUserId, access, noteId, actorIsSuperAdmin, ipAd
 
 module.exports = {
   FOLLOWUP_STATUSES,
+  FOLLOWUP_OUTCOMES,
   createFollowup,
   listFollowups,
   updateFollowup,

@@ -1,6 +1,7 @@
 import {
-  BarChart3,
+  Activity,
   Building2,
+  CalendarClock,
   Gauge,
   Home,
   KeyRound,
@@ -8,65 +9,96 @@ import {
   LogOut,
   PlusCircle,
   ScrollText,
-  Search,
   ShieldCheck,
-  Tags,
   UserCog,
   UsersRound,
   Workflow,
 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { PROSPECT_READ_PERMISSIONS, REPORT_READ_PERMISSIONS, type PermissionInput } from '@/auth/usePermission';
+import {
+  hasAdminContext,
+  persistWorkspaceContext,
+  resolveWorkspaceContext,
+  type WorkspaceContext,
+} from '@/auth/workspaceContext';
 
 type NavEntry = { to: string; label: string; icon: typeof Home; end?: boolean; permission?: PermissionInput };
 type NavGroup = { id: string; label: string; entries: NavEntry[] };
 
-const NAV_GROUPS: NavGroup[] = [
+const MERCHANT_ENTRY: NavEntry = {
+  to: '/merchants',
+  label: 'Merchants',
+  icon: Building2,
+  permission: ['growth_os.merchants.read_insight', 'growth_os.admin.merchants.read'],
+};
+
+// Sales & Growth answers "who do I act on next". Every entry leads to work,
+// not to a chart. Quick Add and Sources live inside the lead/performance
+// flows; global search lives in the header.
+const SALES_GROUPS: NavGroup[] = [
   {
     id: 'workspace',
     label: 'Workspace',
     entries: [
-      { to: '/', label: 'Home', icon: Home, end: true, permission: 'growth_os.prospects.read_all' },
+      { to: '/', label: 'Today', icon: Home, end: true, permission: 'growth_os.prospects.read_all' },
       { to: '/my-work', label: 'My Work', icon: ListChecks, permission: 'growth_os.followups.manage' },
     ],
   },
   {
-    id: 'growth',
-    label: 'Growth',
+    id: 'leads',
+    label: 'Leads',
     entries: [
       { to: '/prospects', label: 'Prospects', icon: UsersRound, permission: PROSPECT_READ_PERMISSIONS },
-      { to: '/quick-add', label: 'Quick Add', icon: PlusCircle, permission: 'growth_os.prospects.manage_all' },
       { to: '/pipeline', label: 'Pipeline', icon: Workflow, permission: PROSPECT_READ_PERMISSIONS },
-      { to: '/follow-ups', label: 'Follow-ups', icon: PlusCircle, permission: 'growth_os.followups.manage' },
-      { to: '/sources', label: 'Sources', icon: Tags, permission: REPORT_READ_PERMISSIONS },
-      { to: '/analytics', label: 'Analytics', icon: BarChart3, permission: REPORT_READ_PERMISSIONS },
+      { to: '/follow-ups', label: 'Follow-ups', icon: CalendarClock, permission: 'growth_os.followups.manage' },
     ],
   },
   {
-    id: 'merchant-insights',
-    label: 'Merchant Insights',
+    id: 'performance',
+    label: 'Performance',
+    entries: [
+      { to: '/performance', label: 'Growth Performance', icon: Activity, permission: REPORT_READ_PERMISSIONS },
+    ],
+  },
+  { id: 'merchants', label: 'Merchants', entries: [MERCHANT_ENTRY] },
+];
+
+// Admin Control answers "what needs attention and which action is allowed".
+const ADMIN_GROUPS: NavGroup[] = [
+  {
+    id: 'control',
+    label: 'Control',
     entries: [
       {
-        to: '/merchants',
-        label: 'Merchants',
-        icon: Building2,
-        permission: ['growth_os.merchants.read_insight', 'growth_os.admin.merchants.read'],
+        to: '/admin',
+        label: 'Attention',
+        icon: Gauge,
+        end: true,
+        permission: [
+          'growth_os.admin.operations.read',
+          'growth_os.admin.merchants.read',
+          'growth_os.admin.users.read',
+          'growth_os.admin.audit.read',
+          'growth_os.roles.manage',
+        ],
       },
-      { to: '/search', label: 'Search', icon: Search, permission: 'growth_os.search.read' },
-    ],
-  },
-  {
-    id: 'platform',
-    label: 'Platform',
-    entries: [
-      { to: '/operations', label: 'Operations', icon: Gauge, permission: 'growth_os.admin.operations.read' },
+      { to: '/operations', label: 'Operations', icon: Activity, permission: 'growth_os.admin.operations.read' },
       { to: '/audit', label: 'Audit', icon: ScrollText, permission: 'growth_os.admin.audit.read' },
     ],
   },
   {
-    id: 'system',
-    label: 'System',
+    id: 'merchants',
+    label: 'Merchants',
+    entries: [
+      { ...MERCHANT_ENTRY, permission: ['growth_os.admin.merchants.read', 'growth_os.merchants.read_insight'] },
+    ],
+  },
+  {
+    id: 'team',
+    label: 'Team & Access',
     entries: [
       { to: '/growth-users', label: 'Growth Users', icon: UserCog, permission: 'growth_os.admin.users.read' },
       { to: '/access-control', label: 'Access Control', icon: KeyRound, permission: 'growth_os.admin.users.read' },
@@ -83,19 +115,37 @@ function toList(permission?: PermissionInput): string[] {
 export function GrowthShell() {
   const { session, error, logout, status } = useGrowthAuth();
   const navigate = useNavigate();
-  const granted = new Set(session?.permissions ?? []);
+  const granted = useMemo(() => new Set(session?.permissions ?? []), [session]);
+  const canAdmin = hasAdminContext(session?.permissions ?? []);
+  const [context, setContext] = useState<WorkspaceContext>('sales');
+
+  useEffect(() => {
+    if (status === 'authenticated') setContext(resolveWorkspaceContext(session?.permissions ?? []));
+  }, [status, session]);
+
+  // Switching context changes navigation and home only. The server never
+  // learns about this toggle, and no client state can grant a permission.
+  const switchContext = (next: WorkspaceContext) => {
+    setContext(next);
+    persistWorkspaceContext(next);
+    navigate(next === 'admin' ? '/admin' : '/');
+  };
+
   // Hide entries whose permissions the account lacks; the server remains the
   // authorization authority no matter what renders here.
   const visibleGroups = status === 'authenticated'
-    ? NAV_GROUPS.map((group) => ({
-      ...group,
-      entries: group.entries.filter((entry) => {
-        const required = toList(entry.permission);
-        return required.length === 0 || required.some((permission) => granted.has(permission));
-      }),
-    })).filter((group) => group.entries.length > 0)
+    ? (context === 'admin' ? ADMIN_GROUPS : SALES_GROUPS)
+      .map((group) => ({
+        ...group,
+        entries: group.entries.filter((entry) => {
+          const required = toList(entry.permission);
+          return required.length === 0 || required.some((permission) => granted.has(permission));
+        }),
+      })).filter((group) => group.entries.length > 0)
     : [];
   const canSearch = granted.has('growth_os.search.read');
+  const canAddProspect = granted.has('growth_os.prospects.manage_all');
+  const contextLabel = context === 'admin' ? 'Admin Control' : 'Sales & Growth';
 
   return (
     <div className="app-frame">
@@ -151,19 +201,47 @@ export function GrowthShell() {
               </form>
             </div>
           ) : null}
+          {canAdmin ? (
+            <div className="context-switcher" role="group" aria-label="Workspace context">
+              <button
+                type="button"
+                className="context-option"
+                aria-pressed={context === 'sales'}
+                onClick={() => switchContext('sales')}
+              >
+                Sales &amp; Growth
+              </button>
+              <button
+                type="button"
+                className="context-option"
+                aria-pressed={context === 'admin'}
+                onClick={() => switchContext('admin')}
+              >
+                Admin Control
+              </button>
+            </div>
+          ) : null}
           <div>
-            <p className="eyebrow">Internal workspace</p>
+            <p className="eyebrow">{contextLabel}</p>
             <h1>Growth OS</h1>
           </div>
-          <div className="user-strip">
-            <ShieldCheck aria-hidden="true" />
-            <div>
-              <strong>{session?.displayName}</strong>
-              <span>{session?.role}</span>
+          <div className="topbar-actions">
+            {context === 'sales' && canAddProspect ? (
+              <NavLink className="primary-button add-prospect-action" to="/prospects/new">
+                <PlusCircle aria-hidden="true" />
+                <span>Add prospect</span>
+              </NavLink>
+            ) : null}
+            <div className="user-strip">
+              <ShieldCheck aria-hidden="true" />
+              <div>
+                <strong>{session?.displayName}</strong>
+                <span>{session?.role}</span>
+              </div>
+              <button className="icon-button" type="button" aria-label="Log out" title="Log out" onClick={() => void logout()}>
+                <LogOut aria-hidden="true" />
+              </button>
             </div>
-            <button className="icon-button" type="button" aria-label="Log out" title="Log out" onClick={() => void logout()}>
-              <LogOut aria-hidden="true" />
-            </button>
           </div>
         </header>
         {error ? <p className="form-error" role="alert">{error}</p> : null}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ElementType } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { workspaceApi, type GrowthAnalyticsResponse, type ProspectStatus } from '@/api/client';
@@ -29,7 +29,7 @@ function rateLabel(value: number | null) {
   return value === null ? '—' : `${value}%`;
 }
 
-export function AnalyticsPage() {
+export function AnalyticsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { reportApiError } = useGrowthAuth();
   const [windowDays, setWindowDays] = useState<number>(90);
   const [data, setData] = useState<GrowthAnalyticsResponse | null>(null);
@@ -106,19 +106,22 @@ export function AnalyticsPage() {
     { label: 'Contacted or beyond', value: funnel.contactedOrBeyond },
     { label: 'Qualified or beyond', value: funnel.qualified, drill: `/prospects?stage=qualified${cohortSuffix}` },
     { label: 'Onboarding', value: funnel.onboarding, drill: `/prospects?status=onboarding${cohortSuffix}` },
-    { label: 'Growth activated', value: funnel.activated, drill: `/prospects?activated=true${cohortSuffix}` },
+    { label: 'AI activated', value: funnel.activated, drill: `/prospects?activated=true${cohortSuffix}` },
   ];
   const funnelMax = Math.max(1, ...funnelSteps.map((step) => step.value));
   const statusRows = Object.entries(data.byStatus ?? {})
     .filter((entry): entry is [ProspectStatus, number] => typeof entry[1] === 'number')
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
 
+  const Wrapper: ElementType = embedded ? 'div' : 'main';
+  const HeadingTag: ElementType = embedded ? 'h2' : 'h1';
+
   return (
-    <main className="page-content" aria-labelledby="analytics-title">
+    <Wrapper className={embedded ? 'performance-embedded' : 'page-content'} aria-labelledby="analytics-title">
       <div className="page-heading detail-heading">
         <div>
           <p className="eyebrow">Growth reporting</p>
-          <h1 id="analytics-title">Analytics</h1>
+          <HeadingTag id="analytics-title">Analytics</HeadingTag>
           <p className="page-lede">Funnel, conversion, and timing measures from the prospect ledger for the selected window.</p>
         </div>
         <div className="button-row">
@@ -229,7 +232,7 @@ export function AnalyticsPage() {
                 <th scope="col">Owner</th>
                 <th scope="col">Created+</th>
                 <th scope="col">Qualified+</th>
-                <th scope="col">Converted+</th>
+                <th scope="col">AI activated+</th>
                 <th scope="col">Qualification rate</th>
                 <th scope="col">Activation rate</th>
               </tr>
@@ -315,6 +318,6 @@ export function AnalyticsPage() {
           </ul>
         )}
       </section>
-    </main>
+    </Wrapper>
   );
 }

@@ -257,10 +257,15 @@ export function ProspectListPage() {
           <p className="page-lede">Capture, qualify, and assign the next conversation without leaving the Growth workspace.</p>
         </div>
         {canCreate ? (
-          <Link className="primary-button" to="/prospects/new">
-            <Plus aria-hidden="true" />
-            <span>New prospect</span>
-          </Link>
+          <div className="button-row">
+            <Link className="secondary-button" to="/quick-add">
+              Quick add
+            </Link>
+            <Link className="primary-button" to="/prospects/new">
+              <Plus aria-hidden="true" />
+              <span>Add prospect</span>
+            </Link>
+          </div>
         ) : null}
       </div>
 

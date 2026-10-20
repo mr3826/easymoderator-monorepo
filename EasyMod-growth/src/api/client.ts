@@ -717,6 +717,26 @@ export interface InternalNoteListResponse {
   pageSize: number;
 }
 
+export type FollowupOutcome =
+  | 'reached'
+  | 'no_answer'
+  | 'not_interested'
+  | 'next_step_scheduled'
+  | 'other';
+
+export interface FollowupTransitionPayload {
+  outcome?: FollowupOutcome;
+  reason?: string;
+}
+
+export const FOLLOWUP_OUTCOME_LABELS: Record<FollowupOutcome, string> = {
+  reached: 'Reached them',
+  no_answer: 'No answer',
+  not_interested: 'Not interested',
+  next_step_scheduled: 'Next step scheduled',
+  other: 'Other',
+};
+
 export const workspaceApi = {
   async home(): Promise<HomeResponse> {
     const payload = await request<{ success: true; data: HomeResponse }>('/api/internal/growth-os/home');
@@ -769,12 +789,19 @@ export const workspaceApi = {
     return payload.data;
   },
 
-  async transitionFollowup(id: string, status: 'completed' | 'cancelled'): Promise<Followup> {
-    const payload = await request<{ success: true; data: Followup }>(
+  async transitionFollowup(
+    id: string,
+    status: 'completed' | 'cancelled',
+    payload: FollowupTransitionPayload = {},
+  ): Promise<Followup> {
+    const body: Record<string, string> = { status };
+    if (payload.outcome) body.outcome = payload.outcome;
+    if (payload.reason && payload.reason.trim()) body.reason = payload.reason.trim();
+    const response = await request<{ success: true; data: Followup }>(
       `/api/internal/growth-os/followups/${encodeURIComponent(id)}/status`,
-      { method: 'POST', body: JSON.stringify({ status }) },
+      { method: 'POST', body: JSON.stringify(body) },
     );
-    return payload.data;
+    return response.data;
   },
 
   async listNotes(

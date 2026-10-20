@@ -6,6 +6,7 @@ import { RequirePermission } from '@/components/RequirePermission';
 import { PROSPECT_READ_PERMISSIONS, REPORT_READ_PERMISSIONS } from '@/auth/usePermission';
 import { GrowthShell } from '@/layout/GrowthShell';
 import { AccessDeniedPage } from '@/pages/AccessDeniedPage';
+import { AdminHome } from '@/pages/AdminHome';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { CapturePage } from '@/pages/CapturePage';
 import { ChangePasswordPage } from '@/pages/ChangePasswordPage';
@@ -24,12 +25,21 @@ import { PipelinePage } from '@/pages/PipelinePage';
 import { ProspectDetailPage } from '@/pages/ProspectDetailPage';
 import { ProspectFormPage } from '@/pages/ProspectFormPage';
 import { ProspectListPage } from '@/pages/ProspectListPage';
+import { PerformancePage } from '@/pages/PerformancePage';
 import { QuickAddPage } from '@/pages/QuickAddPage';
 import { SearchPage } from '@/pages/SearchPage';
 import { SessionExpiredPage } from '@/pages/SessionExpiredPage';
 import { SourcesPage } from '@/pages/SourcesPage';
 import { GrowthUnavailablePage } from '@/pages/GrowthUnavailablePage';
 import { LoadingState, MessageState } from '@/components/states';
+
+const ADMIN_CONTROL_PERMISSIONS = [
+  'growth_os.admin.operations.read',
+  'growth_os.admin.merchants.read',
+  'growth_os.admin.users.read',
+  'growth_os.admin.audit.read',
+  'growth_os.roles.manage',
+] as const;
 
 function BootstrapPendingRoute() {
   const auth = useGrowthAuth();
@@ -74,6 +84,9 @@ export function App() {
                 <Route element={<RequirePermission permission="growth_os.prospects.read_all" />}>
                   <Route index element={<HomePage />} />
                 </Route>
+                <Route element={<RequirePermission permission={ADMIN_CONTROL_PERMISSIONS} />}>
+                  <Route path="admin" element={<AdminHome />} />
+                </Route>
                 <Route element={<RequirePermission permission="growth_os.followups.manage" />}>
                   <Route path="my-work" element={<FollowUpsPage scope="mine" />} />
                   <Route path="follow-ups" element={<FollowUpsPage scope="all" />} />
@@ -103,6 +116,7 @@ export function App() {
                   <Route path="prospects/:prospectId/edit" element={<ProspectFormPage />} />
                 </Route>
                 <Route element={<RequirePermission permission={REPORT_READ_PERMISSIONS} />}>
+                  <Route path="performance" element={<PerformancePage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
                 </Route>
                 <Route

@@ -66,7 +66,7 @@ describe('FollowUpsPage', () => {
     expect(screen.getByText('1 overdue in this view.')).toBeInTheDocument();
   });
 
-  it('completes a follow-up and reschedules it with an inline due date editor', async () => {
+  it('completes a follow-up with a typed outcome and reschedules it with an inline due date editor', async () => {
     const user = userEvent.setup();
     vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(makeList([makeFollowup()]));
     const transition = vi.spyOn(workspaceApi, 'transitionFollowup').mockResolvedValue(makeFollowup({
@@ -78,8 +78,14 @@ describe('FollowUpsPage', () => {
 
     await screen.findByText('Call back about activation');
     await user.click(screen.getByRole('button', { name: 'Complete' }));
+    await user.selectOptions(screen.getByLabelText('Outcome (required)'), 'not_interested');
+    await user.click(screen.getByRole('button', { name: 'Record and complete' }));
 
-    await waitFor(() => expect(transition).toHaveBeenCalledWith('followup-1', 'completed'));
+    await waitFor(() => expect(transition).toHaveBeenCalledWith(
+      'followup-1',
+      'completed',
+      { outcome: 'not_interested', reason: undefined },
+    ));
 
     await user.click(screen.getByRole('button', { name: 'Reschedule' }));
     const dueInput = screen.getByLabelText('New due date');

@@ -119,6 +119,8 @@ async function transitionFollowup(req, res, next) {
       actorIsSuperAdmin: isSuperAdmin,
       followupId: req.params.id,
       toStatus: req.body.status,
+      outcome: req.body.outcome,
+      reason: req.body.reason,
       ipAddress,
       userAgent,
     });

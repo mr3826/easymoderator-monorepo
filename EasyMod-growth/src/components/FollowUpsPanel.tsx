@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { CalendarPlus, ListChecks } from 'lucide-react';
-import { workspaceApi, type Followup, type FollowupListResponse } from '@/api/client';
+import {
+  FOLLOWUP_OUTCOME_LABELS,
+  workspaceApi,
+  type Followup,
+  type FollowupListResponse,
+  type FollowupOutcome,
+} from '@/api/client';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import { usePermission } from '@/auth/usePermission';
 import { fromBusinessDateTimeLocal, formatGrowthDateTime, toBusinessDateTimeLocal } from '@/growthTime';
@@ -30,6 +36,9 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [outcomeFor, setOutcomeFor] = useState<string | null>(null);
+  const [outcomeChoice, setOutcomeChoice] = useState<FollowupOutcome | ''>('');
+  const [outcomeReason, setOutcomeReason] = useState('');
 
   useEffect(() => {
     if (!canManage) return undefined;
@@ -53,10 +62,20 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
   }, [canManage, prospectId, reportApiError, reloadToken]);
 
   async function complete(followup: Followup) {
+    if (!outcomeChoice) {
+      setFormError('Choose an outcome before completing this follow-up.');
+      return;
+    }
     setCompletingId(followup.id);
     setFormError(null);
     try {
-      await workspaceApi.transitionFollowup(followup.id, 'completed');
+      await workspaceApi.transitionFollowup(followup.id, 'completed', {
+        outcome: outcomeChoice,
+        reason: outcomeReason.trim() || undefined,
+      });
+      setOutcomeFor(null);
+      setOutcomeChoice('');
+      setOutcomeReason('');
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
       if (reportApiError(requestError)) return;
@@ -64,6 +83,13 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
     } finally {
       setCompletingId(null);
     }
+  }
+
+  function openOutcome(followup: Followup) {
+    setFormError(null);
+    setOutcomeFor(followup.id);
+    setOutcomeChoice('');
+    setOutcomeReason('');
   }
 
   async function addFollowup(event: FormEvent<HTMLFormElement>) {
@@ -138,17 +164,61 @@ export function FollowUpsPanel({ prospectId }: { prospectId: string }) {
                   {followup.note ? ` · ${followup.note}` : ''}
                 </span>
               </div>
-              <div className="button-row">
-                {followup.overdue ? <span className="status-badge status-overdue">overdue</span> : null}
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={completingId !== null || adding}
-                  onClick={() => void complete(followup)}
+              {outcomeFor === followup.id ? (
+                <form
+                  className="action-form"
+                  aria-label={`Record outcome for ${followup.action}`}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void complete(followup);
+                  }}
                 >
-                  {completingId === followup.id ? 'Completing' : 'Complete'}
-                </button>
-              </div>
+                  <label htmlFor={`panel-outcome-${followup.id}`}>
+                    Outcome (required)
+                    <select
+                      id={`panel-outcome-${followup.id}`}
+                      value={outcomeChoice}
+                      onChange={(event) => setOutcomeChoice(event.target.value as FollowupOutcome)}
+                      required
+                    >
+                      <option value="" disabled>Choose what happened…</option>
+                      {(Object.keys(FOLLOWUP_OUTCOME_LABELS) as FollowupOutcome[]).map((outcome) => (
+                        <option key={outcome} value={outcome}>{FOLLOWUP_OUTCOME_LABELS[outcome]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label htmlFor={`panel-outcome-reason-${followup.id}`}>
+                    Reason (optional, max 200 chars)
+                    <input
+                      id={`panel-outcome-reason-${followup.id}`}
+                      type="text"
+                      maxLength={200}
+                      value={outcomeReason}
+                      onChange={(event) => setOutcomeReason(event.target.value)}
+                    />
+                  </label>
+                  <div className="button-row">
+                    <button className="primary-button" type="submit" disabled={completingId !== null || adding}>
+                      {completingId === followup.id ? 'Completing' : 'Record and complete'}
+                    </button>
+                    <button className="secondary-button" type="button" disabled={completingId !== null} onClick={() => setOutcomeFor(null)}>
+                      Close
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="button-row">
+                  {followup.overdue ? <span className="status-badge status-overdue">overdue</span> : null}
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={completingId !== null || adding}
+                    onClick={() => openOutcome(followup)}
+                  >
+                    Complete
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -53,6 +53,10 @@ const followups = {
     params: Joi.object({ id: uuid().required() }),
     body: Joi.object({
       status: Joi.string().valid('completed', 'cancelled').required(),
+      outcome: Joi.string()
+        .valid('reached', 'no_answer', 'not_interested', 'next_step_scheduled', 'other')
+        .optional(),
+      reason: boundedText(1, 200).optional(),
     }).unknown(false),
   },
 };

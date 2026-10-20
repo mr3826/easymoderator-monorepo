@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ElementType } from 'react';
 import { RefreshCw, Tags } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { workspaceApi, type GrowthAnalyticsResponse, type ProspectSource } from '@/api/client';
@@ -42,7 +42,7 @@ function rateLabel(row: SourceRow) {
   return `${Math.round((row.activated / row.leads) * 1000) / 10}%`;
 }
 
-export function SourcesPage() {
+export function SourcesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { reportApiError } = useGrowthAuth();
   const [data, setData] = useState<GrowthAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,13 +91,16 @@ export function SourcesPage() {
   if (cohort.sourceRecordedTo) cohortQuery.set('sourceRecordedBefore', cohort.sourceRecordedTo);
   const cohortSuffix = cohortQuery.toString() ? `&${cohortQuery.toString()}` : '';
 
+  const Wrapper: ElementType = embedded ? 'div' : 'main';
+  const HeadingTag: ElementType = embedded ? 'h2' : 'h1';
+
   return (
-    <main className="page-content" aria-labelledby="sources-title">
+    <Wrapper className={embedded ? 'performance-embedded' : 'page-content'} aria-labelledby="sources-title">
       <div className="page-heading detail-heading">
         <div>
           <p className="eyebrow">Acquisition attribution</p>
-          <h1 id="sources-title">Sources</h1>
-  <p className="page-lede">Leads and Growth activations per controlled source over the last {WINDOW_DAYS} days.</p>
+          <HeadingTag id="sources-title">Sources</HeadingTag>
+   <p className="page-lede">Leads and AI activations (first successful AI reply — not paid conversion) per controlled source over the last {WINDOW_DAYS} days.</p>
         </div>
         <div className="button-row">
           <button className="icon-button" type="button" aria-label="Refresh source analytics" title="Refresh source analytics" onClick={() => setReloadToken((current) => current + 1)}>
@@ -127,12 +130,12 @@ export function SourcesPage() {
         ) : (
           <div className="table-scroll">
             <table className="data-table">
-           <caption className="sr-only">Leads, Growth activations, and activation rate by acquisition source</caption>
+             <caption className="sr-only">Leads, AI activations, and activation rate by acquisition source</caption>
               <thead>
                 <tr>
                   <th scope="col">Source</th>
                   <th scope="col">Leads</th>
-                  <th scope="col">Growth activated</th>
+                  <th scope="col">AI activated</th>
                   <th scope="col">Growth activation rate</th>
                 </tr>
               </thead>
@@ -170,6 +173,6 @@ export function SourcesPage() {
           </div>
         )}
       </section>
-    </main>
+    </Wrapper>
   );
 }

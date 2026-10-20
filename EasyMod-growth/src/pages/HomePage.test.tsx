@@ -1,16 +1,31 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, workspaceApi, type HomeResponse } from '@/api/client';
+import {
+  ApiError,
+  growthApi,
+  workspaceApi,
+  type FollowupListResponse,
+  type HomeResponse,
+  type ProspectListResponse,
+} from '@/api/client';
 import { HomePage } from './HomePage';
 
 const reportApiError = vi.fn(() => false);
+const sessionPermissions = {
+  value: [
+    'growth_os.session.read',
+    'growth_os.prospects.read_all',
+    'growth_os.prospects.manage_all',
+    'growth_os.followups.manage',
+  ] as string[],
+};
 
 vi.mock('@/auth/GrowthAuthProvider', () => ({
   useGrowthAuth: () => ({
     reportApiError,
-    session: { permissions: ['growth_os.followups.manage'] },
+    session: { permissions: sessionPermissions.value },
   }),
 }));
 
@@ -31,7 +46,7 @@ function makeHome(overrides: Partial<HomeResponse> = {}): HomeResponse {
     growthAttention: {
       newLeadsLast7d: 12,
       qualifiedOpen: 4,
-      unassignedQualified: 0,
+      unassignedQualified: 1,
       onboardingOpen: 3,
       onboardingStalledOver15d: 1,
       qualifiedStalledOver15d: 2,
@@ -43,6 +58,82 @@ function makeHome(overrides: Partial<HomeResponse> = {}): HomeResponse {
   };
 }
 
+function makeFollowupList(overrides: Partial<FollowupListResponse> = {}): FollowupListResponse {
+  return {
+    items: [{
+      id: 'fu-1',
+      prospectId: 'p-1',
+      prospectName: 'Rima Boutique',
+      ownerUserId: 'me',
+      createdByUserId: 'me',
+      dueAt: '2026-09-11T04:00:00.000Z',
+      action: 'Call about first reply setup',
+      note: null,
+      status: 'open',
+      completedAt: null,
+      overdue: true,
+      createdAt: '2026-09-01T10:00:00.000Z',
+      updatedAt: '2026-09-01T10:00:00.000Z',
+    }],
+    total: 2,
+    page: 1,
+    pageSize: 5,
+    ...overrides,
+  };
+}
+
+function makeProspectList(overrides: Partial<ProspectListResponse> = {}): ProspectListResponse {
+  return {
+    items: [{
+      id: 'p-2',
+      businessName: 'Dhaka Dairy Bazar',
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      pageUrl: null,
+      niche: null,
+      notes: null,
+      source: 'manual_entry',
+      sourceDetail: null,
+      sourceReference: null,
+      sourceRecordedAt: '2026-09-05T10:00:00.000Z',
+      status: 'qualified',
+      statusChangedAt: '2026-09-05T10:00:00.000Z',
+      disqualifiedReason: null,
+      ownerUserId: null,
+      assignedAt: null,
+      assignedBy: null,
+      linkedShopId: null,
+      linkedUserId: null,
+      linkedAt: null,
+      mergedIntoId: null,
+      mergedAt: null,
+      createdBy: null,
+      metadata: {},
+      createdAt: '2026-09-04T10:00:00.000Z',
+      updatedAt: '2026-09-05T10:00:00.000Z',
+    }],
+    total: 1,
+    page: 1,
+    pageSize: 5,
+    totalPages: 1,
+    ...overrides,
+  };
+}
+
+function mockWorkspaceReads() {
+  vi.spyOn(workspaceApi, 'home').mockResolvedValue(makeHome());
+  vi.spyOn(workspaceApi, 'listFollowups').mockImplementation(async ({ state }) => (
+    state === 'overdue'
+      ? makeFollowupList()
+      : makeFollowupList({ items: [], total: 0 })
+  ));
+  vi.spyOn(growthApi, 'getProspects').mockImplementation(async (filters) => {
+    if (filters.status === 'qualified') return makeProspectList();
+    return makeProspectList({ items: [], total: 0 });
+  });
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/']}>
@@ -51,90 +142,122 @@ function renderPage() {
   );
 }
 
-describe('HomePage', () => {
+describe('HomePage action queue', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     reportApiError.mockReturnValue(false);
+    sessionPermissions.value = [
+      'growth_os.session.read',
+      'growth_os.prospects.read_all',
+      'growth_os.prospects.manage_all',
+      'growth_os.followups.manage',
+    ];
   });
 
-  it('renders my work counts and attention metrics with truthful header copy', async () => {
-    vi.spyOn(workspaceApi, 'home').mockResolvedValue(makeHome());
+  it('renders the ordered queue segments backed by real list rows', async () => {
+    mockWorkspaceReads();
 
     renderPage();
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Today' })).toBeInTheDocument();
-    expect(screen.getByText('Operational overview')).toBeInTheDocument();
-    await screen.findByText('open follow-ups assigned to you');
-    expect(screen.getByText('prospects assigned to you')).toBeInTheDocument();
-    expect(screen.getByText('New leads (last 7 days)')).toBeInTheDocument();
-    expect(screen.getAllByText('12')).toHaveLength(1);
-    expect(screen.getByText('Onboarding stalled (15+ days)')).toBeInTheDocument();
-    expect(screen.getByText('Qualified stalled (15+ days)')).toBeInTheDocument();
-    expect(screen.getByText('Overdue follow-ups in scope')).toBeInTheDocument();
-    expect(screen.getByText('Due today in scope')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review in My Work' })).toHaveAttribute('href', '/my-work?state=overdue');
-    expect(screen.getByRole('link', { name: 'Open My Work' })).toHaveAttribute('href', '/my-work?state=open');
-    expect(screen.getByRole('link', { name: 'Open prospects' })).toHaveAttribute('href', '/prospects?owner=me');
-    const overdueScopeLink = screen.getByText('Overdue follow-ups in scope').closest('a');
-    expect(overdueScopeLink).toHaveAttribute('href', '/follow-ups?state=overdue');
-    const dueTodayLink = screen.getByText('Due today in scope').closest('a');
-    expect(dueTodayLink).toHaveAttribute('href', '/follow-ups?state=due_today');
-    const newLeadsLink = screen.getByText('New leads (last 7 days)').closest('a');
-    expect(newLeadsLink?.getAttribute('href')).toContain('status=new');
-    expect(newLeadsLink?.getAttribute('href')).toContain('createdAfter=');
-    expect(newLeadsLink?.getAttribute('href')).toContain('createdBefore=');
-    const activatedLink = screen.getByText('Activated (last 7 days)').closest('a');
+    const queue = screen.getByRole('region', { name: 'Action queue' });
+    const headings = within(queue).getAllByRole('heading', { level: 3 }).map((node) => node.textContent);
+    expect(headings).toEqual([
+      'Overdue follow-ups',
+      'Due today',
+      'Qualified leads without an owner',
+      'Onboarding stalled 15+ days',
+      'Other open leads to start',
+    ]);
+
+    const overdueSection = within(queue).getByRole('region', { name: 'Overdue follow-ups' });
+    expect(await within(overdueSection).findByRole('link', { name: 'Rima Boutique' }))
+      .toHaveAttribute('href', '/prospects/p-1');
+    expect(within(overdueSection).getByText(/Overdue by \d+ days/)).toBeInTheDocument();
+    expect(within(overdueSection).getByText('Showing 1 of 2')).toBeInTheDocument();
+    expect(within(overdueSection).getByRole('link', { name: 'View all' }))
+      .toHaveAttribute('href', '/my-work?state=overdue');
+
+    const qualifiedSection = within(queue).getByRole('region', { name: 'Qualified leads without an owner' });
+    expect(await within(qualifiedSection).findByRole('link', { name: 'Dhaka Dairy Bazar' }))
+      .toHaveAttribute('href', '/prospects/p-2');
+    expect(within(qualifiedSection).getByRole('link', { name: 'View all' }))
+      .toHaveAttribute('href', '/prospects?status=qualified&owner=unassigned');
+  });
+
+  it('fetches each queue segment from its exact canonical query', async () => {
+    mockWorkspaceReads();
+
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Today' });
+    await waitFor(() => expect(workspaceApi.listFollowups).toHaveBeenCalled());
+
+    expect(workspaceApi.listFollowups).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'overdue', owner: 'me', pageSize: 5 }),
+    );
+    expect(workspaceApi.listFollowups).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'due_today', owner: 'me', pageSize: 5 }),
+    );
+    expect(growthApi.getProspects).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'qualified', owner: 'unassigned' }),
+    );
+    expect(growthApi.getProspects).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'onboarding', stalledBefore: '2026-08-29T08:00:00.000Z' }),
+    );
+    expect(growthApi.getProspects).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'new', owner: 'unassigned' }),
+    );
+  });
+
+  it('keeps the truthful weekly summary with the AI activation semantic', async () => {
+    mockWorkspaceReads();
+
+    renderPage();
+
+    expect(await screen.findByText('This week')).toBeInTheDocument();
+    const activatedLink = screen.getByText('AI activated (last 7 days)').closest('a');
     expect(activatedLink?.getAttribute('href')).toContain('activated=true');
-    expect(activatedLink?.getAttribute('href')).toContain('statusChangedAfter=');
-    expect(activatedLink?.getAttribute('href')).toContain('statusChangedBefore=');
-    const stalledOnboardingLink = screen.getByText('Onboarding stalled (15+ days)').closest('a');
-    expect(stalledOnboardingLink?.getAttribute('href'))
-      .toBe(`/prospects?status=onboarding&stalledBefore=${encodeURIComponent('2026-08-29T08:00:00.000Z')}`);
-    const stalledQualifiedLink = screen.getByText('Qualified stalled (15+ days)').closest('a');
-    expect(stalledQualifiedLink?.getAttribute('href'))
-      .toBe(`/prospects?status=qualified&stalledBefore=${encodeURIComponent('2026-08-29T08:00:00.000Z')}`);
+    expect(screen.getByText(/first successful AI reply — it is not a paid subscription claim/))
+      .toBeInTheDocument();
   });
 
-  it('keeps super-admin sections hidden when the payload has no privileged fields', async () => {
+  it('hides follow-up segments for sessions without follow-up manage permission', async () => {
+    sessionPermissions.value = ['growth_os.session.read', 'growth_os.prospects.read_all'];
     vi.spyOn(workspaceApi, 'home').mockResolvedValue(makeHome());
+    const listSpy = vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(makeFollowupList({ items: [], total: 0 }));
+    vi.spyOn(growthApi, 'getProspects').mockResolvedValue(makeProspectList({ items: [], total: 0 }));
 
     renderPage();
 
-    expect(await screen.findByText('Growth attention')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Merchant attention' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Platform attention' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Recent privileged actions' })).not.toBeInTheDocument();
+    await screen.findByRole('heading', { level: 1, name: 'Today' });
+    expect(screen.queryByRole('region', { name: 'Overdue follow-ups' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Due today' })).not.toBeInTheDocument();
+    expect(listSpy).not.toHaveBeenCalled();
   });
 
-  it('renders privileged sections when the SUPER_ADMIN payload includes them', async () => {
-    vi.spyOn(workspaceApi, 'home').mockResolvedValue(makeHome({
-      merchantAttention: { merchantsTotal: 41 },
-      platformAttention: {
-        metaChannelsUnhealthy: 1,
-        paymentTransactionsStuckOver24h: 0,
-        subscriptionsSuspended: 2,
-      },
-      recentPrivilegedActions: [{
-        id: 'entry-1',
-        actor: { userId: 'su-1', name: 'Dana Founder' },
-        action: 'growth_os:user_role_changed',
-        resourceType: 'GROWTH_OS_ROLE',
-        createdAt: '2026-09-12T10:00:00.000Z',
-        reason: 'Role rotation for cover week',
-      }],
-    }));
+  it('recovers one failed segment without discarding the rest of the queue', async () => {
+    mockWorkspaceReads();
+    vi.mocked(workspaceApi.listFollowups).mockImplementation(async ({ state }) => {
+      if (state === 'overdue') throw new ApiError('Segment unavailable', 500);
+      return makeFollowupList({ items: [], total: 0 });
+    });
 
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: 'Merchant attention' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Platform attention' })).toBeInTheDocument();
-    expect(screen.getByText('Merchants total')).toBeInTheDocument();
-    expect(screen.getByText('Meta channels unhealthy')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Recent privileged actions' })).toBeInTheDocument();
-    expect(screen.getByText('growth_os:user_role_changed')).toBeInTheDocument();
-    expect(screen.getByText('Dana Founder · GROWTH_OS_ROLE')).toBeInTheDocument();
-    expect(screen.getByText('Reason: Role rotation for cover week')).toBeInTheDocument();
+    const queue = await screen.findByRole('region', { name: 'Action queue' });
+    const overdueSection = within(queue).getByRole('region', { name: 'Overdue follow-ups' });
+    expect(await within(overdueSection).findByText('Segment unavailable')).toBeInTheDocument();
+    // Other segments still render.
+    expect(await within(
+      within(queue).getByRole('region', { name: 'Qualified leads without an owner' }),
+    ).findByRole('link', { name: 'Dhaka Dairy Bazar' })).toBeInTheDocument();
+
+    vi.mocked(workspaceApi.listFollowups).mockImplementation(async () => makeFollowupList());
+    const user = userEvent.setup();
+    await user.click(within(overdueSection).getByRole('button', { name: 'Retry this list' }));
+    await waitFor(() =>
+      expect(within(overdueSection).getByRole('link', { name: 'Rima Boutique' })).toBeInTheDocument());
   });
 
   it('routes endpoint authentication failures through the auth provider', async () => {
@@ -147,8 +270,10 @@ describe('HomePage', () => {
     expect(screen.queryByText('Expired')).not.toBeInTheDocument();
   });
 
-  it('shows an error state and retries on a plain server failure', async () => {
+  it('shows an error state and retries when the home windows fail', async () => {
     const home = vi.spyOn(workspaceApi, 'home').mockRejectedValue(new ApiError('Growth workspace unavailable', 500));
+    vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(makeFollowupList({ items: [], total: 0 }));
+    vi.spyOn(growthApi, 'getProspects').mockResolvedValue(makeProspectList({ items: [], total: 0 }));
 
     renderPage();
 
@@ -160,6 +285,6 @@ describe('HomePage', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
 
     await waitFor(() => expect(home).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('Growth attention')).toBeInTheDocument();
+    expect(await screen.findByText('This week')).toBeInTheDocument();
   });
 });

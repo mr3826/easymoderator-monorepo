@@ -550,6 +550,69 @@ describe('Growth OS control plane on real PostgreSQL and Redis', () => {
       ]));
     });
 
+    test('follow-up completion records a typed outcome and reason on the event and audit', async () => {
+      const seed = suffix();
+      const prospect = await api(growthUser, 'post', '/prospects', {
+        businessName: `CP Outcome ${seed}`,
+        contactPhone: phoneFor(`cp-outcome-${seed}`),
+        source: 'manual_entry',
+      });
+      expect(prospect.status).toBe(201);
+      const followup = await api(growthUser, 'post', '/followups', {
+        prospectId: prospect.body.data.id,
+        dueAt: new Date(Date.now() - 60_000).toISOString(),
+        action: 'Call the page owner back',
+      });
+      expect(followup.status).toBe(201);
+
+      const rejected = await api(growthUser, 'post', `/followups/${followup.body.data.id}/status`, {
+        status: 'completed',
+        outcome: 'guessed_revenue_potential',
+      });
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.code).toBe('GROWTH_OS_WORK_INVALID_INPUT');
+
+      const completed = await api(growthUser, 'post', `/followups/${followup.body.data.id}/status`, {
+        status: 'completed',
+        outcome: 'reached',
+        reason: 'Spoke with owner; demo scheduled',
+      });
+      expect(completed.status).toBe(200);
+      expect(completed.body.data.status).toBe('completed');
+
+      const event = await GrowthOsProspectEvent.findOne({
+        where: { prospect_id: prospect.body.data.id, event_type: 'followup_completed' },
+      });
+      expect(event).toBeTruthy();
+      expect(event.metadata.followup_id).toBe(followup.body.data.id);
+      expect(event.metadata.outcome).toBe('reached');
+      expect(event.reason).toBe('Spoke with owner; demo scheduled');
+
+      const audit = await AuditLog.findOne({
+        where: { resource_type: 'growth_os_followup', resource_id: followup.body.data.id, action: 'growth_os:followup_completed' },
+        order: [['created_at', 'DESC']],
+      });
+      expect(audit).toBeTruthy();
+      expect(audit.new_values.outcome).toBe('reached');
+
+      // Legacy body without outcome/reason keeps working unchanged.
+      const plain = await api(growthUser, 'post', '/followups', {
+        prospectId: prospect.body.data.id,
+        dueAt: new Date(Date.now() + 60_000).toISOString(),
+        action: 'Plain completion',
+      });
+      const plainDone = await api(growthUser, 'post', `/followups/${plain.body.data.id}/status`, { status: 'completed' });
+      expect(plainDone.status).toBe(200);
+      const plainEvent = await GrowthOsProspectEvent.findOne({
+        where: {
+          prospect_id: prospect.body.data.id,
+          event_type: 'followup_completed',
+          metadata: { [Op.contains]: { followup_id: plain.body.data.id } },
+        },
+      });
+      expect(plainEvent.metadata.outcome).toBeNull();
+    });
+
     test('merging a prospect rehomes operational work to the surviving record', async () => {
       const sourceSeed = suffix();
       const targetSeed = suffix();

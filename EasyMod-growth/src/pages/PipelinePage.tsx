@@ -23,7 +23,7 @@ const COLUMN_LABELS: Record<AllColumnKey, string> = {
   qualifying: 'Qualifying',
   qualified: 'Qualified',
   onboarding: 'Onboarding',
-  converted: 'Converted',
+  converted: 'AI Activated',
   disqualified: 'Disqualified',
   unreachable: 'Unreachable',
 };

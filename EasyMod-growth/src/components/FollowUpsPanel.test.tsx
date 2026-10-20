@@ -62,16 +62,51 @@ describe('FollowUpsPanel', () => {
     expect(workspaceApi.listFollowups).toHaveBeenCalledWith({ prospectId: 'prospect-1', state: 'open' });
   });
 
-  it('completes a follow-up and refreshes the list', async () => {
+  it('completes a follow-up with a typed outcome and refreshes the list', async () => {
     const listSpy = vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(list([makeFollowup()]));
     const transition = vi.spyOn(workspaceApi, 'transitionFollowup').mockResolvedValue(makeFollowup({ status: 'completed', overdue: false }));
 
     renderPanel();
 
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Complete' }));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Complete' }));
+    await user.selectOptions(screen.getByLabelText('Outcome (required)'), 'reached');
+    await user.type(screen.getByLabelText('Reason (optional, max 200 chars)'), 'Spoke with owner');
+    await user.click(screen.getByRole('button', { name: 'Record and complete' }));
 
-    await waitFor(() => expect(transition).toHaveBeenCalledWith('followup-1', 'completed'));
+    await waitFor(() => expect(transition).toHaveBeenCalledWith(
+      'followup-1',
+      'completed',
+      { outcome: 'reached', reason: 'Spoke with owner' },
+    ));
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+  });
+
+  it('will not complete a follow-up without choosing an outcome', async () => {
+    vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(list([makeFollowup()]));
+    const transition = vi.spyOn(workspaceApi, 'transitionFollowup').mockResolvedValue(makeFollowup({ status: 'completed' }));
+
+    renderPanel();
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Complete' }));
+    await user.click(screen.getByRole('button', { name: 'Record and complete' }));
+
+    expect(transition).not.toHaveBeenCalled();
+  });
+
+  it('closes the outcome form without completing', async () => {
+    vi.spyOn(workspaceApi, 'listFollowups').mockResolvedValue(list([makeFollowup()]));
+    const transition = vi.spyOn(workspaceApi, 'transitionFollowup');
+
+    renderPanel();
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Complete' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByRole('button', { name: 'Record and complete' })).not.toBeInTheDocument();
+    expect(transition).not.toHaveBeenCalled();
   });
 
   it('schedules a new follow-up through the create mini-form', async () => {

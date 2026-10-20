@@ -88,7 +88,7 @@ describe('ProspectListPage', () => {
     expect(screen.getAllByText('manual entry')).toHaveLength(2);
     expect(screen.getAllByText('Not provided')).toHaveLength(2);
     expect(screen.queryByText('Hidden for your role')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'New prospect' })).toHaveAttribute('href', '/prospects/new');
+    expect(screen.getByRole('link', { name: 'Add prospect' })).toHaveAttribute('href', '/prospects/new');
     expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument();
     expect(screen.getAllByText('Owner One').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Not linked').length).toBeGreaterThanOrEqual(1);
@@ -188,7 +188,7 @@ describe('ProspectListPage', () => {
     renderPage();
 
     expect(await screen.findByText('No prospects match these filters.')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'New prospect' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Add prospect' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Create a prospect' })).not.toBeInTheDocument();
   });
 

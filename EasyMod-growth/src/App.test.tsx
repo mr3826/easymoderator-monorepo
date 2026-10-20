@@ -51,6 +51,12 @@ vi.mock('@/pages/AnalyticsPage', () => ({
 vi.mock('@/pages/SourcesPage', () => ({
   SourcesPage: () => <div>Sources route</div>,
 }));
+vi.mock('@/pages/PerformancePage', () => ({
+  PerformancePage: () => <div>Performance route</div>,
+}));
+vi.mock('@/pages/AdminHome', () => ({
+  AdminHome: () => <div>Admin home route</div>,
+}));
 
 vi.mock('@/pages/AccessDeniedPage', () => ({
   AccessDeniedPage: () => <div>Access denied route</div>,
@@ -132,6 +138,44 @@ describe('Growth prospect route permissions', () => {
     authState.permissions = ['growth_os.admin.operations.read'];
 
     renderAt('/audit');
+
+    expect(screen.getByText('Access denied route')).toBeInTheDocument();
+  });
+
+  it('denies the Admin Control landing without any admin-side permission', () => {
+    authState.permissions = ['growth_os.prospects.read_all', 'growth_os.followups.manage'];
+
+    renderAt('/admin');
+
+    expect(screen.getByText('Access denied route')).toBeInTheDocument();
+  });
+
+  it('reaches the Admin Control landing with an admin-side permission', () => {
+    authState.permissions = ['growth_os.admin.operations.read'];
+
+    renderAt('/admin');
+
+    expect(screen.getByText('Admin home route')).toBeInTheDocument();
+  });
+
+  it('consolidates performance behind the report permission', () => {
+    authState.permissions = ['growth_os.reports.read_all'];
+
+    renderAt('/performance');
+
+    expect(screen.getByText('Performance route')).toBeInTheDocument();
+  });
+
+  it('keeps legacy analytics and sources routes rendering their pages', () => {
+    authState.permissions = ['growth_os.reports.read_all'];
+
+    renderAt('/analytics');
+
+    expect(screen.getByText('Analytics route')).toBeInTheDocument();
+  });
+
+  it('denies the performance route without any report permission', () => {
+    renderAt('/performance');
 
     expect(screen.getByText('Access denied route')).toBeInTheDocument();
   });
