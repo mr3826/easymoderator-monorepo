@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const { chromium, firefox, webkit } = require(path.resolve(__dirname, '../../../node_modules/playwright'));
 
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
@@ -105,8 +105,30 @@ const runPlaywright = (baseURL, browsers) => new Promise((resolve, reject) => {
     child.once('close', (code, signal) => resolve({ code: code ?? 1, signal: signal || null, stdout, stderr }));
 });
 
+const playwrightSummary = (output) => {
+    const clean = String(output || '').replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
+    const results = clean.split(/\r?\n/).map(line => {
+        const match = line.match(/^\s*(ok|x|-)\s+(\d+)\s+\[([^\]]+)\]\s+›\s+(.+?)(?:\s+\(([^)]+)\))?\s*$/);
+        if (!match) return null;
+        return {
+            status: match[1] === 'ok' ? 'passed' : match[1] === 'x' ? 'failed' : 'skipped',
+            project: match[3],
+            title: match[4],
+            duration: match[5] || null,
+        };
+    }).filter(Boolean);
+    return {
+        total: results.length,
+        passed: results.filter(result => result.status === 'passed').length,
+        failed: results.filter(result => result.status === 'failed').length,
+        skipped: results.filter(result => result.status === 'skipped').length,
+        results,
+    };
+};
+
 const main = async () => {
     fs.mkdirSync(ARTIFACT_ROOT, { recursive: true });
+    const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     const browsers = availableBrowsers();
     const startedAt = new Date().toISOString();
     let lab;
@@ -131,11 +153,26 @@ const main = async () => {
         status: failure ? 'FAIL' : 'PASS',
         startedAt,
         completedAt: new Date().toISOString(),
+        sourceRevision,
         localUrl: lab?.url || null,
         browsersAvailable: browsers,
         browserLimitations: ['Firefox or WebKit are included only when their local browser binary is installed.'],
         playwrightExitCode: execution?.code ?? null,
         playwrightSignal: execution?.signal ?? null,
+        tests: playwrightSummary(execution?.stdout),
+        accessibility: (() => {
+            try {
+                const axe = JSON.parse(fs.readFileSync(path.join(ARTIFACT_ROOT, 'axe-accessibility-report.json'), 'utf8'));
+                return {
+                    status: axe.status,
+                    criticalOrSeriousViolationCount: axe.criticalOrSeriousViolationCount,
+                    scannedSections: (axe.scannedSections || []).map(section => section.section),
+                    report: 'axe-accessibility-report.json',
+                };
+            } catch (_) {
+                return { status: 'NOT_RUN' };
+            }
+        })(),
         htmlReport: path.join(ARTIFACT_ROOT, 'html-report', 'index.html'),
         traceDirectory: path.join(ARTIFACT_ROOT, 'test-results'),
         screenshotsDirectory: path.join(ARTIFACT_ROOT, 'screenshots'),

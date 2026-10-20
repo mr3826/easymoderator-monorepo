@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import AxeBuilder from '@axe-core/playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const screenshotRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-1/artifacts/playwright/screenshots');
@@ -30,12 +31,29 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   test.skip(testInfo.project.name !== 'chromium', 'The complete replay workflow is run once in Chromium; alternate browsers receive shell smoke coverage.');
   mkdirSync(screenshotRoot, { recursive: true });
   const pageErrors: string[] = [];
+  const accessibilitySections: Array<{ section: string; violations: Array<{ id: string; impact: string | null; help: string; helpUrl: string; targets: string[][] }> }> = [];
+  const inspectAccessibility = async (section: string) => {
+    const result = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    accessibilitySections.push({
+      section,
+      violations: result.violations.map(violation => ({
+        id: violation.id,
+        impact: violation.impact,
+        help: violation.help,
+        helpUrl: violation.helpUrl,
+        targets: violation.nodes.map(node => node.target.map(String)),
+      })),
+    });
+  };
   page.on('pageerror', error => pageErrors.push(error.message));
   await page.goto('/');
   await expect(page).toHaveTitle(/Founder Test Lab/);
   await expect(page.locator('#service-status')).toContainText('ready');
   await expect(page.locator('#dataset-stats')).toContainText('20');
   await expect(page.locator('#dataset-stats')).toContainText('200');
+  await inspectAccessibility('Overview');
 
   const available = await page.evaluate(async () => {
     const response = await fetch('/__lab/api/dataset');
@@ -46,6 +64,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(available.json).not.toMatch(/customerMessage|simulatedAttachment|expectedAnswer|sourceHash/i);
 
   await page.getByRole('tab', { name: /Scenario Explorer/ }).click();
+  await inspectAccessibility('Scenario Explorer');
   await page.locator('#scenario-persona').selectOption('P01');
   await page.getByRole('button', { name: 'Load scenarios' }).click();
   await expect(page.locator('#scenario-results tbody tr')).toHaveCount(10);
@@ -62,6 +81,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-scenario-explorer.png`), fullPage: true });
 
   await page.getByRole('tab', { name: /Evidence Inspector/ }).click();
+  await inspectAccessibility('Evidence Inspector');
   await page.locator('#evidence-id').fill('targeted-price-a');
   await page.getByRole('button', { name: 'Inspect evidence' }).click();
   await expect(page.locator('#evidence-results')).toContainText('ANSWERABLE');
@@ -104,6 +124,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(baselineId).toBeTruthy();
   expect(baselineId).not.toBe(candidateId);
   await page.getByRole('tab', { name: /Baseline vs Candidate/ }).click();
+  await inspectAccessibility('Baseline vs Candidate');
   await selectComparisonRuns(page, baselineId, candidateId);
   await page.getByRole('button', { name: 'Compare runs' }).click();
   await expect(page.locator('#comparison-results')).toContainText('Baseline selection');
@@ -154,21 +175,28 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   await expect(page.locator('#comparison-results')).toContainText('same dataset source hash');
 
   await page.getByRole('tab', { name: /Cost & Latency/ }).click();
+  await inspectAccessibility('Cost & Latency');
   await expect(page.locator('#cost-results')).toContainText('mock');
   await expect(page.locator('#cost-results')).toContainText('Unavailable when not measured');
   await page.getByRole('tab', { name: /Failure Triage/ }).click();
+  await inspectAccessibility('Failure Triage');
   await expect(page.locator('#triage-results')).toContainText('unsafe-price-claim');
   await expect(page.locator('#triage-results')).toContainText('P1');
   await page.getByRole('button', { name: 'Rerun fixture' }).click();
   await expect(page.locator('#triage-results')).toContainText('BLOCKED_BY_GROUNDING', { timeout: 120_000 });
   await page.getByRole('tab', { name: /Run History/ }).click();
+  await inspectAccessibility('Run History');
   await expect(page.locator('#history-results')).toContainText(fullCandidateId);
 
   const exportDir = resolve(screenshotRoot, '../exports');
   mkdirSync(exportDir, { recursive: true });
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('tab', { name: /Conversation Replay/ }).click().then(() => page.getByRole('link', { name: 'Export JSON' }).click()),
+    (async () => {
+      await page.getByRole('tab', { name: /Conversation Replay/ }).click();
+      await inspectAccessibility('Conversation Replay');
+      await page.getByRole('link', { name: 'Export JSON' }).click();
+    })(),
   ]);
   const exportPath = resolve(exportDir, `${fullCandidateId}.json`);
   await download.saveAs(exportPath);
@@ -178,6 +206,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(JSON.stringify(exported)).not.toMatch(/sourceHash|customerMessage|simulatedAttachment|expectedAnswer/i);
 
   await page.getByRole('tab', { name: /Playground/ }).click();
+  await inspectAccessibility('Playground');
   const playgroundButtonLabels = await page.getByRole('button').allTextContents();
   expect(playgroundButtonLabels.join(' ')).not.toMatch(/\b(?:purchase|place order|checkout|pay now|confirm order)\b/i);
   await page.locator('#tenant-id').fill('merchant-a');
@@ -228,6 +257,18 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   }
 
   expect(pageErrors).toEqual([]);
+  const accessibilityReport = {
+    schemaVersion: 1,
+    status: accessibilitySections.some(section => section.violations.some(violation => ['critical', 'serious'].includes(violation.impact || '')))
+      ? 'FAIL_CRITICAL_OR_SERIOUS'
+      : 'PASS_NO_CRITICAL_OR_SERIOUS',
+    browser: testInfo.project.name,
+    scannedSections: accessibilitySections,
+    criticalOrSeriousViolationCount: accessibilitySections.reduce((count, section) =>
+      count + section.violations.filter(violation => ['critical', 'serious'].includes(violation.impact || '')).length, 0),
+  };
+  writeFileSync(resolve(screenshotRoot, '../axe-accessibility-report.json'), `${JSON.stringify(accessibilityReport, null, 2)}\n`);
+  expect(accessibilityReport.criticalOrSeriousViolationCount).toBe(0);
 });
 
 test('loads the real Lab shell on every installed browser engine', async ({ page }, testInfo) => {

@@ -22,6 +22,7 @@ const grounding = require('../../src/modules/ai/grounding');
 const productSearch = require('../../src/modules/product/product-search.service');
 const {
     UsageEvent, Subscription, Customer, Conversation, Message,
+    Product,
 } = require('../../src/modules/entities');
 
 const { IDS, RUNTIME, EXPECTED, CUSTOMER_PSID, CUSTOMER_PSID_PAGE_A2 } = fixtures;
@@ -306,6 +307,53 @@ describe('META-E2E-003 — a product this shop really sells', () => {
             expect.arrayContaining([expect.stringContaining('unsupported_price:999')]),
         );
         expect(body(result)).not.toContain('999');
+    });
+
+    test('the production BullMQ worker reads a catalog update committed while the message waits in Redis', async () => {
+        const worker = require('../../src/jobs/message-worker').startWorker();
+        const eventId = 'm_e2e_catalog_changed_while_queued';
+        const updatedPrice = 1975;
+
+        try {
+            await worker.pause();
+            const payload = harness.messagePayload({
+                pageId: IDS.pageA,
+                psid: CUSTOMER_PSID,
+                text: 'black panjabi picture den',
+                mid: eventId,
+            });
+            const response = await harness.postWebhook(payload);
+            expect(response.status).toBe(200);
+            expect(await harness.waitForJobs(1)).toHaveLength(1);
+
+            const [updatedRows] = await Product.update(
+                { price: updatedPrice },
+                { where: { id: IDS.knownProduct, shop_id: IDS.shopA } },
+            );
+            expect(updatedRows).toBe(1);
+
+            await worker.resume();
+            const deadline = Date.now() + 20_000;
+            let receipt = null;
+            do {
+                receipt = await harness.receiptForEvent(eventId);
+                if (receipt?.status === 'PROCESSED' || receipt?.status === 'DEAD_LETTERED') break;
+                await new Promise(resolve => setTimeout(resolve, 50));
+            } while (Date.now() < deadline);
+
+            expect(receipt?.status).toBe('PROCESSED');
+            expect(transport.capturedSends()).toHaveLength(2);
+            expect(harness.sentBody(transport.capturedSends())).toContain('1,975');
+            expect(harness.sentBody(transport.capturedSends())).not.toContain('1,847');
+            expect(harness.sentAttachments(transport.capturedSends())).toEqual([
+                expect.objectContaining({
+                    type: 'image',
+                    payload: expect.objectContaining({ url: EXPECTED.knownProductImage }),
+                }),
+            ]);
+        } finally {
+            await worker.close();
+        }
     });
 });
 

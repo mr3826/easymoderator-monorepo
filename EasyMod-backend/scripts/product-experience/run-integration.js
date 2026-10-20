@@ -5,7 +5,7 @@ const path = require('node:path');
 const net = require('node:net');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 
 const SCRIPT_ROOT = __dirname;
 const BACKEND_ROOT = path.resolve(SCRIPT_ROOT, '../..');
@@ -109,6 +109,7 @@ const redact = (value) => String(value || '')
     .replace(/postgres(?:ql)?:\/\/[^\s"']+/gi, 'postgres://[redacted]')
     .replace(/redis:\/\/[^\s"']+/gi, 'redis://[redacted]')
     .replace(/(?:\+?880\s*)?0?(1[3-9]\d{8})\b/g, '[contact redacted]')
+    .replace(/\b\d{12,20}\b/g, '[identifier redacted]')
     .replace(/[\w.+\-]+@[\w\-]+\.[a-z]{2,}/gi, '[email redacted]')
     .replace(/(TOKEN|SECRET|PASSWORD|API_KEY)=([^\s]+)/gi, '$1=[redacted]');
 
@@ -172,6 +173,9 @@ const summarizeJestReport = (reportPath) => {
             failedSuites: report.numFailedTestSuites ?? null,
             passedTests: report.numPassedTests ?? null,
             failedTests: report.numFailedTests ?? null,
+            passedTestTitles: (report.testResults || []).flatMap(result => (result.assertionResults || [])
+                .filter(assertion => assertion.status === 'passed')
+                .map(assertion => assertion.fullName || assertion.title || 'unnamed assertion')),
             failedSuiteDiagnostics: failedSuites.map(result => {
                 const messages = [result.message, ...(result.assertionResults || []).flatMap(assertion => assertion.failureMessages || [])]
                     .filter(Boolean).join('\n');
@@ -207,12 +211,16 @@ const summarizeJestReport = (reportPath) => {
                         const expected = failureText.match(/^\s*Expected:\s*(.+)$/m)?.[1]
                             || failureText.match(/^\s*Expected substring:\s*(.+)$/m)?.[1];
                         const received = failureText.match(/^\s*Received:\s*(.+)$/m)?.[1];
+                        const callCounts = failureText.match(/Expected number of calls:\s*(\d+)[\s\S]*?Received number of calls:\s*(\d+)/);
                         const testTitle = assertion.fullName || assertion.title || 'unnamed assertion';
                         return {
                             caseId: crypto.createHash('sha256').update(testTitle).digest('hex').slice(0, 16),
                             location: assertion.location || null,
                             expected: scalar(expected),
                             received: scalar(received),
+                            expectedCalls: callCounts ? Number(callCounts[1]) : null,
+                            receivedCalls: callCounts ? Number(callCounts[2]) : null,
+                            failureMessage: redact(failureText).slice(0, 1800),
                             assertionKind: /Expected substring:/.test(failureText) ? 'MISSING_SUBSTRING' : 'VALUE_MISMATCH',
                         };
                     });
@@ -256,6 +264,7 @@ const ensureComposeBoundary = async (project, postgresPort, redisPort, networkSu
 const main = async () => {
     fs.mkdirSync(REPORT_ROOT, { recursive: true });
     const runId = crypto.randomUUID();
+    const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     const project = `easymod-product-lab-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
     const postgresPort = await freePort();
     let redisPort = await freePort();
@@ -365,6 +374,7 @@ const main = async () => {
         startedAt,
         completedAt: new Date().toISOString(),
         branch: 'feature/ai-product-experience-v1.1',
+        sourceRevision,
         composeProject: project,
         serviceNetwork: { driver: 'bridge', internal: false, ipMasquerading: false, subnet: networkSubnet, overlapChecked: true },
         services: [
