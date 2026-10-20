@@ -1,6 +1,6 @@
 # Baseline and Candidate Comparison
 
-Both latest full runs executed the same 200 source turns across 20 personas, sequentially within personas, using dataset SHA-256 `892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6`. Candidate receipt: `artifacts/runs/ba2632ad-07f2-4899-bfbd-23c9c0f1629c.json`; baseline receipt: `artifacts/runs/8bd67fb2-e29c-48b6-a6f0-6e4028ef7a9c.json`. The shared runner SHA-256 is `f587f0301cd474b1f4ff85a2dc022b77c953ead811f6aa44bab0a0a1d0a2a452`.
+Both latest independently verified full runs executed the same 200 source turns across 20 personas, sequentially within personas, using dataset SHA-256 `892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6`. Candidate receipt: `artifacts/runs/9fe42774-0577-4568-9a4e-ab9cf14129da.json`; baseline receipt: `artifacts/runs/a785b54c-8f0c-4856-8f78-812ef69a137d.json`. The shared runner SHA-256 is `f587f0301cd474b1f4ff85a2dc022b77c953ead811f6aa44bab0a0a1d0a2a452`.
 
 | Measure | Baseline | Candidate |
 |---|---:|---:|

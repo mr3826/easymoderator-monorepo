@@ -11,7 +11,8 @@
     "p1Findings": 0,
     "openP2Findings": 0,
     "resolvedP2Findings": [
-      "Material/title ownership boundary for English and Bengali qualifiers"
+      "Material/title ownership boundary for English and Bengali qualifiers",
+      "Playwright runner now binds axe evidence to a UUID-scoped report per execution"
     ],
     "historicalLimitations": [
       "An earlier suite-level integration failure's root cause cannot be reconstructed; the final run passes and the current runner persists structured failure summaries."
@@ -25,20 +26,20 @@
     "freeTextResponsesPersisted": false,
     "privacyScan": {
       "status": "PASS",
-      "jsonArtifacts": 285,
+      "jsonArtifacts": 341,
       "jsonParseErrors": 0,
       "deniedPropertyKeys": 0,
       "distinctLongCsvCellValuesChecked": 616,
       "distinctSimulatorMessageAndTruthValuesChecked": 397,
       "minimumCharacterLength": 12,
       "exactSourceTextMatchesInJson": 0,
-      "playwrightZipArchives": 4,
+      "playwrightZipArchives": 13,
       "exactSourceTextMatchesInPlaywrightArchives": 0
     }
   },
   "evaluation": {
-    "baselineReplayId": "8bd67fb2-e29c-48b6-a6f0-6e4028ef7a9c",
-    "candidateReplayId": "ba2632ad-07f2-4899-bfbd-23c9c0f1629c",
+    "baselineReplayId": "a785b54c-8f0c-4856-8f78-812ef69a137d",
+    "candidateReplayId": "9fe42774-0577-4568-9a4e-ab9cf14129da",
     "baselineEngineSourceSha256": "6bc6dfd460faa28841b0419a2daa822a263f13704fde4b3d269c492593354cb8",
     "candidateEngineSourceSha256": "422d20f15cba2128e3fed628caafce6ac24ced803a76147f6830eb1622e66914",
     "runnerSourceSha256": "f587f0301cd474b1f4ff85a2dc022b77c953ead811f6aa44bab0a0a1d0a2a452",
@@ -57,33 +58,44 @@
     "suites": 282,
     "tests": 3614,
     "runtime": "Node v24.19.0",
-    "redis": "Task-owned disposable Redis 7 on 127.0.0.1:6379; container and anonymous data volume removed"
+    "redis": "Task-owned disposable Redis 7 on 127.0.0.1:6379; container and anonymous data volume removed",
+    "receipt": "artifacts/unit-regression/4cea78a0-0274-4da5-aa6a-8745fd9703bd.receipt.json",
+    "sourceRevision": "bb5f2dcc63a7fc4e00559b8abba6a351802a2d27"
   },
   "localIntegration": {
     "status": "PASS_SELECTED_SUBSET",
-    "latestReceipt": "2f3cf498-9164-46b9-8323-0c6208711213",
+    "latestReceipt": "191422c9-ee09-41d4-96da-a78f3433335a",
     "selectedIntegrationSuites": 3,
     "selectedIntegrationTests": 12,
-    "selectedIntegrationDurationSeconds": 15.543,
+    "selectedIntegrationDurationSeconds": 18.045,
     "webhookPipelineSuites": 1,
-    "webhookPipelineTests": 45,
-    "webhookPipelineDurationSeconds": 37.231,
+    "webhookPipelineTests": 46,
+    "webhookPipelineDurationSeconds": 45.309,
     "cleanupExitCode": 0,
     "blockedNonLoopbackAttempts": 0,
     "externalProvidersConfigured": false,
-    "historicalSuiteDiagnosticLimitation": "An earlier suite-level failure's root cause cannot be reconstructed; current runner persists structured failure summaries."
+    "historicalSuiteDiagnosticLimitation": "An earlier suite-level failure's root cause cannot be reconstructed; current runner persists structured failure summaries.",
+    "sourceRevision": "bb5f2dcc63a7fc4e00559b8abba6a351802a2d27"
   },
   "playwright": {
     "status": "PASS",
     "executionReceipt": "artifacts/playwright/execution.json",
-    "tests": 2,
-    "browser": "Chromium",
+    "tests": 6,
+    "browser": "Chromium full journey; Chromium, Firefox, and WebKit shell smoke",
     "retries": 0,
-    "durationSeconds": 70,
-    "localUrl": "http://127.0.0.1:13433",
-    "firefox": "UNAVAILABLE",
-    "webkit": "UNAVAILABLE",
-    "axeCore": "NOT_RUN"
+    "durationSeconds": 165,
+    "localUrl": "http://127.0.0.1:1076",
+    "firefox": "SHELL_SMOKE_PASS",
+    "webkit": "SHELL_SMOKE_PASS",
+    "axeCore": "PASS_NO_CRITICAL_OR_SERIOUS",
+    "runId": "73e7f36e-86c4-4c80-b6bb-12be77caea3a",
+    "sourceRevision": "1be73a59971d6d66b59ef631ee82cef0636fcf72",
+    "passed": 4,
+    "failed": 0,
+    "skipped": 2,
+    "axeSections": 9,
+    "axeViolations": 0,
+    "axeReport": "artifacts/playwright/axe-accessibility-report-73e7f36e-86c4-4c80-b6bb-12be77caea3a.json"
   },
   "measuredPerformance": {
     "sample": "200 in-process intent-router calls with controlled mock collaborators",
@@ -114,10 +126,11 @@
     "pushMergeDeploymentAuthorized": false
   },
   "checksumManifest": {
-    "entries": 363,
+    "entries": 444,
     "invalidOrDuplicate": 0,
     "missing": 0,
     "mismatch": 0,
     "outside": 0
-  }
+  },
+  "finalCodeCommit": "1be73a59971d6d66b59ef631ee82cef0636fcf72"
 }

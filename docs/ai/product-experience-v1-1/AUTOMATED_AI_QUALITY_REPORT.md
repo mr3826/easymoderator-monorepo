@@ -14,10 +14,10 @@ The intentionally unsafe `unsafe-price-claim` P1 triage fixture is preserved und
 
 ## Automated regression and integration
 
-- Full backend Jest suite: **282/282 suites and 3,614/3,614 tests passed** in 102.541 seconds with Node `v24.19.0`, task-owned disposable Redis, and the Node no-egress preload. An initial attempt without the expected Redis service timed out; the successful run used the disposable Redis endpoint.
+- Full backend Jest suite: **282/282 suites and 3,614/3,614 tests passed** in 101.532 seconds with Node `v24.19.0`, task-owned disposable Redis, and the Node no-egress preload. Receipt `artifacts/unit-regression/4cea78a0-0274-4da5-aa6a-8745fd9703bd.receipt.json` records the pass at source revision `bb5f2dcc63a7fc4e00559b8abba6a351802a2d27`. An earlier attempt omitted the required Redis service and timed out; its receipt identifies the missing service, and the successful rerun used task-owned disposable Redis.
 - Focused product-evidence hardening suite: **81/81 tests passed**, including English and Bengali material/title boundaries, supported claims, and title-only controls.
-- Selected real-stack integration: **3 suites / 12 tests passed**; webhook-to-worker pipeline: **1 suite / 45 tests passed**. See [Local Integration Results](LOCAL_INTEGRATION_RESULTS.md).
-- Playwright: **2 Chromium tests passed**, zero retries, in 70 seconds. See [Playwright E2E Report](PLAYWRIGHT_E2E_REPORT.md).
+- Selected real-stack integration: **3 suites / 12 tests passed**; webhook-to-worker pipeline: **1 suite / 46 tests passed**, including a production-worker case that reads a catalog price committed while its job waits in Redis. See [Local Integration Results](LOCAL_INTEGRATION_RESULTS.md).
+- Playwright: **4 passed, 2 explicitly skipped, 0 failed** across Chromium, Firefox, and WebKit with zero retries; Chromium ran the full journey and all three browsers passed shell smoke. Axe scanned 9 sections with 0 violations. See [Playwright E2E Report](PLAYWRIGHT_E2E_REPORT.md).
 
 ## Failure and refusal interpretation
 

@@ -1,0 +1,422 @@
+{
+  "schemaVersion": 1,
+  "status": "FAIL_CRITICAL_OR_SERIOUS",
+  "browser": "chromium",
+  "scannedSections": [
+    {
+      "section": "Overview",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Scenario Explorer",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Evidence Inspector",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Baseline vs Candidate",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Cost & Latency",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Failure Triage",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Run History",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Conversation Replay",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Playground",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "targets": [
+            [
+              ".nav-label"
+            ],
+            [
+              "#tab-overview > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-scenarios > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-replay > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-comparison > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-evidence > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-cost > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-triage > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-playground > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "#tab-history > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "footer"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "criticalOrSeriousViolationCount": 9
+}

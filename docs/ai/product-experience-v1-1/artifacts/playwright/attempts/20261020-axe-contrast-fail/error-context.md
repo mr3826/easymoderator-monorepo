@@ -1,0 +1,143 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - link "Skip to workspace" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: em
+      - generic [ref=e6]:
+        - strong [ref=e7]: EasyModerator
+        - generic [ref=e8]: Founder Test Lab
+    - generic [ref=e9]:
+      - generic [ref=e10]: LOCAL WORKSPACE
+      - status [ref=e11]: product-engine-local-test-lab · ready
+  - generic [ref=e12]:
+    - complementary [ref=e13]:
+      - tablist "Test Lab sections" [ref=e14]:
+        - tab "Overview" [active] [selected] [ref=e15] [cursor=pointer]
+        - tab "Scenario Explorer" [ref=e16] [cursor=pointer]
+        - tab "Conversation Replay" [ref=e17] [cursor=pointer]
+        - tab "Baseline vs Candidate" [ref=e18] [cursor=pointer]
+        - tab "Evidence Inspector" [ref=e19] [cursor=pointer]
+        - tab "Cost & Latency" [ref=e20] [cursor=pointer]
+        - tab "Failure Triage" [ref=e21] [cursor=pointer]
+        - tab "Playground" [ref=e22] [cursor=pointer]
+        - tab "Run History" [ref=e23] [cursor=pointer]
+    - main [ref=e24]:
+      - tabpanel "Overview" [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - paragraph [ref=e28]: REVIEW WORKSPACE
+            - heading "Make every answer inspectable." [level=1] [ref=e29]
+            - paragraph [ref=e30]: Explore the source, replay conversations, and follow each answer back to its evidence.
+          - button "Refresh workspace" [ref=e31] [cursor=pointer]
+        - generic [ref=e32]:
+          - generic [ref=e33]: SIMULATION ≠ LIVE PROOF
+          - paragraph [ref=e34]: Source expectations are evaluation context. Synthetic catalog fixtures and mock provider responses do not establish real merchant facts, live model accuracy, or Messenger delivery.
+        - generic "Dataset summary" [ref=e35]:
+          - article [ref=e36]:
+            - generic [ref=e37]: Personas
+            - strong [ref=e38]: "20"
+            - paragraph [ref=e39]: Source dataset
+          - article [ref=e40]:
+            - generic [ref=e41]: Scenario turns
+            - strong [ref=e42]: "200"
+            - paragraph [ref=e43]: Ordered source records
+          - article [ref=e44]:
+            - generic [ref=e45]: Input formats
+            - strong [ref=e46]: "4"
+            - paragraph [ref=e47]: As reported by the API
+          - article [ref=e48]:
+            - generic [ref=e49]: Languages
+            - strong [ref=e50]: "4"
+            - paragraph [ref=e51]: As reported by the API
+        - generic [ref=e52]:
+          - article [ref=e53]:
+            - generic [ref=e54]:
+              - heading "Start a replay" [level=2] [ref=e55]
+              - generic [ref=e56]: LOCAL HARNESS
+            - paragraph [ref=e57]: Select one persona for a focused review, or run the full dataset.
+            - generic [ref=e58]:
+              - generic [ref=e59]: Persona
+              - combobox "Persona" [ref=e60]:
+                - option "P01 · 10 turns" [selected]
+                - option "P02 · 10 turns"
+                - option "P03 · 10 turns"
+                - option "P04 · 10 turns"
+                - option "P05 · 10 turns"
+                - option "P06 · 10 turns"
+                - option "P07 · 10 turns"
+                - option "P08 · 10 turns"
+                - option "P09 · 10 turns"
+                - option "P10 · 10 turns"
+                - option "P11 · 10 turns"
+                - option "P12 · 10 turns"
+                - option "P13 · 10 turns"
+                - option "P14 · 10 turns"
+                - option "P15 · 10 turns"
+                - option "P16 · 10 turns"
+                - option "P17 · 10 turns"
+                - option "P18 · 10 turns"
+                - option "P19 · 10 turns"
+                - option "P20 · 10 turns"
+              - generic [ref=e61]: Execution selection
+              - combobox "Execution selection" [ref=e62]:
+                - option "Candidate" [selected]
+                - option "Baseline"
+              - generic [ref=e63]:
+                - button "Run selected persona" [ref=e64] [cursor=pointer]
+                - button "Run full dataset" [ref=e65] [cursor=pointer]
+            - generic [ref=e66]: No run selected. Results appear after a run is created or opened from history.
+          - article [ref=e67]:
+            - heading "Source & provenance" [level=2] [ref=e68]
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - term [ref=e71]: Source SHA-256
+                - definition [ref=e72]: 892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6
+              - generic [ref=e73]:
+                - term [ref=e74]: Personas
+                - definition [ref=e75]: "20"
+              - generic [ref=e76]:
+                - term [ref=e77]: Scenario turns
+                - definition [ref=e78]: "200"
+              - generic [ref=e79]:
+                - term [ref=e80]: Provenance
+                - definition [ref=e81]: Source metadata · not catalog truth
+            - paragraph [ref=e82]: Only sanitized scenario metadata is requested. Original source cells are not presented as merchant evidence.
+        - article [ref=e83]:
+          - heading "Dataset coverage" [level=2] [ref=e84]
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - heading "Input types" [level=3] [ref=e87]
+              - generic [ref=e88]:
+                - generic [ref=e89]:
+                  - generic [ref=e90]: TEXT
+                  - generic [ref=e93]: "179"
+                - generic [ref=e94]:
+                  - generic [ref=e95]: IMAGE_TEXT
+                  - generic [ref=e98]: "17"
+                - generic [ref=e99]:
+                  - generic [ref=e100]: IMAGE
+                  - generic [ref=e103]: "3"
+                - generic [ref=e104]:
+                  - generic [ref=e105]: IMAGE_IMAGE
+                  - generic [ref=e108]: "1"
+            - generic [ref=e109]:
+              - heading "Languages" [level=3] [ref=e110]
+              - generic [ref=e111]:
+                - generic [ref=e112]:
+                  - generic [ref=e113]: banglish
+                  - generic [ref=e116]: "123"
+                - generic [ref=e117]:
+                  - generic [ref=e118]: other
+                  - generic [ref=e121]: "3"
+                - generic [ref=e122]:
+                  - generic [ref=e123]: bangla
+                  - generic [ref=e126]: "46"
+                - generic [ref=e127]:
+                  - generic [ref=e128]: english
+                  - generic [ref=e131]: "28"
+      - generic [ref=e132]: EasyModerator Product Engine · Local founder review · Live behavior requires separate evidence
+```

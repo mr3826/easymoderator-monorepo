@@ -1,17 +1,81 @@
 {
   "schemaVersion": 1,
+  "runId": "73e7f36e-86c4-4c80-b6bb-12be77caea3a",
   "status": "PASS",
-  "startedAt": "2026-10-20T16:43:34.879Z",
-  "completedAt": "2026-10-20T16:44:44.281Z",
-  "localUrl": "http://127.0.0.1:13433",
+  "startedAt": "2026-10-20T17:39:12.866Z",
+  "completedAt": "2026-10-20T17:41:57.714Z",
+  "sourceRevision": "1be73a59971d6d66b59ef631ee82cef0636fcf72",
+  "localUrl": "http://127.0.0.1:1076",
   "browsersAvailable": [
-    "chromium"
+    "chromium",
+    "firefox",
+    "webkit"
   ],
   "browserLimitations": [
     "Firefox or WebKit are included only when their local browser binary is installed."
   ],
   "playwrightExitCode": 0,
   "playwrightSignal": null,
+  "tests": {
+    "total": 6,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 2,
+    "results": [
+      {
+        "status": "skipped",
+        "project": "webkit",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:30:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
+        "duration": null
+      },
+      {
+        "status": "skipped",
+        "project": "firefox",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:30:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
+        "duration": null
+      },
+      {
+        "status": "passed",
+        "project": "webkit",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:277:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "7.0s"
+      },
+      {
+        "status": "passed",
+        "project": "firefox",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:277:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "4.8s"
+      },
+      {
+        "status": "passed",
+        "project": "chromium",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:30:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
+        "duration": "2.5m"
+      },
+      {
+        "status": "passed",
+        "project": "chromium",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:277:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "1.0s"
+      }
+    ]
+  },
+  "accessibility": {
+    "status": "PASS_NO_CRITICAL_OR_SERIOUS",
+    "criticalOrSeriousViolationCount": 0,
+    "scannedSections": [
+      "Overview",
+      "Scenario Explorer",
+      "Evidence Inspector",
+      "Baseline vs Candidate",
+      "Cost & Latency",
+      "Failure Triage",
+      "Run History",
+      "Conversation Replay",
+      "Playground"
+    ],
+    "report": "axe-accessibility-report-73e7f36e-86c4-4c80-b6bb-12be77caea3a.json"
+  },
   "htmlReport": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\html-report\\index.html",
   "traceDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\test-results",
   "screenshotsDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\screenshots",

@@ -10,7 +10,7 @@ The oracle is response-blind and independent of the CSV's suggested answers. A f
 
 ## Candidate coverage and outcomes
 
-The latest candidate receipt is `artifacts/runs/ba2632ad-07f2-4899-bfbd-23c9c0f1629c.json`; paired baseline receipt: `artifacts/runs/8bd67fb2-e29c-48b6-a6f0-6e4028ef7a9c.json`. Each executed all 200 turns sequentially within personas and isolated synthetic tenants.
+The latest independently verified candidate receipt is `artifacts/runs/9fe42774-0577-4568-9a4e-ab9cf14129da.json`; paired baseline receipt: `artifacts/runs/a785b54c-8f0c-4856-8f78-812ef69a137d.json`. Each executed all 200 turns sequentially within personas and isolated synthetic tenants.
 
 | Domain | Turns |
 |---|---:|

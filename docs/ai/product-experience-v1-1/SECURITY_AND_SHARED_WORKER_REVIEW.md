@@ -11,7 +11,7 @@
 
 ## Regression coverage
 
-The full backend Jest suite passed 282 suites / 3,614 tests. The final disposable-stack integration passed the selected 12-test Postgres/Redis/worker group and the 45-test webhook pipeline. The browser journey verifies tenant switching and reset, grounded evidence display, safe unknown handling, and no image-identification claim from a fixture ID. Current Bengali title-boundary regressions cover `খাঁটি`, `খাটি`, `বিশুদ্ধ`, `শতভাগ`, and `১০০%` before an unknown product title.
+The full backend Jest suite passed 282 suites / 3,614 tests. The final disposable-stack integration passed the selected 12-test Postgres/Redis/worker group and the 46-test webhook pipeline, including a queued catalog-price update read by the resumed production worker. The browser journey verifies tenant switching and reset, grounded evidence display, safe unknown handling, and no image-identification claim from a fixture ID. Chromium/axe coverage found no violations across the 9 Lab sections. Current Bengali title-boundary regressions cover `খাঁটি`, `খাটি`, `বিশুদ্ধ`, `শতভাগ`, and `১০০%` before an unknown product title.
 
 A historical integration-run diagnostic limitation remains: an earlier attempt exited at suite level despite all assertions passing, and its receipt omitted suite diagnostics. The final run passed, and the runner captures structured failure summaries for future attempts. The cause of the historical failure cannot be reconstructed; it is not an open code finding.
 
