@@ -1425,3 +1425,97 @@ https://growth.easymod.tech/build-info.json.commit=8e83f17839b21331bbda52f164a3c
 The live image predates this branch and its CSP does not yet contain the new
 API-origin allowance; this is evidence of the current deployed state, not a
 claim that the branch has been deployed.
+
+## Growth OS Action-First V1 implementation receipt (2026-10-20)
+
+Bounded single phase across BOTH existing workspaces per
+`EasyModerator_GrowthOS_Action_First_Codex_Goal_2026-10-20`; local-only;
+production untouched. Full handoff: `docs/growth-os/action-first-v1/`.
+
+```text
+BASE_REMOTE_MAIN_SHA=07168f49066e4dc4a8e2a756621ac577a13c12bd (verified via ls-remote+fetch)
+FEATURE_BRANCH=feat/growth-os-action-first-v1-20261020T0310Z
+FEATURE_WORKTREE=D:\easymod\_wt-growth-os-action-first-v1
+REMOTE_BRANCH_URL=https://github.com/mr3826/easymoderator-monorepo/tree/feat/growth-os-action-first-v1-20261020T0310Z
+PR_CREATED=NO; MERGED=NO; DEPLOYED=NO; FORCE_PUSH=NO
+OTHER_AGENT_WORKTREES_TOUCHED=NO; OTHER_AGENT_PROCESSES_STOPPED=NO
+OTHER_AGENT_DOCKER_RESOURCES_TOUCHED=NO (easymod-v4/v5/v6 stacks and all
+foreign networks/volumes left running; own temp containers only were removed)
+PRODUCTION_CHANGED=NO
+```
+
+Implemented (KEEP/IMPROVE/MERGE-NAV/DEFER/REJECT rationale in
+`action-first-v1/01-decision-log.md`):
+
+- Sales & Growth: `Today` is now an ordered item-backed Action Queue
+  (overdue → due-today → qualified-unassigned → onboarding-stalled →
+  new-unclaimed) composed ONLY from existing `/home`, `/followups` and
+  `/prospects` reads; rows deep-link to canonical records with per-row
+  "why"; per-segment retry; weekly summary retained below with the
+  **AI activated** semantic and explicit not-a-paid-conversion note.
+- Admin Control: new `/admin` attention landing (server-guarded ANY-of admin
+  permissions) — stuck-payment/channel aggregates stay honestly
+  aggregate-only (no fabricated merchant correlation), suspended
+  subscriptions and stalled-before-activation cohorts drill to real
+  record-level views, Team & Access entries, reason-bearing privileged
+  trail.
+- Two-context workspace switcher (Sales & Growth / Admin Control): shown
+  only when effective session permissions include admin-side grants;
+  switching changes navigation + home only; stored context cannot escalate
+  (unit-tested; GROWTH_USER never renders admin destinations; direct API
+  403s proven in browser and smoke).
+- Nav consolidation: Quick Add/Sidebar Search/standalone Sources removed
+  from primary nav (all routes and extension handoff intact); header
+  **Add prospect** primary action; `/performance` tabbed Growth
+  Performance while `/analytics` and `/sources` keep rendering; Team &
+  Access grouping; canonical role copy replaces Founder/Growth Manager.
+- Backend (smallest change, NO migration): follow-up completion accepts
+  optional typed `outcome` enum + `reason` (≤200), persisted on the
+  existing `growth_os_prospect_events.reason/metadata` ledger and audit
+  `new_values`; legacy `{status}` bodies unchanged; unknown fields still
+  rejected.
+- `prefers-reduced-motion` block; 320 px queue verified overflow-free.
+- Local founder review (persistent, owned): `npm run
+  growth:review:up|seed|health|test|code|reset|down|status` — unique
+  `em-growth-review-*` Compose project, loopback-only auto-selected port,
+  disposable DB guard, `GROWTH_REVIEW_MODE=true`, providers-disabled
+  verified, fresh strong password + real TOTP enrollment per seed,
+  credentials only in gitignored `0600` receipt. Live at phase end:
+  http://127.0.0.1:4290 (project `em-growth-review-2e859b49`, receipt
+  `.growth-review/credentials-em-growth-review-2e859b49.md`).
+
+Validation receipts (exact commands in `action-first-v1/04-evidence-receipts.md`
+and `05-image-smoke-receipt.md`):
+
+| Gate | Result |
+|---|---|
+| growth typecheck / build / `lint:growth --max-warnings=0` | PASS |
+| growth Vitest | PASS 27 files / 177 tests (new AdminHome, PerformancePage, workspaceContext suites) |
+| backend growth-os Jest units | PASS 12 suites / 88 tests |
+| growth-os PostgreSQL+Redis integration | PASS 4 suites / 46 tests incl. new typed-outcome audit test |
+| Playwright browser E2E | PASS 39 / 1 pre-existing skip / 0 fail incl. new action-first spec |
+| review stack health self-diagnosis | PASS 6/6 |
+| review stack authorization smoke | PASS 11/11 (real MFA, 403/409/audit evidence) |
+| `test:growthos:image` | PASS (retry after shared-VM contention; build itself green) |
+| gitleaks over branch diff (238 KB) | PASS, no leaks |
+
+Environment limitation (honest): this shared machine's Docker predefined
+address pools are exhausted by pre-existing foreign bridge networks, so the
+canonical compose-bootstrapped integration/e2e runners could not create
+their networks. Both suites were executed against self-owned loopback
+PostgreSQL/Redis containers with explicit out-of-pool subnets using the
+runners' own supported `GROWTH_E2E_USE_EXISTING_SERVICES` path and identical
+migrate/seed/test commands; no foreign resource was removed. Remote CI
+(Node 20, clean runners) remains authoritative for the shared bootstrap path.
+
+```text
+LOCAL_CODE_GATES=PASS
+LOCAL_BROWSER_E2E=PASS
+LOCAL_DOCKER_REVIEW=RUNNING (http://127.0.0.1:4290)
+SECURITY_ADVERSARIAL_CHECKS=PASS (privilege escalation, merchant isolation,
+  masked-shape leak, duplicate 409, audit completeness — browser + smoke)
+PRODUCTION_CHANGED=NO
+FINAL_STATUS=PASS (single bounded phase complete; stop per AGENTS.md —
+  deferred items listed in the decision log; no next phase started)
+```
+

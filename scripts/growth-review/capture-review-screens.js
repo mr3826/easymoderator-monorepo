@@ -102,11 +102,14 @@ async function main() {
       .getByRole('link').first();
     await prospectLink.click();
     await salesPage.waitForURL(/\/prospects\//);
-    const completeButton = salesPage.locator('section[aria-labelledby="followups-panel-title"]')
-      .getByRole('button', { name: 'Complete' }).first();
-    if (await completeButton.count()) {
+    const panel = salesPage.locator('section[aria-labelledby="followups-panel-title"]');
+    const completeButton = panel.getByRole('button', { name: 'Complete' }).first();
+    try {
+      await completeButton.waitFor({ state: 'visible', timeout: 30_000 });
       await completeButton.click();
       await salesPage.screenshot({ path: path.join(outDir, 'sales-outcome-form-1440.png'), fullPage: true });
+    } catch (_error) {
+      console.log('outcome form not present on this record; skipping that shot');
     }
     await salesPage.goto(`${baseUrl}/performance?tab=sources`);
     await salesPage.getByRole('heading', { name: 'Growth Performance', exact: true }).waitFor();
@@ -114,8 +117,12 @@ async function main() {
     await salesContext.close();
 
     // Mobile sales queue.
+    // Wait past the current 30-second TOTP window so a second sign-in with
+    // the same account never reuses a consumed code.
+    await new Promise((resolve) => setTimeout(resolve, 31_000));
     const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const mobilePage = await mobileContext.newPage();
+    mobilePage.setDefaultNavigationTimeout(90_000);
     await signIn(mobilePage, baseUrl, accounts.sales);
     await mobilePage.getByRole('heading', { name: 'Today', exact: true }).waitFor();
     await mobilePage.screenshot({ path: path.join(outDir, 'sales-today-390.png'), fullPage: true });

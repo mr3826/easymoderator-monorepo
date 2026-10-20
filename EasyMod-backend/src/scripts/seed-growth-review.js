@@ -364,8 +364,8 @@ async function ensureTenant() {
         transaction_id: `growth-review-stuck-${order.id}`,
         amount: definition.payment.amount,
         status: definition.payment.status,
-        created_at: daysAgo(definition.payment.createdAtDaysAgo),
-        updated_at: daysAgo(definition.payment.createdAtDaysAgo),
+        createdAt: daysAgo(definition.payment.createdAtDaysAgo),
+        updatedAt: daysAgo(definition.payment.createdAtDaysAgo),
       });
     }
 

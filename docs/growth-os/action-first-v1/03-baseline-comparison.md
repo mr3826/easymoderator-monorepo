@@ -48,8 +48,26 @@ operator and the sample is synthetic fixtures, not real staff.
 | Nav | "System" group with two destinations | "Team & Access" grouping (same routes, same guards) — grouping-only change; steps unchanged |
 | Flow create→grant→MFA→revoke | Fully preserved (admin-journey E2E) | Same, verified again on this branch |
 
-## Measured after-values (browser, owned local review stack)
+## Measured after-values (browser, owned local review stack + Playwright)
 
-To be appended from the founder-review walkthrough and Playwright receipts:
-clicks-from-cold-landing to first actionable record for S1 and A1, console
-error count, horizontal overflow at 320 px, and outcome persistence evidence.
+- S1: from cold landing on Today, the first overdue item is reachable with
+  1 click to the record ("Open and record"), outcome recorded in 2 further
+  interactions; completion persisted and re-read from the audited timeline
+  in `action-first.spec.ts` (E2E 39/39 pass incl. this flow, 320 px
+  overflow check ≤1 px, 403 direct-API matrix).
+- A1: Super Admin lands in Admin Control by default; the payment-stuck card
+  is visibly aggregate-only (seeded stuck fixture verified count=1 after
+  the seed timestamp fix), stalled cohorts drill to exactly the counted
+  population, and the privileged trail shows reason-bearing reconnect
+  entries in the live UI (screenshot `admin-attention-1440.png`).
+- Screenshots (admin attention, admin→sales nav switch, sales Today queue,
+  outcome form, performance sources tab, 390 px queue) captured via
+  `node scripts/growth-review/capture-review-screens.js` into gitignored
+  `.growth-review/screenshots/`.
+- Console-error and horizontal-overflow checks run inside the E2E specs;
+  no failures reported by the suite.
+- "Before" screenshots were not captured: rebuilding the 07168f49 SPA
+  against the shared review backend would have contended with other
+  agents' Docker resources; baseline claims above are therefore derived
+  from the shipped pre-change code paths (exact file/line behavior), not
+  from a re-run of the old UI. No percentage uplift is claimed.
