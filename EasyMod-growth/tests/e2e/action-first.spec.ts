@@ -28,7 +28,8 @@ test.describe('action-first sales journeys', () => {
     // GROWTH_USER never sees the Admin Control context toggle (boundary B1).
     await expect(page.getByRole('group', { name: 'Workspace context' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Growth Users' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Add prospect' })).toHaveAttribute('href', '/prospects/new');
+    await expect(page.getByRole('banner').getByRole('link', { name: 'Add prospect' }))
+      .toHaveAttribute('href', '/prospects/new');
   });
 
   test('sales operator records a typed outcome on completion and history shows it (S1)', async ({ page }) => {
@@ -87,17 +88,6 @@ test.describe('action-first sales journeys', () => {
     await expect(page.getByRole('link', { name: 'Quick Add' })).toHaveCount(0);
   });
 
-  test('narrow mobile keeps the queue usable without horizontal overflow', async ({ page }) => {
-    test.use({ viewport: { width: 320, height: 640 } });
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Overdue follow-ups' })).toBeVisible();
-    const overflow = await page.evaluate(() => (
-      document.documentElement.scrollWidth - document.documentElement.clientWidth
-    ));
-    expect(overflow).toBeLessThanOrEqual(1);
-  });
-
   test('growth user is denied the Admin Control surface by the backend', async ({ page }) => {
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
@@ -110,6 +100,20 @@ test.describe('action-first sales journeys', () => {
       (await fetch('/api/internal/growth-os/admin/operations', { credentials: 'include' })).status
     ));
     expect(adminStatus).toBe(403);
+  });
+});
+
+test.describe('action-first mobile queue', () => {
+  test.use({ storageState: authStatePath('growth'), viewport: { width: 320, height: 640 } });
+
+  test('narrow mobile keeps the queue usable without horizontal overflow', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Overdue follow-ups' })).toBeVisible();
+    const overflow = await page.evaluate(() => (
+      document.documentElement.scrollWidth - document.documentElement.clientWidth
+    ));
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });
 
@@ -128,8 +132,10 @@ test.describe('action-first admin journeys', () => {
     const signals = page.getByRole('region', { name: 'Operational attention' });
     await expect(signals.getByText(/No record-level merchant identification is available/)).toBeVisible();
     await expect(signals.getByRole('link', { name: 'Open Operations' })).toHaveAttribute('href', '/operations');
-    await expect(page.getByRole('region', { name: 'Team & access' }))
-      .getByRole('link', { name: /Manage growth staff/ }).toHaveAttribute('href', '/growth-users');
+    await expect(
+      page.getByRole('region', { name: 'Team & access' })
+        .getByRole('link', { name: /Manage growth staff/ }),
+    ).toHaveAttribute('href', '/growth-users');
 
     // Supported drilldowns navigate to cohort-bearing views.
     const stuck = page.getByRole('region', { name: 'Merchants needing support investigation' });

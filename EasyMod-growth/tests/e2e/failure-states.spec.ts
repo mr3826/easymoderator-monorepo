@@ -20,7 +20,7 @@ test.describe('Growth OS failure states', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
     await interceptGrowthApi(page, 401, 'AUTH_REQUIRED');
-    await page.getByRole('link', { name: 'Prospects', exact: true }).click();
+    await page.goto('/prospects');
     await expect(page).toHaveURL(/\/session-expired$/);
     await expect(page.getByRole('heading', { name: 'Session expired' })).toBeVisible();
   });
@@ -29,7 +29,7 @@ test.describe('Growth OS failure states', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
     await interceptGrowthApi(page, 403, 'GROWTH_OS_FORBIDDEN');
-    await page.getByRole('link', { name: 'Prospects', exact: true }).click();
+    await page.goto('/prospects');
     await expect(page).toHaveURL(/\/access-denied$/);
     await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
   });
@@ -38,7 +38,7 @@ test.describe('Growth OS failure states', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
     await interceptGrowthApi(page, 503, 'GROWTH_OS_DISABLED');
-    await page.getByRole('link', { name: 'Prospects', exact: true }).click();
+    await page.goto('/prospects');
     await expect(page.getByRole('heading', { name: 'Growth OS is temporarily unavailable' })).toBeVisible();
   });
 
@@ -46,7 +46,7 @@ test.describe('Growth OS failure states', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
     await page.route('**/api/internal/growth-os/prospects*', (route) => route.abort('failed'));
-    await page.getByRole('link', { name: 'Prospects', exact: true }).click();
+    await page.goto('/prospects');
     await expect(page.getByText('Prospects could not be loaded.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
   });

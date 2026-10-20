@@ -73,8 +73,11 @@ test.describe('follow-up date browser-independence contract', () => {
     await expect(row.locator('time')).toHaveText(expectedDueText);
 
     // Completing must not change the due day; the row keeps one explicit
-    // Due cell and one labeled Completed moment.
+    // Due cell and one labeled Completed moment. Completion now records a
+    // typed outcome first.
     await row.getByRole('button', { name: 'Complete' }).click();
+    await row.getByLabel('Outcome (required)').selectOption('reached');
+    await row.getByRole('button', { name: 'Record and complete' }).click();
     await expect(page.locator('tr', { hasText: action })).toHaveCount(0);
     await page.getByRole('group', { name: 'Follow-up state filters' })
       .getByRole('button', { name: 'Completed', exact: true })
