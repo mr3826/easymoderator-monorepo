@@ -10,7 +10,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const SCRIPT_ROOT = __dirname;
 const BACKEND_ROOT = path.resolve(SCRIPT_ROOT, '../..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
-const REPORT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-1', 'artifacts', 'integration');
+const REPORT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-2', 'artifacts', 'integration');
 const EGRESS_FENCE = path.join(SCRIPT_ROOT, 'no-egress.js');
 const COMPOSE_FILE = path.join(SCRIPT_ROOT, 'lab-integration.compose.yml');
 const TESTS = [
@@ -224,7 +224,14 @@ const summarizeJestReport = (reportPath) => {
                             assertionKind: /Expected substring:/.test(failureText) ? 'MISSING_SUBSTRING' : 'VALUE_MISMATCH',
                         };
                     });
-                return { suite: path.relative(BACKEND_ROOT, result.name).replace(/\\/g, '/'), errorType, kinds, locations, failedAssertions };
+                return {
+                    suite: path.relative(BACKEND_ROOT, result.name).replace(/\\/g, '/'),
+                    errorType,
+                    kinds,
+                    locations,
+                    failedAssertions,
+                    sanitizedFailureExcerpt: redact(messages).slice(0, 1800),
+                };
             }),
         };
     } catch (_) {
@@ -373,7 +380,7 @@ const main = async () => {
         status,
         startedAt,
         completedAt: new Date().toISOString(),
-        branch: 'feature/ai-product-experience-v1.1',
+        branch: 'feature/verified-commerce-foundation-v1.2',
         sourceRevision,
         composeProject: project,
         serviceNetwork: { driver: 'bridge', internal: false, ipMasquerading: false, subnet: networkSubnet, overlapChecked: true },

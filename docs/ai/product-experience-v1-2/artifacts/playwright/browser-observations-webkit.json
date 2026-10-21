@@ -1,0 +1,17 @@
+{
+  "browser": "webkit",
+  "consoleErrors": [
+    "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.",
+    "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.",
+    "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy."
+  ],
+  "pageErrors": [],
+  "failedRequests": [
+    {
+      "origin": "http://127.0.0.1:13585",
+      "path": "/__lab/api/playground",
+      "method": "POST",
+      "failure": "Load request cancelled"
+    }
+  ]
+}

@@ -65,6 +65,8 @@ export interface MessageSourceReference {
   id?: string | null;
   title?: string | null;
   score?: number | null;
+  /** Excludes related products from being reused as verified follow-up context. */
+  contextEligible?: boolean;
 }
 
 /**

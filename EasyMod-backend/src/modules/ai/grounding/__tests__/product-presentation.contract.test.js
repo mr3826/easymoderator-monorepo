@@ -108,6 +108,46 @@ describe('channel-neutral product presentation', () => {
         expect(payload.text).not.toContain('৳3,200');
     });
 
+    test.each([
+        ['W32 hobe?', '32', 'v-32'],
+        ['সাইজ ৪৪', '44', 'v-44'],
+    ])('selects the current numeric size request %s', (message, optionValue, variantId) => {
+        const evidence = grounding.resolveContextualAttributeEvidence({
+            shopId: SHOP,
+            message,
+            contextProducts: [product({
+                variants: [
+                    { id: variantId, option_name: 'Size', option_value: optionValue, price: 3300, quantity: 2, is_active: true },
+                    { id: 'v-xl', option_name: 'Size', option_value: 'XL', price: 3400, quantity: 1, is_active: true },
+                ],
+            })],
+        });
+        const presentation = buildProductPresentation(evidence, { message, language: 'en' });
+        const payload = renderMessengerProductPresentation(presentation, 'en');
+
+        expect(presentation.products[0].selectedVariant).toEqual(expect.objectContaining({ id: variantId, value: optionValue }));
+        expect(presentation.products[0].price).toEqual({ state: 'KNOWN', amount: 3300, currency: 'BDT' });
+        expect(payload.text).toContain(`Size ${optionValue}`);
+    });
+
+    test('does not select a waist size when multiple color variants share it', () => {
+        const message = 'W32 hobe?';
+        const evidence = grounding.resolveContextualAttributeEvidence({
+            shopId: SHOP,
+            message,
+            contextProducts: [product({
+                variants: [
+                    { id: 'v-32-blue', option_name: 'Size', option_value: '32', price: 3300, quantity: 2, is_active: true, color: 'blue' },
+                    { id: 'v-32-black', option_name: 'Size', option_value: '32', price: 3400, quantity: 1, is_active: true, color: 'black' },
+                ],
+            })],
+        });
+        const presentation = buildProductPresentation(evidence, { message, language: 'en' });
+
+        expect(presentation.products[0].selectedVariant).toBeNull();
+        expect(presentation.products[0].price).toEqual({ state: 'UNKNOWN', amount: null, currency: 'BDT' });
+    });
+
     test('a live matching prior selection remains selected on a follow-up', () => {
         const evidence = grounding.resolveContextualAttributeEvidence({
             shopId: SHOP,

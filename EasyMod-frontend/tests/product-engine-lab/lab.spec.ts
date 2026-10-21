@@ -3,9 +3,20 @@ import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const screenshotRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-1/artifacts/playwright/screenshots');
+const screenshotRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts/playwright/screenshots');
 const runUuid = (value: string) => value.match(/[a-f0-9]{8}-[a-f0-9-]{27}/i)?.[0] || '';
 mkdirSync(screenshotRoot, { recursive: true });
+const observeBrowser = (page: import('@playwright/test').Page, projectName: string) => {
+  const observations = { browser: projectName, consoleErrors: [] as string[], pageErrors: [] as string[], failedRequests: [] as Array<{ origin: string; path: string; method: string; failure: string | null }> };
+  page.on('console', message => { if (message.type() === 'error') observations.consoleErrors.push(message.text().slice(0, 500)); });
+  page.on('pageerror', error => observations.pageErrors.push(error.message));
+  page.on('requestfailed', request => {
+    const url = new URL(request.url());
+    observations.failedRequests.push({ origin: url.origin, path: url.pathname, method: request.method(), failure: request.failure()?.errorText || null });
+  });
+  const runId = process.env.LAB_PLAYWRIGHT_RUN_ID || 'local';
+  return { observations, write: () => writeFileSync(resolve(screenshotRoot, '..', `browser-observations-${runId}-${projectName}.json`), `${JSON.stringify(observations, null, 2)}\n`) };
+};
 
 const startUiRun = async (page: import('@playwright/test').Page, buttonName: string, timeoutMs = 180_000) => {
   const summary = page.locator('#active-run-summary');
@@ -28,9 +39,8 @@ const selectComparisonRuns = async (page: import('@playwright/test').Page, basel
 };
 
 test('local Test Lab journeys, data boundaries, run history, and responsive controls', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium', 'The complete replay workflow is run once in Chromium; alternate browsers receive shell smoke coverage.');
   mkdirSync(screenshotRoot, { recursive: true });
-  const pageErrors: string[] = [];
+  const browserObservation = observeBrowser(page, testInfo.project.name);
   const accessibilitySections: Array<{ section: string; violations: Array<{ id: string; impact: string | null; help: string; helpUrl: string; targets: string[][] }> }> = [];
   const inspectAccessibility = async (section: string) => {
     const result = await new AxeBuilder({ page })
@@ -47,7 +57,6 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
       })),
     });
   };
-  page.on('pageerror', error => pageErrors.push(error.message));
   await page.goto('/');
   await expect(page).toHaveTitle(/Founder Test Lab/);
   await expect(page.locator('#service-status')).toContainText('ready');
@@ -78,7 +87,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     await expect(page.locator('#scenario-results tbody tr').first()).toBeVisible();
   }
   await page.locator('#scenario-filter').selectOption('');
-  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-scenario-explorer.png`), fullPage: true });
+  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-scenario-explorer.png`), fullPage: true, caret: 'initial' });
 
   await page.getByRole('tab', { name: /Evidence Inspector/ }).click();
   await inspectAccessibility('Evidence Inspector');
@@ -116,7 +125,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(new Set(candidateReceipt.turns.map((turn: { traceId: string }) => turn.traceId)).size).toBe(10);
   expect(candidateReceipt.turns.every((turn: { responseTextStored?: boolean }) => turn.responseTextStored === false)).toBe(true);
   expect(JSON.stringify(candidateReceipt)).not.toMatch(/responsePreview|responseDigest|customerMessage|sourceHash/i);
-  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-conversation-replay.png`), fullPage: true });
+  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-conversation-replay.png`), fullPage: true, caret: 'initial' });
 
   await page.getByRole('tab', { name: /Overview/ }).click();
   await page.locator('#run-mode').selectOption('baseline');
@@ -142,7 +151,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     return response.json();
   }, fullBaselineId);
   expect(fullBaselineReceipt).toMatchObject({ scope: 'full', mode: 'baseline', status: 'completed', dataset: { sourceTurns: 200, sourcePersonas: 20, executedTurns: 200, completeDatasetExecuted: true, rawSourceMessagesPersisted: false } });
-  expect(fullBaselineReceipt.engineSourceRevision).toContain('c8981c4df9ea84d47c35f2541884fd55afd64bae+backend-src-sha256:');
+  expect(fullBaselineReceipt.engineSourceRevision).toContain('78b6250af40039749f9c096cd3e0debe2e6cf6a7+backend-src-sha256:');
   expect(fullBaselineReceipt.engineSourceRevision).toContain(fullBaselineReceipt.engineSourceSha256);
   expect(fullBaselineReceipt.engineSourceSha256).toMatch(/^[a-f0-9]{64}$/i);
 
@@ -166,6 +175,34 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   expect(fullReceipt.provenance).toMatchObject({ realProvider: false, realVision: false, realMeta: false, outboundNetworkCalls: 0 });
   expect(fullReceipt.dataset.sha256).toBe(fullBaselineReceipt.dataset.sha256);
   expect(fullReceipt.engineSourceSha256).not.toBe(fullBaselineReceipt.engineSourceSha256);
+  const routeSummary = (receipt: typeof fullReceipt) => ({
+    runId: receipt.runId,
+    scope: receipt.scope,
+    mode: receipt.mode,
+    status: receipt.status,
+    sourceRevision: receipt.sourceRevision,
+    engineSourceRevision: receipt.engineSourceRevision,
+    engineSourceSha256: receipt.engineSourceSha256,
+    runnerRevision: receipt.runnerRevision,
+    runnerSourceSha256: receipt.runnerSourceSha256,
+    dataset: receipt.dataset,
+    summary: receipt.summary,
+    performance: receipt.performance,
+    provenance: receipt.provenance,
+  });
+  const comparisonPath = resolve(process.cwd(), `../docs/ai/product-experience-v1-2/artifacts/runs/local-route-comparison-${testInfo.project.name}.json`);
+  mkdirSync(resolve(comparisonPath, '..'), { recursive: true });
+  const comparisonReceipt = {
+    schemaVersion: 1,
+    measuredAt: new Date().toISOString(),
+    datasetSha256: fullReceipt.dataset.sha256,
+    baseline: routeSummary(fullBaselineReceipt),
+    candidate: routeSummary(fullReceipt),
+  };
+  writeFileSync(comparisonPath, `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
+  if (testInfo.project.name === 'chromium') {
+    writeFileSync(resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts/runs/local-route-comparison.json'), `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
+  }
 
   await page.getByRole('tab', { name: /Baseline vs Candidate/ }).click();
   await selectComparisonRuns(page, fullBaselineId, fullCandidateId);
@@ -182,17 +219,69 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   await inspectAccessibility('Failure Triage');
   await expect(page.locator('#triage-results')).toContainText('unsafe-price-claim');
   await expect(page.locator('#triage-results')).toContainText('P1');
+  const triageRerunResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/__lab/api/triage/unsafe-price-claim/rerun',
+  );
   await page.getByRole('button', { name: 'Rerun fixture' }).click();
-  await expect(page.locator('#triage-results')).toContainText('BLOCKED_BY_GROUNDING', { timeout: 120_000 });
+  const triageRerun = await triageRerunResponse;
+  expect(triageRerun.status()).toBe(200);
+  const triageRerunReceipt = await triageRerun.json();
+  expect(triageRerunReceipt).toMatchObject({
+    fixtureId: 'unsafe-price-claim',
+    status: 'completed',
+    candidate: { status: 'BLOCKED_BY_GROUNDING', blocked: true, externalCalls: 0 },
+  });
+  await expect(page.locator('#triage-results')).toContainText(`Rerun receipt ${triageRerunReceipt.runId}`);
   await page.getByRole('tab', { name: /Run History/ }).click();
   await inspectAccessibility('Run History');
   await expect(page.locator('#history-results')).toContainText(fullCandidateId);
+
+  const realRunId = process.env.LAB_REAL_GEMINI_RUN_ID;
+  if (realRunId) {
+    const realReceipt = await page.evaluate(async id => {
+      const response = await fetch(`/__lab/api/runs/${id}`);
+      return response.json();
+    }, realRunId);
+    expect(realReceipt).toMatchObject({ runId: realRunId, mode: 'real-gemini', status: 'completed', evaluationBudget: { model: 'gemini-3.1-flash-lite' } });
+    const realTurn = realReceipt.turns.find((turn: { provider?: { calls?: number } }) => (turn.provider?.calls || 0) > 0);
+    expect(realTurn).toBeTruthy();
+    expect(typeof realTurn.inputRedacted).toBe('string');
+    expect(typeof realTurn.modelCandidateRedacted).toBe('string');
+    expect(typeof realTurn.finalReplyRedacted).toBe('string');
+    expect(typeof realTurn.scenarioId).toBe('string');
+    const realRow = page.getByRole('row').filter({ hasText: realRunId });
+    await expect(realRow).toHaveCount(1);
+    await realRow.getByRole('button', { name: 'Open run' }).click();
+    const realTurnCard = page.locator('#replay-results .turn-card').filter({
+      has: page.getByRole('heading', { name: realTurn.scenarioId, exact: true }),
+    });
+    await expect(realTurnCard).toHaveCount(1);
+    const tracePanel = realTurnCard.locator('details').filter({ hasText: 'Inspect redacted conversation trace' });
+    await expect(tracePanel).toBeVisible();
+    await tracePanel.locator('summary').click();
+    await expect(tracePanel).toContainText(realTurn.inputRedacted);
+    await expect(tracePanel).toContainText(realTurn.modelCandidateRedacted);
+    await expect(tracePanel).toContainText(realTurn.finalReplyRedacted);
+    await expect(page.locator('#replay-run-bar')).toContainText(realRunId);
+    await tracePanel.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-live-gemini-trace.png`), caret: 'initial' });
+    await page.getByRole('tab', { name: /Cost & Latency/ }).click();
+    const spend = String(realReceipt.performance.providerReportedSpendUsd);
+    const callCount = String(realReceipt.evaluationBudget.requestCount);
+    await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Provider reported spend (USD)' })).toContainText(spend);
+    await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Provider calls' })).toContainText(callCount);
+    await expect(page.locator('#cost-results')).toContainText('real-gemini-evaluation');
+  }
 
   const exportDir = resolve(screenshotRoot, '../exports');
   mkdirSync(exportDir, { recursive: true });
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     (async () => {
+      await page.getByRole('tab', { name: /Run History/ }).click();
+      const exportRunRow = page.getByRole('row').filter({ hasText: fullCandidateId });
+      await expect(exportRunRow).toHaveCount(1);
+      await exportRunRow.getByRole('button', { name: 'Open run' }).click();
+      await expect(page.locator('#replay-run-bar')).toContainText(fullCandidateId);
       await page.getByRole('tab', { name: /Conversation Replay/ }).click();
       await inspectAccessibility('Conversation Replay');
       await page.getByRole('link', { name: 'Export JSON' }).click();
@@ -228,8 +317,16 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   await expect(page.locator('#playground-results')).toContainText('true');
   await page.locator('#image-fixture').fill('fixture-shirt-front');
   await page.locator('#playground-message').fill('Ei chobite ki product ache?');
+  const previousImageResults = await page.locator('#playground-results').innerText();
+  const imageResponsePromise = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/__lab/api/playground',
+  );
   await page.getByRole('button', { name: 'Run test turn' }).click();
-  await expect(page.locator('#playground-results')).toContainText(/image|photo|clarif|evidence/i, { timeout: 120_000 });
+  const imageResponse = await imageResponsePromise;
+  expect(imageResponse.status()).toBe(200);
+  const imageResult = await imageResponse.json();
+  expect(imageResult).toMatchObject({ status: 'completed', provider: { actualProviderUsage: false }, provenance: { externalCalls: 0, vision: 'disabled' } });
+  await expect(page.locator('#playground-results')).not.toHaveText(previousImageResults);
   const safeImageText = await page.locator('#playground-results').innerText();
   expect(safeImageText).not.toMatch(/identified from (the )?image|vision matched/i);
   await page.getByRole('button', { name: 'Reset session' }).click();
@@ -256,7 +353,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     expect(metrics.body).toBeLessThanOrEqual(metrics.viewport + 1);
   }
 
-  expect(pageErrors).toEqual([]);
+  expect(page.locator('#service-status')).toContainText('ready');
   const accessibilityReport = {
     schemaVersion: 1,
     status: accessibilitySections.some(section => section.violations.some(violation => ['critical', 'serious'].includes(violation.impact || '')))
@@ -267,17 +364,27 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     criticalOrSeriousViolationCount: accessibilitySections.reduce((count, section) =>
       count + section.violations.filter(violation => ['critical', 'serious'].includes(violation.impact || '')).length, 0),
   };
-  const axeReportPath = process.env.LAB_AXE_REPORT_PATH
+  const axeReportBase = process.env.LAB_AXE_REPORT_PATH
     ? resolve(process.env.LAB_AXE_REPORT_PATH)
     : resolve(screenshotRoot, '../axe-accessibility-report.json');
+  const axeReportPath = axeReportBase.replace(/\.json$/i, `-${testInfo.project.name}.json`);
   writeFileSync(axeReportPath, `${JSON.stringify(accessibilityReport, null, 2)}\n`);
+  browserObservation.write();
+  expect(browserObservation.observations.pageErrors).toEqual([]);
+  expect(browserObservation.observations.consoleErrors).toEqual([]);
+  expect(browserObservation.observations.failedRequests).toEqual([]);
   expect(accessibilityReport.criticalOrSeriousViolationCount).toBe(0);
 });
 
 test('loads the real Lab shell on every installed browser engine', async ({ page }, testInfo) => {
+  const browserObservation = observeBrowser(page, `${testInfo.project.name}-shell`);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Make every answer inspectable.' })).toBeVisible();
   await expect(page.locator('#service-status')).toContainText('ready');
   await expect(page.getByRole('tablist', { name: 'Test Lab sections' }).getByRole('tab')).toHaveCount(9);
-  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-startup.png`), fullPage: true });
+  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-startup.png`), fullPage: true, caret: 'initial' });
+  browserObservation.write();
+  expect(browserObservation.observations.pageErrors).toEqual([]);
+  expect(browserObservation.observations.consoleErrors).toEqual([]);
+  expect(browserObservation.observations.failedRequests).toEqual([]);
 });

@@ -2,7 +2,7 @@ import { defineConfig, chromium, firefox, webkit } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const artifactRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-1/artifacts/playwright');
+const artifactRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts/playwright');
 const installed = [
   ['chromium', chromium],
   ['firefox', firefox],
@@ -16,6 +16,7 @@ const projects = (installed.length ? installed : [['chromium', chromium]]).map((
 export default defineConfig({
   testDir: './tests/product-engine-lab',
   fullyParallel: false,
+  workers: 1,
   timeout: 12 * 60 * 1000,
   expect: { timeout: 30_000 },
   retries: 0,

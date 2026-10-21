@@ -82,13 +82,16 @@ describe('Meta webhook durable replay with real PostgreSQL and Redis', () => {
     });
 
     afterAll(async () => {
+        // Close BullMQ consumers and queues before the independent Redis client.
+        // Keeping Redis alive through their shutdown avoids late connection
+        // errors being emitted while Jest is tearing down this suite.
+        await testWorker?.close().catch(() => {});
+        await settlementQueue?.close().catch(() => {});
+        await messageQueue.close().catch(() => {});
         if (queueRedis) {
             await queueRedis.flushdb().catch(() => {});
             await queueRedis.quit().catch(() => {});
         }
-        await testWorker?.close().catch(() => {});
-        await settlementQueue?.close().catch(() => {});
-        await messageQueue.close().catch(() => {});
         if (app) await truncateAll().catch(() => {});
         await sequelize.close().catch(() => {});
     });

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 2,
+  "sourceDatasetPhotosProvided": false,
+  "csvImageIdsLinked": [],
+  "synthetic": true,
+  "generationTool": "Codex built-in image_gen",
+  "generatedAt": "2026-10-21",
+  "contactSheet": {
+    "file": "synthetic-contact-sheet-source.png",
+    "role": "supplementary source artifact; not used as a family fixture",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 2223319,
+    "sha256": "d6cf5c4813bb7fe10b2cc0e62d315bff177758ccdf7c225fe7bfd92df9d1edf1"
+  },
+  "assets": [
+    {
+      "id": "kamiz-lavender",
+      "file": "kamiz-lavender.png",
+      "mimeType": "image/png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 2582589,
+      "sha256": "8f469bf00a5ae2702ba37788c24ff5cf0abae7983f3056402cbeee45829da0fb",
+      "generatedOutputId": "exec-ec5239e7-aa49-40b6-8944-f9fdd395c51e",
+      "promptSummary": "Photorealistic single lavender embroidered kameez product image on a neutral studio background; no text, logo, price, or watermark.",
+      "provenance": "direct synthetic image generation; not an original dataset or merchant photograph"
+    },
+    {
+      "id": "panjabi-black",
+      "file": "panjabi-black.png",
+      "mimeType": "image/png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 2006984,
+      "sha256": "035753aed24b23d57d093daf57ca3fda601c5dc75196d2660f203956baf0fa86",
+      "generatedOutputId": "exec-c1a94748-a403-4a42-b447-fc8ba23daaba",
+      "promptSummary": "Photorealistic single black panjabi product image on a neutral studio background; no text, logo, price, or watermark.",
+      "provenance": "direct synthetic image generation; not an original dataset or merchant photograph"
+    },
+    {
+      "id": "cargo-olive",
+      "file": "cargo-olive.png",
+      "mimeType": "image/png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 2210094,
+      "sha256": "97d2fee7d5a404217fcbfac01e62bb4a192df3e1e2a256e386fb1b7a699201e8",
+      "generatedOutputId": "exec-caa634e9-2f52-4bdb-9b79-77db21ea5401",
+      "promptSummary": "Photorealistic single pair of olive cargo pants on a neutral studio background; no text, logo, price, or watermark.",
+      "provenance": "direct synthetic image generation; not an original dataset or merchant photograph"
+    },
+    {
+      "id": "denim-jacket-blue",
+      "file": "denim-jacket-blue.png",
+      "mimeType": "image/png",
+      "width": 1312,
+      "height": 1199,
+      "bytes": 3427647,
+      "sha256": "9c079b6a6443d49abd5aacb16e87b040470b95edf5d56c8b7f5735297cf8c84a",
+      "generatedOutputId": "exec-4be36fea-731f-40cc-8bac-cdb85229c317",
+      "promptSummary": "Photorealistic single classic blue denim jacket product image on a neutral studio background; no text, logo, price, or watermark.",
+      "provenance": "direct synthetic image generation; not an original dataset or merchant photograph"
+    }
+  ],
+  "visionEvaluation": {
+    "status": "EXECUTED",
+    "runId": "471add4a-f2c5-44c8-8a9f-2e156a731a10",
+    "provider": "Gemini",
+    "model": "gemini-3.1-flash-lite",
+    "syntheticAssetsEvaluated": 4,
+    "schemaValid": 4,
+    "categoryAndColorMatches": 4,
+    "sourceDatasetPhotosUsed": false,
+    "note": "Bounded real-provider check on synthetic rasters only; this does not measure accuracy on customer or merchant photos."
+  }
+}

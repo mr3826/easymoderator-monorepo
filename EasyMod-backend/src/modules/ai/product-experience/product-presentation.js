@@ -26,11 +26,15 @@ const normalizeLanguage = (language) => {
     return 'mixed';
 };
 
+const normalizeOptionText = value => String(value || '').normalize('NFKC').toLocaleLowerCase()
+    .replace(/[০-৯]/g, digit => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)))
+    .replace(/\bw\s*(\d{2})\b/gi, '$1');
+
 const optionValueAppears = (message, value) => {
-    const normalized = String(value || '').trim();
+    const normalized = normalizeOptionText(value).trim();
     if (!normalized) return false;
     const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, 'iu').test(String(message || ''));
+    return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, 'iu').test(normalizeOptionText(message));
 };
 
 const OPTION_REQUEST_STOP_WORDS = new Set([

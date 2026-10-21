@@ -7,6 +7,7 @@ const {
     classifyOracleTurn,
 } = require('./lab-contracts');
 const { createCatalog } = require('./fixtures');
+const { createV12Catalog } = require('./catalog-fixtures-v1-2');
 
 const makeCsv = (rows) => [
     'Persona ID,Customer Profile,Turn,Input Type,Language,Customer Message,Simulated Attachment,Hallucination Risk and Test Intent,Expected AI Truth',
@@ -100,6 +101,36 @@ describe('Product Engine Lab request and dataset contracts', () => {
         expect(policy.requiredAuthority).toBe('approved_merchant_policy');
     });
 
+    test.each([
+        ['How long does delivery take to Bogra?', 'merchant_policy', 'approved_merchant_policy'],
+        ['Will the two products arrive together or separately?', 'merchant_policy', 'approved_merchant_policy'],
+        ['Do you require advance payment?', 'merchant_policy', 'approved_merchant_policy'],
+        ['Which courier do you use?', 'merchant_policy', 'approved_merchant_policy'],
+        ['Where is my parcel now?', 'outside_product', 'live_transaction_state'],
+        ['Has my parcel been dispatched?', 'outside_product', 'live_transaction_state'],
+    ])('separates merchant policy from live parcel state: %s', (message, domain, requiredAuthority) => {
+        const result = classifyOracleTurn({ message, inputType: 'Text' }, 'fixture-shop-a', createCatalog(), null);
+        expect(result).toMatchObject({ domain, requiredAuthority, eligibility: 'NOT_ANSWERABLE', eligibleSlots: [] });
+    });
+
+    test('does not treat invoice or consignment availability as catalog stock', () => {
+        const product = {
+            id: 'fixture-shirt', shop_id: 'fixture-shop-a', name: 'Test Everyday T-Shirt',
+            is_active: true, price: 900, currency: 'BDT', quantity: 2, track_quantity: true, variants: [],
+        };
+        const result = classifyOracleTurn({
+            message: 'Is my invoice or consignment available yet?', inputType: 'Text',
+        }, 'fixture-shop-a', [product], product.id);
+
+        expect(result).toMatchObject({
+            domain: 'outside_product',
+            requiredAuthority: 'live_transaction_state',
+            eligibility: 'NOT_ANSWERABLE',
+            eligibleSlots: [],
+            classificationTags: ['transaction_or_live_state'],
+        });
+    });
+
     test('requires real image authority for textless IMAGE_TEXT inputs', () => {
         const result = classifyOracleTurn({ message: '', inputType: 'Image + Text' }, 'fixture-shop-a', createCatalog(), null);
         expect(result).toMatchObject({ domain: 'image_dependent', eligibility: 'NOT_ANSWERABLE', requiredAuthority: 'authorized_raster_image_and_vision_provider' });
@@ -119,5 +150,242 @@ describe('Product Engine Lab request and dataset contracts', () => {
             imageAuthority: 'NO_REAL_IMAGE_EVALUATED',
         });
         expect(result.eligibleSlots).toEqual([]);
+    });
+});
+
+describe('V1.2 independent catalog oracle', () => {
+    const simple = (overrides = {}) => ({
+        id: 'simple', shop_id: 'fixture-shop-a', name: 'Synthetic Coat', is_active: true,
+        price: 1200, currency: 'BDT', quantity: 3, track_quantity: true, variants: [], ...overrides,
+    });
+    const evaluate = (message, catalog = [simple()], extra = {}) => classifyOracleTurn({ message, inputType: 'Text', ...extra }, 'fixture-shop-a', catalog);
+
+    test.each([null, undefined, '', '   ', false, true, NaN, Infinity, -1, {}, []])('missing or invalid price %p never becomes a zero-price fact', (price) => {
+        const result = evaluate('What is the price of Synthetic Coat?', [simple({ price })]);
+        expect(result.eligibleSlots).toEqual([]);
+        expect(result.unknownRequestedFields).toContain('price');
+    });
+
+    test('real zero and finite decimal strings remain authoritative prices', () => {
+        for (const [price, expectedValue] of [[0, 0], ['1200.50', 1200.5]]) {
+            expect(evaluate('What is the price of Synthetic Coat?', [simple({ price })]).eligibleSlots)
+                .toEqual([expect.objectContaining({ field: 'price', expectedValue, currency: 'BDT' })]);
+        }
+    });
+
+    test.each([null, undefined, '', false, NaN, Infinity, -1, 1.5])('invalid tracked quantity %p remains unknown despite a stock flag', (quantity) => {
+        const result = evaluate('Is Synthetic Coat in stock?', [simple({ quantity, in_stock: true })]);
+        expect(result.eligibleSlots).toEqual([]);
+        expect(result.unknownRequestedFields).toContain('stock');
+    });
+
+    test('untracked boolean availability is authoritative without claiming a quantity', () => {
+        expect(evaluate('Is Synthetic Coat in stock?', [simple({ track_quantity: false, quantity: null, in_stock: false })]).eligibleSlots)
+            .toEqual([expect.objectContaining({ field: 'stock', expectedValue: 'OUT_OF_STOCK' })]);
+    });
+
+    test.each(['kamiz', 'panjabi', 'cargo', 'denim'])('resolves a complete %s SKU across duplicate tenant titles', (family) => {
+        const catalog = createV12Catalog();
+        const size = ({ kamiz: 'M', panjabi: '40', cargo: '32', denim: 'M' })[family];
+        for (const tenant of ['a', 'b']) {
+            const product = catalog.find(item => item.id === `v12-${tenant}-${family}`);
+            const result = classifyOracleTurn({ message: `What is the price and stock of ${product.name} size ${size} color ${product.verifiedColor}?`, inputType: 'Text' }, product.shop_id, catalog);
+            expect(result.selectedVariantId).toBe(`v12-${tenant}-${family}-${size.toLocaleLowerCase()}`);
+            expect(result.eligibleSlots).toEqual(expect.arrayContaining([
+                expect.objectContaining({ field: 'price', expectedValue: product.price }),
+                expect.objectContaining({ field: 'variant_stock', expectedValue: tenant === 'a' ? 'IN_STOCK' : 'OUT_OF_STOCK' }),
+            ]));
+            expect(result.eligibleSlots.every(slot => slot.evidenceId.startsWith(product.id))).toBe(true);
+        }
+    });
+
+    test('does not choose the first SKU when only size identifies multiple colors', () => {
+        const result = evaluate('What is the price of Synthetic Coat size M?', [simple({ variants: [
+            { id: 'm-lavender', size: 'M', color: 'lavender', price: 1200, quantity: 2, is_active: true },
+            { id: 'm-mauve', size: 'M', color: 'mauve', price: 1200, quantity: 1, is_active: true },
+        ] })]);
+        expect(result.selectedVariantId).toBeNull();
+        expect(result.eligibleSlots).toEqual([]);
+        expect(result.variantResolution).toBe('AMBIGUOUS');
+    });
+
+    test('missing size/color combinations and unknown sizes cannot inherit parent facts', () => {
+        for (const selection of ['size L color navy', 'size XXXL color maroon', 'size L color pink']) {
+            const result = evaluate(`What is the price and stock of Embroidered Kamiz ${selection}?`, createV12Catalog());
+            expect(result.selectedVariantId).toBeNull();
+            expect(result.eligibleSlots).toEqual([]);
+            expect(result.variantResolution).toBe('NOT_FOUND');
+        }
+    });
+
+    test('duplicate complete SKUs remain ambiguous regardless of array order', () => {
+        const variants = [
+            { id: 'first', size: 'M', color: 'Red', price: 1200, quantity: 1 },
+            { id: 'second', size: 'M', color: 'Red', price: 1800, quantity: 0 },
+        ];
+        for (const ordered of [variants, [...variants].reverse()]) {
+            const result = evaluate('What is the price and stock of Synthetic Coat size M color Red?', [simple({ variants: ordered })]);
+            expect(result).toMatchObject({ selectedVariantId: null, variantResolution: 'AMBIGUOUS', eligibleSlots: [] });
+        }
+    });
+
+    test('unique flat variants still use their explicit price and quantity', () => {
+        const variants = [{ id: 'flat-xl', option_name: 'Size', option_value: 'XL', price: '1250.50', quantity: '0' }];
+        const result = evaluate('What is the price and stock of Synthetic Coat XL size?', [simple({ variants })]);
+        expect(result.selectedVariantId).toBe('flat-xl');
+        expect(result.eligibleSlots).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'price', expectedValue: 1250.5 }),
+            expect.objectContaining({ field: 'variant_stock', expectedValue: 'OUT_OF_STOCK' }),
+        ]));
+    });
+
+    test('a variant with null price inherits the parent price while unknown stock stays unknown', () => {
+        const result = evaluate('What is the price and stock of Embroidered Kamiz size L color lavender?', createV12Catalog());
+        expect(result.selectedVariantId).toBe('v12-a-kamiz-l');
+        expect(result.eligibleSlots).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'price', expectedValue: 1850 }),
+        ]));
+        expect(result.eligibleSlots.some(slot => slot.field === 'variant_stock')).toBe(false);
+        expect(result.unknownRequestedFields).toContain('stock');
+    });
+
+    test('independent flat size/color entries never establish a SKU combination', () => {
+        const variants = [
+            { id: 'size-m', option_name: 'Size', option_value: 'M', price: 1200, quantity: 2 },
+            { id: 'color-red', option_name: 'Color', option_value: 'Red', price: 1200, quantity: 2 },
+        ];
+        const result = evaluate('What is the price and stock of Synthetic Coat size M color Red?', [simple({ variants })]);
+        expect(result.selectedVariantId).toBeNull();
+        expect(result.eligibleSlots).toEqual([]);
+    });
+
+    test('foreign currency and unverified or invalid attributes are not BDT/catalog facts', () => {
+        const product = simple({ currency: 'USD', verifiedMaterial: true, verifiedColor: '   ', ai_material: 'cotton' });
+        expect(evaluate('What is the price, material and color of Synthetic Coat?', [product]).eligibleSlots).toEqual([]);
+    });
+
+    test('image currency descriptions and CSV suggested answers never become evidence', () => {
+        const result = evaluate('What is the price of Embroidered Kamiz?', createV12Catalog(), {
+            inputType: 'Image+Text', simulatedAttachment: '[Image 1: USD 5]', expectedTruth: 'BDT 500',
+        });
+        expect(result).toMatchObject({ eligibility: 'NOT_ANSWERABLE', imageAuthority: 'NO_REAL_IMAGE_EVALUATED' });
+        expect(result.eligibleSlots).toEqual([]);
+        expect(JSON.stringify(result)).not.toMatch(/USD|500/);
+        expect(JSON.stringify(createV12Catalog())).not.toMatch(/expectedTruth|oracle|scenario|answerable|USD/);
+    });
+
+    test('inactive products and inactive SKU options do not establish facts', () => {
+        expect(evaluate('What is the price of Synthetic Coat?', [simple({ is_active: false })]).eligibleSlots).toEqual([]);
+        const variants = [{ id: 'inactive', size: 'XXL', color: 'Red', price: 1200, quantity: 2, is_active: false }];
+        expect(evaluate('What is the price of Synthetic Coat size XXL color Red?', [simple({ variants })]).eligibleSlots).toEqual([]);
+    });
+
+    test('does not treat an unsupported pocket-count question as an identity request', () => {
+        const catalog = createV12Catalog();
+        const product = catalog.find(item => item.id === 'v12-a-cargo');
+        const result = classifyOracleTurn({
+            message: `How many pockets does the ${product.name} have?`, inputType: 'Text',
+        }, product.shop_id, catalog);
+
+        expect(result).toMatchObject({
+            domain: 'unknown_product_attribute',
+            eligibility: 'NOT_ANSWERABLE',
+            productId: product.id,
+            eligibleSlots: [],
+            unknownRequestedFields: ['pocket_count'],
+        });
+    });
+
+    test('resolves W32 follow-up to the previous exact product and variant', () => {
+        const cargo = simple({
+            id: 'cargo-1', name: 'Olive Cargo Pant', aliases: ['cargo trousers'],
+            variants: [{ id: 'cargo-32-olive', size: '32', color: 'olive', price: 1550, quantity: 2, is_active: true }],
+        });
+        const result = classifyOracleTurn({ message: 'W32 hobe?', inputType: 'Text' }, 'fixture-shop-a', [cargo], cargo.id);
+
+        expect(result).toMatchObject({
+            domain: 'product', eligibility: 'ANSWERABLE', productId: cargo.id,
+            selectedVariantId: 'cargo-32-olive',
+            eligibleSlots: [expect.objectContaining({ field: 'variant', expectedValue: '32' })],
+        });
+    });
+
+    test('resolves a Bengali catalog name with a greeting and merchant honorifics', () => {
+        const catalog = createV12Catalog();
+        const product = catalog.find(item => item.id === 'v12-a-panjabi');
+        const result = classifyOracleTurn({
+            message: 'আসসালামু আলাইকুম। কালো পাঞ্জাবি আছে আপনাদের?', inputType: 'Text',
+        }, product.shop_id, catalog);
+
+        expect(result).toMatchObject({
+            domain: 'product', eligibility: 'ANSWERABLE', productId: product.id,
+            eligibleSlots: [expect.objectContaining({ field: 'stock', expectedValue: 'IN_STOCK' })],
+        });
+    });
+
+    test.each([
+        ['accessory compatibility', 'Bhai apnader showroom e ki Panjabi er shathe matching orna ba koti ache?', 'accessory_compatibility'],
+        ['surface finish', 'Panjabi er fabric ki shiny naki matte finish?', 'surface_finish'],
+    ])('does not treat unsupported %s as a catalog identity or material fact', (_label, message, field) => {
+        const catalog = createV12Catalog();
+        const product = catalog.find(item => item.id === 'v12-b-panjabi');
+        const result = classifyOracleTurn({ message, inputType: 'Text' }, product.shop_id, catalog);
+
+        expect(result).toMatchObject({ eligibility: 'NOT_ANSWERABLE', eligibleSlots: [] });
+        expect(result.unknownRequestedFields).toContain(field);
+        expect(result.eligibleSlots.some(slot => slot.field === 'identity' || slot.field === 'material')).toBe(false);
+    });
+
+    test.each([
+        ['Bengali personal size', 'আমার গায়ের সাইজ ৪৪। ৪৪ সাইজ হবে?', 'v12-a-panjabi'],
+        ['English chest measurement', 'Chest size 38 er jonno kon size? M naki L?', 'v12-b-panjabi'],
+    ])('does not infer garment fit from a %s', (_label, message, productId) => {
+        const catalog = createV12Catalog();
+        const product = catalog.find(item => item.id === productId);
+        const result = classifyOracleTurn({ message, inputType: 'Text' }, product.shop_id, catalog, product.id);
+
+        expect(result).toMatchObject({ eligibility: 'NOT_ANSWERABLE', eligibleSlots: [] });
+        expect(result.unknownRequestedFields).toContain('body_size_fit');
+    });
+
+    test('a numeric size before a Bengali size label does not fall back to parent stock', () => {
+        const catalog = createV12Catalog();
+        const product = catalog.find(item => item.id === 'v12-a-kamiz');
+        const result = classifyOracleTurn({
+            message: 'অন্য কোনো ৪৬ সাইজের কামিজ আছে আপনাদের কাছে?', inputType: 'Text',
+        }, product.shop_id, catalog);
+
+        expect(result).toMatchObject({
+            eligibility: 'NOT_ANSWERABLE',
+            variantResolution: 'NOT_FOUND',
+            eligibleSlots: [],
+        });
+    });
+
+    test.each([
+        ['a bundled discount', 'Panjabi ar jacket eksathe nile 200 taka discount diben?'],
+        ['a fixed-price negotiation', '1450 taka ki fixed price?'],
+        ['parcel travel duration', 'Bogra te parcel jete koto din lage?'],
+    ])('classifies %s as a merchant-policy question', (_label, message) => {
+        const result = classifyOracleTurn({ message, inputType: 'Text' }, 'fixture-shop-b', createV12Catalog(), 'v12-b-panjabi');
+
+        expect(result).toMatchObject({
+            domain: 'merchant_policy',
+            eligibility: 'NOT_ANSWERABLE',
+            eligibleSlots: [],
+        });
+    });
+
+    test('variant prices inherit the parent price when the live variant price is null', () => {
+        const coat = simple({
+            variants: [{ id: 'coat-m', size: 'M', price: null, quantity: 2, is_active: true }],
+        });
+        const result = evaluate('What is the price of Synthetic Coat size M?', [coat]);
+
+        expect(result.selectedVariantId).toBe('coat-m');
+        expect(result.eligibleSlots).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'price', expectedValue: 1200 }),
+            expect.objectContaining({ field: 'variant', expectedValue: 'M' }),
+        ]));
     });
 });

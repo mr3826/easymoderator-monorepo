@@ -131,8 +131,10 @@
     entries.forEach(([label, count]) => {
       const row = el('div', undefined, 'distribution-row');
       const track = el('div', undefined, 'bar-track'); track.setAttribute('aria-hidden', 'true');
-      const fill = el('div', undefined, 'bar-fill');
-      fill.style.width = `${total ? Math.max(0, Math.min(100, Number(count) / total * 100)) : 0}%`;
+      const fill = el('progress', undefined, 'bar-fill');
+      const maximum = Math.max(1, total);
+      fill.setAttribute('max', String(maximum));
+      fill.setAttribute('value', String(Math.max(0, Math.min(maximum, Number(count) || 0))));
       track.append(fill); row.append(el('span', label), track, el('span', count)); node.append(row);
     });
   }
@@ -213,9 +215,20 @@
       const top = el('div', undefined, 'turn-heading');
       top.append(el('span', first(turn.turn, index + 1), 'turn-number'), el('h2', first(turn.scenarioId, turn.id, `Turn ${index + 1}`)), badge(first(decisionOf(turn), turn.status, 'Recorded')));
       card.append(top);
-      if (turn.responseTextStored === false) card.append(el('div', 'Free-text response scored in memory and omitted from the saved run.', 'turn-output'));
+      if (turn.responseTextStored === false) card.append(el('div', 'Unredacted free text is omitted; redacted input, candidate, and validated reply remain inspectable.', 'turn-output'));
       const facts = el('dl', undefined, 'key-values'); keys(facts, [['Router source', first(turn.routerSource, turn.source)], ['Reason', reasonOf(turn)], ['Product evidence', first(turn.productEvidence?.status, turn.grounding?.productStatus)], ['Provider mode', turn.provider?.mode], ['Model calls', turn.provider?.calls], ['Trace ID', turn.traceId]]);
       card.append(facts, details(turn));
+      const traceRows = [
+        ['Customer input (redacted)', turn.inputRedacted],
+        ['Gemini candidate (redacted)', turn.modelCandidateRedacted],
+        ['Validated reply (redacted)', turn.finalReplyRedacted],
+      ].filter(([, value]) => typeof value === 'string');
+      if (traceRows.length) {
+        const tracePanel = el('details', undefined, 'json-details');
+        tracePanel.append(el('summary', 'Inspect redacted conversation trace'));
+        const traceBody = el('dl', undefined, 'key-values'); keys(traceBody, traceRows);
+        tracePanel.append(traceBody); card.append(tracePanel);
+      }
       if (turn.scenarioId) card.append(action('Inspect evidence', () => inspectEvidence(turn.scenarioId)));
       target.append(card);
     });
@@ -303,14 +316,19 @@
     const target = $('cost-results'); clear(target);
     const performance = first(run.performance, run.metrics?.performance, {});
     const usage = first(run.usage, run.metrics?.usage, {});
+    const budget = first(run.evaluationBudget, run.metrics?.evaluationBudget, {});
+    const budgetCalls = Array.isArray(budget.calls) ? budget.calls : [];
     const turns = turnsOf(run);
     const latencies = turns.map(turn => turn.latencyMs).filter(value => typeof value === 'number' && Number.isFinite(value)).sort((a, b) => a - b);
     const percentile = fraction => latencies.length ? latencies[Math.max(0, Math.ceil(latencies.length * fraction) - 1)] : undefined;
     const completeCosts = turns.length > 0 && turns.every(turn => typeof turn.provider?.costUsd === 'number' && Number.isFinite(turn.provider.costUsd));
     const providerCost = completeCosts ? turns.reduce((sum, turn) => sum + turn.provider.costUsd, 0) : undefined;
+    const providerCalls = first(budget.requestCount, turns.reduce((sum, turn) => sum + (Number(turn.provider?.calls) || 0), 0));
+    const visionCalls = first(budget.visionRequestCount, budgetCalls.filter(call => call.vision).length);
+    const calculatedTokens = budgetCalls.reduce((sum, call) => sum + (Number(call.inputTokens) || 0) + (Number(call.outputTokens) || 0), 0);
     const stats = el('div', undefined, 'stat-grid');
-    stats.append(metric('p50 route latency', first(performance.p50Ms, performance.routeP50Ms, performance.routeLatencyMs?.p50, percentile(.5)), 'Milliseconds · recorded local turns'), metric('p95 route latency', first(performance.p95Ms, performance.routeP95Ms, performance.routeLatencyMs?.p95, percentile(.95)), 'Milliseconds · recorded local turns'), metric('Model tokens', first(usage.totalTokens, performance.modelTokenCount), 'Unavailable when not measured'), metric('Provider cost (USD)', first(usage.estimatedCostUsd, performance.estimatedProviderCostUsd, providerCost), 'Reported spend; not a production forecast'));
-    const card = el('article', undefined, 'card'); card.append(el('h2', `Measurement record · ${text(runId(run))}`), tags([...new Set(turns.map(turn => turn.provider?.mode).filter(Boolean))]), details({ executionMode: run.executionMode, performance, usage, measuredTurnCount: latencies.length, providers: turns.map(turn => ({ scenarioId: turn.scenarioId, provider: turn.provider, latencyMs: turn.latencyMs })), provenance: run.provenance }, 'Inspect recorded measurement scope')); target.append(stats, card);
+    stats.append(metric('p50 route latency', first(performance.p50Ms, performance.routeP50Ms, performance.routeLatencyMs?.p50, percentile(.5)), 'Milliseconds · recorded local turns'), metric('p95 route latency', first(performance.p95Ms, performance.routeP95Ms, performance.routeLatencyMs?.p95, percentile(.95)), 'Milliseconds · recorded local turns'), metric('Model tokens', first(usage.totalTokens, performance.modelTokenCount, calculatedTokens || undefined), 'Unavailable when not measured'), metric('Provider reported spend (USD)', first(performance.providerReportedSpendUsd, budget.providerReportedUsd, performance.estimatedSpendUsd, usage.estimatedCostUsd, performance.estimatedProviderCostUsd, providerCost), 'Recorded provider usage; not a production forecast'), metric('Provider calls', providerCalls, `${text(visionCalls)} vision calls · recorded evaluation budget`));
+    const card = el('article', undefined, 'card'); card.append(el('h2', `Measurement record · ${text(runId(run))}`), tags([...new Set(turns.map(turn => turn.provider?.mode).filter(Boolean))]), details({ executionMode: run.executionMode, performance, usage, evaluationBudget: budget, providerCalls, visionCalls, measuredTurnCount: latencies.length, providers: turns.map(turn => ({ scenarioId: turn.scenarioId, provider: turn.provider, latencyMs: turn.latencyMs })), provenance: run.provenance }, 'Inspect recorded measurement scope')); target.append(stats, card);
   }
   function renderTriage(run) {
     const target = $('triage-results'); clear(target);

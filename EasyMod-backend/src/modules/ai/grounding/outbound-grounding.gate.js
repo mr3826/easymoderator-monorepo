@@ -85,6 +85,9 @@ const extractUrls = (text) => (typeof text === 'string'
 const AVAILABILITY_ASSERTION =
     /\b(?:we have|in stock|is available|are available|yes we|ache|achhe|ase|paben|peye jaben)\b|আছে|স্টকে|পাবেন/i;
 const DELIVERY_TERMS = /\b(?:delivery|deliver|shipping|ship|courier|dispatch|rider)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার|পাঠানো|পৌঁছে/i;
+const PRODUCT_TERMS = /\b(?:products?|items?|catalog(?:ue)?|merchandise|ponno)\b|পণ্য|প্রোডাক্ট|আইটেম|জিনিস|মালামাল/i;
+const PRODUCT_INFORMATION_TERMS = /\b(?:information|info|details|data|records?)\b|তথ্য|বিবরণ|বিস্তারিত/i;
+const PRODUCT_ABSENCE_ASSERTION = /\b(?:there\s+(?:are|is)\s+)?(?:no|zero)\s+(?:products?|items?|merchandise)\b|\bwe\s+(?:(?:do|does)\s+not|don't|doesn't)\s+have\s+(?:(?:any|this|that|these|those|the)\s+)?(?:products?|items?|merchandise)\b|\b(?:our|the)\s+catalog(?:ue)?\s+(?:is|looks?)\s+(?:empty|blank)\b|\b(?:our|the)\s+(?:shop|store)\s+(?:has|have)\s+(?:no|zero|not\s+any)\s+(?:products?|items?)\b|(?:আমাদের|দোকানে|শপে)\s*(?:কোনো|কোন|একটিও)?\s*(?:পণ্য|প্রোডাক্ট|আইটেম|জিনিস)\s*(?:নেই|নাই)|ক্যাটালগে?.{0,24}(?:পণ্য|প্রোডাক্ট|আইটেম)\s*(?:নেই|নাই)|(?:ক্যাটালগ|ক্যাটালগে)\s*(?:খালি|ফাঁকা)/i;
 const DELIVERY_ASSERTION = /\b(?:we\s+(?:can|will|do)\s+(?:deliver|ship)|delivery\s+(?:is\s+)?available|nationwide\s+delivery|will\s+arrive|can\s+arrive|ships?\s+to)\b|ডেলিভারি\s*(?:হবে|পাবেন|দেওয়া হয়|দেওয়া হয়)/i;
 const DELIVERY_NEGATIVE_ASSERTION = /\b(?:delivery|shipping|courier)\s+(?:is\s+)?(?:not\s+available|unavailable|not\s+supported|not\s+offered|not\s+possible)|\bwe\s+(?:cannot|can't|won't|do\s+not|don't)\s+(?:deliver|ship)\b|ডেলিভারি\s*(?:হবে না|পাবেন না|দেওয়া হয় না|দেওয়া হয় না)/i;
 const COMMITMENT_TIMELINE = /(?:(?<![\p{L}\p{N}])[0-9০-৯]{1,2}\s*(?:[-–]\s*[0-9০-৯]{1,2}\s*)?(?:(?:(?:business|working)\s+)?(?:minutes?|hours?|days?|weeks?)|মিনিট|ঘণ্টা|ঘন্টা|দিন(?:ে)?|সপ্তাহ(?:ে)?)(?![\p{L}\p{N}])|\b(?:today|tomorrow|same[- ]day|next day|within 24 hours|one day|two days|three days)\b|আজ|আগামীকাল|২৪\s*ঘণ্টা|এক\s*দিন|দুই\s*দিন|তিন\s*দিন)/giu;
@@ -160,7 +163,7 @@ const UNAVAILABILITY_MARKER =
 
 const splitClaimClauses = (text, includeConjunctions = true) => {
     const separators = includeConjunctions
-        ? /[,;.!?\n।]+|\b(?:but|however|and)\b|\s+(?:কিন্তু|এবং)\s+/gi
+        ? /[,;.!?\n।]+|\b(?:but|however|and|while|whereas|although|though)\b|\s+(?:কিন্তু|এবং|তবে|যদিও)\s+/gi
         : /[.!?\n।]+/g;
     return String(text || '').split(separators).map(value => value.trim()).filter(Boolean);
 };
@@ -168,8 +171,8 @@ const splitClaimClauses = (text, includeConjunctions = true) => {
 const claimClauseAt = (text, index) => {
     const prefix = String(text || '').slice(0, index);
     const suffix = String(text || '').slice(index);
-    const left = [...prefix.matchAll(/[,;.!?\n।]+|\b(?:but|however|and)\b|\s+(?:কিন্তু|এবং)\s+/gi)].at(-1);
-    const right = suffix.match(/[,;.!?\n।]+|\b(?:but|however|and)\b|\s+(?:কিন্তু|এবং)\s+/i);
+    const left = [...prefix.matchAll(/[,;.!?\n।]+|\b(?:but|however|and|while|whereas|although|though)\b|\s+(?:কিন্তু|এবং|তবে|যদিও)\s+/gi)].at(-1);
+    const right = suffix.match(/[,;.!?\n।]+|\b(?:but|however|and|while|whereas|although|though)\b|\s+(?:কিন্তু|এবং|তবে|যদিও)\s+/i);
     const start = left ? left.index + left[0].length : 0;
     const end = right ? index + right.index : String(text || '').length;
     return String(text || '').slice(start, end).trim();
@@ -727,9 +730,9 @@ const variantValueAppears = (candidate, value) => {
     return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, 'iu').test(candidate);
 };
 
-const AVAILABILITY_POSITIVE = /\b(?:available|in stock|we have|stocked|ache|achhe|ase|paben|peye jaben)\b|আছে|স্টকে|পাবেন/i;
+const AVAILABILITY_POSITIVE = /\b(?:available|in stock|(?:yes\s+)?we\s+(?:do\s+)?have|stocked|ache|achhe|ase|paben|peye jaben)\b|আছে|স্টকে|পাবেন/i;
 const AVAILABILITY_NEGATIVE = /\b(?:out of stock|sold out|no stock|not in stock|stock unavailable|unavailable|not available|isn't available|aren't available|nei|nai)\b|স্টক\s*(?:নেই|নাই|শেষ)|নেই|নাই/i;
-const AVAILABILITY_WORD = /\b(?:available|availability|stock|stocked|in stock|out of stock|sold out|unavailable|ache|achhe|ase|nei|nai)\b|আছে|স্টকে|স্টক|নেই|নাই/i;
+const AVAILABILITY_WORD = /\b(?:available|availability|stock|stocked|in stock|out of stock|sold out|unavailable|(?:yes\s+)?we\s+(?:do\s+)?have|ache|achhe|ase|nei|nai)\b|আছে|স্টকে|স্টক|নেই|নাই/i;
 const OPTION_LABEL = /\b(?:size|sizes|color|colour)\b|সাইজ|রং/i;
 const IGNORED_OPTION_WORDS = new Set(['is', 'are', 'in', 'out', 'available', 'unavailable', 'stock', 'the', 'size', 'sizes', 'color', 'colour']);
 
@@ -1153,13 +1156,27 @@ const evaluateCandidate = ({
         return deny(ReasonCode.RETRIEVAL_FAILED);
     }
 
-    // 3. Availability asserted for something this catalog does not contain.
-    //    Backstop for paths that skip deterministic generation (response cache,
-    //    FAQ tier): the normal NOT_FOUND turn never reaches a model at all.
+    // 3. Availability asserted for something this catalog did not verify.
+    //    Apply to both positive and negative claims: NOT_FOUND evidence cannot
+    //    support either "available" or "out of stock". Delivery-only policy
+    //    clauses remain eligible; a combined product-and-delivery information
+    //    claim is not delivery-only. This also backstops cached and FAQ replies.
     if (evidence.productStatus === ProductEvidenceStatus.NOT_FOUND) {
-        const mentionsMissingTerm = (evidence.unmatchedTerms || [])
-            .some(term => candidate.toLowerCase().includes(term));
-        if (mentionsMissingTerm && AVAILABILITY_ASSERTION.test(candidate)) {
+        const assertsCatalogAbsence = splitClaimClauses(candidate)
+            .some(clause => PRODUCT_ABSENCE_ASSERTION.test(clause));
+        if (assertsCatalogAbsence) {
+            violations.push('product_absence_asserted_for_not_found');
+            return deny(ReasonCode.PRODUCT_NOT_FOUND);
+        }
+
+        const assertsAvailability = splitClaimClauses(candidate).some((clause) => {
+            const productAndDeliveryInfo = PRODUCT_TERMS.test(clause)
+                && DELIVERY_TERMS.test(clause)
+                && PRODUCT_INFORMATION_TERMS.test(clause);
+            return availabilityAssertion(clause)
+                && (!DELIVERY_TERMS.test(clause) || productAndDeliveryInfo);
+        });
+        if (assertsAvailability) {
             violations.push('availability_asserted_for_absent_product');
             return deny(ReasonCode.PRODUCT_NOT_FOUND);
         }

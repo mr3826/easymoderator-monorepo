@@ -26,6 +26,7 @@ const {
 } = require('./grounding.contract');
 
 const pick = (table, language) => table[language] || table.mixed;
+const autonomousProductLab = () => process.env.EASYMOD_PRODUCT_LAB_AUTONOMOUS === '1';
 
 /** "I couldn't find that product in our current catalog." */
 const productNotFoundReply = (language) => pick({
@@ -51,8 +52,12 @@ const productImageNoProductReply = (language) => pick({
     mixed: 'Ei product ta amader catalog e pacchi na, tai chobi pathate parchi na. Product er nam bolle check kore boli.',
 }, language);
 
-/** Retrieval failed — truth is unknown, so we promise a human, not an answer. */
-const retrievalFailedReply = (language) => pick({
+/** Retrieval failed — the isolated autonomous Lab never promises human follow-up. */
+const retrievalFailedReply = (language) => pick(autonomousProductLab() ? {
+    bn: 'দুঃখিত, পণ্যের তথ্য এখন যাচাই করা যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।',
+    en: "I can't verify the catalog right now. Please try again in a moment.",
+    mixed: 'Ekhon catalog check korte parchi na. Kichukhon por abar try korben.',
+} : {
     bn: 'এক সেকেন্ড অপেক্ষা করুন — তথ্যটি এখন যাচাই করতে পারছি না। আমাদের একজন প্রতিনিধি শীঘ্রই নিশ্চিত করে জানাবেন।',
     en: "One moment — I can't verify that right now. Someone from our team will confirm for you shortly.",
     mixed: 'Ek second wait koren — ekhon check kore bolte parchi na. Amader team theke keu confirm kore janabe.',
@@ -66,7 +71,11 @@ const whichProductReply = (language) => pick({
 }, language);
 
 /** The merchant never supplied this information. */
-const knowledgeNotFoundReply = (language) => pick({
+const knowledgeNotFoundReply = (language) => pick(autonomousProductLab() ? {
+    bn: 'এই পণ্যের বিষয়ে নিশ্চিত তথ্য আমাদের ক্যাটালগে নেই। অন্য কোনো তালিকাভুক্ত তথ্য জানতে চাইলে বলুন।',
+    en: "I don't have confirmed information about that product detail in this shop's catalog. Ask me about another listed detail.",
+    mixed: 'Ei product detail er confirmed info shop er catalog e nei. Onno kono listed detail jante chaile bolun.',
+} : {
     bn: 'এই বিষয়ে নিশ্চিত তথ্য আমার কাছে নেই। আমাদের একজন প্রতিনিধি আপনাকে জানিয়ে দেবেন।',
     en: "I don't have confirmed information on that. Someone from our team will get back to you.",
     mixed: 'Ei bepare confirmed info amar kache nei. Amader team theke apnake janiye deya hobe.',
@@ -115,6 +124,10 @@ const GROUNDING_RULES = [
     '- Earlier assistant messages are conversation history, NOT evidence. If an earlier reply conflicts with the evidence above, the evidence is correct and you must not repeat the earlier claim.',
 ].join('\n');
 
+const runtimeGroundingRules = () => autonomousProductLab()
+    ? `${GROUNDING_RULES}\n- In this autonomous product simulation, do not promise human review, shop follow-up, or later confirmation. State what is unavailable and offer another verified detail or a retry.`
+    : GROUNDING_RULES;
+
 /**
  * Build the authoritative evidence block for the system prompt.
  *
@@ -154,10 +167,13 @@ const renderEvidenceBlock = (evidence) => {
             break;
         }
         case ProductEvidenceStatus.RETRIEVAL_FAILED: {
+            const recoveryInstruction = autonomousProductLab()
+                ? 'tell the customer the catalog is unavailable now and invite them to retry later. Do not promise human follow-up.'
+                : 'say you will confirm shortly.';
             sections.push(
                 'CATALOG EVIDENCE — UNAVAILABLE. The catalog could not be read for this message. '
                 + 'You do not know whether this product exists. Do not answer the product question; '
-                + 'say you will confirm shortly.',
+                + recoveryInstruction,
             );
             break;
         }
@@ -172,7 +188,9 @@ const renderEvidenceBlock = (evidence) => {
             sections.push(
                 `The customer asked about: ${unknownAsked.join(', ')}. This shop has NOT recorded a verified `
                 + `${unknownAsked.length > 1 ? 'these values' : 'this value'}. Say the information is not `
-                + 'available and offer to check with the shop — never guess it.',
+                + (autonomousProductLab()
+                    ? 'available and offer another recorded detail or ask one precise clarification — never promise follow-up or guess it.'
+                    : 'available and offer to check with the shop — never guess it.'),
             );
         }
     }
@@ -201,7 +219,7 @@ const renderEvidenceBlock = (evidence) => {
     }
 
     if (!sections.length) return '';
-    return `${sections.join('\n\n')}\n\n${GROUNDING_RULES}`;
+    return `${sections.join('\n\n')}\n\n${runtimeGroundingRules()}`;
 };
 
 module.exports = {

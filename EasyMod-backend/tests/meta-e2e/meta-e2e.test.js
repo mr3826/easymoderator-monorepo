@@ -1008,32 +1008,32 @@ describe('META-E2E-011 — the catalog cannot be read', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('META-E2E-012 — unusable model output', () => {
-    test('an empty completion for a product question is replaced by written copy', async () => {
+    test('an empty provider completion cannot create a product claim and reaches the human-safe hold path', async () => {
         const result = await harness.deliver({
             text: 'black panjabi ache?',
             candidate: '   ',
         });
 
-        expect(result.decision.reasonCode).toBe(ReasonCode.MODEL_OUTPUT_INVALID);
-        expect(result.decision.violations).toContain('empty_or_non_string_candidate');
-        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
-
-        const sent = body(result);
-        expect(sent.trim().length).toBeGreaterThan(0);
+        // llm.service rejects blank provider completions before a model candidate
+        // reaches the grounding gate. The router then falls back to generic copy,
+        // which is low confidence and held for an agent.
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.NONE);
+        expect(result.jobResults[0]).toMatchObject({ sent: false, reason: 'low_confidence_handoff', handoff: true });
+        expect(body(result).trim().length).toBeGreaterThan(0); // one generic holding message only
+        expect(body(result)).not.toMatch(/black\s+panjabi|৳|\b\d{3,}\b/i);
         expect(harness.sentAttachments(result.sends)).toEqual([]);
     });
 
-    test('an empty completion with nothing to answer sends nothing at all', async () => {
-        // "ok" carries no product-identifying term at all, so the evidence is
-        // NONE: there is no written reply that could be true, and silence plus a
-        // human beats a guess.
+    test('an empty completion with nothing to answer sends only a generic holding message and hands off', async () => {
+        // "ok" carries no product-identifying term at all. Provider failure
+        // produces a low-confidence generic response that is held for an agent.
         const result = await harness.deliver({ text: 'ok', candidate: '' });
 
-        expect(result.decision.decision).toBe(GroundingDecision.SUPPRESS);
-        expect(result.decision.reasonCode).toBe(ReasonCode.MODEL_OUTPUT_INVALID);
-        expect(result.jobResults[0].reason).toBe('grounding_suppressed');
-        expect(result.jobResults[0].handoff).toBe(true);
-        expect(harness.sentTexts(result.sends).join('\n')).not.toContain('undefined');
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.NONE);
+        expect(result.jobResults[0]).toMatchObject({ sent: false, reason: 'low_confidence_handoff', handoff: true });
+        expect(result.sends).toHaveLength(1);
+        expect(harness.sentTexts(result.sends).join('\n')).not.toMatch(/undefined|৳|\b\d{3,}\b/i);
+        expect(harness.sentAttachments(result.sends)).toEqual([]);
     });
 });
 

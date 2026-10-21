@@ -1,0 +1,1052 @@
+{
+  "schemaVersion": 2,
+  "runId": "aa8d565f-40f5-4b41-85f1-84956886a424",
+  "scope": "persona",
+  "personaId": "P01",
+  "mode": "baseline",
+  "status": "completed",
+  "executionMode": "production-intent-router-with-controlled-local-collaborators",
+  "sourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7",
+  "engineSourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7+backend-src-sha256:a946514a4440d11a98d33cadca1e2ed3f26790b94b4d48e174f1cd35781fdd79",
+  "engineSourceSha256": "a946514a4440d11a98d33cadca1e2ed3f26790b94b4d48e174f1cd35781fdd79",
+  "runnerRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7+runner-sha256:b09e5c3d90e31299718ba49e4ccd9e1dbee11e3a3fac363c6ec47771f28cec5d",
+  "runnerSourceSha256": "b09e5c3d90e31299718ba49e4ccd9e1dbee11e3a3fac363c6ec47771f28cec5d",
+  "dataset": {
+    "sha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+    "sourceTurns": 200,
+    "sourcePersonas": 20,
+    "executedTurns": 10,
+    "completeDatasetIterated": false,
+    "completeDatasetExecuted": false,
+    "routeNotRunCount": 0,
+    "sequentialPerPersona": true,
+    "rawSourceMessagesPersisted": false
+  },
+  "provenance": {
+    "sourceAnswersUsedAsGroundTruth": false,
+    "catalogSource": "synthetic-fixture-snapshot",
+    "modelProvider": "mock-adversarial-provider",
+    "vision": "disabled; attachments are metadata-only",
+    "realPostgres": false,
+    "realRedis": false,
+    "realWorker": false,
+    "realMeta": false,
+    "realProvider": false,
+    "realVision": false,
+    "outboundNetworkCalls": 0
+  },
+  "summary": {
+    "sourceAnswerableProductTurns": 1,
+    "evaluatedAnswerableProductTurns": 1,
+    "correctVerifiedProductTurns": 1,
+    "sourceEligibleProductFactSlots": 1,
+    "evaluatedEligibleProductFactSlots": 1,
+    "correctVerifiedProductAnswers": 1,
+    "unnecessaryRefusalSlots": 0,
+    "unsupportedClaimsSent": 0,
+    "blockedMockUnsupportedCandidates": 3,
+    "safeFallbacks": 3,
+    "routeExecutedTurns": 10,
+    "routeNotRunTurns": 0,
+    "realGeminiRouteTurns": 0,
+    "realGeminiTextCalls": 0,
+    "realGeminiVisionCalls": 0,
+    "dispositions": {
+      "SEND": 7,
+      "SAFE_FALLBACK": 3
+    },
+    "routerSources": {
+      "grounding_product_presentation": 1,
+      "llm": 3,
+      "grounding_not_found": 6
+    },
+    "oracleDomains": {
+      "product": 1,
+      "image_dependent": 1,
+      "product_identity_unresolved": 4,
+      "outside_product": 1,
+      "merchant_policy": 3
+    },
+    "oracleEligibility": {
+      "ANSWERABLE": 1,
+      "NOT_ANSWERABLE": 9
+    },
+    "presentationContractsValid": 10,
+    "tenantScopeViolations": 0,
+    "unscopedCatalogReads": 0,
+    "realModelCalls": 0,
+    "mockModelCalls": 4,
+    "realVisionCalls": 0,
+    "businessMutations": 0,
+    "messengerSends": 0
+  },
+  "targetedEvaluation": {
+    "provenance": "fixed synthetic cases; independent evidence oracle; production router and grounding gate; mock provider; no external calls",
+    "caseCount": 7,
+    "answerableCaseCount": 6,
+    "eligibleFactSlots": 8,
+    "correctFactSlots": 8,
+    "factAccuracy": 1,
+    "tenantIsolationPass": true,
+    "presentationContractPass": true,
+    "allCases": [
+      {
+        "caseId": "identity",
+        "tenantId": "merchant-a",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 1,
+        "factSlots": [
+          {
+            "field": "identity",
+            "expectedValue": "Test Everyday T-Shirt",
+            "actualValue": "Test Everyday T-Shirt",
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 2.741
+      },
+      {
+        "caseId": "price-tenant-a",
+        "tenantId": "merchant-a",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 1,
+        "factSlots": [
+          {
+            "field": "price",
+            "expectedValue": 900,
+            "actualValue": 900,
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 2.244
+      },
+      {
+        "caseId": "stock-tenant-b",
+        "tenantId": "merchant-b",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 1,
+        "factSlots": [
+          {
+            "field": "stock",
+            "expectedValue": "OUT_OF_STOCK",
+            "actualValue": "OUT_OF_STOCK",
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 2.034
+      },
+      {
+        "caseId": "price-tenant-b",
+        "tenantId": "merchant-b",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 1,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 1,
+        "factSlots": [
+          {
+            "field": "price",
+            "expectedValue": 1050,
+            "actualValue": 1050,
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 1.852
+      },
+      {
+        "caseId": "variant-stock-tenant-a",
+        "tenantId": "merchant-a",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 2,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 2,
+        "factSlots": [
+          {
+            "field": "variant_stock",
+            "expectedValue": "OUT_OF_STOCK",
+            "actualValue": "OUT_OF_STOCK",
+            "correct": true,
+            "presentInResponse": true
+          },
+          {
+            "field": "variant",
+            "expectedValue": "XL",
+            "actualValue": "XL",
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-a-denim-jacket"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 5.775
+      },
+      {
+        "caseId": "variant-price-tenant-b",
+        "tenantId": "merchant-b",
+        "eligibility": "ANSWERABLE",
+        "answerableSlots": 2,
+        "disposition": "SEND",
+        "reasonCode": "GROUNDED",
+        "routerSource": "grounding_product_presentation",
+        "correctFactSlots": 2,
+        "factSlots": [
+          {
+            "field": "price",
+            "expectedValue": 4350,
+            "actualValue": 4350,
+            "correct": true,
+            "presentInResponse": true
+          },
+          {
+            "field": "variant",
+            "expectedValue": "L",
+            "actualValue": "L",
+            "correct": true,
+            "presentInResponse": true
+          }
+        ],
+        "unknownRequestedFields": [],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-denim-jacket"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 3.75
+      },
+      {
+        "caseId": "unknown-material",
+        "tenantId": "merchant-b",
+        "eligibility": "NOT_ANSWERABLE",
+        "answerableSlots": 0,
+        "disposition": "SAFE_FALLBACK",
+        "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+        "routerSource": "llm",
+        "correctFactSlots": 0,
+        "factSlots": [],
+        "unknownRequestedFields": [
+          "material"
+        ],
+        "evidenceStatus": "VERIFIED",
+        "evidenceProductIds": [
+          "fixture-shop-b-cotton-tee"
+        ],
+        "tenantEvidenceOnly": true,
+        "presentationContractValid": true,
+        "latencyMs": 4.089
+      }
+    ]
+  },
+  "triageFixtures": [
+    {
+      "fixtureId": "unsafe-price-claim",
+      "severity": "P1",
+      "status": "BLOCKED_BY_GROUNDING",
+      "blocked": true,
+      "disposition": "SAFE_FALLBACK",
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "evidenceProductIds": [
+        "fixture-shop-a-cotton-tee"
+      ],
+      "evidenceFields": [
+        "price",
+        "stock",
+        "merchant policy"
+      ],
+      "providerMode": "mock-adversarial-candidate",
+      "externalCalls": 0
+    }
+  ],
+  "visionEvaluation": null,
+  "evaluationBudget": null,
+  "budgetLedgerPath": null,
+  "priorInterruptedRunUpperBoundUsd": null,
+  "priorAuthCheckReportedUsd": null,
+  "transcriptArtifact": {
+    "path": null,
+    "languages": [
+      {
+        "language": "Banglish",
+        "sourceTurns": 10,
+        "realGeminiCalls": 0
+      },
+      {
+        "language": "Bangla",
+        "sourceTurns": 0,
+        "realGeminiCalls": 0
+      },
+      {
+        "language": "English",
+        "sourceTurns": 0,
+        "realGeminiCalls": 0
+      }
+    ],
+    "piiRedacted": true,
+    "hiddenAnswerCellsIncluded": false
+  },
+  "performance": {
+    "measuredLayer": "in-process intent-router call only; controlled mock adapters",
+    "p50Ms": 1.701,
+    "p95Ms": 60.637,
+    "meanMs": 8.125,
+    "sampleCount": 10,
+    "wallMs": 324.13,
+    "providerP50Ms": 0,
+    "providerP95Ms": 0,
+    "estimatedSpendUsd": null,
+    "providerReportedSpendUsd": null,
+    "costStatus": "NOT_MEASURED_NO_REAL_PROVIDER_CALLS",
+    "actualProviderUsageRecords": 0
+  },
+  "turns": [
+    {
+      "scenarioId": "scenario-01-01",
+      "personaId": "P01",
+      "turn": 1,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_identity_request"
+      ],
+      "oracle": {
+        "domain": "product",
+        "eligibility": "ANSWERABLE",
+        "productId": "fixture-shop-a-cargo-pant",
+        "selectedVariantId": null,
+        "eligibleSlots": [
+          {
+            "field": "identity",
+            "expectedValue": "Cargo Pant",
+            "evidenceId": "fixture-shop-a-cargo-pant:identity"
+          }
+        ]
+      },
+      "routerSource": "grounding_product_presentation",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "VERIFIED",
+        "productIds": [
+          "fixture-shop-a-cargo-pant"
+        ],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "READY",
+        "selection": "SINGLE",
+        "contractValid": true,
+        "products": [
+          {
+            "id": "fixture-shop-a-cargo-pant",
+            "price": {
+              "state": "KNOWN",
+              "amount": 1450,
+              "currency": "BDT"
+            },
+            "attributes": {
+              "material": {
+                "state": "UNKNOWN",
+                "value": null
+              },
+              "color": {
+                "state": "KNOWN",
+                "value": "Olive"
+              },
+              "size": {
+                "state": "KNOWN",
+                "value": "32, 34"
+              },
+              "stock": {
+                "state": "KNOWN",
+                "value": "IN_STOCK"
+              }
+            },
+            "selectedVariant": null,
+            "variants": [
+              {
+                "id": "fixture-a-cargo-32",
+                "option": "Size",
+                "value": "32",
+                "price": {
+                  "state": "KNOWN",
+                  "amount": 1450,
+                  "currency": "BDT"
+                },
+                "availability": {
+                  "state": "KNOWN",
+                  "value": "IN_STOCK"
+                }
+              },
+              {
+                "id": "fixture-a-cargo-34",
+                "option": "Size",
+                "value": "34",
+                "price": {
+                  "state": "KNOWN",
+                  "amount": 1450,
+                  "currency": "BDT"
+                },
+                "availability": {
+                  "state": "KNOWN",
+                  "value": "OUT_OF_STOCK"
+                }
+              },
+              {
+                "id": "fixture-a-cargo-olive",
+                "option": "Color",
+                "value": "Olive",
+                "price": {
+                  "state": "KNOWN",
+                  "amount": 1450,
+                  "currency": "BDT"
+                },
+                "availability": {
+                  "state": "KNOWN",
+                  "value": "IN_STOCK"
+                }
+              }
+            ],
+            "image": "UNKNOWN"
+          }
+        ]
+      },
+      "factScores": {
+        "eligibleSlots": 1,
+        "correctEvidenceSlots": 1,
+        "correctAnsweredSlots": 1,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Cargo Pant — ৳1,450\nAvailable options: Size 32 (৳1,450), Color Olive (৳1,450)",
+      "latencyMs": 60.637,
+      "traceId": "scenario-01-01",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-02",
+      "personaId": "P01",
+      "turn": 2,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "IMAGE_TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_fact_request"
+      ],
+      "oracle": {
+        "domain": "image_dependent",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Ei bepare confirmed info amar kache nei. Amader team theke apnake janiye deya hobe.",
+      "latencyMs": 3.427,
+      "traceId": "scenario-01-02",
+      "attachmentEvidence": "METADATA_ONLY_NO_VISION",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-03",
+      "personaId": "P01",
+      "turn": 3,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_identity_request"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Sorry, amader current catalog e ei product ta pacchi na. Onno kichu khujchen janale check kore boli. 😊\n\nAmader kache ja ache:\n• Test Everyday T-Shirt — ৳900",
+      "latencyMs": 3.211,
+      "traceId": "scenario-01-03",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-04",
+      "personaId": "P01",
+      "turn": 4,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_fact_request"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Ei bepare confirmed info amar kache nei. Amader team theke apnake janiye deya hobe.",
+      "latencyMs": 3.475,
+      "traceId": "scenario-01-04",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-05",
+      "personaId": "P01",
+      "turn": 5,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "transaction_or_live_state"
+      ],
+      "oracle": {
+        "domain": "outside_product",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Sorry, amader current catalog e ei product ta pacchi na. Onno kichu khujchen janale check kore boli. 😊",
+      "latencyMs": 1.472,
+      "traceId": "scenario-01-05",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-06",
+      "personaId": "P01",
+      "turn": 6,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": [
+          "fixture-shop-a-cotton-tee"
+        ]
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Sorry, amader current catalog e ei product ta pacchi na. Onno kichu khujchen janale check kore boli. 😊\n\nAmader kache ja ache:\n• Test Everyday T-Shirt — ৳900",
+      "latencyMs": 1.655,
+      "traceId": "scenario-01-06",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-07",
+      "personaId": "P01",
+      "turn": 7,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Sorry, amader current catalog e ei product ta pacchi na. Onno kichu khujchen janale check kore boli. 😊",
+      "latencyMs": 1.701,
+      "traceId": "scenario-01-07",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-08",
+      "personaId": "P01",
+      "turn": 8,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "product_fact_request"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Sorry, amader current catalog e ei product ta pacchi na. Onno kichu khujchen janale check kore boli. 😊",
+      "latencyMs": 1.092,
+      "traceId": "scenario-01-08",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-09",
+      "personaId": "P01",
+      "turn": 9,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "intent_unresolved"
+      ],
+      "oracle": {
+        "domain": "product_identity_unresolved",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "llm",
+      "disposition": "SAFE_FALLBACK",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "UNSUPPORTED_DOMAIN_CLAIM",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 1,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Ei bepare confirmed info amar kache nei. Amader team theke apnake janiye deya hobe.",
+      "latencyMs": 2.887,
+      "traceId": "scenario-01-09",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    },
+    {
+      "scenarioId": "scenario-01-10",
+      "personaId": "P01",
+      "turn": 10,
+      "evaluationStatus": "EXECUTED",
+      "inputType": "TEXT",
+      "language": "banglish",
+      "classificationTags": [
+        "merchant_policy"
+      ],
+      "oracle": {
+        "domain": "merchant_policy",
+        "eligibility": "NOT_ANSWERABLE",
+        "productId": null,
+        "selectedVariantId": null,
+        "eligibleSlots": []
+      },
+      "routerSource": "grounding_not_found",
+      "disposition": "SEND",
+      "responseTextStored": false,
+      "rawResponseTextStored": false,
+      "redactedResponseTextStored": true,
+      "reasonCode": "GROUNDED",
+      "productEvidence": {
+        "status": "NOT_FOUND",
+        "productIds": [],
+        "relatedProductIds": []
+      },
+      "presentation": {
+        "status": "BLOCKED",
+        "selection": "NONE",
+        "contractValid": true,
+        "products": []
+      },
+      "factScores": {
+        "eligibleSlots": 0,
+        "correctEvidenceSlots": 0,
+        "correctAnsweredSlots": 0,
+        "unnecessaryRefusalSlots": 0,
+        "incorrectOrUnansweredSlots": 0,
+        "unsupportedPriceClaimsSent": 0
+      },
+      "provider": {
+        "mode": "mock",
+        "calls": 0,
+        "actualProviderUsage": false,
+        "requestIds": [],
+        "callsLedger": [],
+        "costUsd": 0
+      },
+      "finalReplyRedacted": "Sorry, amader current catalog e ei product ta pacchi na. Onno kichu khujchen janale check kore boli. 😊",
+      "latencyMs": 1.692,
+      "traceId": "scenario-01-10",
+      "attachmentEvidence": "NONE",
+      "sideEffects": {
+        "databaseWrites": 0,
+        "queueJobs": 0,
+        "messengerSends": 0,
+        "readAuditCalls": 0
+      }
+    }
+  ],
+  "startedAt": "2026-10-21T00:07:32.372Z",
+  "completedAt": "2026-10-21T00:07:32.697Z"
+}

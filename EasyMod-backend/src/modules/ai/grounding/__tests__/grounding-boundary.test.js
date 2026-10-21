@@ -149,6 +149,43 @@ describe('nonexistent product', () => {
         expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
     });
 
+    test('out-of-stock related catalog rows are not offered under an available-alternatives heading', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([product({
+            id: 'sold-out-saree',
+            name: 'Premium Black Saree',
+            quantity: 0,
+            track_quantity: true,
+            in_stock: true,
+        })]);
+
+        const result = await routeMessage('chiffon saree ache?');
+
+        expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+        expect(result.grounding.relatedProducts[0].facts.stock).toEqual({
+            state: grounding.FactState.KNOWN,
+            value: 'OUT_OF_STOCK',
+        });
+        expect(result.response).not.toMatch(/What we do have|আমাদের কাছে যা আছে|Amader kache ja ache/i);
+        expect(result.response).not.toContain('Premium Black Saree');
+        expect(llm.chat).not.toHaveBeenCalled();
+        expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('only explicitly in-stock related products are offered as alternatives', async () => {
+        const soldOutSaree = product({
+            id: 'sold-out-saree', name: 'Premium Black Saree', quantity: 0, track_quantity: true,
+        });
+        productSearch.searchByAttributes.mockResolvedValue([soldOutSaree, COTTON_SAREE]);
+
+        const result = await routeMessage('chiffon saree ache?');
+
+        expect(result.response).toMatch(/What we do have:|আমাদের কাছে যা আছে:|Amader kache ja ache:/i);
+        expect(result.response).toContain('Cotton Saree');
+        expect(result.response).not.toContain('Premium Black Saree');
+        expect(result.response).not.toContain('৳1490');
+        expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
     test('a related-product price from another shop is rejected at the final gate', () => {
         const evidence = {
             ...grounding.emptyEvidence(SHOP),

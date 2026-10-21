@@ -20,10 +20,10 @@ const BACKEND_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const DATASET_PATH = path.resolve(REPO_ROOT, '..', 'customer-simulator.csv');
 const UI_ROOT = path.join(__dirname, 'lab-ui');
-const ARTIFACT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-1', 'artifacts');
+const ARTIFACT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-2', 'artifacts');
 const RUNS_ROOT = path.join(ARTIFACT_ROOT, 'runs');
 const TRIAGE_ROOT = path.join(ARTIFACT_ROOT, 'triage');
-const BASELINE_SHA = 'c8981c4df9ea84d47c35f2541884fd55afd64bae';
+const BASELINE_SHA = '78b6250af40039749f9c096cd3e0debe2e6cf6a7';
 const ROUTER_SOURCE_RELATIVE_PATH = 'EasyMod-backend/src/modules/ai/intent-router.service.js';
 const MAX_CONCURRENT_RUNS = 1;
 const RUN_ID = /^[a-f0-9-]{36}$/i;
@@ -80,6 +80,16 @@ const hashLabRunnerSources = () => {
         'EasyMod-backend/scripts/product-experience/lab-replay.test.js',
         'EasyMod-backend/scripts/product-experience/fixtures.js',
         'EasyMod-backend/scripts/product-experience/lab-contracts.js',
+        'EasyMod-backend/scripts/product-experience/catalog-fixtures-v1-2.js',
+        'EasyMod-backend/scripts/product-experience/synthetic-media-fixtures.js',
+        'EasyMod-backend/scripts/product-experience/lab-scorer.js',
+        'EasyMod-backend/scripts/product-experience/replay.js',
+        'EasyMod-backend/scripts/product-experience/evaluation-budget.js',
+        'EasyMod-backend/scripts/product-experience/gemini-evaluation-client.js',
+        'EasyMod-backend/scripts/product-experience/no-egress.js',
+        'EasyMod-backend/scripts/product-experience/lab-ui/index.html',
+        'EasyMod-backend/scripts/product-experience/lab-ui/app.js',
+        'EasyMod-backend/scripts/product-experience/lab-ui/styles.css',
     ];
     const hash = crypto.createHash('sha256');
     for (const relativePath of files) {
@@ -87,6 +97,19 @@ const hashLabRunnerSources = () => {
         hash.update(fs.readFileSync(path.join(REPO_ROOT, relativePath))).update('\0');
     }
     return hash.digest('hex');
+};
+
+const getSourceProvenance = () => {
+    const sourceRevision = resolveRevision();
+    const engineSourceSha256 = hashBackendSourceTree();
+    const runnerSourceSha256 = hashLabRunnerSources();
+    return {
+        sourceRevision,
+        engineSourceRevision: sourceRevision + '+backend-src-sha256:' + engineSourceSha256,
+        engineSourceSha256,
+        runnerRevision: sourceRevision + '+runner-sha256:' + runnerSourceSha256,
+        runnerSourceSha256,
+    };
 };
 
 const baselineRouterModule = (runId) => {
@@ -260,6 +283,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_RUN_SCOPE: run.scope,
             LAB_PERSONA_ID: run.personaId || '',
             LAB_RUN_MODE: run.mode,
+            EASYMOD_PRODUCT_LAB_AUTONOMOUS: '1',
             LAB_RESULT_PATH: outputPath,
             LAB_PROGRESS_PATH: progressPath,
             LAB_DATASET_PATH: datasetPath,
@@ -327,6 +351,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             SENTRY_DSN: '',
             QDRANT_URL: '',
             LAB_OPERATION: 'playground',
+            EASYMOD_PRODUCT_LAB_AUTONOMOUS: '1',
             LAB_PLAYGROUND_INPUT_PATH: inputPath,
             LAB_PLAYGROUND_RESULT_PATH: resultPath,
             LAB_RUN_ID: crypto.randomUUID(),
@@ -373,6 +398,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             REDIS_URL: 'redis://127.0.0.1:1',
             LAB_OPERATION: 'triage',
             LAB_TRIAGE_FIXTURE_ID: fixtureId,
+            EASYMOD_PRODUCT_LAB_AUTONOMOUS: '1',
             LAB_TRIAGE_RESULT_PATH: resultPath,
             LAB_RUN_ID: runId,
             LAB_RUN_MODE: 'candidate',
@@ -421,7 +447,9 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
         if (product) {
             const facts = [
                 ['identity', product.name, `${product.id}:identity`],
-                ['price', Number.isFinite(Number(product.price)) ? { amount: Number(product.price), currency: 'BDT' } : null, `${product.id}:price`],
+                ['price', product.price !== null && product.price !== undefined && product.price !== '' && Number.isFinite(Number(product.price))
+                    ? { amount: Number(product.price), currency: 'BDT' }
+                    : null, `${product.id}:price`],
                 ['material', product.ai_material || null, `${product.id}:material`],
                 ['color', product.ai_color || null, `${product.id}:color`],
                 ['stock', product.track_quantity ? (Number(product.quantity) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') : (product.in_stock ? 'IN_STOCK' : null), `${product.id}:stock`],
@@ -498,7 +526,8 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
                     'X-Content-Type-Options': 'nosniff',
                     'Referrer-Policy': 'no-referrer',
                     'X-Frame-Options': 'DENY',
-                    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+                    // Playwright WebKit injects this exact no-op stylesheet to synchronize screenshots.
+                    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-YjaKGiklmzC6wjXA513HAMmzus8VE61XCOT+SmwNZWA='; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
                 });
                 return response.end(html);
             } catch (_) { return sendJson(response, 503, { error: 'Test Lab UI assets are unavailable.' }); }
@@ -709,4 +738,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { createLabServer, DATASET_PATH, RUNS_ROOT, BASELINE_SHA };
+module.exports = { createLabServer, DATASET_PATH, RUNS_ROOT, BASELINE_SHA, getSourceProvenance };

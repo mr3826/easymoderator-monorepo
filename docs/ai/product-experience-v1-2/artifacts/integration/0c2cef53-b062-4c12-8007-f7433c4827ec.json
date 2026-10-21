@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "runId": "0c2cef53-b062-4c12-8007-f7433c4827ec",
+  "status": "FAIL",
+  "startedAt": "2026-10-20T23:34:54.073Z",
+  "completedAt": "2026-10-20T23:37:06.203Z",
+  "branch": "feature/verified-commerce-foundation-v1.2",
+  "sourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7",
+  "composeProject": "easymod-product-lab-29972-15d28f",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": false,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 10186,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 10187,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 9363
+  },
+  "testPaths": {
+    "selectedIntegration": [
+      "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+      "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+      "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+    ],
+    "webhookPipelineE2E": "tests/meta-e2e/meta-e2e.test.js"
+  },
+  "jest": {
+    "status": "FAIL",
+    "selectedIntegration": {
+      "exitCode": 1,
+      "timedOut": false,
+      "suites": "1 failed, 2 passed, 3 total",
+      "tests": "12 passed, 12 total",
+      "duration": "68.133 s",
+      "structured": {
+        "passedSuites": 2,
+        "failedSuites": 1,
+        "passedTests": 12,
+        "failedTests": 0,
+        "passedTestTitles": [
+          "real message-worker Action Gate traversal creates one order and one courier dispatch claim with matching authorized audits",
+          "real message-worker Action Gate traversal missing production secret denies before order creation with a named audit reason",
+          "real message-worker Action Gate traversal replaying the confirmed turn denies on committed order idempotency",
+          "real message-worker Action Gate traversal price change between summary and gate denies on material revalidation",
+          "replaying one turn preserves its start timestamp and sends one holding message by 8 seconds",
+          "recovery holding delivery rechecks business mode before provider delivery",
+          "AI pipeline turns do not emit provider-delay holding messages before the send boundary",
+          "HUMAN_REQUIRED and hitl are committed together and a missing conversation creates neither",
+          "recovery holding delivery does not send when the customer context is missing",
+          "recovery holding delivery does not send with an empty settings context",
+          "Meta webhook durable replay with real PostgreSQL and Redis replays accepted work after queue data loss without duplicating the inbound message",
+          "Meta webhook durable replay with real PostgreSQL and Redis recovery claims and fences only one due durable receipt"
+        ],
+        "failedSuiteDiagnostics": [
+          {
+            "suite": "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+            "errorType": "UNCLASSIFIED",
+            "kinds": [
+              "SUITE_SETUP"
+            ],
+            "locations": [
+              "node_modules/ioredis/built/redis/event_handler.js:214:25",
+              "node_modules/ioredis/built/redis/event_handler.js:181:20"
+            ],
+            "failedAssertions": []
+          }
+        ]
+      }
+    },
+    "webhookPipelineE2E": {
+      "status": "NOT_RUN"
+    }
+  },
+  "egress": {
+    "mode": "Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch",
+    "guard": "PASS",
+    "blockedNonLoopbackAttempts": 0,
+    "externalProvidersConfigured": false
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 9363,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 1,
+      "durationMs": 80110,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-29972-15d28f"
+    }
+  ],
+  "failure": "Selected real PostgreSQL/Redis integration suites failed.",
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

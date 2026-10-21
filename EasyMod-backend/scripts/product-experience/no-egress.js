@@ -7,6 +7,12 @@ const dns = require('node:dns');
 const dgram = require('node:dgram');
 const http = require('node:http');
 const https = require('node:https');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const {
+    consumeGeminiEvaluationPermit,
+} = require('./evaluation-budget');
+const geminiNetworkContext = new AsyncLocalStorage();
+const GEMINI_HOST = 'generativelanguage.googleapis.com';
 
 const isLocalHost = (value) => {
     const host = String(value || '').replace(/^\[|\]$/g, '').toLowerCase();
@@ -19,6 +25,16 @@ const isLocalHost = (value) => {
 const isLoopbackAddress = (value) => {
     const host = String(value || '').replace(/^\[|\]$/g, '').toLowerCase();
     return net.isIP(host) !== 0 && isLocalHost(host);
+};
+
+const isAllowedGeminiEvaluationRequest = (urlValue, init = {}) =>
+    consumeGeminiEvaluationPermit(urlValue, init);
+const isGeminiEvaluationHost = (value, port) => {
+    const allowed = geminiNetworkContext.getStore();
+    return Boolean(allowed
+        && String(value || '').replace(/^\[|\]$/g, '').toLowerCase() === allowed.host
+        && Number(port) === allowed.port
+        && allowed.host === GEMINI_HOST && allowed.port === 443);
 };
 
 const blocked = (api) => {
@@ -43,7 +59,9 @@ const originalConnect = net.Socket.prototype.connect;
 net.Socket.prototype.connect = function guardedConnect(...args) {
     const options = connectionOptions(args);
     if (options?.path) return originalConnect.apply(this, args);
-    if (!isLocalHost(connectionHost(args)) || (options && typeof options.lookup === 'function')) {
+    const allowedGeminiSocket = isGeminiEvaluationHost(connectionHost(args), options?.port || args[1]);
+    if ((!isLocalHost(connectionHost(args)) && !allowedGeminiSocket)
+        || (options && typeof options.lookup === 'function' && !allowedGeminiSocket)) {
         const error = blocked('net.Socket.connect');
         process.nextTick(() => this.emit('error', error));
         return this;
@@ -53,7 +71,7 @@ net.Socket.prototype.connect = function guardedConnect(...args) {
 
 const originalLookup = dns.lookup;
 dns.lookup = function guardedLookup(hostname, ...args) {
-    if (!isLocalHost(hostname)) {
+    if (!isLocalHost(hostname) && !isGeminiEvaluationHost(hostname, 443)) {
         const callback = args.find(value => typeof value === 'function');
         const error = blocked('dns.lookup');
         if (callback) return process.nextTick(() => callback(error));
@@ -90,7 +108,7 @@ if (promiseDns) {
         if (method === 'lookup') {
             const original = promiseDns[method].bind(promiseDns);
             promiseDns[method] = function guardedPromiseLookup(hostname, ...args) {
-        if (!isLocalHost(hostname)) return Promise.reject(blocked('dns.promises.lookup'));
+                if (!isLocalHost(hostname) && !isGeminiEvaluationHost(hostname, 443)) return Promise.reject(blocked('dns.promises.lookup'));
                 return original(hostname, ...args);
             };
         } else {
@@ -146,10 +164,16 @@ if (typeof globalThis.fetch === 'function') {
     globalThis.fetch = function guardedFetch(input, init) {
         let url;
         try { url = new URL(typeof input === 'string' ? input : input.url); } catch (_) { return Promise.reject(blocked('fetch')); }
-        if (!['http:', 'https:'].includes(url.protocol) || !isLocalHost(url.hostname)
-            || init?.dispatcher || init?.agent) return Promise.reject(blocked('fetch'));
+        const geminiAllowed = isAllowedGeminiEvaluationRequest(url.toString(), init);
+        if ((!['http:', 'https:'].includes(url.protocol) || !isLocalHost(url.hostname)) && !geminiAllowed) {
+            return Promise.reject(blocked('fetch'));
+        }
+        if (init?.dispatcher || init?.agent) return Promise.reject(blocked('fetch'));
+        if (geminiAllowed) {
+            return geminiNetworkContext.run({ host: GEMINI_HOST, port: 443 }, () => originalFetch.call(this, input, init));
+        }
         return originalFetch.call(this, input, init);
     };
 }
 
-module.exports = { isLocalHost, isLoopbackAddress };
+module.exports = { isLocalHost, isLoopbackAddress, isAllowedGeminiEvaluationRequest };

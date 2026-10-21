@@ -68,7 +68,7 @@ const INTENT_STOPWORDS = new Set([
     'আমার', 'আপনার', 'আপনি', 'আমি', 'ছবি', 'ছবিটা', 'দিন', 'দেন', 'করেন', 'আবার',
     'একটা', 'একটি', 'কোন', 'কোনো', 'হবে', 'হয়', 'এবং', 'ও', 'তো', 'না', 'জন্য',
     'পাব', 'পাবো', 'নিব', 'নিবো', 'স্টক', 'ডেলিভারি', 'ছাড়', 'অফার', 'প্রোডাক্ট',
-    'রং', 'রঙ', 'কাপড়', 'সাইজ', 'মাপ',
+    'রং', 'রঙ', 'কাপড়', 'সাইজ', 'মাপ', 'আসসালামু', 'আলাইকুম', 'সালাম', 'আপনাদের', 'আপনারা',
 ]);
 
 /**
@@ -111,12 +111,14 @@ const ATTRIBUTE_VOCABULARY = Object.freeze({
         'কালো', 'সাদা', 'লাল', 'নীল', 'সবুজ', 'হলুদ', 'গোলাপি', 'খয়েরি',
     ],
     size: ['size', 'sizes', 'small', 'medium', 'large', 'xl', 'xxl', 'সাইজ', 'মাপ'],
+    stock: ['stock', 'availability', 'available', 'in stock', 'quantity', 'ache', 'ase', 'আছে', 'পাওয়া যাবে', 'পাওয়া যাবে'],
 });
 
 const ATTRIBUTE_LABELS = Object.freeze({
     material: ['material', 'fabric', 'kapor', 'kapod', 'উপাদান', 'কাপড়', 'কাপড়'],
     color: ['color', 'colour', 'rong', 'rang', 'রং', 'রঙ'],
     size: ['size', 'sizes', 'সাইজ', 'মাপ'],
+    stock: ['stock', 'availability', 'available', 'in stock', 'quantity'],
 });
 
 /** Does the customer's message request a product photo? */
@@ -160,6 +162,8 @@ const identifyingTerms = (message) => {
     if (!message || typeof message !== 'string') return [];
     const raw = message
         .toLowerCase()
+        .replace(/[০-৯]/g, digit => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)))
+        .replace(/\bw\s*(\d{2})\b/gi, ' size ')
         .replace(/[^\wঀ-৿\s-]/g, ' ')
         .split(/\s+/)
         .filter(Boolean);
@@ -233,11 +237,15 @@ const matchTerms = (product, terms) => {
  */
 const askedAttributes = (message) => {
     if (!message || typeof message !== 'string') return [];
-    const lower = message.toLowerCase();
-    const asksPriceOrAvailability = /\b(?:price|cost|dam|daam|koto|taka|stock|available|availability|ache|ase|delivery|shipping|charge)\b|দাম|মূল্য|কত|টাকা|স্টক|ডেলিভারি/i.test(lower);
+    const lower = message.toLowerCase().replace(/[০-৯]/g, digit => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)));
+    const asksNumericSize = /\bw\s?\d{2}\b/i.test(lower) || /(?:সাইজ|মাপ)\s*\d{1,3}/i.test(lower);
+    const asksPriceOrAvailability = /\b(?:price|cost|dam|daam|koto|taka|stock|available|availability|ache|ase|delivery|shipping|charge)\b|দাম|মূল্য|কত|টাকা|স্টক|ডেলিভারি|আছে|পাওয়া যাবে|পাওয়া যাবে/i.test(lower);
+    const hasAvailabilityCue = /\b(?:stock|available|availability|in stock|quantity|ache|ase|stock e ache|stock e ase)\b|স্টক|আছে|পাওয়া যাবে|পাওয়া যাবে/i.test(lower);
     const hasAttributeQuestionCue = /\b(?:what|which|is|are|it|this|that|eta|eita|otar|tar|made|ki|kina)\b|কি|কী|এর/i.test(lower);
     return Object.entries(ATTRIBUTE_VOCABULARY)
         .filter(([attribute, words]) => {
+            if (attribute === 'size' && asksNumericSize) return true;
+            if (attribute === 'stock' && hasAvailabilityCue) return true;
             const labels = ATTRIBUTE_LABELS[attribute] || [];
             const values = words.filter(word => !labels.includes(word));
             const explicitName = labels.some(word => lower.includes(word));
@@ -500,7 +508,7 @@ const isAttributeOnlyQuery = (message) => {
         attributes.flatMap(a => ATTRIBUTE_VOCABULARY[a]).map(w => w.toLowerCase()),
     );
     const terms = identifyingTerms(message);
-    return terms.length > 0 && terms.every(t => attributeWords.has(t));
+    return terms.every(t => attributeWords.has(t));
 };
 
 /** Does this product's recorded value for `attribute` contain the asked term? */
@@ -596,7 +604,7 @@ const contextProductIds = (history = [], { now = Date.now(), ttlMs = PRODUCT_CON
         if (turn.role === 'user' || turn.role === 'customer') continue;
         const references = turn.sourceReferences || turn.source_references || [];
         const ids = (Array.isArray(references) ? references : [])
-            .filter(r => r && r.kind === 'product' && r.id)
+            .filter(r => r && r.kind === 'product' && r.id && r.contextEligible !== false)
             .map(r => String(r.id));
         // The newest assistant turn is the active context boundary. A reply
         // with no product references clears an older selection; do not revive

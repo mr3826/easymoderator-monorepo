@@ -11,7 +11,7 @@ const { createCatalog, merchantPolicyFixtures } = require('./fixtures');
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEFAULT_INPUT = path.resolve(REPO_ROOT, '..', 'customer-simulator.csv');
-const DEFAULT_OUTPUT = path.join(REPO_ROOT, 'docs/ai/product-experience-v1/artifacts/200-turn-replay.json');
+const DEFAULT_OUTPUT = path.join(REPO_ROOT, 'docs/ai/product-experience-v1-2/artifacts/200-turn-replay.json');
 const BASE_CLOCK = Date.parse('2026-10-20T00:00:00.000Z');
 
 const HEADER_KEYS = new Map([

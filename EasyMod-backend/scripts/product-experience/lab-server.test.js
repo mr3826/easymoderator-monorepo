@@ -72,6 +72,8 @@ describe('local Product Engine Test Lab HTTP server', () => {
         const page = await get(active.url);
         expect(page.status).toBe(200);
         expect(page.headers['content-security-policy']).toContain("connect-src 'self'");
+        expect(page.headers['content-security-policy']).toContain("style-src 'self' 'sha256-YjaKGiklmzC6wjXA513HAMmzus8VE61XCOT+SmwNZWA='");
+        expect(page.headers['content-security-policy']).not.toContain("'unsafe-inline'");
         expect(page.body).toContain(`name="lab-token" content="${active.token}"`);
         expect(page.body).not.toContain('http://');
 

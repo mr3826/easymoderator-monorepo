@@ -47,6 +47,31 @@ const evidenceForProducts = (products) => {
 };
 
 describe('product evidence trust boundaries', () => {
+    test.each(['W32 hobe?', 'সাইজ ৪৪'])('recognizes waist and Bengali numeric size follow-ups: %s', message => {
+        expect(grounding.askedAttributes(message)).toContain('size');
+        expect(grounding.isAttributeOnlyQuery(message)).toBe(true);
+    });
+
+    test('Bengali greetings and merchant honorifics do not become product identity claims', () => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'আসসালামু আলাইকুম। কালো পাঞ্জাবি আছে আপনাদের?',
+            candidates: [catalogProduct({
+                name: 'Premium Black Panjabi',
+                name_bn: 'প্রিমিয়াম কালো পাঞ্জাবি',
+                category: 'panjabi',
+                aliases: ['black panjabi'],
+                ai_color: 'black',
+                quantity: 3,
+                track_quantity: true,
+            })],
+        });
+
+        expect(evidence.productStatus).toBe(grounding.ProductEvidenceStatus.VERIFIED);
+        expect(evidence.unmatchedTerms).toEqual([]);
+        expect(evidence.askedAttributes).toContain('stock');
+    });
+
     test('a candidate explicitly owned by a different shop cannot verify here', () => {
         const evidence = grounding.resolveProductEvidence({
             shopId: SHOP,
@@ -649,6 +674,58 @@ describe('product evidence trust boundaries', () => {
         }).decision).toBe(grounding.GroundingDecision.SEND);
     });
 
+    test.each([
+        'Olive Cargo Pant is available in size 32.',
+        'Olive Cargo Pant is currently out of stock in all available sizes (30, 32, 34, and 36).',
+    ])('blocks an availability claim when the named catalog product is only a partial match: %s', candidate => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'Can I wear this cargo pant in a smart-casual office setup? What is the cut?',
+            candidates: [catalogProduct({
+                id: 'v12-b-cargo',
+                name: 'Olive Cargo Pant',
+                category: 'trousers',
+                ai_color: 'olive',
+                track_quantity: true,
+                quantity: 0,
+            })],
+        });
+
+        expect(evidence.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+        expect(evidence.verifiedProducts).toEqual([]);
+        expect(evidence.relatedProducts.map(product => product.id)).toContain('v12-b-cargo');
+
+        const verdict = evaluateCandidate({ candidate, evidence, language: 'en' });
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_NOT_FOUND);
+        expect(verdict.text).not.toMatch(/available in size|out of stock/i);
+    });
+
+    test.each([
+        'We do have Olive Cargo Pant.',
+        'What we do have is Olive Cargo Pant.',
+        'We have Olive Cargo Pant.',
+        'We do have a black cargo pant.',
+    ])('blocks a bare positive related-product claim when only a partial match exists: %s', candidate => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'Can I wear this cargo pant in a smart-casual office setup? What is the cut?',
+            candidates: [catalogProduct({
+                id: 'v12-b-cargo',
+                name: 'Olive Cargo Pant',
+                category: 'trousers',
+                ai_color: 'olive',
+                track_quantity: true,
+                quantity: 0,
+            })],
+        });
+
+        expect(evidence.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+        const verdict = evaluateCandidate({ candidate, evidence, language: 'en', modelGenerated: true });
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_NOT_FOUND);
+    });
+
     test('a bare amount is ambiguous when multiple verified products are present', () => {
         const evidence = grounding.resolveProductEvidence({
             shopId: SHOP,
@@ -742,6 +819,91 @@ describe('product evidence trust boundaries', () => {
         });
 
         expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a mixed product and delivery information denial is not exempted as delivery-only', () => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'chiffon saree ache?',
+            candidates: [],
+        });
+        grounding.withPolicyText(evidence, 'Delivery is available nationwide across Bangladesh for all products.');
+
+        const mixed = evaluateCandidate({
+            candidate: 'বর্তমানে কোনো পণ্য বা ডেলিভারির তথ্য নেই।',
+            evidence,
+            language: 'bn',
+            modelGenerated: true,
+        });
+        expect(mixed.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(mixed.reasonCode).toBe(grounding.ReasonCode.PRODUCT_NOT_FOUND);
+
+        const deliveryOnly = evaluateCandidate({
+            candidate: 'Delivery is available nationwide across Bangladesh for all products.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+        expect(deliveryOnly.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test.each([
+        'There are no products, and delivery is available nationwide.',
+        'We do not have any products, but delivery is available nationwide.',
+        'We do not have this product, but delivery is available nationwide.',
+        'Our catalog is empty, but delivery is available nationwide.',
+        'ক্যাটালগে কোনো পণ্য নেই, তবে সারাদেশে ডেলিভারি আছে।',
+        'আমাদের কোনো পণ্য নেই, তবে সারাদেশে ডেলিভারি আছে।',
+    ])('rejects a store-wide catalog absence claim when product evidence is NOT_FOUND: %s', candidate => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'chiffon saree ache?',
+            candidates: [],
+        });
+        grounding.withPolicyText(evidence,
+            'Delivery is available nationwide. Delivery is available nationwide for all products.');
+
+        const verdict = evaluateCandidate({ candidate, evidence, language: 'mixed', modelGenerated: true });
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_NOT_FOUND);
+    });
+
+    test.each([
+        'We could not find that item, but delivery is available nationwide.',
+        'Delivery is available nationwide for all products.',
+    ])('preserves a specific not-found statement or supported delivery policy: %s', candidate => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'chiffon saree ache?',
+            candidates: [],
+        });
+        grounding.withPolicyText(evidence,
+            'Delivery is available nationwide. Delivery is available nationwide for all products.');
+
+        const verdict = evaluateCandidate({ candidate, evidence, language: 'mixed', modelGenerated: true });
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test.each(['while', 'whereas', 'although', 'though', 'তবে', 'যদিও'])(
+        'supported delivery availability cannot mask an unsupported stock claim joined by %s', connector => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'Can I wear this cargo pant in a smart-casual office setup? What is the cut?',
+            candidates: [catalogProduct({
+                id: 'v12-b-cargo', name: 'Olive Cargo Pant', category: 'trousers', ai_color: 'olive',
+            })],
+        });
+        grounding.withPolicyText(evidence, 'Delivery is available nationwide across Bangladesh.');
+        const verdict = evaluateCandidate({
+            candidate: `Delivery is available nationwide across Bangladesh ${connector} Olive Cargo Pant is out of stock in all sizes.`,
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_NOT_FOUND);
+        expect(verdict.text).not.toMatch(/Olive Cargo Pant is out of stock/i);
     });
 
     test('mixed exact variant states validate independently within one reply', () => {
@@ -944,6 +1106,17 @@ describe('product evidence trust boundaries', () => {
             { role: 'user', content: 'No, a different item' },
             { role: 'assistant', sourceReferences: null },
         ])).toEqual([]);
+    });
+
+    test('related-product suggestions cannot become the active product context', () => {
+        expect(grounding.contextProductIds([{
+            role: 'assistant',
+            sourceReferences: [{ kind: 'product', id: 'related-product', contextEligible: false }],
+        }])).toEqual([]);
+        expect(grounding.contextProductIds([{
+            role: 'assistant',
+            sourceReferences: [{ kind: 'product', id: 'verified-product', contextEligible: true }],
+        }])).toEqual(['verified-product']);
     });
 
     test.each([

@@ -12,6 +12,7 @@ Messenger sales and order automation API for Bangladeshi f-commerce sellers. Mer
 - [Architecture](#architecture)
 - [Module / Route Map](#module--route-map)
 - [AI & RAG Pipeline](#ai--rag-pipeline)
+- [Product Evidence & Local Evaluation](#product-evidence--local-evaluation)
 - [Meta Integration & Compliance](#meta-integration--compliance)
 - [Billing Model](#billing-model)
 - [Background Jobs](#background-jobs)
@@ -172,6 +173,12 @@ Inbound message → reply, end to end:
 Business Info updates are part of the AI knowledge path. The owner-written `settings.businessInfo.additionalInfo` field is stored with the shop profile, injected into the system prompt immediately, and included by the scheduled business-info RAG reindex job together with shop name, address, phone, and opening hours.
 
 ---
+
+## Product Evidence & Local Evaluation
+
+Product answers pass through the tenant-scoped catalog resolver and outbound grounding gate. Catalog-backed replies may quote only facts the shop's current records establish; absent prices and stock remain unknown, variant selection requires a matching catalog dimension, and model observations from images are retrieval hints rather than verified product facts. The deterministic Messenger presenter applies those same evidence and media ownership checks before a reply can be sent.
+
+The local Product Engine Test Lab, synthetic multi-tenant catalog fixtures, replay contracts, and evaluation operations are documented in [`docs/ai/product-experience-v1-2/README.md`](../docs/ai/product-experience-v1-2/README.md). CSV replay, synthetic catalog cases, mocked route comparison, and real Gemini measurements use separate denominators and must be reported separately. A real provider run is an explicit local evaluation action, not production traffic.
 
 ## Meta Integration & Compliance
 
