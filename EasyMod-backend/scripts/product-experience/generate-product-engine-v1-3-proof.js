@@ -558,7 +558,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost: ${realComparison ? `$${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. Candidate cost per verified answer: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost: ${details.realComparison ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. Candidate cost per verified answer: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -608,4 +608,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { backendSourceSha256, matchingComparison, safeExamples };
+module.exports = { backendSourceSha256, matchingComparison, renderMarkdown, safeExamples };

@@ -2,7 +2,10 @@ import { defineConfig, chromium, firefox, webkit } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const artifactRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts/playwright');
+const artifactBase = process.env.LAB_ARTIFACT_ROOT
+  ? resolve(process.env.LAB_ARTIFACT_ROOT)
+  : resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts');
+const artifactRoot = resolve(artifactBase, 'playwright');
 const installed = [
   ['chromium', chromium],
   ['firefox', firefox],

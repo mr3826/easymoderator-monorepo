@@ -22,6 +22,21 @@ const geminiRequest = (body = JSON.stringify({
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': 'test-only-not-a-credential' },
     body,
 });
+const captureBlockedEgress = async action => {
+    const attemptsPath = path.join(os.tmpdir(), `easymod-egress-probe-${process.pid}-${crypto.randomUUID()}.txt`);
+    const priorAttemptsPath = process.env.LAB_EGRESS_ATTEMPTS_PATH;
+    process.env.LAB_EGRESS_ATTEMPTS_PATH = attemptsPath;
+    try {
+        await action();
+        return fs.existsSync(attemptsPath)
+            ? fs.readFileSync(attemptsPath, 'utf8').split(/\r?\n/).filter(Boolean)
+            : [];
+    } finally {
+        if (priorAttemptsPath === undefined) delete process.env.LAB_EGRESS_ATTEMPTS_PATH;
+        else process.env.LAB_EGRESS_ATTEMPTS_PATH = priorAttemptsPath;
+        try { fs.unlinkSync(attemptsPath); } catch (_) { }
+    }
+};
 
 describe('disposable test egress fence', () => {
     test('permits local database/service addresses and rejects other hosts', () => {
@@ -89,10 +104,18 @@ describe('disposable test egress fence', () => {
         try {
             process.env.EASYMOD_LIVE_GEMINI_EGRESS = '1';
             process.env['EM-GEMINI-KEY'] = 'test-only-not-a-credential';
-            await expect(dns.promises.lookup('generativelanguage.googleapis.com')).rejects.toMatchObject({ code: 'EACCES' });
-            const socket = net.createConnection({ host: 'generativelanguage.googleapis.com', port: 443 });
-            const error = await new Promise(resolve => socket.once('error', resolve));
-            expect(error).toMatchObject({ code: 'EACCES' });
+            const blockedApis = await captureBlockedEgress(async () => {
+                await expect(dns.promises.lookup('generativelanguage.googleapis.com')).rejects.toMatchObject({ code: 'EACCES' });
+                const socket = net.createConnection({ host: 'generativelanguage.googleapis.com', port: 443 });
+                const error = await new Promise(resolve => socket.once('error', resolve));
+                expect(error).toMatchObject({ code: 'EACCES' });
+                const directSocket = new net.Socket();
+                const directErrorPromise = new Promise(resolve => directSocket.once('error', resolve));
+                directSocket.connect({ host: '192.0.2.1', port: 443 });
+                const directError = await directErrorPromise;
+                expect(directError).toMatchObject({ code: 'EACCES' });
+            });
+            expect(blockedApis).toEqual(['dns.promises.lookup', 'dns.lookup', 'net.Socket.connect']);
         } finally {
             if (prior === undefined) delete process.env.EASYMOD_LIVE_GEMINI_EGRESS;
             else process.env.EASYMOD_LIVE_GEMINI_EGRESS = prior;
@@ -120,11 +143,19 @@ describe('disposable test egress fence', () => {
             }, async context => {
                 expect(context.authorizeGeminiRequest(request)).toBe(true);
                 expect(isAllowedGeminiEvaluationRequest(request.url, request)).toBe(true);
-                await expect(dns.promises.lookup('generativelanguage.googleapis.com'))
-                    .rejects.toMatchObject({ code: 'EACCES' });
-                const socket = net.createConnection({ host: 'generativelanguage.googleapis.com', port: 443 });
-                const error = await new Promise(resolve => socket.once('error', resolve));
-                expect(error).toMatchObject({ code: 'EACCES' });
+                const blockedApis = await captureBlockedEgress(async () => {
+                    await expect(dns.promises.lookup('generativelanguage.googleapis.com'))
+                        .rejects.toMatchObject({ code: 'EACCES' });
+                    const socket = net.createConnection({ host: 'generativelanguage.googleapis.com', port: 443 });
+                    const error = await new Promise(resolve => socket.once('error', resolve));
+                    expect(error).toMatchObject({ code: 'EACCES' });
+                    const directSocket = new net.Socket();
+                    const directErrorPromise = new Promise(resolve => directSocket.once('error', resolve));
+                    directSocket.connect({ host: '192.0.2.1', port: 443 });
+                    const directError = await directErrorPromise;
+                    expect(directError).toMatchObject({ code: 'EACCES' });
+                });
+                expect(blockedApis).toEqual(['dns.promises.lookup', 'dns.lookup', 'net.Socket.connect']);
                 return { usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 1 } };
             });
         } finally {

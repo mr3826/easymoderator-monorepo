@@ -3,7 +3,10 @@ import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const screenshotRoot = resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts/playwright/screenshots');
+const artifactBase = process.env.LAB_ARTIFACT_ROOT
+  ? resolve(process.env.LAB_ARTIFACT_ROOT)
+  : resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts');
+const screenshotRoot = resolve(artifactBase, 'playwright/screenshots');
 const runUuid = (value: string) => value.match(/[a-f0-9]{8}-[a-f0-9-]{27}/i)?.[0] || '';
 mkdirSync(screenshotRoot, { recursive: true });
 const observeBrowser = (page: import('@playwright/test').Page, projectName: string) => {
@@ -151,7 +154,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     return response.json();
   }, fullBaselineId);
   expect(fullBaselineReceipt).toMatchObject({ scope: 'full', mode: 'baseline', status: 'completed', dataset: { sourceTurns: 200, sourcePersonas: 20, executedTurns: 200, completeDatasetExecuted: true, rawSourceMessagesPersisted: false } });
-  expect(fullBaselineReceipt.engineSourceRevision).toContain('78b6250af40039749f9c096cd3e0debe2e6cf6a7+backend-src-sha256:');
+  expect(fullBaselineReceipt.engineSourceRevision).toContain('957bb991a18db1949369a6f805822b8c8b69889b+backend-src-sha256:');
   expect(fullBaselineReceipt.engineSourceRevision).toContain(fullBaselineReceipt.engineSourceSha256);
   expect(fullBaselineReceipt.engineSourceSha256).toMatch(/^[a-f0-9]{64}$/i);
 
@@ -190,7 +193,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     performance: receipt.performance,
     provenance: receipt.provenance,
   });
-  const comparisonPath = resolve(process.cwd(), `../docs/ai/product-experience-v1-2/artifacts/runs/local-route-comparison-${testInfo.project.name}.json`);
+  const comparisonPath = resolve(artifactBase, `runs/local-route-comparison-${testInfo.project.name}.json`);
   mkdirSync(resolve(comparisonPath, '..'), { recursive: true });
   const comparisonReceipt = {
     schemaVersion: 1,
@@ -201,7 +204,7 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
   };
   writeFileSync(comparisonPath, `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
   if (testInfo.project.name === 'chromium') {
-    writeFileSync(resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts/runs/local-route-comparison.json'), `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
+    writeFileSync(resolve(artifactBase, 'runs/local-route-comparison.json'), `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
   }
 
   await page.getByRole('tab', { name: /Baseline vs Candidate/ }).click();
