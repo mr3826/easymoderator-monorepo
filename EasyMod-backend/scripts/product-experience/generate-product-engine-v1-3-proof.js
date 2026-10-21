@@ -33,7 +33,11 @@ const backendSourceSha256 = () => {
     };
     visit(sourceRoot);
     const relative = filename => path.relative(sourceRoot, filename).replace(/\\/g, '/');
-    files.sort((left, right) => relative(left).localeCompare(relative(right)));
+    files.sort((left, right) => {
+        const a = relative(left);
+        const b = relative(right);
+        return a < b ? -1 : a > b ? 1 : 0;
+    });
     const digest = crypto.createHash('sha256');
     for (const filename of files) digest.update(relative(filename), 'utf8').update('\0').update(fs.readFileSync(filename)).update('\0');
     return digest.digest('hex');

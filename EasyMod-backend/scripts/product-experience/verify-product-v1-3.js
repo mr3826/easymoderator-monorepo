@@ -170,28 +170,34 @@ const main = async () => {
             LAB_COMPARISON_MODE: 'real-gemini', LAB_COMPARISON_DATASET: 'source', LAB_RUN_SCOPE: 'full' };
         const paidComparison = await runStep('paid-gemini-source-and-genuine-photo-comparison-cap-usd-2', NODE, [path.join(__dirname, 'run-engine-comparison.js')], paidEnv, 35 * 60 * 1000);
         steps.push(paidComparison);
-        if (paidComparison.status === 'PASS') {
-            try {
-                const oraclePath = path.join(ARTIFACT_ROOT, 'benchmarks', 'customer-truth-oracle.json');
-                const oracleSha256 = JSON.parse(fs.readFileSync(oraclePath, 'utf8')).oracleSha256;
-                realGeminiCandidateRunId = findCandidateRealGeminiRunId({
-                    comparisonRoot: path.join(ARTIFACT_ROOT, 'comparisons'),
-                    sourceSha256: EXPECTED_SOURCE_SHA256,
-                    oracleSha256,
-                    backendSourceSha256: candidateBackendSourceSha256,
-                });
-            } catch (_) { realGeminiCandidateRunId = null; }
-        }
-        steps.push({
-            name: 'paid-gemini-candidate-run-discovery',
-            status: realGeminiCandidateRunId ? 'PASS' : 'FAIL',
-            exitCode: realGeminiCandidateRunId ? 0 : 1,
-            timedOut: false,
-            summary: realGeminiCandidateRunId ? ['Matched the current paid source comparison to its candidate run.'] : ['No valid current paid candidate run could be matched.'],
-        });
     } else {
         steps.push({ name: 'paid-gemini-source-and-genuine-photo-comparison', status: 'NOT_RUN_OFFLINE_DEFAULT' });
     }
+
+    if (!paidOptIn || steps.find(step => step.name === 'paid-gemini-source-and-genuine-photo-comparison-cap-usd-2')?.status === 'PASS') {
+        try {
+            const oraclePath = path.join(ARTIFACT_ROOT, 'benchmarks', 'customer-truth-oracle.json');
+            const oracleSha256 = JSON.parse(fs.readFileSync(oraclePath, 'utf8')).oracleSha256;
+            realGeminiCandidateRunId = findCandidateRealGeminiRunId({
+                comparisonRoot: path.join(ARTIFACT_ROOT, 'comparisons'),
+                sourceSha256: EXPECTED_SOURCE_SHA256,
+                oracleSha256,
+                backendSourceSha256: candidateBackendSourceSha256,
+            });
+        } catch (_) { realGeminiCandidateRunId = null; }
+    }
+
+    steps.push({
+        name: 'paid-gemini-candidate-run-discovery',
+        status: realGeminiCandidateRunId ? 'PASS'
+            : paidOptIn ? 'FAIL' : 'NOT_RUN_OFFLINE_DEFAULT',
+        exitCode: realGeminiCandidateRunId ? 0 : paidOptIn ? 1 : null,
+        timedOut: false,
+        summary: realGeminiCandidateRunId
+            ? ['Matched a current paid source comparison to its candidate run.']
+            : paidOptIn ? ['No valid current paid candidate run could be matched.']
+                : ['No current paid candidate run was available for browser verification.'],
+    });
 
     const playwrightEnv = realGeminiCandidateRunId
         ? { ...offline, LAB_REAL_GEMINI_RUN_ID: realGeminiCandidateRunId }
@@ -227,6 +233,7 @@ const main = async () => {
         candidateCommit,
         candidateBranch,
         candidateBackendSourceSha256,
+        realGeminiCandidateRunId,
         worktreeCleanAtStart,
         baselineSha: BASELINE_SHA,
         sourceCorpusSha256: EXPECTED_SOURCE_SHA256,

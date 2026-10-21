@@ -18,7 +18,7 @@ Real Gemini evaluation is opt-in. The exact process that launches the command mu
 npm run verify:product-v1.3 -- --paid-gemini
 ```
 
-In paid mode, the verifier links the successful candidate run from the matched Gemini comparison into the final Playwright pass. The browser checks the redacted conversation trace and the run's usage and cost display; offline mode reports that path as not run.
+In paid mode, the verifier links the successful candidate run from the matched Gemini comparison into the final Playwright pass. The browser checks the redacted conversation trace and the run's usage and cost display. An offline verifier can reuse a previously recorded paid candidate only when its source corpus, oracle, and backend source hash match the current checkout; otherwise that browser path is reported as not run.
 
 The key is passed only to the paid comparison child. Do not save it in this repository, a `.env` file, or a persistent Windows environment variable. The persistent campaign ledger at `artifacts/campaigns/v13-cf6f18b2-2a9a-4831-ad42-2b8509bfcd35/budget-ledger.json` enforces a cumulative ceiling of $2, at most 256 provider requests, and at most 12 vision requests. Existing usage remains charged against those caps. Provider cost in the report is estimated from reported tokens; an invoice is not available.
 
