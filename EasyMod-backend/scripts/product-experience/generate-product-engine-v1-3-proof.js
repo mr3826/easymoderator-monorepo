@@ -78,6 +78,7 @@ const runArtifactFor = (entry, engineName) => {
 
 const metric = value => Number.isFinite(value) ? value : 'NOT_MEASURED';
 const percent = (numerator, denominator) => denominator > 0 ? `${(100 * numerator / denominator).toFixed(1)}%` : 'NOT_MEASURED';
+const privacyScanPassed = report => report?.privacyGateStatus === 'PASS';
 const safeText = (value, maxLength = 220) => String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 const passState = value => value === true ? 'PASS' : value === false ? 'FAIL' : 'NOT_RUN';
 
@@ -194,7 +195,7 @@ const main = () => {
     const playwrightPass = playwright?.playwrightExitCode === 0
         && (playwright?.tests?.failed || 0) === 0
         && (playwright?.tests?.passed || 0) > 0;
-    const privacyPass = privacy?.status === 'PASS';
+    const privacyPass = privacyScanPassed(privacy);
     const backendSecurityStep = verificationReceipt?.steps?.find(step => step.name === 'backend-security-suite') || null;
     const backendSecurityPass = backendSecurityStep?.status === 'PASS';
     const securityPass = integration ? integration.egress?.guard === 'PASS' && backendRegressionPass && backendSecurityPass : null;
@@ -618,4 +619,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { backendSourceSha256, matchesCurrentVerificationCommit, matchingComparison, renderMarkdown, safeExamples };
+module.exports = { backendSourceSha256, matchesCurrentVerificationCommit, matchingComparison, privacyScanPassed, renderMarkdown, safeExamples };

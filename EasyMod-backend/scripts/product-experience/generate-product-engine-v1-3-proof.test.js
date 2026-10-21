@@ -1,6 +1,14 @@
 'use strict';
 
-const { matchesCurrentVerificationCommit, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+const { matchesCurrentVerificationCommit, privacyScanPassed, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+
+describe('artifact privacy status mapping', () => {
+    test('uses the scanner report privacyGateStatus field', () => {
+        expect(privacyScanPassed({ privacyGateStatus: 'PASS' })).toBe(true);
+        expect(privacyScanPassed({ privacyGateStatus: 'FAIL' })).toBe(false);
+        expect(privacyScanPassed({ status: 'PASS' })).toBe(false);
+    });
+});
 
 describe('V1.3 proof Markdown rendering', () => {
     const proof = {
