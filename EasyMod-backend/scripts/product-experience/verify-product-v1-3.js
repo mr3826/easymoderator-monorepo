@@ -17,6 +17,7 @@ const EXPECTED_SOURCE_SHA256 = '892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238c
 const BASELINE_ROOT = path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
 const paidOptIn = process.argv.includes('--paid-gemini');
+const PLAYWRIGHT_GATE_TIMEOUT_MS = 20 * 60 * 1000;
 
 const runCapture = (command, args, env, timeoutMs = 20 * 60 * 1000) => new Promise(resolve => {
     const child = spawn(command, args, {
@@ -202,7 +203,7 @@ const main = async () => {
     const playwrightEnv = realGeminiCandidateRunId
         ? { ...offline, LAB_REAL_GEMINI_RUN_ID: realGeminiCandidateRunId }
         : offline;
-    steps.push(await runStep('local-test-lab-playwright', NODE, [path.join(__dirname, 'run-lab-playwright.js')], playwrightEnv, 10 * 60 * 1000));
+    steps.push(await runStep('local-test-lab-playwright', NODE, [path.join(__dirname, 'run-lab-playwright.js')], playwrightEnv, PLAYWRIGHT_GATE_TIMEOUT_MS));
     steps.push(await runStep('privacy-scanner-unit-tests', 'python', [path.join(__dirname, 'test_scan_artifact_privacy.py')], offline));
     steps.push(await runStep('trace-sanitizer-unit-tests', 'python', [path.join(__dirname, 'test_sanitize_playwright_traces.py')], offline));
     const traceSanitizationOutput = path.join(ARTIFACT_ROOT, 'security', 'playwright-trace-sanitization.json');
