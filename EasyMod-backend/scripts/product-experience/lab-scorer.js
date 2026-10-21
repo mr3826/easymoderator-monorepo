@@ -9,15 +9,40 @@ const normalizeForMatch = value => String(value || '')
     .trim()
     .replace(/\s+/g, ' ');
 
-const responseContainsValue = (response, value) => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return String(response || '').replace(/[\s,]/g, '').includes(String(value));
+const numericTokens = value => {
+    const text = String(value || '').normalize('NFKC')
+        .replace(/[০-৯]/g, digit => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)));
+    const tokens = [];
+    const pattern = /(?<![\p{L}\p{M}\d.,])((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?![\d,])/gu;
+    for (const match of text.matchAll(pattern)) {
+        tokens.push({ value: Number(match[1].replace(/,/g, '')), start: match.index, end: match.index + match[0].length, text });
     }
+    return tokens;
+};
+
+const hasExactNumericValue = (response, expectedValue) => {
+    const expected = Number(expectedValue);
+    return Number.isFinite(expected) && numericTokens(response).some(token => token.value === expected);
+};
+
+const numericAssertionIsNegated = (response, expectedValue) => {
+    const expected = Number(expectedValue);
+    return numericTokens(response).some(token => {
+        if (token.value !== expected) return false;
+        const before = token.text.slice(Math.max(0, token.start - 40), token.start).trim();
+        const after = token.text.slice(token.end, token.end + 32).trim();
+        return /\b(?:not|no|never|wrong|incorrect|isn't|isnt)\b[^.!?;]{0,28}$/i.test(before)
+            || /(?:না|নয়|নয়|ভুল)\s*[,;.!?]*$/u.test(before)
+            || /^(?:(?:is\s+)?(?:not|wrong|incorrect)|না|নয়|নয়|ভুল)(?=$|[\s,.!?;])/iu.test(after);
+    });
+};
+
+const responseContainsValue = (response, value) => {
     const normalizedResponse = normalizeForMatch(response);
     const normalizedValue = normalizeForMatch(value);
     if (!normalizedValue) return false;
     if (/^\d+(?:\.\d+)?$/.test(normalizedValue)) {
-        return new RegExp(`(?:^|\\s)${normalizedValue.replace('.', '\\.')}($|\\s)`).test(normalizedResponse);
+        return hasExactNumericValue(response, normalizedValue);
     }
     return normalizedResponse.includes(normalizedValue);
 };
@@ -33,7 +58,27 @@ const stockDisposition = (response, expectedValue) => {
 
 const responseContainsFact = ({ response, field, expectedValue, alternateValues = [] }) => {
     if (['stock', 'variant_stock'].includes(field)) return stockDisposition(response, expectedValue);
+    if (field === 'price' && numericAssertionIsNegated(response, expectedValue)) return false;
     return [expectedValue, ...alternateValues].some(value => responseContainsValue(response, value));
 };
 
-module.exports = { normalizeForMatch, responseContainsValue, responseContainsFact };
+const hasPolicyUncertainty = response => /\b(?:cannot|can't|do not|don't|unable to|not able to)\s+(?:verify|confirm)\b|\b(?:not|no)\s+(?:confirmed|verified)\b|\bdon't\s+have\s+confirmed\s+(?:information|info)\b|নিশ্চিত\s*করতে\s*পারছি\s*না|নিশ্চিত\s*করতে\s*পারব\s*না|তথ্য.{0,16}(?:নেই|পাইনি)|confirm\s+(?:korte\s+)?parchi\s+na|confirmed\s+info\s+amar\s+kache\s+(?:nei|nai)|\b(?:order|delivery)\b.{0,45}\b(?:confirm|create)\b.{0,25}\b(?:parchi\s+na|kora\s+hoyni)\b|ডেলিভারি\s+নিশ্চিত\s+করা\s+হয়নি|ডেলিভারি\s+নিশ্চিত\s+করা\s+হয়নি/iu.test(String(response || ''));
+const hasUnsupportedPolicyAssertion = response => /\b(?:free\s+(?:delivery|shipping)|(?:delivery|shipping)\s+(?:is|will be)\s+(?:free|guaranteed)|(?:delivery|shipping)\s+(?:takes?|arrives?|will arrive)\s+(?:within|in|by|today|tomorrow)|(?:delivery|shipping)\s+(?:fee|charge)\s+(?:is|will be|costs?)\s*(?:৳|\d)|(?:cash on delivery|\bCOD\b).{0,24}\b(?:available|accepted|offered|allowed)\b|(?:return|exchange)\s+(?:is|are)\s+(?:available|accepted|allowed))|\bdelivery\s+guaranteed\b/iu.test(String(response || ''));
+const hasTeamHandoff = response => /\b(?:someone|our team|a team member)\b.{0,55}\b(?:get back|contact|follow up|reach out)\b|\bplease\s+(?:contact|message|ask)\b.{0,40}\b(?:shop|merchant|team|seller|us)\b|\b(?:amader|shop-er|dokaner)\s+(?:team|shop|seller|representative)\b.{0,55}\b(?:janiye|janabe|janaben|verify|confirm|bolbe|bolben)\b|আমাদের\s+(?:একজন\s+)?(?:প্রতিনিধি|টিম|দল).{0,45}(?:জানিয়ে|জানিয়ে|যোগাযোগ|বলবেন|জানাবেন)|দোকানের\s+সাথে.{0,45}(?:যাচাই|যোগাযোগ|জানাতে\s+হবে|জানাবেন)/iu.test(String(response || ''));
+
+const isSafeCrossDomainHandoff = ({ response, disposition, crossDomainHandoffs, answerableSlots = 0, correctAnsweredSlots = 0 }) => {
+    if (!Array.isArray(crossDomainHandoffs) || crossDomainHandoffs.length === 0) return false;
+    const text = String(response || '');
+    if (hasUnsupportedPolicyAssertion(text)) return false;
+    if (disposition === 'SAFE_FALLBACK' && hasTeamHandoff(text)) return true;
+    return hasPolicyUncertainty(text) && correctAnsweredSlots === answerableSlots;
+};
+
+module.exports = {
+    normalizeForMatch,
+    responseContainsValue,
+    responseContainsFact,
+    hasPolicyUncertainty,
+    hasUnsupportedPolicyAssertion,
+    isSafeCrossDomainHandoff,
+};

@@ -250,13 +250,14 @@ describe('nonexistent product', () => {
 
 // ── Test 2 — a real product with a NULL attribute ────────────────────────────
 describe('unknown product attribute', () => {
-    test('a NULL material is rendered as UNKNOWN rather than omitted', async () => {
+    test('a NULL material stays unknown when the product question is answered deterministically', async () => {
         productSearch.searchByAttributes.mockResolvedValue([BLACK_SAREE]);
 
         const result = await routeMessage('black saree ache?');
 
         expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.VERIFIED);
-        expect(lastSystemPrompt()).toContain('Material: UNKNOWN');
+        expect(result.grounding.verifiedProducts[0].facts.material.state).toBe(grounding.FactState.UNKNOWN);
+        expect(result.response).not.toMatch(/silk|cotton|chiffon/i);
     });
 
     test('"eta chiffon?" resolves against the product in context, not a new search', async () => {
@@ -572,11 +573,12 @@ describe('stock for shops that do not count inventory', () => {
         expect(grounding.buildFacts(off).stock.value).toBe('OUT_OF_STOCK');
     });
 
-    test('the prompt never shows a stock line the catalog contradicts', async () => {
+    test('the deterministic availability answer follows the untracked stock fact', async () => {
         productSearch.searchByAttributes.mockResolvedValue([UNTRACKED]);
-        await routeMessage('black panjabi ache?');
-        expect(lastSystemPrompt()).toContain('IN_STOCK');
-        expect(lastSystemPrompt()).not.toContain('OUT_OF_STOCK');
+        const result = await routeMessage('black panjabi ache?');
+        expect(result.grounding.verifiedProducts[0].facts.stock.value).toBe('IN_STOCK');
+        expect(result.response).toMatch(/Stock-e ache|In stock|স্টকে আছে/i);
+        expect(result.response).not.toMatch(/Out of stock|স্টকে নেই/i);
     });
 });
 
@@ -690,13 +692,14 @@ describe('retrieval failure', () => {
 
 // ── Test 14 — malformed model output ─────────────────────────────────────────
 describe('malformed model output', () => {
-    test('an empty completion for a product turn becomes a safe fallback', async () => {
+    test('an empty completion for a product-adjacent policy turn becomes a safe fallback', async () => {
         productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
         llm.chat.mockResolvedValue({ text: '', provider: 'gemini-lite' });
 
-        const result = await routeMessage('cotton saree ache?');
+        const result = await routeMessage('cotton saree return policy ki?');
         const verdict = gate(result);
 
+        expect(llm.chat).toHaveBeenCalled();
         expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
         expect(verdict.reasonCode).toBe(grounding.ReasonCode.MODEL_OUTPUT_INVALID);
         expect(typeof verdict.text).toBe('string');

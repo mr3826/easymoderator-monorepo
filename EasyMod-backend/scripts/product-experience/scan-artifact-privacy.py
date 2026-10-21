@@ -331,13 +331,13 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=repo_root / "docs/ai/product-experience-v1-2/artifacts/final-qa/privacy-scan.json",
+        default=repo_root / "docs/ai/product-experience-v1-3/artifacts/final-qa/privacy-scan.json",
         help="Summary JSON path. Only aggregate counts and the CSV hash are written.",
     )
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=repo_root / "docs/ai/product-experience-v1-2/artifacts/final-qa/SHA256SUMS.txt",
+        default=repo_root / "docs/ai/product-experience-v1-3/artifacts/final-qa/SHA256SUMS.txt",
         help="Checksum manifest path; the manifest itself is omitted.",
     )
     args = parser.parse_args()

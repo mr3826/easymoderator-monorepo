@@ -20,10 +20,11 @@ const BACKEND_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const DATASET_PATH = path.resolve(REPO_ROOT, '..', 'customer-simulator.csv');
 const UI_ROOT = path.join(__dirname, 'lab-ui');
-const ARTIFACT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-2', 'artifacts');
+const ARTIFACT_ROOT = path.resolve(process.env.LAB_ARTIFACT_ROOT
+    || path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-3', 'artifacts'));
 const RUNS_ROOT = path.join(ARTIFACT_ROOT, 'runs');
 const TRIAGE_ROOT = path.join(ARTIFACT_ROOT, 'triage');
-const BASELINE_SHA = '78b6250af40039749f9c096cd3e0debe2e6cf6a7';
+const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
 const ROUTER_SOURCE_RELATIVE_PATH = 'EasyMod-backend/src/modules/ai/intent-router.service.js';
 const MAX_CONCURRENT_RUNS = 1;
 const RUN_ID = /^[a-f0-9-]{36}$/i;
@@ -78,15 +79,33 @@ const hashLabRunnerSources = () => {
         'EasyMod-backend/scripts/product-experience/lab-server.js',
         'EasyMod-backend/scripts/product-experience/lab-security.js',
         'EasyMod-backend/scripts/product-experience/lab-replay.test.js',
+        'EasyMod-backend/scripts/product-experience/lab-contracts.test.js',
+        'EasyMod-backend/scripts/product-experience/lab-scorer.test.js',
+        'EasyMod-backend/scripts/product-experience/lab-process.test.js',
+        'EasyMod-backend/scripts/product-experience/benchmark-oracle.js',
+        'EasyMod-backend/scripts/product-experience/benchmark-oracle.test.js',
+        'EasyMod-backend/scripts/product-experience/generate-heldout-benchmark.js',
+        'EasyMod-backend/scripts/product-experience/heldout-fixtures-v1-3.js',
+        'EasyMod-backend/scripts/product-experience/heldout-benchmark.test.js',
+        'EasyMod-backend/scripts/product-experience/run-engine-comparison.js',
+        'EasyMod-backend/scripts/product-experience/verify-product-v1-3.js',
+        'EasyMod-backend/scripts/product-experience/generate-product-engine-v1-3-proof.js',
         'EasyMod-backend/scripts/product-experience/fixtures.js',
         'EasyMod-backend/scripts/product-experience/lab-contracts.js',
         'EasyMod-backend/scripts/product-experience/catalog-fixtures-v1-2.js',
+        'EasyMod-backend/scripts/product-experience/genuine-photo-fixtures.js',
+        'docs/ai/product-experience-v1-3/media/genuine/Genuine_Photo_Manifest.json',
         'EasyMod-backend/scripts/product-experience/synthetic-media-fixtures.js',
         'EasyMod-backend/scripts/product-experience/lab-scorer.js',
         'EasyMod-backend/scripts/product-experience/replay.js',
         'EasyMod-backend/scripts/product-experience/evaluation-budget.js',
+        'EasyMod-backend/scripts/product-experience/evaluation-budget.test.js',
+        'EasyMod-backend/scripts/product-experience/evaluation-campaign-ledger.js',
+        'EasyMod-backend/scripts/product-experience/evaluation-campaign-ledger.test.js',
         'EasyMod-backend/scripts/product-experience/gemini-evaluation-client.js',
+        'EasyMod-backend/scripts/product-experience/gemini-evaluation-client.test.js',
         'EasyMod-backend/scripts/product-experience/no-egress.js',
+        'EasyMod-backend/jest.product-engine-v1-3.config.js',
         'EasyMod-backend/scripts/product-experience/lab-ui/index.html',
         'EasyMod-backend/scripts/product-experience/lab-ui/app.js',
         'EasyMod-backend/scripts/product-experience/lab-ui/styles.css',
@@ -283,6 +302,8 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_RUN_SCOPE: run.scope,
             LAB_PERSONA_ID: run.personaId || '',
             LAB_RUN_MODE: run.mode,
+            LAB_ENGINE_LABEL: run.mode === 'baseline' ? 'baseline-v1-2' : 'candidate-v1-3',
+            LAB_BASELINE_ROUTER_ONLY: run.mode === 'baseline' ? '1' : '0',
             EASYMOD_PRODUCT_LAB_AUTONOMOUS: '1',
             LAB_RESULT_PATH: outputPath,
             LAB_PROGRESS_PATH: progressPath,
@@ -292,6 +313,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_ENGINE_SOURCE_SHA256: run.mode === 'baseline' ? '' : candidateEngineSourceSha256,
             LAB_RUNNER_REVISION: labRunnerRevision,
             LAB_RUNNER_SOURCE_SHA256: labRunnerSourceSha256,
+            LAB_ARTIFACT_ROOT: ARTIFACT_ROOT,
         };
         let baselineModule = null;
         if (run.mode === 'baseline') {
@@ -361,12 +383,12 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_ENGINE_SOURCE_SHA256: candidateEngineSourceSha256,
             LAB_RUNNER_REVISION: labRunnerRevision,
             LAB_RUNNER_SOURCE_SHA256: labRunnerSourceSha256,
+            LAB_ARTIFACT_ROOT: ARTIFACT_ROOT,
         };
         for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
         try {
             const childResult = await executeLabTest(tempDir, env);
             if (childResult.code !== 0) {
-                server.lab.lastRunnerDiagnostic = `${childResult.stdout}\n${childResult.stderr}`.slice(-8000);
                 throw Object.assign(new Error('Local playground route execution failed.'), { reasonCode: 'PLAYGROUND_RUNNER_FAILED', exitCode: childResult.code });
             }
             return JSON.parse(fs.readFileSync(resultPath, 'utf8'));
@@ -407,6 +429,7 @@ const createLabServer = ({ port = 0, host = '127.0.0.1', datasetPath = DATASET_P
             LAB_ENGINE_SOURCE_SHA256: candidateEngineSourceSha256,
             LAB_RUNNER_REVISION: labRunnerRevision,
             LAB_RUNNER_SOURCE_SHA256: labRunnerSourceSha256,
+            LAB_ARTIFACT_ROOT: ARTIFACT_ROOT,
         };
         for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
         try {

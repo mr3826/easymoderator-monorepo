@@ -341,12 +341,12 @@ def main() -> int:
     parser.add_argument(
         "--artifacts",
         type=Path,
-        default=repo_root / "docs/ai/product-experience-v1-2/artifacts/playwright",
+        default=repo_root / "docs/ai/product-experience-v1-3/artifacts/playwright",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=repo_root / "docs/ai/product-experience-v1-2/artifacts/final-qa/playwright-trace-sanitization.json",
+        default=repo_root / "docs/ai/product-experience-v1-3/artifacts/final-qa/playwright-trace-sanitization.json",
     )
     parser.add_argument(
         "--metadata-only",

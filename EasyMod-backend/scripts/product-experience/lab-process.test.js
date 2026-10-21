@@ -91,7 +91,7 @@ describe('Test Lab spawned production-route processes', () => {
         expect(baselineAccepted.status).toBe(202);
         const baseline = await waitForRun(base, token, baselineAccepted.data.runId);
         expect(baseline.status).toBe('completed');
-        expect(baseline.sourceRevision).toBe('78b6250af40039749f9c096cd3e0debe2e6cf6a7');
+        expect(baseline.sourceRevision).toBe('957bb991a18db1949369a6f805822b8c8b69889b');
         const baselineRouterSource = execFileSync('git', ['show', `${BASELINE_SHA}:EasyMod-backend/src/modules/ai/intent-router.service.js`], {
             cwd: path.resolve(__dirname, '../../..'),
             stdio: ['ignore', 'pipe', 'ignore'],

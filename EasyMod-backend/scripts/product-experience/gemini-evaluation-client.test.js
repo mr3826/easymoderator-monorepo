@@ -2,6 +2,7 @@
 
 const { createEvaluationBudget } = require('./evaluation-budget');
 const { createGeminiEvaluationClient, EvaluationClientError, MODEL } = require('./gemini-evaluation-client');
+const { loadGenuinePhotoFixture, GENUINE_PHOTO_MANIFEST } = require('./genuine-photo-fixtures');
 const { loadSyntheticMediaFixture, SYNTHETIC_MEDIA_MANIFEST } = require('./synthetic-media-fixtures');
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -109,6 +110,45 @@ describe('bounded Gemini evaluation client', () => {
             expect(fixture.dataUrl).toMatch(/^data:image\/png;base64,/);
         }
         expect(() => loadSyntheticMediaFixture('../synthetic-contact-sheet-source')).toThrow(/not registered/);
+    });
+
+    test('loads the provenance-checked genuine photo set without relying on source-dataset images', () => {
+        expect(GENUINE_PHOTO_MANIFEST.assets).toHaveLength(3);
+        expect(GENUINE_PHOTO_MANIFEST.sourceDatasetPhotosProvided).toBe(false);
+        for (const asset of GENUINE_PHOTO_MANIFEST.assets) {
+            const fixture = loadGenuinePhotoFixture(asset.id);
+            expect(fixture).toMatchObject({
+                assetId: asset.id,
+                bytes: asset.bytes,
+                sha256: asset.sha256,
+                mimeType: 'image/jpeg',
+                sourcePageUrl: asset.sourcePageUrl,
+                author: asset.author,
+                license: asset.license,
+            });
+            expect(fixture.dataUrl).toMatch(/^data:image\/jpeg;base64,/);
+            expect(fixture.expectedVisible.category).toEqual(expect.arrayContaining(['kurta']));
+            expect(fixture.expectedVisible.dominantColor.length).toBeGreaterThan(0);
+        }
+        expect(() => loadGenuinePhotoFixture('../yellow-kurta.jpg')).toThrow(/not registered/);
+    });
+
+    test('accepts only a checksum-registered genuine photo and meters it as vision', async () => {
+        process.env['EM-GEMINI-KEY'] = 'test-only-secret';
+        const fixture = loadGenuinePhotoFixture('yellow-kurta');
+        const budget = makeBudget({ maxVisionRequests: 1 });
+        const llm = { chat: jest.fn(async () => ({
+            text: 'The image visibly shows a yellow kurta.', provider: 'gemini-lite', model: MODEL,
+            usage: { promptTokenCount: 4200, candidatesTokenCount: 10 },
+        })) };
+        const client = createGeminiEvaluationClient({ budget, llm });
+        await client.chat(validParams({ messages: [{ role: 'user', content: [
+            { type: 'text', text: 'Identify visible garment and color.' },
+            { type: 'image_url', url: fixture.dataUrl },
+        ] }] }));
+        expect(llm.chat).toHaveBeenCalledTimes(1);
+        expect(budget.snapshot()).toMatchObject({ visionRequestCount: 1, calls: [{ vision: true }] });
+        expect(JSON.stringify(budget.snapshot())).not.toContain(fixture.dataUrl);
     });
 
     test.each([

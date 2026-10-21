@@ -161,6 +161,362 @@ describe('B — Bengali product-intent gate', () => {
         expect(llm.chat).not.toHaveBeenCalled();
     });
 
+    test('a Banglish size availability question returns the exact verified variant', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
+            price: 2850, quantity: 3, track_quantity: true,
+            variants: [
+                { id: 'panjabi-44', option_name: 'Size', option_value: '44', price: 2850, quantity: 2, is_active: true },
+            ],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Premium Black Panjabi size 44 ache?',
+            systemPrompt: 'BASE',
+            language: 'Banglish',
+        });
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Size 44');
+        expect(result.response).toContain('in stock');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a value-bearing size follow-up re-fetches the product from grounded conversation context', async () => {
+        const now = new Date('2026-10-22T06:00:00.000Z');
+        productSearch.getProductsByIds.mockResolvedValue([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 4, track_quantity: true,
+            variants: [
+                { id: 'cargo-30', option_name: 'Size', option_value: '30', price: 1450, quantity: 2, is_active: true },
+                { id: 'cargo-32', option_name: 'Size', option_value: '32', price: 1450, quantity: 2, is_active: true },
+            ],
+        }]);
+        const history = [
+            { role: 'user', content: 'Tell me about Olive Cargo Pant.', createdAt: new Date(now.getTime() - 1000).toISOString() },
+            {
+                role: 'assistant', content: 'Olive Cargo Pant',
+                sourceReferences: [{ kind: 'product', id: 'cargo-1', contextEligible: true }],
+                createdAt: now.toISOString(),
+            },
+        ];
+
+        const result = await route({
+            shopId: SHOP,
+            message: '28 na thakle 30 size ki belt diye pora jabe?',
+            history,
+            systemPrompt: 'BASE',
+            language: 'Banglish',
+            now: new Date(now.getTime() + 1000),
+        });
+
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['cargo-1'], SHOP, { throwOnError: true });
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Size 30');
+        expect(result.response).toContain('in stock');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('an unresolved media question keeps the previously grounded product as a context pointer', async () => {
+        const now = new Date();
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 4, track_quantity: true, variants: [], image_url: null,
+        }]);
+        productSearch.searchByAttributes.mockResolvedValueOnce([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 4, track_quantity: true, variants: [],
+        }]);
+        const first = await route({
+            shopId: SHOP, message: 'Tell me about Olive Cargo Pant.',
+            systemPrompt: 'BASE', language: 'English', history: [], now,
+        });
+        const history = [
+            { role: 'user', content: 'Tell me about Olive Cargo Pant.', createdAt: new Date(now.getTime() - 1000).toISOString() },
+            {
+                role: 'assistant', content: first.response, sourceReferences: first.sourceReferences,
+                createdAt: now.toISOString(),
+            },
+        ];
+
+        const media = await route({
+            shopId: SHOP, message: 'Can I get actual live camera pictures without studio lighting?',
+            systemPrompt: 'BASE', language: 'English', history, now: new Date(now.getTime() + 1000),
+        });
+
+        expect(media.source).toBe('grounding_media_unavailable');
+        expect(media.sourceReferences).toContainEqual(expect.objectContaining({
+            kind: 'product', id: 'cargo-1', contextEligible: true,
+        }));
+    });
+
+    test('a named photo request reuses the same-category grounded product without claiming a photo exists', async () => {
+        const now = new Date();
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'panjabi-1', shop_id: SHOP, name: 'Premium Black Panjabi', price: 2850,
+            quantity: 3, track_quantity: true, variants: [], image_url: null,
+        }]);
+        const result = await route({
+            shopId: SHOP,
+            message: 'Panjabi tar chobi pathan',
+            history: [{
+                role: 'assistant',
+                sourceReferences: [{ kind: 'product', id: 'panjabi-1', title: 'Premium Black Panjabi', contextEligible: true }],
+                createdAt: now.toISOString(),
+            }],
+            systemPrompt: 'BASE', language: 'Banglish', now: new Date(now.getTime() + 1000),
+        });
+
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['panjabi-1'], SHOP, { throwOnError: true });
+        expect(result.grounding.verifiedProducts.map(product => product.id)).toContain('panjabi-1');
+        expect(result.source).toBe('grounding_media_unavailable');
+        expect(result.response).toContain('Premium Black Panjabi');
+        expect(result.response).toMatch(/photo|chobi|ছবি/iu);
+        expect(result.response).not.toMatch(/sent|attached/i);
+    });
+
+    test('an unsupported fit follow-up re-fetches and retains its grounded product context', async () => {
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 4, track_quantity: true, variants: [],
+        }]);
+        llm.chat.mockResolvedValueOnce({
+            text: "I can't verify the fit details from the shop's available information.",
+            provider: 'gemini-lite',
+        });
+        const history = [{
+            role: 'assistant',
+            content: 'Olive Cargo Pant — ৳1,450',
+            sourceReferences: [{ kind: 'product', id: 'cargo-1', title: 'Olive Cargo Pant', contextEligible: true }],
+        }];
+
+        const result = await route({
+            shopId: SHOP, message: 'Is it oversized fit or regular fit?', history,
+            systemPrompt: 'BASE', language: 'English',
+        });
+
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['cargo-1'], SHOP, { throwOnError: true });
+        expect(result.sourceReferences).toContainEqual(expect.objectContaining({
+            kind: 'product', id: 'cargo-1', contextEligible: true,
+        }));
+    });
+
+    test('a same-category garment follow-up keeps context while an explicit different category starts a new lookup', async () => {
+        const now = new Date();
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 4, track_quantity: true, variants: [],
+        }]);
+        llm.chat.mockResolvedValueOnce({
+            text: "I can't verify the fabric details from the shop's information.",
+            provider: 'gemini-lite',
+        });
+        const history = [{
+            role: 'assistant', sourceReferences: [{ kind: 'product', id: 'cargo-1', title: 'Olive Cargo Pant', contextEligible: true }],
+            createdAt: now.toISOString(),
+        }];
+        const sameCategory = await route({
+            shopId: SHOP, message: 'Pant er fabric ki pure cotton?', history,
+            systemPrompt: 'BASE', language: 'Banglish', now: new Date(now.getTime() + 1000),
+        });
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['cargo-1'], SHOP, { throwOnError: true });
+        expect(sameCategory.sourceReferences).toContainEqual(expect.objectContaining({
+            kind: 'product', id: 'cargo-1', contextEligible: true,
+        }));
+
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 4, track_quantity: true, variants: [],
+        }]);
+        llm.chat.mockResolvedValueOnce({
+            text: "I can't verify the pocket construction from the shop's information.",
+            provider: 'gemini-lite',
+        });
+        await route({
+            shopId: SHOP, message: 'Pockets er button gulo ki show naki real button?', history,
+            systemPrompt: 'BASE', language: 'Banglish', now: new Date(now.getTime() + 1500),
+        });
+        expect(productSearch.getProductsByIds).toHaveBeenLastCalledWith(['cargo-1'], SHOP, { throwOnError: true });
+
+        productSearch.searchByAttributes.mockResolvedValueOnce([{
+            id: 'kamiz-1', shop_id: SHOP, name: "Women's Embroidered Kamiz", price: 2350,
+            quantity: 2, track_quantity: true, variants: [],
+        }]);
+        const differentCategory = await route({
+            shopId: SHOP, message: "What is the Women's Embroidered Kamiz price?", history,
+            systemPrompt: 'BASE', language: 'English', now: new Date(now.getTime() + 2000),
+        });
+
+        expect(productSearch.searchByAttributes).toHaveBeenCalled();
+        expect(differentCategory.grounding.verifiedProducts.map(product => product.id)).toContain('kamiz-1');
+        expect(differentCategory.grounding.verifiedProducts.map(product => product.id)).not.toContain('cargo-1');
+    });
+
+    test('a mixed price and delivery question answers the catalog price and leaves the fee unknown', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
+            price: 2850, quantity: 3, track_quantity: true, variants: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'What is the product price and delivery fee for the Premium Black Panjabi?',
+            systemPrompt: 'BASE',
+            language: 'English',
+        });
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('৳2,850');
+        expect(result.response).toMatch(/can't verify|cannot verify|not confirmed/i);
+        expect(result.response).not.toMatch(/delivery (?:is|costs|will be)\s*(?:free|\d)/i);
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a Bengali mixed price and delivery-fee question answers price and leaves delivery policy unknown', async () => {
+        const now = new Date();
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi', name_bn: 'প্রিমিয়াম কালো পাঞ্জাবি',
+            price: 2850, quantity: 3, track_quantity: true, variants: [],
+        }]);
+        const result = await route({
+            shopId: SHOP,
+            message: 'দাম ও ডেলিভারি চার্জ কত?',
+            history: [{ role: 'assistant', sourceReferences: [{ kind: 'product', id: 'panjabi-bn-1', contextEligible: true }], createdAt: now.toISOString() }],
+            systemPrompt: 'BASE',
+            language: 'Bangla',
+            now: new Date(now.getTime() + 1000),
+        });
+
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['panjabi-bn-1'], SHOP, { throwOnError: true });
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('৳2,850');
+        expect(result.response).toMatch(/ডেলিভারি চার্জ নিশ্চিত করতে পারছি না/);
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a size selection with a delivery address does not imply an order or confirmed delivery', async () => {
+        const now = new Date();
+        productSearch.getProductsByIds.mockResolvedValueOnce([{
+            id: 'cargo-1', shop_id: SHOP, name: 'Olive Cargo Pant', price: 1450,
+            quantity: 3, track_quantity: true,
+            variants: [{ id: 'cargo-m', option_name: 'Size', option_value: 'M', price: 1450, quantity: 1, is_active: true }],
+        }]);
+        const result = await route({
+            shopId: SHOP,
+            message: "I'll take size M. Delivery to Dhanmondi.",
+            history: [{ role: 'assistant', sourceReferences: [{ kind: 'product', id: 'cargo-1', title: 'Olive Cargo Pant', contextEligible: true }], createdAt: now.toISOString() }],
+            systemPrompt: 'BASE', language: 'English', now: new Date(now.getTime() + 1000),
+        });
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Size M');
+        expect(result.response).toMatch(/can't confirm or create an order/i);
+        expect(result.response).not.toMatch(/order (?:is )?(?:confirmed|placed)/i);
+    });
+
+    test('a missing product combined with return policy request gets an explicit policy handoff', async () => {
+        productSearch.searchByAttributes.mockResolvedValueOnce([{
+            id: 'jacket-1', shop_id: SHOP, name: 'Classic Blue Denim Jacket', price: 3200,
+            quantity: 1, track_quantity: true, variants: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Tell me the jacket price and your return policy.',
+            systemPrompt: 'BASE',
+            language: 'English',
+        });
+
+        expect(result.source).toBe('grounding_not_found');
+        expect(result.response).toMatch(/can't verify the shop's return or exchange policy/i);
+        expect(result.response).toMatch(/team can check and get back/i);
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a delivery-duration question does not become a product price or a fee question', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
+            price: 2850, quantity: 3, track_quantity: true, variants: [],
+        }]);
+        llm.chat.mockResolvedValue({
+            text: "I can't verify the delivery timeframe from the shop's available information.",
+            provider: 'gemini-lite',
+        });
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Premium Black Panjabi delivery time koto din?',
+            systemPrompt: 'BASE',
+            language: 'Banglish',
+        });
+
+        expect(llm.chat).toHaveBeenCalled();
+        expect(result.response).not.toContain('৳2,850');
+        expect(result.response).not.toMatch(/delivery (?:fee|charge)/i);
+    });
+
+    test('a delivery-fee-only question does not answer with the product price', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
+            price: 2850, quantity: 3, track_quantity: true, variants: [],
+        }]);
+        llm.chat.mockResolvedValue({
+            text: "I can't verify the delivery charge from the shop's available information.",
+            provider: 'gemini-lite',
+        });
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Premium Black Panjabi delivery charge koto?',
+            systemPrompt: 'BASE',
+            language: 'Banglish',
+        });
+
+        expect(llm.chat).toHaveBeenCalled();
+        expect(result.response).not.toContain('৳2,850');
+    });
+
+    test('a garment-length koto question does not become a product price', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
+            price: 2850, quantity: 3, track_quantity: true, variants: [],
+        }]);
+        llm.chat.mockResolvedValue({
+            text: "I can't verify the garment length from the shop's available information.",
+            provider: 'gemini-lite',
+        });
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Premium Black Panjabi length koto inch?',
+            systemPrompt: 'BASE',
+            language: 'Banglish',
+        });
+
+        expect(llm.chat).toHaveBeenCalled();
+        expect(result.response).not.toContain('৳2,850');
+    });
+
+    test('a Bangla fixed-price offer is routed to merchant policy instead of echoing catalog price', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
+            price: 2850, quantity: 3, track_quantity: true, variants: [],
+        }]);
+
+        const result = await route({
+            shopId: SHOP,
+            message: 'Premium Black Panjabi একদাম ১২০০ টাকা রাখলে কনফার্ম করি।',
+            systemPrompt: 'BASE',
+            language: 'Bangla',
+        });
+
+        expect(result.source).toBe('grounding_price_negotiation');
+        expect(result.response).toContain('ছাড়ের দাম নিশ্চিত করতে পারছি না');
+        expect(result.response).not.toContain('৳2,850');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
     test('an explicit variant price request renders the selected variant price', async () => {
         productSearch.searchByAttributes.mockResolvedValue([{
             id: 'jacket-1',
@@ -414,7 +770,7 @@ describe('C — RAG product hit re-fetched live', () => {
         rag.queryData.mockResolvedValue(productHit);
         productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', shop_id: SHOP, name: 'Red Silk Saree', price: 3200 }]);
 
-        await route({ shopId: SHOP, message: 'red silk saree ache?', systemPrompt: 'BASE' });
+        await route({ shopId: SHOP, message: 'What fabric is the red silk saree made of?', systemPrompt: 'BASE' });
 
         expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-saree'], SHOP, { throwOnError: true });
         const sys = lastSystemPrompt();

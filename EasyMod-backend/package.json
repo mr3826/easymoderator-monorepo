@@ -19,6 +19,7 @@
     "test:meta:e2e": "jest --config jest.meta-e2e.config.js --runInBand --forceExit",
     "eval:product-experience": "node scripts/product-experience/replay.js",
     "eval:product-experience:router": "jest src/modules/ai/product-experience/__tests__/production-router-replay.test.js --runInBand --coverage=false",
+    "verify:product-v1.3": "node scripts/product-experience/verify-product-v1-3.js",
     "test:meta:live": "node scripts/meta-live-e2e.js",
     "test:courier:live": "node scripts/courier-live-e2e.js",
     "db:sync": "node src/utils/database/sync.js",

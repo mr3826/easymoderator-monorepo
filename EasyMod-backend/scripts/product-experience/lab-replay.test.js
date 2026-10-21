@@ -16,16 +16,20 @@ const crypto = require('node:crypto');
 const { performance } = require('node:perf_hooks');
 const { createCatalog } = require('./fixtures');
 const { createV12Catalog } = require('./catalog-fixtures-v1-2');
+const { loadGenuinePhotoFixture, GENUINE_PHOTO_MANIFEST } = require('./genuine-photo-fixtures');
 const { loadSyntheticMediaFixture, SYNTHETIC_MEDIA_MANIFEST } = require('./synthetic-media-fixtures');
-const { buildDatasetIndex, classifyOracleTurn } = require('./lab-contracts');
-const { latestGroundedProductId, referencesForReplayTurn } = require('./replay-context');
-const { responseContainsFact } = require('./lab-scorer');
+const { buildDatasetIndex, classifyOracleTurn, createOracleContextTracker } = require('./lab-contracts');
+const { referencesForReplayTurn } = require('./replay-context');
+const { responseContainsFact, isSafeCrossDomainHandoff } = require('./lab-scorer');
 const { scrubPII } = require('../../src/modules/ai/prompt-sanitizer.service');
 
 let mockCatalog = createCatalog();
 let evaluationBudget = null;
 let evaluationClient = null;
 let budgetLedgerPath = null;
+let campaignLedger = null;
+let campaignLedgerPath = null;
+let campaignStage = null;
 const PRIOR_INTERRUPTED_RUN_UPPER_BOUND_USD = 2.108288;
 const PRIOR_AUTH_CHECK_REPORTED_USD = 0.000006;
 let mockExpectedShopId = null;
@@ -87,8 +91,10 @@ const { parseCsv, normalizeInputType, normalizeLanguage, imageReferences, DEFAUL
 const { getSourceProvenance } = require('./lab-server');
 const sourceProvenance = getSourceProvenance();
 
-const OUTPUT_ROOT = path.resolve(__dirname, '../../../docs/ai/product-experience-v1-2/artifacts/runs');
-const TRIAGE_ROOT = path.resolve(__dirname, '../../../docs/ai/product-experience-v1-2/artifacts/triage');
+const LAB_ARTIFACT_ROOT = path.resolve(process.env.LAB_ARTIFACT_ROOT
+    || path.resolve(__dirname, '../../../docs/ai/product-experience-v1-3/artifacts'));
+const OUTPUT_ROOT = path.join(LAB_ARTIFACT_ROOT, 'runs');
+const TRIAGE_ROOT = path.join(LAB_ARTIFACT_ROOT, 'triage');
 const ID_PATTERN = /^[a-f0-9-]{36}$/i;
 const routerLanguage = language => language === 'english' ? 'en' : language === 'bangla' ? 'bn' : 'mixed';
 const toRouterV12Catalog = () => createV12Catalog().map(product => {
@@ -112,24 +118,67 @@ const toRouterV12Catalog = () => createV12Catalog().map(product => {
         })),
     };
 });
+const catalogProjection = products => products.map(product => ({
+    id: String(product.id),
+    shopId: String(product.shop_id || product.shopId || ''),
+    name: String(product.name || ''),
+    nameBn: String(product.name_bn || ''),
+    price: product.price ?? null,
+    variants: (product.variants || []).map(variant => ({
+        id: String(variant.id),
+        option: String(variant.option_name || ''),
+        value: String(variant.option_value || ''),
+        price: variant.price ?? null,
+        quantity: variant.quantity ?? null,
+    })).sort((left, right) => left.id.localeCompare(right.id)),
+})).sort((left, right) => left.id.localeCompare(right.id));
+const currentCatalogFixtureIntegrity = (profile = process.env.LAB_CATALOG_FIXTURE || 'synthetic-default') => {
+    const expectedCatalog = profile === 'v1.2-two-tenant' ? toRouterV12Catalog() : createCatalog();
+    const expected = JSON.stringify(catalogProjection(expectedCatalog));
+    const actual = JSON.stringify(catalogProjection(mockCatalog));
+    const productIdsMatch = expectedCatalog.map(product => String(product.id)).sort()
+        .join('\n') === mockCatalog.map(product => String(product.id)).sort().join('\n');
+    const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
+    return {
+        profile,
+        status: expected === actual ? 'PASS' : 'FAIL',
+        expectedProducts: expectedCatalog.length,
+        actualProducts: mockCatalog.length,
+        productIdsMatch,
+        expectedProjectionSha256: sha256(expected),
+        actualProjectionSha256: sha256(actual),
+    };
+};
+const sourceReplayMediaFor = attachmentIds => ({
+    // Simulator attachment references do not include source pixels. Keep them as
+    // evidence metadata; never turn an invented URL into application media.
+    imageUrls: [],
+    attachmentEvidence: attachmentIds.length ? 'METADATA_ONLY_NO_VISION' : 'NONE',
+});
 const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const BANGLADESH_CONTACT_PATTERN = /(?:\+?880\s*|0|০)(?:1[3-9]|১[৩-৯])[\p{Nd}Xx\s().-]{7,9}/u;
-const containsContactInStringValues = value => {
+const containsContactInStringValues = (value, fieldName = '') => {
+    if (/sha256$/i.test(fieldName)) return false;
     if (typeof value === 'string') return BANGLADESH_CONTACT_PATTERN.test(value);
-    if (Array.isArray(value)) return value.some(containsContactInStringValues);
-    if (value && typeof value === 'object') return Object.values(value).some(containsContactInStringValues);
+    if (Array.isArray(value)) return value.some(item => containsContactInStringValues(item));
+    if (value && typeof value === 'object') return Object.entries(value).some(([key, item]) => containsContactInStringValues(item, key));
     return false;
 };
 const redactTranscriptText = (value, record) => {
     const source = String(value || '');
-    if (BANGLADESH_CONTACT_PATTERN.test(source)) return '[CUSTOMER CONTACT DETAILS REDACTED]';
-    let text = scrubPII(source);
+    const contactPattern = new RegExp(BANGLADESH_CONTACT_PATTERN.source, 'gu');
+    let text = scrubPII(source.replace(contactPattern, '[PHONE]'));
     const profileName = String(record?.customerProfile || '').split(',')[0].trim();
     if (profileName.length >= 2) {
         const namePattern = new RegExp('(?<![\\p{L}\\p{M}\\p{N}])' + escapeRegExp(profileName) + '(?![\\p{L}\\p{M}\\p{N}])', 'giu');
         text = text.replace(namePattern, '[NAME]');
     }
-    return text.replace(/\b(?:house|road|street|lane|flat|apartment)\s*#?\s*[\w/-]+(?:,\s*(?:[\p{L}\d#.-]+\s*){1,3})?/giu, '[ADDRESS]');
+    text = text
+        .replace(/\b(?:house|road|street|lane|flat|apartment)\s*#?\s*[\w/-]+(?:,\s*(?:[\p{L}\d#.-]+\s*){1,3})?/giu, '[ADDRESS]')
+        .replace(/\b(delivery|deliver|shipping|ship|send)\s+to\s+[^.,!?;\n]+/giu, '$1 to [ADDRESS]');
+    const hasContact = BANGLADESH_CONTACT_PATTERN.test(source);
+    const hasCommerceMeaning = /[?؟]|\b(?:price|cost|dam|daam|size|stock|available|delivery|product|shirt|panjabi|kamiz|trouser|legging|order|want|need|take|confirm|color|colour|length|offer|discount)\b|দাম|কত|সাইজ|স্টক|আছে|পণ্য|জামা|কামিজ|পাঞ্জাবি|ট্রাউজার|লেগিংস|ডেলিভারি|নেব|নিতে|চাই|রং|অর্ডার/iu.test(text);
+    return hasContact && !hasCommerceMeaning ? '[CUSTOMER CONTACT DETAILS REDACTED]' : text;
 };
 
 describe('real replay transcript contact redaction', () => {
@@ -144,6 +193,16 @@ describe('real replay transcript contact redaction', () => {
         expect(redactTranscriptText('What is the price for size 32?', null)).toBe('What is the price for size 32?');
     });
 
+    test('keeps a product question while masking the phone span', () => {
+        expect(redactTranscriptText('Size L lagbe, contact 01712XXXXXX', null))
+            .toBe('Size L lagbe, contact [PHONE]');
+    });
+
+    test('masks a delivery location while preserving the product selection', () => {
+        expect(redactTranscriptText("Fine. I'll take 1 M size. Delivery to Dhanmondi 27.", null))
+            .toBe("Fine. I'll take 1 M size. Delivery to [ADDRESS].");
+    });
+
     test('redacts a Bengali profile name in a message without a phone number', () => {
         expect(redactTranscriptText(
             'রফিক আহমেদ, এই পাঞ্জাবির দাম কত?',
@@ -154,6 +213,100 @@ describe('real replay transcript contact redaction', () => {
     test('checks artifact text values without treating a spend decimal as a phone', () => {
         expect(containsContactInStringValues({ providerReportedUsd: 0.01510825 })).toBe(false);
         expect(containsContactInStringValues({ inputRedacted: 'Call me at 01711XXXXXX' })).toBe(true);
+        expect(containsContactInStringValues({ oracleSha256: '01711123456789' })).toBe(false);
+    });
+});
+
+describe('real-router provider prompt privacy', () => {
+    test('scrubs synthetic Bengali and formatted contact sentinels before the LLM seam', async () => {
+        const shopId = 'fixture-shop-a';
+        mockCatalog = toRouterV12Catalog();
+        mockExpectedShopId = shopId;
+        mockLlmChat.mockClear();
+        mockLlmChat.mockResolvedValueOnce({ text: 'I cannot verify the pocket count from the catalog.' });
+        try {
+            await route({
+                shopId,
+                message: 'Do you sell the Mystery Moon Suit? Call ০১৭১২-৩৪৫-৬৭৮ or email sara.private@example.invalid.',
+                conversationId: 'privacy-sentinel-conversation',
+                history: [],
+                language: 'en',
+                systemPrompt: 'Use only verified merchant evidence.',
+                imageUrls: [],
+                traceId: 'privacy-sentinel-test',
+                now: new Date('2026-10-22T00:00:00.000Z'),
+            });
+        } finally {
+            mockExpectedShopId = null;
+            mockCatalog = createCatalog();
+        }
+        expect(mockLlmChat).toHaveBeenCalled();
+        const captured = JSON.stringify(mockLlmChat.mock.calls);
+        const phoneSurvived = captured.includes('০১৭১২-৩৪৫-৬৭৮');
+        const emailSurvived = captured.includes('sara.private@example.invalid');
+        const baselineRouterOnly = process.env.LAB_BASELINE_ROUTER_ONLY === '1';
+        const baselineExpected = process.env.LAB_ENGINE_LABEL === 'baseline-v1-2' && !baselineRouterOnly;
+        const privacyDirectory = path.join(LAB_ARTIFACT_ROOT, 'security');
+        const privacyPath = path.join(privacyDirectory, `provider-prompt-pii.${process.env.LAB_ENGINE_LABEL || 'candidate'}.${runId}.json`);
+        fs.mkdirSync(privacyDirectory, { recursive: true });
+        fs.writeFileSync(privacyPath, `${JSON.stringify({
+            schemaVersion: 1,
+            engineVariant: process.env.LAB_ENGINE_LABEL || 'candidate',
+            runId,
+            syntheticPhoneSentinelReachedProviderSeam: phoneSurvived,
+            syntheticEmailSentinelReachedProviderSeam: emailSurvived,
+            providerSeamReached: true,
+            expectedBaselineGap: baselineExpected,
+            baselineRouterOnly,
+            status: baselineExpected
+                ? (phoneSurvived && !emailSurvived ? 'BASELINE_PHONE_GAP_REPRODUCED' : 'BASELINE_BEHAVIOR_CHANGED')
+                : baselineRouterOnly
+                    ? 'BASELINE_ROUTER_ONLY_SHARED_CANDIDATE_SANITIZER'
+                : (!phoneSurvived && !emailSurvived ? 'CANDIDATE_PII_SCRUBBED' : 'CANDIDATE_PII_LEAK'),
+        }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+        expect(phoneSurvived).toBe(baselineExpected);
+        expect(emailSurvived).toBe(false);
+    });
+});
+
+describe('registered genuine photo routing seam', () => {
+    test('sends a hash-verified public photo through production attribute extraction', async () => {
+        const fixture = loadGenuinePhotoFixture('yellow-kurta');
+        const calls = [];
+        const evaluationClient = {
+            chat: jest.fn(async params => {
+                calls.push(params);
+                return calls.length === 1
+                    ? { text: '{"category":"kurta","color":"yellow","material":null,"query":"yellow kurta","tags":["kurta"],"description":"Yellow garment."}' }
+                    : { text: 'I can check this against the shop catalog.' };
+            }),
+        };
+        mockCatalog = toRouterV12Catalog();
+        mockExpectedShopId = 'fixture-shop-a';
+        mockPhotoMatch.mockReturnValue(true);
+        try {
+            const result = await route({
+                shopId: 'fixture-shop-a',
+                message: 'Can you identify this garment?',
+                conversationId: 'genuine-photo-route-contract',
+                history: [],
+                language: 'en',
+                systemPrompt: 'Use only verified catalog evidence.',
+                imageUrls: [fixture.dataUrl],
+                traceId: 'genuine-photo-route-contract',
+                now: new Date('2026-10-22T06:00:00.000Z'),
+                evaluationClient,
+            });
+            const imageCalls = calls.filter(params => params.messages.some(message => Array.isArray(message.content)
+                && message.content.some(part => part?.type === 'image_url')));
+            expect(imageCalls).toHaveLength(1);
+            expect(imageCalls[0].messages[0].content.find(part => part.type === 'image_url').url).toBe(fixture.dataUrl);
+            expect(result).toEqual(expect.objectContaining({ response: expect.any(String), grounding: expect.any(Object) }));
+        } finally {
+            mockExpectedShopId = null;
+            mockCatalog = createCatalog();
+            mockPhotoMatch.mockReturnValue(false);
+        }
     });
 });
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -198,6 +351,230 @@ const parseVisibleObservation = text => {
         return null;
     }
 };
+const parseProductionVisualObservation = text => {
+    try {
+        const fenced = String(text || '').match(/```(?:json)?\s*([\s\S]*?)```/i);
+        const source = fenced?.[1] || String(text || '').match(/\{[\s\S]*\}/)?.[0] || String(text || '');
+        const parsed = JSON.parse(source);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        const safeLabel = value => typeof value === 'string' && /^[\p{L}\p{M} -]{1,64}$/u.test(value.trim())
+            ? value.trim() : null;
+        return {
+            category: safeLabel(parsed.category),
+            color: safeLabel(parsed.color),
+            materialFieldPopulated: typeof parsed.material === 'string' && Boolean(parsed.material.trim()),
+        };
+    } catch {
+        return null;
+    }
+};
+const runGenuinePhotoEvaluation = async evaluationClient => {
+    const results = [];
+    let stoppedReason = null;
+    const shopId = 'fixture-shop-a';
+    const previousCatalog = mockCatalog;
+    const matches = (observed, expected) => Boolean(observed)
+        && expected.some(term => observed.toLocaleLowerCase().includes(term.toLocaleLowerCase()));
+    mockCatalog = toRouterV12Catalog();
+    mockPhotoMatch.mockReturnValue(true);
+    try {
+        for (const asset of GENUINE_PHOTO_MANIFEST.assets) {
+            if (stoppedReason) {
+                results.push({ fixtureId: asset.id, status: 'NOT_RUN', reasonCode: stoppedReason });
+                continue;
+            }
+            const fixture = loadGenuinePhotoFixture(asset.id);
+            const providerObservations = [];
+            const startedAt = performance.now();
+            const capturingClient = Object.freeze({
+                chat: async params => {
+                    const result = await evaluationClient.chat(params);
+                    const hasRaster = params.messages.some(message => Array.isArray(message.content)
+                        && message.content.some(part => part?.type === 'image_url'));
+                    if (hasRaster) providerObservations.push({
+                        observation: parseProductionVisualObservation(result.text),
+                        callId: result.budget.callId,
+                        requestId: result.requestId,
+                        usage: result.usage,
+                        latencyMs: result.latencyMs,
+                        estimatedCostUsd: result.budget.estimatedProviderChargeUsd,
+                    });
+                    return result;
+                },
+            });
+            try {
+                mockExpectedShopId = shopId;
+                const reply = await route({
+                    shopId,
+                    message: 'Can you identify this garment and its visible color?',
+                    conversationId: `genuine-photo-${asset.id}`,
+                    history: [],
+                    language: 'en',
+                    systemPrompt: 'Synthetic local test merchant. Use only verified catalog evidence. Do not treat visual observations as merchant-confirmed product facts.',
+                    imageUrls: [fixture.dataUrl],
+                    traceId: `genuine-photo-${asset.id}`,
+                    now: new Date('2026-10-22T06:00:00.000Z'),
+                    evaluationClient: capturingClient,
+                });
+                const visual = providerObservations[0]?.observation || null;
+                results.push({
+                    fixtureId: fixture.assetId,
+                    fixtureSha256: fixture.sha256,
+                    sourcePageUrl: fixture.sourcePageUrl,
+                    author: fixture.author,
+                    license: fixture.license,
+                    licenseUrl: fixture.licenseUrl,
+                    classification: 'GENUINE_PUBLIC_PHOTO_NO_SOURCE_DATASET_PHOTO',
+                    status: providerObservations.length ? 'EXECUTED' : 'NOT_RUN',
+                    schemaValid: Boolean(visual?.category || visual?.color),
+                    observedCategory: visual?.category || null,
+                    observedDominantColor: visual?.color || null,
+                    categoryMatch: matches(visual?.category, fixture.expectedVisible.category),
+                    dominantColorMatch: matches(visual?.color, fixture.expectedVisible.dominantColor),
+                    unverifiedMaterialFieldPopulated: Boolean(visual?.materialFieldPopulated),
+                    providerCallId: providerObservations[0]?.callId || null,
+                    requestId: providerObservations[0]?.requestId || null,
+                    usage: providerObservations[0]?.usage || null,
+                    providerLatencyMs: providerObservations[0]?.latencyMs ?? null,
+                    estimatedProviderChargeUsd: providerObservations[0]?.estimatedCostUsd ?? null,
+                    routeLatencyMs: Number((performance.now() - startedAt).toFixed(3)),
+                    customerFacingReplyRedacted: redactTranscriptText(reply.response, null),
+                    productCatalogIdentityScored: false,
+                });
+            } catch (error) {
+                stoppedReason = evaluationBudget?.snapshot().halted ? 'BUDGET_HALTED' : 'PHOTO_ROUTE_FAILED';
+                results.push({
+                    fixtureId: fixture.assetId,
+                    fixtureSha256: fixture.sha256,
+                    sourcePageUrl: fixture.sourcePageUrl,
+                    author: fixture.author,
+                    license: fixture.license,
+                    status: 'FAILED',
+                    reasonCode: /^[A-Z_]{1,64}$/.test(String(error?.code || '')) ? error.code : stoppedReason,
+                    routeLatencyMs: Number((performance.now() - startedAt).toFixed(3)),
+                });
+            } finally {
+                mockExpectedShopId = null;
+            }
+        }
+    } finally {
+        mockExpectedShopId = null;
+        mockCatalog = previousCatalog;
+        mockPhotoMatch.mockReturnValue(false);
+    }
+    return {
+        evaluationSource: 'three independently sourced, checksum-verified, licensed public photos; production router image-extraction path; no customer dataset images',
+        photosTested: results.filter(item => item.status === 'EXECUTED').length,
+        cases: results,
+    };
+};
+
+describe('genuine photo replay fixture isolation', () => {
+    test('restores the configured two-tenant catalog after image evaluation', async () => {
+        const originalCatalog = mockCatalog;
+        const configuredCatalog = toRouterV12Catalog();
+        mockCatalog = configuredCatalog;
+        const evaluationClient = {
+            chat: jest.fn(async () => ({
+                text: '{"category":"kurta","color":"yellow","material":null,"query":"yellow kurta","tags":["kurta"],"description":"Yellow garment."}',
+            })),
+        };
+
+        try {
+            await runGenuinePhotoEvaluation(evaluationClient);
+            expect(mockCatalog.map(product => product.id)).toEqual(configuredCatalog.map(product => product.id));
+            expect(mockCatalog.map(product => product.id)).toContain('v12-a-cargo');
+        } finally {
+            mockCatalog = originalCatalog;
+            mockPhotoMatch.mockReturnValue(false);
+        }
+    });
+});
+
+describe('source replay attachment and catalog integrity', () => {
+    test('keeps simulator attachment identifiers as metadata without creating placeholder image URLs', () => {
+        expect(sourceReplayMediaFor(['image-4'])).toEqual({
+            imageUrls: [],
+            attachmentEvidence: 'METADATA_ONLY_NO_VISION',
+        });
+    });
+
+    test('identifies the exact pinned catalog projection before replay', () => {
+        const originalCatalog = mockCatalog;
+        mockCatalog = toRouterV12Catalog();
+        try {
+            expect(currentCatalogFixtureIntegrity('v1.2-two-tenant')).toEqual(expect.objectContaining({
+                profile: 'v1.2-two-tenant',
+                status: 'PASS',
+                expectedProducts: 8,
+                actualProducts: 8,
+            }));
+            mockCatalog = createCatalog();
+            expect(currentCatalogFixtureIntegrity('v1.2-two-tenant').status).toBe('FAIL');
+        } finally {
+            mockCatalog = originalCatalog;
+        }
+    });
+});
+
+describe('product context across merchant-policy turns', () => {
+    test('keeps a grounded product available for a later variant question after delivery-policy dialogue', async () => {
+        const originalCatalog = mockCatalog;
+        const originalLlmImplementation = mockLlmChat.getMockImplementation();
+        const shopId = 'fixture-shop-a';
+        const now = new Date();
+        mockCatalog = toRouterV12Catalog();
+        mockExpectedShopId = shopId;
+        mockLlmChat.mockClear();
+        mockLlmChat.mockResolvedValue({ text: 'I do not have a confirmed delivery fee for this shop.' });
+
+        const callRoute = (message, history, traceId) => route({
+            shopId,
+            message,
+            conversationId: 'policy-context-retention',
+            history,
+            language: 'en',
+            systemPrompt: 'Synthetic local merchant. Use only verified catalog and approved policy evidence.',
+            imageUrls: [],
+            traceId,
+            now,
+        });
+        try {
+            const first = await callRoute('Tell me about Olive Cargo Pant.', [], 'context-product');
+            const history = [
+                { role: 'user', content: 'Tell me about Olive Cargo Pant.', createdAt: now.toISOString() },
+                {
+                    role: 'assistant', content: first.response, sourceReferences: first.sourceReferences,
+                    createdAt: new Date(now.getTime() + 1000).toISOString(),
+                },
+            ];
+            const policy = await callRoute('What is the delivery charge?', history, 'context-policy');
+            history.push(
+                { role: 'user', content: 'What is the delivery charge?', createdAt: new Date(now.getTime() + 2000).toISOString() },
+                {
+                    role: 'assistant', content: policy.response, sourceReferences: policy.sourceReferences,
+                    createdAt: new Date(now.getTime() + 3000).toISOString(),
+                },
+            );
+            const followUp = await callRoute('Is size 32 available?', history, 'context-variant');
+            const hasGroundedProduct = followUp.grounding?.verifiedProducts?.some(product => product.id === 'v12-a-cargo');
+            const baselineExpected = process.env.LAB_ENGINE_LABEL === 'baseline-v1-2';
+
+            expect(policy.source === 'grounding_not_found').toBe(baselineExpected);
+            expect(Boolean(hasGroundedProduct)).toBe(!baselineExpected);
+        } finally {
+            mockExpectedShopId = null;
+            mockCatalog = originalCatalog;
+            mockLlmChat.mockReset();
+            if (originalLlmImplementation) mockLlmChat.mockImplementation(originalLlmImplementation);
+            else mockLlmChat.mockImplementation(async () => ({
+                text: 'The price is ৳9,999 and delivery is guaranteed tomorrow.',
+                provider: 'fake-test-provider',
+            }));
+        }
+    });
+});
+
 const runSyntheticVisionEvaluation = async evaluationClient => {
     const results = [];
     let stoppedReason = null;
@@ -551,6 +928,33 @@ const persistBudgetLedger = () => {
     fs.renameSync(tempPath, budgetLedgerPath);
 };
 
+const loadFrozenOracle = (oraclePath, datasetSource) => {
+    if (!oraclePath) return null;
+    const resolvedPath = path.resolve(oraclePath);
+    const benchmarkRoot = path.join(LAB_ARTIFACT_ROOT, 'benchmarks');
+    if (!resolvedPath.startsWith(`${benchmarkRoot}${path.sep}`)) throw new Error('Frozen oracle path is outside the V1.3 benchmark directory.');
+    const artifact = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+    if (artifact.schemaVersion !== 1 || artifact.oracleVersion !== 'product-engine-v1.3-customer-truth-1'
+        || artifact.source?.sha256 !== datasetSource.sha256
+        || artifact.source?.turns !== datasetSource.scenarioCount
+        || !Array.isArray(artifact.turns) || artifact.turns.length !== datasetSource.scenarioCount) {
+        throw new Error('Frozen oracle does not match the selected source dataset.');
+    }
+    const oracleSha256 = crypto.createHash('sha256').update(JSON.stringify(artifact.turns)).digest('hex');
+    if (oracleSha256 !== artifact.oracleSha256) throw new Error('Frozen oracle checksum validation failed.');
+    const rows = new Map();
+    for (const row of artifact.turns) {
+        if (typeof row.scenarioId !== 'string' || rows.has(row.scenarioId)
+            || !Array.isArray(row.eligibleSlots) || !Array.isArray(row.domains)
+            || row.contextSource !== 'SOURCE_CUSTOMER_TURNS_ONLY'
+            || Object.keys(row).some(key => /customerMessage|customerProfile|expectedTruth|simulatedAttachment/i.test(key))) {
+            throw new Error('Frozen oracle contains an invalid or source-sensitive row.');
+        }
+        rows.set(row.scenarioId, row);
+    }
+    return { rows, oracleSha256, artifactSha256: crypto.createHash('sha256').update(fs.readFileSync(resolvedPath)).digest('hex') };
+};
+
 describe('Product Engine local Test Lab route replay', () => {
     jest.setTimeout(mode === 'real-gemini' ? 1800000 : 180000);
 
@@ -575,6 +979,15 @@ describe('Product Engine local Test Lab route replay', () => {
         if (!['full', 'persona'].includes(scope) || !['baseline', 'candidate', 'real-gemini'].includes(mode)) throw new Error('Lab run mode is invalid.');
         const source = fs.readFileSync(dataPath);
         const dataset = buildDatasetIndex(source);
+        const frozenOracle = loadFrozenOracle(process.env.LAB_ORACLE_PATH, dataset.source);
+        if (process.env.LAB_CATALOG_FIXTURE && process.env.LAB_CATALOG_FIXTURE !== 'v1.2-two-tenant') {
+            throw new Error('Unsupported fixed catalog fixture profile.');
+        }
+        if (process.env.LAB_CATALOG_FIXTURE === 'v1.2-two-tenant') mockCatalog = toRouterV12Catalog();
+        const evaluationClockMs = process.env.LAB_EVALUATION_CLOCK_MS === undefined
+            ? Date.now()
+            : Number(process.env.LAB_EVALUATION_CLOCK_MS);
+        if (!Number.isSafeInteger(evaluationClockMs) || evaluationClockMs < 0) throw new Error('Evaluation clock is invalid.');
         const parsed = parseCsv(source.toString('utf8'));
         const personaIds = [...new Set(parsed.records.map(record => String(record.personaId).trim()))];
         const selectedOrdinal = personaId ? Number(String(personaId).slice(1)) : null;
@@ -591,7 +1004,8 @@ describe('Product Engine local Test Lab route replay', () => {
         const selectedGroups = [...groups.entries()].filter(([, turns], index) => scope === 'full' || index + 1 === selectedOrdinal);
         if (scope === 'persona' && selectedGroups.length !== 1) throw new Error('Selected persona is absent from the source dataset.');
 
-        let visionEvaluation = null;
+        let genuinePhotoEvaluation = null;
+        let syntheticVisionEvaluation = null;
         if (mode === 'real-gemini') {
             if (process.env.EASYMOD_LIVE_GEMINI_EGRESS !== '1') throw new Error('The exact Gemini-only egress gate must be enabled for a real run.');
             if (typeof process.env['EM-GEMINI-KEY'] !== 'string' || !process.env['EM-GEMINI-KEY'].trim()) {
@@ -600,15 +1014,43 @@ describe('Product Engine local Test Lab route replay', () => {
             mockCatalog = toRouterV12Catalog();
             const { createEvaluationBudget } = require('./evaluation-budget');
             const { createGeminiEvaluationClient } = require('./gemini-evaluation-client');
+            const { createEvaluationCampaignLedger } = require('./evaluation-campaign-ledger');
+            campaignStage = process.env.LAB_CAMPAIGN_STAGE;
+            const campaignId = process.env.LAB_CAMPAIGN_ID;
+            campaignLedgerPath = process.env.LAB_CAMPAIGN_LEDGER_PATH ? path.resolve(process.env.LAB_CAMPAIGN_LEDGER_PATH) : null;
+            if (!campaignStage || !campaignId || !campaignLedgerPath
+                || !campaignLedgerPath.startsWith(`${LAB_ARTIFACT_ROOT}${path.sep}`)) {
+                throw new Error('A V1.3 campaign ID, stage and isolated artifact ledger path are required for paid evaluation.');
+            }
+            const campaignCeilingUsd = Number(process.env.LAB_CAMPAIGN_CEILING_USD || 2);
+            const campaignMaxRequests = Number(process.env.LAB_CAMPAIGN_MAX_REQUESTS || 256);
+            const campaignMaxVisionRequests = Number(process.env.LAB_CAMPAIGN_MAX_VISION_REQUESTS || 12);
+            if (!Number.isFinite(campaignCeilingUsd) || campaignCeilingUsd <= 0 || campaignCeilingUsd > 2) {
+                throw new Error('The V1.3 campaign ceiling must be between zero and USD 2.00.');
+            }
+            campaignLedger = createEvaluationCampaignLedger({
+                ledgerPath: campaignLedgerPath,
+                campaignId,
+                ceilingUsd: campaignCeilingUsd,
+                maxRequests: campaignMaxRequests,
+                maxVisionRequests: campaignMaxVisionRequests,
+            });
+            const remainingCampaignUsd = campaignLedger.remainingUsd();
+            if (remainingCampaignUsd <= 0) throw new Error('The cumulative V1.3 paid-evaluation budget is exhausted.');
             evaluationBudget = createEvaluationBudget({
-                ceilingUsd: 0.65,
-                maxRequests: 250,
-                maxVisionRequests: 40,
+                ceilingUsd: remainingCampaignUsd,
+                maxRequests: 100,
+                maxVisionRequests: 6,
                 maxConcurrency: 1,
                 maxInputTokens: 32768,
                 maxOutputTokens: 768,
                 maxRetries: 0,
                 maxTimeoutMs: 30000,
+            }, {
+                onSnapshot: snapshot => {
+                    campaignLedger.record(campaignStage, snapshot);
+                    persistBudgetLedger();
+                },
             });
             budgetLedgerPath = path.join(OUTPUT_ROOT, `${runId}.budget-ledger.json`);
             // Keep this provider-only run independent of a .env Redis endpoint
@@ -621,9 +1063,23 @@ describe('Product Engine local Test Lab route replay', () => {
             evaluationClient = createRateLimitedEvaluationClient(createGeminiEvaluationClient({
                 budget: evaluationBudget,
                 llm: actualLlm,
-                operationPrefix: 'v12',
+                operationPrefix: 'v13',
             }));
-            visionEvaluation = await runSyntheticVisionEvaluation(evaluationClient);
+            if (process.env.LAB_RUN_GENUINE_PHOTO_EVAL === '1'
+                && process.env.LAB_RUN_SYNTHETIC_VISION === '1') {
+                throw new Error('Genuine and synthetic vision evaluation cannot share one paid run.');
+            }
+            if (process.env.LAB_RUN_GENUINE_PHOTO_EVAL === '1') {
+                genuinePhotoEvaluation = await runGenuinePhotoEvaluation(evaluationClient);
+            } else if (process.env.LAB_RUN_SYNTHETIC_VISION === '1') {
+                syntheticVisionEvaluation = await runSyntheticVisionEvaluation(evaluationClient);
+            }
+        }
+
+        const catalogFixtureIntegrity = currentCatalogFixtureIntegrity();
+        if (catalogFixtureIntegrity.profile === 'v1.2-two-tenant'
+            && catalogFixtureIntegrity.status !== 'PASS') {
+            throw new Error('The active router catalog no longer matches the pinned two-tenant fixture.');
         }
 
         mockLlmChat.mockClear(); mockSearch.mockClear(); mockGetByIds.mockClear();
@@ -645,9 +1101,10 @@ describe('Product Engine local Test Lab route replay', () => {
             const safePersonaId = `P${String(personaOrdinal).padStart(2, '0')}`;
             const shopId = personaOrdinal % 2 ? 'fixture-shop-a' : 'fixture-shop-b';
             const history = [];
+            const oracleContext = createOracleContextTracker(shopId, mockCatalog);
             // Keep synthetic turns inside the production context window while
             // avoiding future timestamps rejected by the live resolver.
-            const clockStart = Date.now() - 12 * 60 * 60 * 1000;
+            const clockStart = evaluationClockMs - 12 * 60 * 60 * 1000;
 
             for (const record of turns) {
                 const turnNumber = Number.parseInt(record.turn, 10);
@@ -656,10 +1113,14 @@ describe('Product Engine local Test Lab route replay', () => {
                 const datasetLanguage = normalizeLanguage(record.language);
                 const language = routerLanguage(datasetLanguage);
                 const attachmentIds = imageReferences(record.simulatedAttachment, scenarioId, inputType);
-                const imageUrls = attachmentIds.map(id => `https://fixtures.invalid/${id}.png`);
+                const replayMedia = sourceReplayMediaFor(attachmentIds);
                 const message = String(record.customerMessage || '');
-                const previousGroundedProductId = latestGroundedProductId(history);
-                const oracle = classifyOracleTurn(record, shopId, mockCatalog, previousGroundedProductId);
+                const frozenOracleRow = frozenOracle?.rows.get(scenarioId);
+                const previousSourceProductId = frozenOracleRow?.sourceContextProductId ?? oracleContext.currentProductId();
+                const oracle = frozenOracleRow || classifyOracleTurn(record, shopId, mockCatalog, previousSourceProductId);
+                // Advance expected context from the customer source turn before
+                // the route runs; generated assistant text cannot influence it.
+                oracleContext.observeSourceTurn(record);
                 const callCountBefore = mockLlmChat.mock.calls.length;
                 const providerCallCountBefore = evaluationBudget?.snapshot().requestCount || 0;
                 const actionCountBefore = mockRecordReadAction.mock.calls.length;
@@ -675,7 +1136,7 @@ describe('Product Engine local Test Lab route replay', () => {
                         history,
                         language,
                         systemPrompt: 'Synthetic local test merchant. Use only verified catalog evidence. This is an offline test fixture.',
-                        imageUrls,
+                        imageUrls: replayMedia.imageUrls,
                         traceId: scenarioId,
                         now: new Date(clockStart + turnNumber * 60 * 60 * 1000),
                         ...(evaluationClient ? { evaluationClient } : {}),
@@ -738,6 +1199,15 @@ describe('Product Engine local Test Lab route replay', () => {
                 const correctAnsweredSlots = verdict.decision === grounding.GroundingDecision.SEND
                     ? correctSlots.filter(slot => exactResponseValues.some(shown => shown.field === slot.field))
                     : [];
+                const safeCrossDomainHandoff = oracle.crossDomainHandoffs?.length
+                    ? isSafeCrossDomainHandoff({
+                        response: rawResponse,
+                        disposition: verdict.decision,
+                        crossDomainHandoffs: oracle.crossDomainHandoffs,
+                        answerableSlots: shownFacts.length,
+                        correctAnsweredSlots: correctAnsweredSlots.length,
+                    })
+                    : null;
                 const unsafePriceClaims = verdict.decision === grounding.GroundingDecision.SEND
                     ? [...String(rawResponse).matchAll(/[৳$]\s*([\d,]+(?:\.\d+)?)/g)]
                         .map(match => Number(match[1].replace(/,/g, '')))
@@ -758,10 +1228,18 @@ describe('Product Engine local Test Lab route replay', () => {
                     classificationTags: oracle.classificationTags,
                     oracle: {
                         domain: oracle.domain,
+                        domains: oracle.domains || [],
+                        inputType: oracle.inputType || inputType,
+                        textOnlyMetricEligible: oracle.textOnlyMetricEligible === true,
                         eligibility: oracle.eligibility,
                         productId: oracle.productId || null,
                         selectedVariantId: oracle.selectedVariantId || null,
                         eligibleSlots: oracle.eligibleSlots,
+                        unknownRequestedFields: oracle.unknownRequestedFields || [],
+                        crossDomainHandoffs: oracle.crossDomainHandoffs || [],
+                        safeCrossDomainHandoff,
+                        sourceContextProductId: oracle.sourceContextProductId || previousSourceProductId || null,
+                        contextSource: oracle.contextSource || 'SOURCE_CUSTOMER_TURNS_ONLY',
                     },
                     routerSource: result.source || 'unknown',
                     disposition: verdict.decision,
@@ -807,7 +1285,7 @@ describe('Product Engine local Test Lab route replay', () => {
                     finalReplyRedacted: redactTranscriptText(rawResponse, record),
                     latencyMs: routeLatencyMs,
                     traceId: scenarioId,
-                    attachmentEvidence: attachmentIds.length ? 'METADATA_ONLY_NO_VISION' : 'NONE',
+                    attachmentEvidence: replayMedia.attachmentEvidence,
                     sideEffects: { databaseWrites: 0, queueJobs: 0, messengerSends: 0, readAuditCalls: mockRecordReadAction.mock.calls.length - actionCountBefore },
                 };
                 turnResults.push(turnTrace);
@@ -834,7 +1312,7 @@ describe('Product Engine local Test Lab route replay', () => {
                     {
                         role: 'assistant',
                         content: rawResponse,
-                        sourceReferences: referencesForReplayTurn(result.sourceReferences, inputType),
+                        sourceReferences: referencesForReplayTurn(result.sourceReferences),
                         createdAt: new Date(now + 1000).toISOString(),
                     },
                 );
@@ -843,13 +1321,29 @@ describe('Product Engine local Test Lab route replay', () => {
             }
         }
 
-        const eligibleTurns = turnResults.filter(item => item.oracle.eligibility === 'ANSWERABLE');
+        const eligibleTurns = turnResults.filter(item => item.oracle.textOnlyMetricEligible && item.oracle.eligibility === 'ANSWERABLE');
         const evaluatedTurns = turnResults.filter(item => item.evaluationStatus === 'EXECUTED');
         const evaluatedEligibleTurns = eligibleTurns.filter(item => item.evaluationStatus === 'EXECUTED');
-        const eligibleSlots = turnResults.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
-        const evaluatedEligibleSlots = evaluatedTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
-        const correctSlots = evaluatedTurns.reduce((sum, item) => sum + (item.factScores.correctAnsweredSlots || 0), 0);
-        const falseRefusalSlots = evaluatedTurns.reduce((sum, item) => sum + (item.factScores.unnecessaryRefusalSlots || 0), 0);
+        const imageBearingTurns = turnResults.filter(item => !item.oracle.textOnlyMetricEligible);
+        const imageBearingEligibleTurns = imageBearingTurns.filter(item => item.oracle.eligibility === 'ANSWERABLE');
+        const eligibleSlots = eligibleTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
+        const evaluatedEligibleSlots = evaluatedEligibleTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
+        const contextDependentAnswerableTurns = turnResults.filter(item => item.oracle.sourceContextProductId
+            && item.oracle.eligibility === 'ANSWERABLE');
+        const contextResolutionFailures = contextDependentAnswerableTurns.filter(item =>
+            !item.productEvidence.productIds.includes(String(item.oracle.productId))).length;
+        const crossDomainTurns = turnResults.filter(item => item.oracle.crossDomainHandoffs.length > 0);
+        const safeCrossDomainHandoffs = crossDomainTurns.filter(item => item.oracle.safeCrossDomainHandoff === true).length;
+        if (scope === 'full' && frozenOracle) {
+            const oracleAnswerableRows = [...frozenOracle.rows.values()].filter(row => row.textOnlyMetricEligible === true
+                && row.eligibility === 'ANSWERABLE');
+            const oracleAnswerableSlots = oracleAnswerableRows.reduce((sum, row) => sum + row.eligibleSlots.length, 0);
+            expect(eligibleTurns.length).toBe(oracleAnswerableRows.length);
+            expect(eligibleSlots).toBe(oracleAnswerableSlots);
+        }
+        const imageBearingFactSlotsExcluded = imageBearingTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
+        const correctSlots = evaluatedEligibleTurns.reduce((sum, item) => sum + (item.factScores.correctAnsweredSlots || 0), 0);
+        const falseRefusalSlots = evaluatedEligibleTurns.reduce((sum, item) => sum + (item.factScores.unnecessaryRefusalSlots || 0), 0);
         const sentUnsupportedClaims = turnResults.reduce((sum, item) => sum + item.factScores.unsupportedPriceClaimsSent, 0);
         const fullyAnsweredTurns = evaluatedEligibleTurns.filter(item => item.factScores.eligibleSlots > 0
             && item.factScores.correctAnsweredSlots === item.factScores.eligibleSlots).length;
@@ -908,6 +1402,7 @@ describe('Product Engine local Test Lab route replay', () => {
             scope,
             personaId,
             mode,
+            engineVariant: process.env.LAB_ENGINE_LABEL || 'candidate',
             status: 'completed',
             executionMode: 'production-intent-router-with-controlled-local-collaborators',
             sourceRevision: process.env.LAB_SOURCE_REVISION || sourceProvenance.sourceRevision,
@@ -926,17 +1421,27 @@ describe('Product Engine local Test Lab route replay', () => {
                 sequentialPerPersona: true,
                 rawSourceMessagesPersisted: false,
             },
+            benchmarkOracle: frozenOracle ? {
+                path: path.relative(LAB_ARTIFACT_ROOT, process.env.LAB_ORACLE_PATH).replace(/\\/g, '/'),
+                oracleSha256: frozenOracle.oracleSha256,
+                artifactSha256: frozenOracle.artifactSha256,
+                frozenBeforeEngineExecution: true,
+                sourceExpectedTruthUsed: false,
+            } : { status: 'GENERATED_IN_MEMORY_NOT_FROZEN' },
+            catalogFixtureIntegrity,
             provenance: {
                 sourceAnswersUsedAsGroundTruth: false,
-                catalogSource: mode === 'real-gemini' ? 'v1.2 two-tenant synthetic catalog snapshot' : 'synthetic-fixture-snapshot',
+                catalogSource: mode === 'real-gemini' ? 'versioned two-tenant synthetic catalog snapshot' : 'synthetic-fixture-snapshot',
+                catalogFixtureIntegrity,
                 modelProvider: mode === 'real-gemini' ? 'Google Gemini API through the existing llm.service; pinned Gemini Lite only' : 'mock-adversarial-provider',
-                vision: mode === 'real-gemini' ? 'synthetic raster vision cases; CSV attachments are metadata-only because originals are unavailable' : 'disabled; attachments are metadata-only',
+                vision: mode === 'real-gemini' ? 'three licensed genuine public product photos; CSV attachments are metadata-only because original rasters are unavailable' : 'disabled; attachments are metadata-only',
                 realPostgres: false,
                 realRedis: false,
                 realWorker: false,
                 realMeta: false,
                 realProvider: mode === 'real-gemini' && (evaluationSnapshot?.requestCount || 0) > 0,
-                realVision: Boolean(visionEvaluation?.cases?.some(item => item.status === 'EXECUTED')),
+                realVision: Boolean(genuinePhotoEvaluation?.cases?.some(item => item.status === 'EXECUTED')),
+                syntheticVision: Boolean(syntheticVisionEvaluation?.cases?.some(item => item.status === 'EXECUTED')),
                 outboundNetworkCalls: evaluationSnapshot?.requestCount || 0,
             },
             summary: {
@@ -945,9 +1450,17 @@ describe('Product Engine local Test Lab route replay', () => {
                 correctVerifiedProductTurns: fullyAnsweredTurns,
                 sourceEligibleProductFactSlots: eligibleSlots,
                 evaluatedEligibleProductFactSlots: evaluatedEligibleSlots,
+                imageBearingSourceTurnsNotEvaluated: imageBearingTurns.length,
+                imageBearingTextResolvableTurnsExcluded: imageBearingEligibleTurns.length,
+                imageBearingEligibleFactSlotsExcluded: imageBearingFactSlotsExcluded,
                 correctVerifiedProductAnswers: correctSlots,
                 unnecessaryRefusalSlots: falseRefusalSlots,
                 unsupportedClaimsSent: sentUnsupportedClaims,
+                contextDependentAnswerableTurns: contextDependentAnswerableTurns.length,
+                contextResolutionFailures,
+                crossDomainHandoffTurns: crossDomainTurns.length,
+                safeCrossDomainHandoffs,
+                unsafeCrossDomainHandoffs: crossDomainTurns.length - safeCrossDomainHandoffs,
                 blockedMockUnsupportedCandidates: turnResults.filter(item => item.provider.calls > 0 && item.disposition !== grounding.GroundingDecision.SEND).length,
                 safeFallbacks: turnResults.filter(item => item.disposition === grounding.GroundingDecision.SAFE_FALLBACK).length,
                 routeExecutedTurns: evaluatedTurns.length,
@@ -958,6 +1471,7 @@ describe('Product Engine local Test Lab route replay', () => {
                 dispositions: aggregate(turnResults, item => item.disposition),
                 routerSources: aggregate(turnResults, item => item.routerSource),
                 oracleDomains: aggregate(turnResults, item => item.oracle.domain),
+                oracleDomainSets: aggregate(turnResults, item => (item.oracle.domains || []).join('+') || 'UNCLASSIFIED'),
                 oracleEligibility: aggregate(turnResults, item => item.oracle.eligibility),
                 presentationContractsValid: turnResults.filter(item => item.presentation.contractValid).length,
                 tenantScopeViolations: mockTenantViolations,
@@ -970,8 +1484,11 @@ describe('Product Engine local Test Lab route replay', () => {
             },
             targetedEvaluation,
             triageFixtures: [unsafePriceCanary],
-            visionEvaluation,
+            genuinePhotoEvaluation,
+            syntheticVisionEvaluation,
             evaluationBudget: evaluationSnapshot,
+            campaignBudget: campaignLedger?.snapshot() || null,
+            campaignBudgetLedgerPath: campaignLedgerPath ? path.relative(LAB_ARTIFACT_ROOT, campaignLedgerPath).replace(/\\/g, '/') : null,
             budgetLedgerPath: budgetLedgerPath ? path.basename(budgetLedgerPath) : null,
             priorInterruptedRunUpperBoundUsd: mode === 'real-gemini' ? PRIOR_INTERRUPTED_RUN_UPPER_BOUND_USD : null,
             priorAuthCheckReportedUsd: mode === 'real-gemini' ? PRIOR_AUTH_CHECK_REPORTED_USD : null,
@@ -995,8 +1512,10 @@ describe('Product Engine local Test Lab route replay', () => {
                 providerP50Ms: Number(percentile(providerLatency, .5).toFixed(3)),
                 providerP95Ms: Number(percentile(providerLatency, .95).toFixed(3)),
                 estimatedSpendUsd: evaluationSnapshot?.committedUsd ?? null,
+                estimatedProviderChargeUsd: evaluationSnapshot?.estimatedProviderChargeUsd ?? null,
                 providerReportedSpendUsd: evaluationSnapshot?.providerReportedUsd ?? null,
-                costStatus: mode === 'real-gemini' ? 'CONSERVATIVE_RESERVATIONS_RECONCILED_TO_REPORTED_USAGE' : 'NOT_MEASURED_NO_REAL_PROVIDER_CALLS',
+                unpricedProviderCalls: evaluationSnapshot?.calls.filter(call => call.estimatedProviderChargeUsd === null).length ?? null,
+                costStatus: mode === 'real-gemini' ? 'TOKEN_USAGE_RATE_CARD_ESTIMATE_NOT_INVOICE' : 'NOT_MEASURED_NO_REAL_PROVIDER_CALLS',
                 actualProviderUsageRecords: (evaluationSnapshot?.calls || []).filter(call => call.inputTokens !== null).length,
             },
             turns: turnResults,
@@ -1025,7 +1544,7 @@ describe('Product Engine local Test Lab route replay', () => {
         expect(mockUnscopedReads).toBe(0);
         if (mode === 'real-gemini') {
             expect(artifact.provenance.outboundNetworkCalls).toBe(evaluationSnapshot.requestCount);
-            expect(evaluationSnapshot.committedUsd).toBeLessThanOrEqual(7.5);
+            expect(campaignLedger.snapshot().reservedWorstCaseUsd).toBeLessThanOrEqual(campaignLedger.snapshot().ceilingUsd);
         } else {
             expect(artifact.provenance.outboundNetworkCalls).toBe(0);
         }

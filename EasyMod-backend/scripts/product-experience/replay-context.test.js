@@ -41,9 +41,8 @@ describe('replay oracle context', () => {
         expect(latestGroundedProductId(history, now)).toBeNull();
     });
 
-    test('does not persist a catalog reference from metadata-only image turns', () => {
-        expect(referencesForReplayTurn([{ kind: 'product', id: 'fixture-product-1' }], 'IMAGE_TEXT')).toBeNull();
-        expect(referencesForReplayTurn([{ kind: 'product', id: 'fixture-product-1' }], 'TEXT'))
-            .toEqual([{ kind: 'product', id: 'fixture-product-1' }]);
+    test('retains a route-verified product pointer when an attachment has metadata but no pixels', () => {
+        const refs = [{ kind: 'product', id: 'fixture-product-1', contextEligible: true }];
+        expect(referencesForReplayTurn(refs)).toEqual(refs);
     });
 });

@@ -65,11 +65,10 @@ function sanitize(message) {
 // ---------------------------------------------------------------------------
 
 const PII_PATTERNS = [
-    // BD mobile: 01XXXXXXXXX or +8801XXXXXXXXX (operator prefixes 3-9)
-    { pattern: /(?:\+?880\s*)?0?(1[3-9]\d{8})\b/g, replace: '[PHONE]' },
     // Email addresses
     { pattern: /[\w.+\-]+@[\w\-]+\.[a-z]{2,}/gi, replace: '[EMAIL]' },
 ];
+const BD_MOBILE_PATTERN = /(?<!\d)(?:\+?880[\s().-]*)?0?1[3-9](?:[\s().-]*\d){8}(?!\d)/g;
 
 /**
  * Mask PII in customer-authored text before it is injected into an LLM prompt.
@@ -78,7 +77,14 @@ const PII_PATTERNS = [
  */
 function scrubPII(text) {
     if (!text || typeof text !== 'string') return text;
-    return PII_PATTERNS.reduce((t, { pattern, replace }) => t.replace(pattern, replace), text);
+    const asciiDigits = text.replace(/[০-৯]/g, digit => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)));
+    let scrubbed = text;
+    // Bengali digit normalization preserves UTF-16 offsets, so replace only
+    // the matching phone span in the original customer text.
+    for (const match of [...asciiDigits.matchAll(BD_MOBILE_PATTERN)].reverse()) {
+        scrubbed = `${scrubbed.slice(0, match.index)}[PHONE]${scrubbed.slice(match.index + match[0].length)}`;
+    }
+    return PII_PATTERNS.reduce((value, { pattern, replace }) => value.replace(pattern, replace), scrubbed);
 }
 
 module.exports = { isTooLong, MAX_MESSAGE_LENGTH, scrubPII, sanitize };

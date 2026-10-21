@@ -139,7 +139,47 @@ const resolveExplicitProductEvidence = ({ shopId, candidate }) => {
         : null;
 };
 
-const CONTEXT_PRODUCT_QUESTION = /\b(?:price|cost|dam|daam|koto|stock|available|availability|size|sizes|color|colour|material|fabric)\b|দাম|মূল্য|কত|স্টক|আছে|সাইজ|মাপ|রং|রঙ|উপাদান|কাপড়|কাপড়/i;
+const CONTEXT_PRODUCT_QUESTION = /\b(?:price|cost|dam|daam|koto|stock|available|availability|size|sizes|color|colour|rong|rang|material|fabric|fit|length|inseam|outseam|shoulder|sleeve|pockets?|buttons?|measurements?|measure|inch|gsm|yarn|count|lace|embroidery|twill|wash|washed|fade|fading|shrink|cotton|polyester|modal|silk|nylon|oversized|cut)\b|দাম|মূল্য|কত|স্টক|আছে|সাইজ|মাপ|রং|রঙ|উপাদান|কাপড়|কাপড়|লম্বা|দৈর্ঘ্য|হাতা|কাঁধ|ইঞ্চি|ফিট|পকেট|বুক|কোমর|হিপ|ধোয়া|ধোয়া|বিবর্ণ/i;
+const PRICE_NEGOTIATION = /\b(?:discount|offer|coupon|bargain|negotiable|fixed price|price negotiation|ekdam|ek\s+dam)\b|দাম\s*(?:কম|রাখলে|দিলে|করলে)|এক\s*দাম|একদাম|ডিসকাউন্ট|ছাড়|ছাড়|অফার|ফিক্সড\s*দাম|দাম\s*নেগোশিয়েবল/i;
+const CONTEXT_PRESERVING_POLICY_QUESTION = /\b(?:delivery|shipping|courier|return|exchange|refund|cash\s+on\s+delivery|cod|payment|paid|transaction|advance|discount|offer|coupon|bargain|negotiable|delivery\s+charge|delivery\s+fee|open\s+(?:the\s+)?parcel|arrive\s+together|separately|order|cancel|cancellation|booking|tracking|dispatch|ekdam|ek\s+dam)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার|পার্সেল|রিটার্ন|এক্সচেঞ্জ|রিফান্ড|পেমেন্ট|পেইড|লেনদেন|অগ্রিম|অর্ডার|বাতিল|ট্র্যাকিং|ডিসপ্যাচ|দাম\s*(?:কম|রাখলে|দিলে|করলে)|এক\s*দাম|একদাম|ডিসকাউন্ট|ছাড়|ছাড়|অফার/i;
+const EXPLICIT_PRODUCT_REFERENCE = /\b(?:cargo|panjabi|punjabi|kamiz|kamij|kameez|kurti|saree|denim|jacket|trouser|trousers|pant|pants|legging|leggings|shirt|t[\s-]?shirt|dress)\b|পাঞ্জাবি|কামিজ|প্যান্ট|ট্রাউজার|লেগিংস|জ্যাকেট/i;
+
+const productCategoriesInText = value => {
+    const text = String(value || '');
+    const categories = [];
+    if (/\b(?:panjabi|punjabi)\b|পাঞ্জাবি/i.test(text)) categories.push('panjabi');
+    const lower = /\b(?:cargo|pant|pants|trouser|trousers|legging|leggings)\b|প্যান্ট|ট্রাউজার|লেগিংস/i.test(text);
+    if (lower) categories.push('lower_clothing');
+    if (/\b(?:kamiz|kamij|kameez|kurti|saree|dress)\b|কামিজ|শাড়ি|শাড়ি/i.test(text)) categories.push('women_clothing');
+    if (!lower && /\b(?:denim|jacket)\b|জ্যাকেট/i.test(text)) categories.push('outerwear');
+    if (/\b(?:t[\s-]?shirts?|tees?)\b|টি-?শার্ট/i.test(text)) categories.push('upper_clothing');
+    return [...new Set(categories)];
+};
+
+const hasConflictingContextProductCategory = (message, history, activeProductIds) => {
+    if (!EXPLICIT_PRODUCT_REFERENCE.test(message)) return false;
+    const requestedCategories = productCategoriesInText(message);
+    if (!requestedCategories.length) return true;
+    const activeIds = new Set((activeProductIds || []).map(String));
+    let activeReferences = [];
+    for (let index = (history || []).length - 1; index >= 0; index -= 1) {
+        const turn = history[index] || {};
+        if (turn.role === 'user' || turn.role === 'customer') continue;
+        const references = turn.sourceReferences || turn.source_references || [];
+        activeReferences = (Array.isArray(references) ? references : [])
+            .filter(reference => reference?.kind === 'product' && reference.id
+                && reference.contextEligible !== false && activeIds.has(String(reference.id)));
+        break;
+    }
+    const contextCategories = activeReferences.flatMap(reference => productCategoriesInText(
+        reference.title || reference.name || reference.productName || '',
+    ));
+    if (!contextCategories.length || requestedCategories.some(category => !contextCategories.includes(category))) return true;
+
+    const distinguishingTerms = String(message).match(/\b(?:premium|classic|black|white|blue|red|olive|mauve|lavender|embroidered)\b/gi) || [];
+    const activeTitles = activeReferences.map(reference => String(reference.title || reference.name || reference.productName || '').toLocaleLowerCase());
+    return distinguishingTerms.some(term => !activeTitles.some(title => title.includes(term.toLocaleLowerCase())));
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -322,6 +362,9 @@ const route = async ({
     preferredProvider,
     imageUrls = [],
     traceId = null,
+    // Injectable clock keeps bounded conversation context consistent with
+    // replay and integration scenarios while defaulting to the live clock.
+    now = new Date(),
      // Bug #11: accept per-shop threshold so shops can tune for Banglish noise.
      // Falls back to SEMANTIC_THRESHOLD (env var) if not provided.
     confidenceThreshold,
@@ -428,7 +471,7 @@ const route = async ({
     }
 
     if (ROUTER_DISABLED) {
-        return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, imageUrls, replyContext, evaluationClient });
+        return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, imageUrls, replyContext, evaluationClient, now });
     }
 
     // ------------------------------------------------------------------
@@ -632,7 +675,7 @@ const route = async ({
     // ------------------------------------------------------------------
     // Stage 3: Full LLM call with context
     // ------------------------------------------------------------------
-    return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls, replyContext, evaluationClient });
+    return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls, replyContext, evaluationClient, now });
 };
 
 /**
@@ -805,7 +848,9 @@ const _mergeVectorProductCandidates = async (candidates, productIds, shopId) => 
     }
 };
 
-const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [], replyContext = null, evaluationClient = null }) => {
+const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [], replyContext = null, evaluationClient = null, now = new Date() }) => {
+    const routeClockMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+    const contextClockMs = Number.isFinite(routeClockMs) ? routeClockMs : Date.now();
     const currentOperatingContextHash = hashOperatingContext(operatingContextFromPrompt(systemPrompt));
     const recentTurns = history.slice(-CONTEXT_WINDOW);
 
@@ -853,7 +898,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     let groundingQuery = message;
     let attributeFollowUp = false;
     const activeContextProductIds = !imageUrls.length && shopId
-        ? grounding.contextProductIds(history)
+        ? grounding.contextProductIds(history, { now: contextClockMs })
         : [];
 
     if (imageUrls.length > 0) {
@@ -943,9 +988,9 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         attributeFollowUp = Boolean(shopId && grounding.isAttributeOnlyQuery(message));
         const hasActiveProductContext = activeContextProductIds.length > 0;
         const contextProductFollowUp = hasActiveProductContext
-            && shouldSearchProducts(message)
-            && CONTEXT_PRODUCT_QUESTION.test(message)
-            && grounding.identifyingTerms(message).length === 0;
+            && !hasConflictingContextProductCategory(message, history, activeContextProductIds)
+            && (grounding.isMediaRequest(message)
+                || (shouldSearchProducts(message) && CONTEXT_PRODUCT_QUESTION.test(message)));
         const useContextProducts = attributeFollowUp || contextProductFollowUp;
 
         // Product search and knowledge retrieval are independent reads — running
@@ -974,11 +1019,12 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     const contextProductFollowUp = Boolean(!imageUrls.length
         && shopId
         && activeContextProductIds.length
-        && CONTEXT_PRODUCT_QUESTION.test(message)
-        && grounding.identifyingTerms(message).length === 0);
+        && !hasConflictingContextProductCategory(message, history, activeContextProductIds)
+        && (grounding.isMediaRequest(message) || CONTEXT_PRODUCT_QUESTION.test(message)));
     const useContextProducts = attributeFollowUp || contextProductFollowUp;
     const selectedVariants = grounding.contextSelectedVariants(history, {
         shopId,
+        now: contextClockMs,
         activeProductIds: activeContextProductIds,
     });
 
@@ -1030,6 +1076,36 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     }
     sourceReferences.push(...knowledge.references);
 
+    // A policy-only reply must not erase the customer's last grounded product
+    // selection. Carry only the tenant-scoped product IDs as context pointers;
+    // the next product question still re-fetches current catalog rows before
+    // those IDs can support an answer.
+    const policyOnlyWithoutProduct = !imageUrls.length
+        && !knowledge.snippets
+        && CONTEXT_PRESERVING_POLICY_QUESTION.test(message)
+        && !hasConflictingContextProductCategory(message, history, activeContextProductIds)
+        && !explicitCatalogIdentity
+        && evidence.verifiedProducts.length === 0;
+    const preserveContextPointer = activeContextProductIds.length > 0
+        && !imageUrls.length
+        && !hasConflictingContextProductCategory(message, history, activeContextProductIds)
+        && !explicitCatalogIdentity
+        && evidence.verifiedProducts.length === 0
+        && (policyOnlyWithoutProduct
+            || attributeFollowUp
+            || contextProductFollowUp
+            || grounding.isMediaRequest(message));
+    if (preserveContextPointer) {
+        const alreadyReferenced = new Set(sourceReferences
+            .filter(reference => reference?.kind === 'product' && reference.id && reference.contextEligible !== false)
+            .map(reference => String(reference.id)));
+        for (const id of activeContextProductIds) {
+            if (!alreadyReferenced.has(String(id))) {
+                sourceReferences.push({ kind: 'product', id: String(id), contextEligible: true });
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Deterministic short-circuit. When the catalog answers the question, the
     // model has nothing to add and every reason to embellish: a NOT_FOUND turn
@@ -1045,7 +1121,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // Photo turns are excluded: the customer sent a picture and deserves a reply
     // that acknowledges it. The NOT_FOUND evidence block already forbids claiming
     // the item exists, and the outbound gate still polices prices and URLs.
-    const productQuestion = !imageUrls.length && !knowledge.snippets && (
+    const productQuestion = !policyOnlyWithoutProduct && !imageUrls.length && !knowledge.snippets && (
         evidence.relatedProducts.length > 0
         || explicitCatalogIdentity
         || hasProductIntent(groundingQuery)
@@ -1065,6 +1141,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         productIdentityQuestion,
         explicitCatalogIdentity,
         explicitCatalogIdentityWithoutFactRequest,
+        hasPolicyKnowledge: Boolean(knowledge.snippets),
         message,
     });
     if (deterministic) {
@@ -1193,9 +1270,36 @@ const _deterministicProductReply = (evidence, language, {
     productIdentityQuestion = false,
     explicitCatalogIdentity = false,
     explicitCatalogIdentityWithoutFactRequest = false,
+    hasPolicyKnowledge = false,
     message = '',
 } = {}) => {
     const { ProductEvidenceStatus, MediaStatus } = grounding;
+    const asksUnverifiedReturnPolicy = !hasPolicyKnowledge
+        && /\b(?:return|exchange|refund)\b|রিটার্ন|এক্সচেঞ্জ|রিফান্ড/i.test(message);
+    const addReturnPolicyHandoff = response => {
+        if (!asksUnverifiedReturnPolicy) return response;
+        const normalizedLanguage = String(language || '').trim().toLocaleLowerCase();
+        const isBengali = ['bn', 'bangla', 'bengali', 'বাংলা'].includes(normalizedLanguage);
+        const isEnglish = ['en', 'english'].includes(normalizedLanguage);
+        const note = isBengali
+            ? 'দোকানের অনুমোদিত তথ্য থেকে রিটার্ন বা এক্সচেঞ্জের নীতি নিশ্চিত করতে পারছি না। আমাদের টিম যাচাই করে জানাবে।'
+            : isEnglish
+                ? "I can't verify the shop's return or exchange policy from approved information. Our team can check and get back to you."
+                : 'Shop-er approved info theke return/exchange policy confirm korte parchi na. Amader team verify kore janabe.';
+        return `${response}\n${note}`;
+    };
+
+    if (PRICE_NEGOTIATION.test(message) && !hasPolicyKnowledge) {
+        const normalizedLanguage = String(language || '').trim().toLocaleLowerCase();
+        const isBengali = ['bn', 'bangla', 'bengali', 'বাংলা'].includes(normalizedLanguage);
+        const isEnglish = ['en', 'english'].includes(normalizedLanguage);
+        const response = isBengali
+            ? 'দোকানের অনুমোদিত তথ্য থেকে ছাড়ের দাম নিশ্চিত করতে পারছি না। দোকানের সঙ্গে যাচাই করে জানাতে হবে।'
+            : isEnglish
+                ? "I can't confirm a discounted price from the shop's approved information. The shop will need to verify it."
+                : 'Shop-er approved info theke discount price confirm korte parchi na. Shop-er sathe verify kore janate hobe.';
+        return { response, confidence: 1.0, source: 'grounding_price_negotiation' };
+    }
 
     if (attributeFollowUp && evidence.productStatus === ProductEvidenceStatus.NONE) {
         // They asked about a fabric/colour but nothing in this conversation is
@@ -1237,7 +1341,7 @@ const _deterministicProductReply = (evidence, language, {
             ? grounding.productImageNoProductReply(language)
             : grounding.productNotFoundReply(language);
         return {
-            response: `${base}${_renderAlternatives(evidence, language)}`,
+            response: addReturnPolicyHandoff(`${base}${_renderAlternatives(evidence, language)}`),
             // Authoritative and deliberately deliverable: this is EasyModerator's
             // answer, not the model's guess, so it must not be held for review.
             confidence: 1.0,
@@ -1248,16 +1352,48 @@ const _deterministicProductReply = (evidence, language, {
     if (evidence.productStatus === ProductEvidenceStatus.VERIFIED
         && evidence.verifiedProducts.length === 1
         && productQuestion) {
-        const asksPrice = /\b(?:price|cost|dam|daam|koto|how\s+much|current\s+price)\b|দাম|মূল্য|কত\s*টাকা/i.test(message)
-            && !/\b(?:delivery|shipping|courier|charge|fee)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার/i.test(message);
-        const asksAvailability = /\b(?:stock|available|availability)\b|স্টক|আছে/i.test(message);
+        const asksDeliveryDuration = /\b(?:koto\s*din|kotodin|koto\s*khon|how\s+long|how\s+many\s+days?|delivery\s+time|arrival\s+time|delivery\s+(?:today|tomorrow|by\s+\w+)|shipping\s+(?:today|tomorrow|by\s+\w+))\b|কত\s*দিন|কতদিন|কয়\s*দিন|কয়দিন|কতক্ষণ|ডেলিভারি\s*(?:আজ|কাল|আগামী)/i.test(message)
+            || /\bETA\b/.test(message);
+        const asksGarmentMeasurement = /\b(?:length|inseam|outseam|shoulder)\b.{0,40}\b(?:inch(?:es)?|cm|measure(?:ment)?|koto|how\s+long|how\s+many)\b|\b(?:inch(?:es)?|cm|measure(?:ment)?)\b.{0,40}\b(?:length|inseam|outseam|shoulder)\b/i.test(message);
+        const asksBodyMeasurement = /\b(?:chest|bust|waist|hip)\b.{0,24}\b(?:size|measure|measurement)\b|\b(?:size|measurement)\b.{0,24}\b(?:chest|bust|waist|hip)\b|\bmy\s+(?:body|chest|bust|waist|hip)\b|\bmy\s+body\s+(?:is|size)\b|আমার\s*(?:গায়ের|বুকের|কোমরের|বডির|বডি)|গায়ের\s*(?:সাইজ|মাপ)/i.test(message);
+        const nonPriceQuantityQuestion = asksDeliveryDuration || asksGarmentMeasurement || asksBodyMeasurement;
+        const mentionsDelivery = /\b(?:delivery|shipping|courier)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার/i.test(message);
+        const deliveryFeeCue = /\b(?:fee|fees|charge|charges|cost|costs|rate|rates|price|koto|how\s+much)\b|ফি|চার্জ|খরচ|রেট|কত/i.test(message);
+        const asksUnverifiedDeliveryPolicy = !asksDeliveryDuration && mentionsDelivery && deliveryFeeCue;
+        const asksProductPriceTerm = /\b(?:price|dam|daam|current\s+price)\b|দাম|মূল্য/i.test(message);
+        const asksPriceAlongsideDeliveryFee = asksUnverifiedDeliveryPolicy && asksProductPriceTerm
+            && (/(?:\b(?:and|plus|also|ar|ebong)\b|এবং|(?<![\p{L}\p{M}])ও(?![\p{L}\p{M}])|[+,])/iu.test(message)
+                || /\b(?:product|item)\s+price\b/i.test(message));
+        const asksPrice = (asksProductPriceTerm && (!asksUnverifiedDeliveryPolicy || asksPriceAlongsideDeliveryFee))
+            || (!asksUnverifiedDeliveryPolicy && !nonPriceQuantityQuestion
+                && /\b(?:cost|taka|tk|bdt|koto|how\s+much)\b|কত|টাকা/i.test(message));
+        const asksAvailability = /\b(?:stock|available|availability|ache|ase|pawa\s+jabe)\b|স্টক|আছে|পাওয়া যাবে|পাওয়া যাবে/i.test(message);
+        const asksUnverifiedDeliveryCommitment = /\b(?:delivery|shipping)\s+(?:to|tomorrow|today|by|next|within)\b|\b(?:address|i(?:'ll|\s+will)\s+(?:take|order)|place\s+(?:an?\s+)?order|book\s+(?:it|one|this)|reserve\b)\b|ঠিকানা|নেব|নিব|অর্ডার|পাঠান|ডেলিভারি\s*(?:আজ|কাল|আগামী)/i.test(message);
+        const addDeliveryUncertainty = response => {
+            if (!asksUnverifiedDeliveryPolicy && !asksUnverifiedDeliveryCommitment) return response;
+            const normalizedLanguage = String(language || '').trim().toLocaleLowerCase();
+            const isBengali = ['bn', 'bangla', 'bengali', 'বাংলা'].includes(normalizedLanguage);
+            const isEnglish = ['en', 'english'].includes(normalizedLanguage);
+            const note = asksUnverifiedDeliveryPolicy
+                ? isBengali
+                    ? 'দোকানের উপলভ্য তথ্য থেকে ডেলিভারি চার্জ নিশ্চিত করতে পারছি না।'
+                    : isEnglish
+                        ? "I can't verify the delivery fee from the shop's available information."
+                        : 'Delivery charge-ta shop-er verified information theke confirm korte parchi na.'
+                : isBengali
+                    ? 'এই চ্যাট থেকে অর্ডার তৈরি বা ডেলিভারি নিশ্চিত করা হয়নি। অনুগ্রহ করে আলাদা অর্ডার প্রক্রিয়ায় এগোন।'
+                    : isEnglish
+                        ? "I can't confirm or create an order from this chat. Please continue through the separate order flow for delivery."
+                        : 'Ei chat theke order create ba delivery confirm korte parchi na. Alada order flow diye agan.';
+            return `${response}\n${note}`;
+        };
         const presentation = buildProductPresentation(evidence, { message, language, selectedVariants });
         const selectedVariant = presentation.products[0]?.selectedVariant;
         if (asksPrice) {
             const rendered = renderMessengerProductPresentation(presentation, language);
             if (rendered.text) {
                 return {
-                    response: rendered.text,
+                    response: addReturnPolicyHandoff(addDeliveryUncertainty(rendered.text)),
                     confidence: 1.0,
                     source: 'grounding_product_presentation',
                 };
@@ -1268,7 +1404,7 @@ const _deterministicProductReply = (evidence, language, {
             const rendered = renderMessengerProductPresentation(presentation, language);
             if (rendered.text) {
                 return {
-                    response: rendered.text,
+                    response: addReturnPolicyHandoff(addDeliveryUncertainty(rendered.text)),
                     confidence: 1.0,
                     source: 'grounding_product_presentation',
                 };
@@ -1285,7 +1421,7 @@ const _deterministicProductReply = (evidence, language, {
                 const rendered = renderMessengerProductPresentation(presentation, language);
                 if (rendered.text) {
                     return {
-                        response: `${rendered.text}\n${status}`,
+                        response: addReturnPolicyHandoff(addDeliveryUncertainty(`${rendered.text}\n${status}`)),
                         confidence: 1.0,
                         source: 'grounding_product_presentation',
                     };
@@ -1298,7 +1434,7 @@ const _deterministicProductReply = (evidence, language, {
                 const rendered = renderMessengerProductPresentation(presentation, language);
                 const photoUnavailable = grounding.productImageUnavailableReply(language);
                 return {
-                    response: [rendered.text, photoUnavailable].filter(Boolean).join('\n'),
+                    response: addReturnPolicyHandoff([rendered.text, photoUnavailable].filter(Boolean).join('\n')),
                     confidence: 1.0,
                     source: 'grounding_media_unavailable',
                 };
@@ -1308,7 +1444,7 @@ const _deterministicProductReply = (evidence, language, {
                 const rendered = renderMessengerProductPresentation(presentation, language);
                 if (rendered.text) {
                     return {
-                        response: rendered.text,
+                        response: addReturnPolicyHandoff(rendered.text),
                         confidence: 1.0,
                         source: 'grounding_product_presentation',
                     };
@@ -1326,7 +1462,7 @@ const _deterministicProductReply = (evidence, language, {
             const rendered = renderMessengerProductPresentation(presentation, language);
             if (rendered.text) {
                 return {
-                    response: rendered.text,
+                    response: addReturnPolicyHandoff(rendered.text),
                     confidence: 1.0,
                     source: 'grounding_product_presentation',
                 };

@@ -2,6 +2,7 @@
 
 const { decodeDataImage } = require('../../src/utils/safe-media-fetch');
 const { GEMINI_PRICE_SNAPSHOT } = require('./evaluation-budget');
+const { isRegisteredGenuineRaster } = require('./genuine-photo-fixtures');
 const { isRegisteredSyntheticRaster } = require('./synthetic-media-fixtures');
 
 const MODEL = GEMINI_PRICE_SNAPSHOT.model;
@@ -28,7 +29,9 @@ const inspectImageDataUrl = value => {
     }
     try {
         const decoded = decodeDataImage(value, { maxBytes: MAX_INLINE_IMAGE_BYTES });
-        if (!isRegisteredSyntheticRaster(decoded)) throw new Error('Image is not in the registered synthetic fixture set.');
+        if (!isRegisteredSyntheticRaster(decoded) && !isRegisteredGenuineRaster(decoded)) {
+            throw new Error('Image is not in the registered, checksum-verified evaluation fixture set.');
+        }
         return { bytes: decoded.buffer.length, mimeType: decoded.mimeType };
     } catch {
         throw new EvaluationClientError('INVALID_RASTER_IMAGE');

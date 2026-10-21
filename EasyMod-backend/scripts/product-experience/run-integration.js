@@ -10,7 +10,9 @@ const { spawn, execFileSync } = require('node:child_process');
 const SCRIPT_ROOT = __dirname;
 const BACKEND_ROOT = path.resolve(SCRIPT_ROOT, '../..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
-const REPORT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-2', 'artifacts', 'integration');
+const ARTIFACT_ROOT = path.resolve(process.env.LAB_ARTIFACT_ROOT
+    || path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-3', 'artifacts'));
+const REPORT_ROOT = path.join(ARTIFACT_ROOT, 'integration');
 const EGRESS_FENCE = path.join(SCRIPT_ROOT, 'no-egress.js');
 const COMPOSE_FILE = path.join(SCRIPT_ROOT, 'lab-integration.compose.yml');
 const TESTS = [
@@ -19,6 +21,28 @@ const TESTS = [
     'src/jobs/__tests__/message-worker.recovery.integration.test.js',
 ];
 const META_E2E_TEST = 'tests/meta-e2e/meta-e2e.test.js';
+
+const hashBackendSourceTree = engineRoot => {
+    const sourceRoot = path.join(engineRoot, 'src');
+    const files = [];
+    const visit = directory => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+            const filename = path.join(directory, entry.name);
+            if (entry.isDirectory()) visit(filename);
+            else if (entry.isFile() && !entry.name.startsWith('intent-router.lab-baseline-')) files.push(filename);
+        }
+    };
+    visit(sourceRoot);
+    const relative = filename => path.relative(sourceRoot, filename).replace(/\\/g, '/');
+    files.sort((left, right) => {
+        const a = relative(left);
+        const b = relative(right);
+        return a < b ? -1 : a > b ? 1 : 0;
+    });
+    const digest = crypto.createHash('sha256');
+    for (const filename of files) digest.update(relative(filename), 'utf8').update('\0').update(fs.readFileSync(filename)).update('\0');
+    return digest.digest('hex');
+};
 
 const freePort = () => new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -122,6 +146,7 @@ const minimalWindowsEnv = () => ({
     USERPROFILE: process.env.USERPROFILE,
     DOCKER_CONFIG: process.env.DOCKER_CONFIG,
     DOCKER_HOST: process.env.DOCKER_HOST,
+    LAB_ARTIFACT_ROOT: ARTIFACT_ROOT,
 });
 
 const integrationEnv = (postgresPort, redisPort, egressAttemptsPath) => ({
@@ -272,6 +297,10 @@ const main = async () => {
     fs.mkdirSync(REPORT_ROOT, { recursive: true });
     const runId = crypto.randomUUID();
     const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+    const candidateBackendSourceSha256 = hashBackendSourceTree(BACKEND_ROOT);
+    const sourceBranch = process.env.LAB_SOURCE_BRANCH
+        || execFileSync('git', ['branch', '--show-current'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim()
+        || 'detached';
     const project = `easymod-product-lab-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
     const postgresPort = await freePort();
     let redisPort = await freePort();
@@ -288,8 +317,10 @@ const main = async () => {
     let migration = null;
     let jest = null;
     let metaE2eJest = null;
+    let backendRegression = null;
     let jestStructured = null;
     let metaE2eJestStructured = null;
+    let backendRegressionStructured = null;
     let metaE2eDeliveryDiagnostics = [];
     let cleanup = null;
     const temporaryJestReports = [];
@@ -346,6 +377,46 @@ const main = async () => {
         } catch (_) { }
         timeline.push({ stage: 'webhook_pipeline_e2e_jest', exitCode: metaE2eJest.code, durationMs: Date.now() - metaE2eStart, timedOut: metaE2eJest.timedOut });
         if (metaE2eJest.code !== 0) throw new Error('The real webhook-to-worker-to-outbound Meta-shaped suite failed.');
+
+        // Run every normal backend Jest suite while these disposable services
+        // are available. Keep this broad regression separate from the real
+        // Postgres scenarios above: unit suites receive a fresh in-memory
+        // SQLite database and isolated Redis logical databases. Provider keys
+        // remain absent and the same egress fence stays active.
+        const backendRegressionStart = Date.now();
+        const backendRegressionReportPath = path.join(os.tmpdir(), `${runId}-backend-regression-jest.json`);
+        temporaryJestReports.push(backendRegressionReportPath);
+        const backendRegressionEnv = {
+            ...env,
+            DATABASE_URL: 'sqlite::memory:',
+            REDIS_SESSION_DB: '20',
+            REDIS_CACHE_DB: '21',
+            REDIS_RATELIMIT_DB: '22',
+            // Auth's production-config test uses only the app origin. Keep the
+            // Growth OS switch disabled for this independent unit-suite pass;
+            // the real integration phase above opts into Growth explicitly.
+            GROWTH_OS_ENABLED: 'false',
+        };
+        backendRegression = await run(nodeExe, [
+            jestPath,
+            '--config', path.join(BACKEND_ROOT, 'jest.config.js'),
+            '--runInBand', '--forceExit', '--detectOpenHandles', '--coverage=false',
+            '--json', `--outputFile=${backendRegressionReportPath}`,
+        ], {
+            cwd: BACKEND_ROOT,
+            env: backendRegressionEnv,
+            timeoutMs: 900000,
+        });
+        const backendReport = summarizeJestReport(backendRegressionReportPath);
+        backendRegressionStructured = backendReport ? {
+            passedSuites: backendReport.passedSuites,
+            failedSuites: backendReport.failedSuites,
+            passedTests: backendReport.passedTests,
+            failedTests: backendReport.failedTests,
+            failedSuiteDiagnostics: backendReport.failedSuiteDiagnostics,
+        } : null;
+        timeline.push({ stage: 'full_backend_regression_jest', exitCode: backendRegression.code, durationMs: Date.now() - backendRegressionStart, timedOut: backendRegression.timedOut });
+        if (backendRegression.code !== 0) throw new Error('The full backend Jest regression suite failed.');
     } catch (error) {
         failure = error.message;
     } finally {
@@ -380,8 +451,9 @@ const main = async () => {
         status,
         startedAt,
         completedAt: new Date().toISOString(),
-        branch: 'feature/verified-commerce-foundation-v1.2',
+        branch: sourceBranch,
         sourceRevision,
+        candidateBackendSourceSha256,
         composeProject: project,
         serviceNetwork: { driver: 'bridge', internal: false, ipMasquerading: false, subnet: networkSubnet, overlapChecked: true },
         services: [
@@ -389,7 +461,11 @@ const main = async () => {
             { name: 'redis', image: 'redis:7-alpine', host: '127.0.0.1', port: redisPort, storage: 'tmpfs', health: 'compose-healthcheck' },
         ],
         migrations: migration ? { exitCode: migration.code, durationMs: timeline.find(item => item.stage === 'migrations')?.durationMs } : { status: 'NOT_RUN' },
-        testPaths: { selectedIntegration: TESTS, webhookPipelineE2E: META_E2E_TEST },
+        testPaths: {
+            selectedIntegration: TESTS,
+            webhookPipelineE2E: META_E2E_TEST,
+            backendRegression: 'jest.config.js (all discovered non-integration, non-quarantined backend suites)',
+        },
         jest: {
             status: failure ? 'FAIL' : 'PASS',
             selectedIntegration: jest ? {
@@ -404,6 +480,12 @@ const main = async () => {
                 ...parseJestSummary(`${metaE2eJest.stdout}\n${metaE2eJest.stderr}`),
                 structured: metaE2eJestStructured,
                 deliveryDiagnostics: metaE2eDeliveryDiagnostics,
+            } : { status: 'NOT_RUN' },
+            backendRegression: backendRegression ? {
+                exitCode: backendRegression.code,
+                timedOut: backendRegression.timedOut,
+                ...parseJestSummary(`${backendRegression.stdout}\n${backendRegression.stderr}`),
+                structured: backendRegressionStructured,
             } : { status: 'NOT_RUN' },
         },
         egress: { mode: 'Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch', guard: 'PASS', blockedNonLoopbackAttempts: blockedEgressAttempts, externalProvidersConfigured: false },
@@ -421,6 +503,7 @@ const main = async () => {
         `Migrations: ${receipt.migrations.exitCode ?? receipt.migrations.status}`,
         `Selected integration Jest: ${receipt.jest.selectedIntegration.tests || receipt.jest.selectedIntegration.status}; suites=${receipt.jest.selectedIntegration.suites || 'not run'}; duration=${receipt.jest.selectedIntegration.duration || 'not run'}`,
         `Webhook pipeline Jest: ${receipt.jest.webhookPipelineE2E.tests || receipt.jest.webhookPipelineE2E.status}; suites=${receipt.jest.webhookPipelineE2E.suites || 'not run'}; duration=${receipt.jest.webhookPipelineE2E.duration || 'not run'}`,
+        `Full backend Jest: ${receipt.jest.backendRegression.tests || receipt.jest.backendRegression.status}; suites=${receipt.jest.backendRegression.suites || 'not run'}; duration=${receipt.jest.backendRegression.duration || 'not run'}`,
         `Egress fence: ${receipt.egress.mode}`,
         `Cleanup: ${receipt.cleanup.exitCode ?? receipt.cleanup.status}`,
         failure ? `Failure: ${redact(failure)}` : 'Failure: none',

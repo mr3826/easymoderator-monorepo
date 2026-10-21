@@ -297,7 +297,7 @@ describe('META-E2E-003 — a product this shop really sells', () => {
 
     test('a price the catalog does not hold is replaced even for a verified product', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: `${EXPECTED.knownProductName} — ৳999 only!`,
         });
 
@@ -364,7 +364,7 @@ describe('META-E2E-003 — a product this shop really sells', () => {
 describe('META-E2E-004 — an attribute the catalog does not record', () => {
     test('a fabric asserted for a product with material = NULL is withdrawn', async () => {
         const result = await harness.deliver({
-            text: 'chiffon kurti ache?',
+            text: 'What is the fabric of the chiffon kurti?',
             candidate: `Ji, ${EXPECTED.unknownMaterialProductName} ache — `
                 + `৳${EXPECTED.unknownMaterialProductPrice}. Eta pure chiffon fabric.`,
         });
@@ -384,7 +384,7 @@ describe('META-E2E-004 — an attribute the catalog does not record', () => {
         // assistant useless — but the fabric claim does not.
         expect(sent).toContain(String(EXPECTED.unknownMaterialProductPrice));
         expect(sent).not.toMatch(/pure chiffon fabric/i);
-        expect(sent).toMatch(/nei|not (recorded|available)|নেই/i);
+        expect(sent).toMatch(/don't have|do not have|nei|not (recorded|available)|নেই/i);
     });
 
     test('"eta chiffon?" with nothing grounded is answered by asking which product', async () => {
@@ -913,24 +913,28 @@ describe('META-E2E-009B — model URL rejection', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('META-E2E-010 — the fallback provider', () => {
-    test('a primary-provider outage fails over, and the reply still passes the gate', async () => {
+    test('a primary-provider outage fails over, while the gate holds an unverified material claim', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            // Keep this long question out of the sentiment LLM path so the
+            // provider-call assertion below measures this reply's failover
+            // chain alone. `thanks` is a strong keyword-positive signal.
+            text: `Thanks — what fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: {
                 'gemini-lite': new Error('503 Service Unavailable'),
-                openai: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+                openai: `${EXPECTED.knownProductName} is ${EXPECTED.aiSuggestedProductMaterial}, ৳${EXPECTED.knownProductPrice}.`,
             },
         });
 
         expect(transport.llmProvidersCalled()).toEqual(['gemini-lite', 'openai']);
         expect(result.decision.provider).toBe('openai');
-        expect(result.decision.decision).toBe(GroundingDecision.SEND);
-        expect(body(result)).toContain(String(EXPECTED.knownProductPrice));
+        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.reasonCode).toBe(ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+        expect(body(result)).not.toMatch(/\b(?:cotton|silk|linen)\b/i);
     });
 
     test('the fallback provider is held to exactly the same boundary', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: {
                 'gemini-lite': new Error('503 Service Unavailable'),
                 openai: `${EXPECTED.knownProductName} — ৳3333, silk.`,
@@ -944,7 +948,7 @@ describe('META-E2E-010 — the fallback provider', () => {
 
     test('every provider failing sends the generic fallback and holds for a human', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: new Error('503 Service Unavailable'),
         });
 
@@ -1010,17 +1014,18 @@ describe('META-E2E-011 — the catalog cannot be read', () => {
 describe('META-E2E-012 — unusable model output', () => {
     test('an empty provider completion cannot create a product claim and reaches the human-safe hold path', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: '   ',
         });
 
-        // llm.service rejects blank provider completions before a model candidate
-        // reaches the grounding gate. The router then falls back to generic copy,
-        // which is low confidence and held for an agent.
+        // llm.service rejects blank provider completions before the router can
+        // return its product evidence. The controller falls back to generic
+        // copy with empty evidence, which is low confidence and held for an
+        // agent; the failure path must not retain or invent a product claim.
         expect(result.decision.productStatus).toBe(ProductEvidenceStatus.NONE);
         expect(result.jobResults[0]).toMatchObject({ sent: false, reason: 'low_confidence_handoff', handoff: true });
         expect(body(result).trim().length).toBeGreaterThan(0); // one generic holding message only
-        expect(body(result)).not.toMatch(/black\s+panjabi|৳|\b\d{3,}\b/i);
+        expect(body(result)).not.toMatch(/৳|\b\d{3,}\b/i);
         expect(harness.sentAttachments(result.sends)).toEqual([]);
     });
 

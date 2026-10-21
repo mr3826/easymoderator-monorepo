@@ -133,7 +133,7 @@ const GEMINI_PRICE_SNAPSHOT = Object.freeze({
     inputUsdPerMillion: 0.25,
     outputUsdPerMillion: 1.5,
     source: 'https://ai.google.dev/gemini-api/docs/pricing',
-    pinnedAt: '2026-10-21',
+    pinnedAt: '2026-10-22',
 });
 
 const HARD_CAPS = Object.freeze({
@@ -233,7 +233,13 @@ const safeRequestMetadata = response => {
  * prompt (including raster tokens) by inputTokenUpperBound BEFORE execute().
  * A transport that ignores cancellation keeps its concurrency slot until settled.
  */
-const createEvaluationBudget = config => {
+const createEvaluationBudget = (config, hooks = {}) => {
+    if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)
+        || Object.keys(hooks).some(key => key !== 'onSnapshot')
+        || (hooks.onSnapshot !== undefined && typeof hooks.onSnapshot !== 'function')) {
+        throw new BudgetError('INVALID_HOOKS');
+    }
+    const onSnapshot = hooks.onSnapshot;
     const limits = normalizeConfig(config);
     const officialPricing = !Object.prototype.hasOwnProperty.call(config, 'rates');
     const ceilingUnits = Math.floor(limits.ceilingUsd * USD_UNITS);
@@ -261,6 +267,10 @@ const createEvaluationBudget = config => {
         ceilingUsd: usd(ceilingUnits),
         committedUsd: usd(committedUnits),
         remainingUsd: usd(Math.max(0, ceilingUnits - committedUnits)),
+        // Gemini usage metadata is converted using the pinned rate card. This
+        // is an estimate, not a Google billing invoice. Keep the legacy alias
+        // for existing Lab clients while publishing the truthful field name.
+        estimatedProviderChargeUsd: usd(calls.reduce((sum, call) => sum + (call.actualUnits ?? 0), 0)),
         providerReportedUsd: usd(calls.reduce((sum, call) => sum + (call.actualUnits ?? 0), 0)),
         requestCount: calls.length,
         visionRequestCount: visionRequests,
@@ -272,9 +282,19 @@ const createEvaluationBudget = config => {
             ...safe,
             reservedUsd: usd(reservedUnits),
             chargedUsd: usd(chargedUnits),
+            estimatedProviderChargeUsd: actualUnits === null ? null : usd(actualUnits),
             providerReportedUsd: actualUnits === null ? null : usd(actualUnits),
         })),
     });
+    const persistSnapshot = () => {
+        if (!onSnapshot) return;
+        try {
+            onSnapshot(snapshot());
+        } catch (_) {
+            halted = true;
+            throw new BudgetError('CAMPAIGN_LEDGER_FAILURE');
+        }
+    };
 
     const execute = async (request, transport) => {
         if (halted) reject('BUDGET_HALTED');
@@ -327,6 +347,16 @@ const createEvaluationBudget = config => {
             authorizeGeminiRequest: officialPricing ? authorizeGeminiEvaluationRequest : () => false,
         });
         const release = () => { activeRequests -= 1; operation.active = false; };
+        try {
+            // A campaign ledger rejection occurs before the transport starts,
+            // so no paid provider request can escape the cumulative cap.
+            persistSnapshot();
+        } catch (_) {
+            row.status = 'campaign_ledger_rejected';
+            blockedRequests.CAMPAIGN_LEDGER_LIMIT = (blockedRequests.CAMPAIGN_LEDGER_LIMIT || 0) + 1;
+            release();
+            throw new BudgetError('CAMPAIGN_LEDGER_REJECTED');
+        }
         const pending = Promise.resolve().then(() => geminiReservationContext.run({
             model, inputTokenUpperBound, maxOutputTokens, vision,
             permit: null, permitIssued: false, permitConsumed: false,
@@ -351,6 +381,7 @@ const createEvaluationBudget = config => {
                 ? 'transport_timeout'
                 : rateLimited ? 'provider_rate_limited' : 'transport_failed';
             if (rateLimited) halted = true;
+            try { persistSnapshot(); } catch (_) { halted = true; }
             throw new BudgetError(code); // Never propagate provider bodies, URLs or errors.
         } finally {
             clearTimeout(timer);
@@ -369,12 +400,14 @@ const createEvaluationBudget = config => {
             row.status = exceeded ? 'usage_exceeds_reservation' : 'provider_reported';
             if (exceeded) {
                 halted = true;
+                try { persistSnapshot(); } catch (_) { halted = true; }
                 throw new BudgetError('USAGE_EXCEEDS_RESERVATION');
             }
         } else {
             row.status = 'usage_unknown';
         }
         operation.completed = true;
+        persistSnapshot();
         return { response: body, receipt: clone(snapshot().calls.find(call => call.callId === row.callId)) };
     };
 

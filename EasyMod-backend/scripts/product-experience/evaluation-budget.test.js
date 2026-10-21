@@ -44,7 +44,27 @@ describe('isolated Gemini evaluation budget', () => {
         });
         expect(result.response).toEqual(response());
         expect(result.receipt).toMatchObject({ status: 'provider_reported', inputTokens: 80, outputTokens: 4, thinkingTokens: 2, chargedUsd: 0.000029 });
-        expect(budget.snapshot()).toMatchObject({ requestCount: 1, activeRequests: 0, committedUsd: 0.000029, providerReportedUsd: 0.000029 });
+        expect(budget.snapshot()).toMatchObject({ requestCount: 1, activeRequests: 0, committedUsd: 0.000029, estimatedProviderChargeUsd: 0.000029, providerReportedUsd: 0.000029 });
+    });
+
+    test('persists a campaign reservation before transport and reconciles the estimate afterward', async () => {
+        const snapshots = [];
+        const budget = createEvaluationBudget({ ceilingUsd: 1 }, { onSnapshot: snapshot => snapshots.push(snapshot) });
+        await budget.execute(request(), async () => {
+            expect(snapshots).toHaveLength(1);
+            expect(snapshots[0]).toMatchObject({ requestCount: 1, activeRequests: 1, committedUsd: 0.00004 });
+            return response();
+        });
+        expect(snapshots).toHaveLength(2);
+        expect(snapshots[1]).toMatchObject({ activeRequests: 0, estimatedProviderChargeUsd: 0.000029 });
+    });
+
+    test('stops before transport if the campaign ledger rejects its reservation', async () => {
+        const transport = jest.fn();
+        const budget = createEvaluationBudget({ ceilingUsd: 1 }, { onSnapshot: () => { throw new Error('CAMPAIGN_LIMIT_EXCEEDED'); } });
+        await expect(budget.execute(request(), transport)).rejects.toMatchObject({ code: 'CAMPAIGN_LEDGER_REJECTED' });
+        expect(transport).not.toHaveBeenCalled();
+        expect(budget.snapshot()).toMatchObject({ halted: true, requestCount: 1, activeRequests: 0 });
     });
 
     test('refuses work before transport when its worst case exceeds remaining spend', async () => {

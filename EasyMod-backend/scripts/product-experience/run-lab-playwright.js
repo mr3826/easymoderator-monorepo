@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium, firefox, webkit } = require(path.resolve(__dirname, '../../../node_modules/playwright'));
 
@@ -12,8 +12,32 @@ const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const FRONTEND_ROOT = path.join(REPO_ROOT, 'EasyMod-frontend');
 const SERVER_PATH = path.join(__dirname, 'lab-server.js');
 const CONFIG_PATH = path.join(FRONTEND_ROOT, 'playwright.lab.config.ts');
-const ARTIFACT_ROOT = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-2', 'artifacts', 'playwright');
+const LAB_ARTIFACT_ROOT = path.resolve(process.env.LAB_ARTIFACT_ROOT
+    || path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-3', 'artifacts'));
+const ARTIFACT_ROOT = path.join(LAB_ARTIFACT_ROOT, 'playwright');
 const REPORT_PATH = path.join(ARTIFACT_ROOT, 'execution.json');
+
+const hashBackendSourceTree = engineRoot => {
+    const sourceRoot = path.join(engineRoot, 'src');
+    const files = [];
+    const visit = directory => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+            const filename = path.join(directory, entry.name);
+            if (entry.isDirectory()) visit(filename);
+            else if (entry.isFile() && !entry.name.startsWith('intent-router.lab-baseline-')) files.push(filename);
+        }
+    };
+    visit(sourceRoot);
+    const relative = filename => path.relative(sourceRoot, filename).replace(/\\/g, '/');
+    files.sort((left, right) => {
+        const a = relative(left);
+        const b = relative(right);
+        return a < b ? -1 : a > b ? 1 : 0;
+    });
+    const digest = createHash('sha256');
+    for (const filename of files) digest.update(relative(filename), 'utf8').update('\0').update(fs.readFileSync(filename)).update('\0');
+    return digest.digest('hex');
+};
 
 const childEnv = () => ({
     PATH: process.env.PATH,
@@ -22,6 +46,7 @@ const childEnv = () => ({
     TEMP: process.env.TEMP,
     TMP: process.env.TMP,
     USERPROFILE: process.env.USERPROFILE,
+    LAB_ARTIFACT_ROOT,
 });
 
 const availableBrowsers = () => [
@@ -133,6 +158,7 @@ const playwrightSummary = (output) => {
 const main = async () => {
     fs.mkdirSync(ARTIFACT_ROOT, { recursive: true });
     const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+    const candidateBackendSourceSha256 = hashBackendSourceTree(BACKEND_ROOT);
     const browsers = availableBrowsers();
     const startedAt = new Date().toISOString();
     const runId = randomUUID();
@@ -185,6 +211,7 @@ const main = async () => {
         startedAt,
         completedAt: new Date().toISOString(),
         sourceRevision,
+        candidateBackendSourceSha256,
         localUrl: lab?.url || null,
         browsersAvailable: browsers,
         browserLimitations: ['Firefox or WebKit are included only when their local browser binary is installed.'],
