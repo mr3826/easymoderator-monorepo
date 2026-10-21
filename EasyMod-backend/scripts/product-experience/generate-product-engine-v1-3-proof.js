@@ -54,6 +54,8 @@ const newestMatching = (directory, predicate) => jsonFiles(directory)
     .filter(item => item && predicate(item.value, item.filename))
     .sort((left, right) => String(right.value.completedAt || right.value.updatedAt || '').localeCompare(String(left.value.completedAt || left.value.updatedAt || '')))[0] || null;
 
+const matchesCurrentVerificationCommit = (receipt, head) => receipt?.candidateCommit === head;
+
 const pathInside = (root, relativePath) => {
     const target = path.resolve(root, relativePath);
     return target.startsWith(`${path.resolve(root)}${path.sep}`) ? target : null;
@@ -141,8 +143,7 @@ const main = () => {
     const realRun = runArtifactFor(realComparisonEntry, 'candidate-v1-3');
     const integrationEntry = newestMatching(path.join(ARTIFACT_ROOT, 'integration'), item => item.candidateBackendSourceSha256 === currentEngineHash);
     const integration = integrationEntry?.value || null;
-    const regressionEntry = newestMatching(path.join(ARTIFACT_ROOT, 'regression'), item => item.candidateCommit === head
-        || item.candidateBackendSourceSha256 === currentEngineHash);
+    const regressionEntry = newestMatching(path.join(ARTIFACT_ROOT, 'regression'), item => matchesCurrentVerificationCommit(item, head));
     const regression = regressionEntry?.value || null;
     const playwrightPath = path.join(ARTIFACT_ROOT, 'playwright', 'execution.json');
     const playwright = fs.existsSync(playwrightPath) ? readJson(playwrightPath) : null;
@@ -617,4 +618,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { backendSourceSha256, matchingComparison, renderMarkdown, safeExamples };
+module.exports = { backendSourceSha256, matchesCurrentVerificationCommit, matchingComparison, renderMarkdown, safeExamples };

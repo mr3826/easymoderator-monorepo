@@ -1,6 +1,6 @@
 'use strict';
 
-const { renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+const { matchesCurrentVerificationCommit, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
 
 describe('V1.3 proof Markdown rendering', () => {
     const proof = {
@@ -52,5 +52,18 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('Estimated matched-pair provider cost from priced usage: $0.12345678.');
         expect(markdown).toContain('Candidate unpriced provider calls: 1.');
         expect(markdown).toContain('candidate estimate may be incomplete.');
+    });
+});
+
+describe('current verification receipt selection', () => {
+    test('does not reuse a failed receipt from an older commit with the same backend source hash', () => {
+        const oldReceipt = {
+            candidateCommit: 'old-commit',
+            candidateBackendSourceSha256: 'a'.repeat(64),
+            status: 'FAIL',
+        };
+
+        expect(matchesCurrentVerificationCommit(oldReceipt, 'current-commit')).toBe(false);
+        expect(matchesCurrentVerificationCommit({ ...oldReceipt, candidateCommit: 'current-commit' }, 'current-commit')).toBe(true);
     });
 });
