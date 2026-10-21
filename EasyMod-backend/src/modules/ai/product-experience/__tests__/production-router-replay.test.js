@@ -101,7 +101,10 @@ const {
     DEFAULT_INPUT,
 } = require('../../../../../scripts/product-experience/replay');
 
-const OUTPUT_PATH = path.resolve(__dirname, '../../../../../../docs/ai/product-experience-v1/artifacts/production-router-replay.json');
+const OUTPUT_ROOT = process.env.LAB_ARTIFACT_ROOT
+    ? path.resolve(process.env.LAB_ARTIFACT_ROOT)
+    : path.resolve(__dirname, '../../../../../../docs/ai/product-experience-v1/artifacts');
+const OUTPUT_PATH = path.join(OUTPUT_ROOT, 'runs', 'production-router-replay.json');
 const BASE_CLOCK = Date.parse('2026-10-20T00:00:00.000Z');
 const PHONE_OR_EMAIL = /(?:\+?880\s*)?0?(1[3-9]\d{8})\b|[\w.+\-]+@[\w\-]+\.[a-z]{2,}/i;
 const routerLanguage = language => language === 'english' ? 'en' : language === 'bangla' ? 'bn' : 'mixed';

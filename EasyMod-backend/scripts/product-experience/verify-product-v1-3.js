@@ -70,11 +70,36 @@ const runStep = async (name, command, args, env, timeoutMs) => {
     return step;
 };
 
+const findCandidateRealGeminiRunId = ({ comparisonRoot, sourceSha256, oracleSha256, backendSourceSha256: candidateSourceSha256 }) => {
+    if (typeof comparisonRoot !== 'string' || !path.isAbsolute(comparisonRoot)
+        || typeof sourceSha256 !== 'string' || typeof oracleSha256 !== 'string'
+        || typeof candidateSourceSha256 !== 'string' || !fs.existsSync(comparisonRoot)) return null;
+    return fs.readdirSync(comparisonRoot)
+        .filter(filename => filename.endsWith('.json'))
+        .map(filename => {
+            try { return JSON.parse(fs.readFileSync(path.join(comparisonRoot, filename), 'utf8')); } catch (_) { return null; }
+        })
+        .filter(comparison => comparison?.mode === 'real-gemini'
+            && comparison.dataset === 'source'
+            && comparison.datasetSha256 === sourceSha256
+            && comparison.comparisonValid === true
+            && comparison.oracleSha256 === oracleSha256)
+        .map(comparison => ({
+            comparison,
+            candidate: comparison.results?.find(result => result.engine === 'candidate-v1-3'),
+        }))
+        .filter(entry => entry.candidate?.status === 'PASS'
+            && entry.candidate.engineSourceSha256 === candidateSourceSha256
+            && typeof entry.candidate.summary?.runId === 'string')
+        .sort((left, right) => String(right.candidate.completedAt || '').localeCompare(String(left.candidate.completedAt || '')))
+        .map(entry => entry.candidate.summary.runId)[0] || null;
+};
+
 const requiredEnv = () => {
     const env = { ...process.env };
     for (const key of [
         'EM-GEMINI-KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'OPENAI_API_KEY',
-        'ANTHROPIC_API_KEY', 'EASYMOD_LIVE_GEMINI_EGRESS',
+        'ANTHROPIC_API_KEY', 'EASYMOD_LIVE_GEMINI_EGRESS', 'LAB_REAL_GEMINI_RUN_ID',
     ]) delete env[key];
     env.NODE_ENV = 'test';
     env.EASYMOD_LIVE_GEMINI_EGRESS = '0';
@@ -139,20 +164,44 @@ const main = async () => {
         steps.push(await runStep(`deterministic-${dataset}-comparison`, NODE, [path.join(__dirname, 'run-engine-comparison.js')], env, 15 * 60 * 1000));
     }
 
-    steps.push(await runStep('local-test-lab-playwright', NODE, [path.join(__dirname, 'run-lab-playwright.js')], offline, 10 * 60 * 1000));
-    steps.push(await runStep('privacy-scanner-unit-tests', 'python', [path.join(__dirname, 'test_scan_artifact_privacy.py')], offline));
-    steps.push(await runStep('trace-sanitizer-unit-tests', 'python', [path.join(__dirname, 'test_sanitize_playwright_traces.py')], offline));
-
+    let realGeminiCandidateRunId = null;
     if (paidOptIn) {
         const paidEnv = { ...offline, 'EM-GEMINI-KEY': process.env['EM-GEMINI-KEY'],
             LAB_COMPARISON_MODE: 'real-gemini', LAB_COMPARISON_DATASET: 'source', LAB_RUN_SCOPE: 'full' };
-        steps.push(await runStep('paid-gemini-source-and-genuine-photo-comparison-cap-usd-2', NODE, [path.join(__dirname, 'run-engine-comparison.js')], paidEnv, 35 * 60 * 1000));
+        const paidComparison = await runStep('paid-gemini-source-and-genuine-photo-comparison-cap-usd-2', NODE, [path.join(__dirname, 'run-engine-comparison.js')], paidEnv, 35 * 60 * 1000);
+        steps.push(paidComparison);
+        if (paidComparison.status === 'PASS') {
+            try {
+                const oraclePath = path.join(ARTIFACT_ROOT, 'benchmarks', 'customer-truth-oracle.json');
+                const oracleSha256 = JSON.parse(fs.readFileSync(oraclePath, 'utf8')).oracleSha256;
+                realGeminiCandidateRunId = findCandidateRealGeminiRunId({
+                    comparisonRoot: path.join(ARTIFACT_ROOT, 'comparisons'),
+                    sourceSha256: EXPECTED_SOURCE_SHA256,
+                    oracleSha256,
+                    backendSourceSha256: candidateBackendSourceSha256,
+                });
+            } catch (_) { realGeminiCandidateRunId = null; }
+        }
+        steps.push({
+            name: 'paid-gemini-candidate-run-discovery',
+            status: realGeminiCandidateRunId ? 'PASS' : 'FAIL',
+            exitCode: realGeminiCandidateRunId ? 0 : 1,
+            timedOut: false,
+            summary: realGeminiCandidateRunId ? ['Matched the current paid source comparison to its candidate run.'] : ['No valid current paid candidate run could be matched.'],
+        });
     } else {
         steps.push({ name: 'paid-gemini-source-and-genuine-photo-comparison', status: 'NOT_RUN_OFFLINE_DEFAULT' });
     }
 
+    const playwrightEnv = realGeminiCandidateRunId
+        ? { ...offline, LAB_REAL_GEMINI_RUN_ID: realGeminiCandidateRunId }
+        : offline;
+    steps.push(await runStep('local-test-lab-playwright', NODE, [path.join(__dirname, 'run-lab-playwright.js')], playwrightEnv, 10 * 60 * 1000));
+    steps.push(await runStep('privacy-scanner-unit-tests', 'python', [path.join(__dirname, 'test_scan_artifact_privacy.py')], offline));
+    steps.push(await runStep('trace-sanitizer-unit-tests', 'python', [path.join(__dirname, 'test_sanitize_playwright_traces.py')], offline));
+
     const privacyOutput = path.join(ARTIFACT_ROOT, 'security', 'artifact-privacy-scan.json');
-    const privacyManifest = path.join(ARTIFACT_ROOT, 'security', 'artifact-checksum-manifest.json');
+    const privacyManifest = path.join(ARTIFACT_ROOT, 'security', 'artifact-checksum-manifest.txt');
     steps.push(await runStep('artifact-privacy-scan-and-checksum-manifest', 'python', [
         path.join(__dirname, 'scan-artifact-privacy.py'),
         '--csv', SOURCE_CSV,
@@ -192,7 +241,9 @@ const main = async () => {
     if (!overall) process.exitCode = 1;
 };
 
-main().catch(() => {
+if (require.main === module) main().catch(() => {
     process.stderr.write('[verify] FAIL VERIFICATION_ENTRYPOINT_ERROR\n');
     process.exitCode = 1;
 });
+
+module.exports = { findCandidateRealGeminiRunId };
