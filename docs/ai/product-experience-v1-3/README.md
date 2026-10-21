@@ -53,7 +53,7 @@ Reproducible outputs are grouped under `artifacts/`:
 - `comparisons/` and `runs/` — deterministic and paid baseline/candidate receipts and redacted transcripts.
 - `integration/` — disposable database, Redis, webhook, worker, and full backend receipts.
 - `playwright/` — browser result, screenshots, and sanitized traces.
-- `security/` — privacy scan, egress evidence, and checksum manifest.
+- `security/` — trace-sanitization report, privacy scan, egress evidence, and checksum manifest. The verifier redacts simulator text from Playwright archives before scanning and records unpriced provider calls with the estimate.
 - `regression/` — verification entrypoint receipts.
 - `campaigns/` — cumulative provider-call and cost ledger.
 

@@ -31,12 +31,15 @@ DENIED_KEYS = {
 }
 MINIMUM_CHARACTER_LENGTH = 12
 BANGLADESH_CONTACT_PATTERN = re.compile(
-    r"(?:\+?880\s*|0|০)(?:1[3-9]|১[৩-৯])[\d০-৯Xx\s().-]{7,9}"
+    r"(?:\+?880\s*|0|০)(?:1[3-9]|১[৩-৯])[\d০-৯Xx\s().-]{7,12}"
 )
 ADDRESS_PATTERN = re.compile(
     r"\b(?:house|road|street|lane|flat|apartment)\s*#?\s*[\w/-]+(?:,\s*(?:[\w#.-]+\s*){1,3})?",
     re.IGNORECASE,
 )
+EMAIL_PATTERN = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])")
+SHA256_TOKEN_PATTERN = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", re.IGNORECASE)
+REDACTED_SOURCE_TEXT_KEYS = {"inputredacted", "customermessageredacted"}
 RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 ARCHIVE_TEXT_EXTENSIONS = {".txt", ".json", ".html", ".trace", ".network", ".stacks", ".log", ".md", ".css", ".js"}
 TEXT_EXTENSIONS = ARCHIVE_TEXT_EXTENSIONS - {".json"}
@@ -96,11 +99,26 @@ def archive_hash(path: Path) -> str:
         return hashlib.file_digest(archive_file, "sha256").hexdigest()
 
 
+def playwright_archive_files(artifacts_root: Path) -> list[Path]:
+    playwright_root = artifacts_root / "playwright"
+    if not playwright_root.is_dir():
+        return []
+    return sorted(path for path in playwright_root.rglob("*.zip") if path.is_file())
+
+
 def normalize_contact_sequence(text: str) -> str:
     return "".join(
         character.upper() if character in "Xx" else character
         for character in text
         if character.isdecimal() or character in "Xx"
+    )
+
+
+def contains_source_contact(text: str, source_contact_matcher: LiteralMatcher) -> bool:
+    text = SHA256_TOKEN_PATTERN.sub("[sha256]", text)
+    return any(
+        source_contact_matcher.contains(normalize_contact_sequence(match.group()))
+        for match in BANGLADESH_CONTACT_PATTERN.finditer(text)
     )
 
 
@@ -117,26 +135,22 @@ def scan_archive_member(
     exact_match = False
     sensitive_match = False
     source_contact_match = False
-    contact_state = 0
+    contact_tail = ""
     with archive.open(member) as stream:
         while chunk := stream.read(ARCHIVE_SCAN_CHUNK_BYTES):
             decoded = decoder.decode(chunk)
             chunk_match, exact_state = exact_matcher.scan(decoded, exact_state)
             exact_match |= chunk_match
-            contact_match, contact_state = source_contact_matcher.scan(
-                normalize_contact_sequence(decoded), contact_state
-            )
-            source_contact_match |= contact_match
+            contact_text = contact_tail + decoded
+            source_contact_match |= contains_source_contact(contact_text, source_contact_matcher)
+            contact_tail = contact_text[-ARCHIVE_SENSITIVE_OVERLAP_CHARS:]
             combined = sensitive_tail + decoded
             sensitive_match |= bool(count_sensitive_pattern_matches(combined, profile_pattern))
             sensitive_tail = combined[-ARCHIVE_SENSITIVE_OVERLAP_CHARS:]
     final_text = decoder.decode(b"", final=True)
     chunk_match, _ = exact_matcher.scan(final_text, exact_state)
     exact_match |= chunk_match
-    contact_match, _ = source_contact_matcher.scan(
-        normalize_contact_sequence(final_text), contact_state
-    )
-    source_contact_match |= contact_match
+    source_contact_match |= contains_source_contact(contact_tail + final_text, source_contact_matcher)
     sensitive_match |= bool(count_sensitive_pattern_matches(sensitive_tail + final_text, profile_pattern))
     return exact_match, sensitive_match, source_contact_match
 
@@ -157,7 +171,7 @@ def scan_archive_members(
     raster_members = 0
     archive_comment = archive.comment.decode("utf-8", errors="ignore")
     exact_match |= exact_matcher.contains(archive_comment)
-    source_contact_match |= source_contact_matcher.contains(normalize_contact_sequence(archive_comment))
+    source_contact_match |= contains_source_contact(archive_comment, source_contact_matcher)
     sensitive_match |= bool(count_sensitive_pattern_matches(archive_comment, profile_pattern))
     for member in archive.infolist():
         metadata_text = "\n".join((
@@ -166,7 +180,7 @@ def scan_archive_members(
             member.extra.decode("utf-8", errors="ignore"),
         ))
         exact_match |= exact_matcher.contains(metadata_text)
-        source_contact_match |= source_contact_matcher.contains(normalize_contact_sequence(metadata_text))
+        source_contact_match |= contains_source_contact(metadata_text, source_contact_matcher)
         sensitive_match |= bool(count_sensitive_pattern_matches(metadata_text, profile_pattern))
         if member.is_dir():
             continue
@@ -238,7 +252,7 @@ def collect_source_text_matches(
         unsafe_matches = 0
         redacted_input_matches = 0
         for key, item in value.items():
-            if str(key).casefold() == "inputredacted":
+            if str(key).casefold() in REDACTED_SOURCE_TEXT_KEYS:
                 if not isinstance(item, str):
                     unsafe_matches += 1
                     continue
@@ -246,6 +260,7 @@ def collect_source_text_matches(
                 contains_contact = bool(
                     BANGLADESH_CONTACT_PATTERN.search(item)
                     or ADDRESS_PATTERN.search(item)
+                    or EMAIL_PATTERN.search(item)
                     or contains_profile_name
                 )
                 if contains_contact:
@@ -266,8 +281,10 @@ def collect_source_text_matches(
 
 
 def count_sensitive_pattern_matches(text: str, profile_pattern: re.Pattern[str] | None) -> int:
+    text = SHA256_TOKEN_PATTERN.sub("[sha256]", text)
     matches = len(BANGLADESH_CONTACT_PATTERN.findall(text))
     matches += len(ADDRESS_PATTERN.findall(text))
+    matches += len(EMAIL_PATTERN.findall(text))
     if profile_pattern:
         matches += len(profile_pattern.findall(text))
     return matches
@@ -275,7 +292,14 @@ def count_sensitive_pattern_matches(text: str, profile_pattern: re.Pattern[str] 
 
 def collect_sensitive_pattern_matches(value: object, profile_pattern: re.Pattern[str] | None) -> int:
     if isinstance(value, dict):
-        return sum(collect_sensitive_pattern_matches(item, profile_pattern) for item in value.values())
+        matches = 0
+        for key, item in value.items():
+            key_name = str(key).casefold()
+            if (key_name.endswith(("sha256", "hash")) and isinstance(item, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", item, re.IGNORECASE)):
+                continue
+            matches += collect_sensitive_pattern_matches(item, profile_pattern)
+        return matches
     if isinstance(value, list):
         return sum(collect_sensitive_pattern_matches(item, profile_pattern) for item in value)
     if isinstance(value, str):
@@ -289,7 +313,7 @@ def collect_source_contact_matches(value: object, source_contact_matcher: Litera
     if isinstance(value, list):
         return sum(collect_source_contact_matches(item, source_contact_matcher) for item in value)
     if isinstance(value, str):
-        return int(source_contact_matcher.contains(normalize_contact_sequence(value)))
+        return int(contains_source_contact(value, source_contact_matcher))
     return 0
 
 
@@ -423,7 +447,7 @@ def main() -> int:
         except (OSError, UnicodeError):
             text_parse_errors += 1
             continue
-        text_source_contact_matches += source_contact_matcher.contains(normalize_contact_sequence(text))
+        text_source_contact_matches += contains_source_contact(text, source_contact_matcher)
         sensitive_text = sensitive_text_for_scan(path, text)
         for line in sensitive_text.splitlines():
             text_sensitive_pattern_matches += count_sensitive_pattern_matches(line, profile_pattern)
@@ -439,7 +463,7 @@ def main() -> int:
             else:
                 text_source_matches += 1
 
-    zip_files = sorted(path for path in (artifacts_root / "artifacts/playwright").rglob("*.zip") if path.is_file())
+    zip_files = playwright_archive_files(artifacts_root)
     zip_text_matches = 0
     zip_sensitive_pattern_matches = 0
     zip_source_contact_matches = 0

@@ -2,6 +2,7 @@ import importlib.util
 from io import BytesIO
 from pathlib import Path
 import struct
+import tempfile
 import unittest
 import zipfile
 
@@ -41,24 +42,55 @@ class LiteralMatcherTests(unittest.TestCase):
         unsafe, redacted = SCANNER.collect_source_text_matches(
             [
                 {"inputRedacted": "synthetic customer question"},
+                {"customerMessageRedacted": "synthetic customer question"},
                 {"rawField": "synthetic customer question"},
             ],
             matcher,
             None,
         )
 
-        self.assertEqual((unsafe, redacted), (1, 1))
+        self.assertEqual((unsafe, redacted), (1, 2))
 
     def test_contact_normalization_matches_source_number_across_formatting(self):
         matcher = SCANNER.LiteralMatcher({"01712345678"})
 
         self.assertTrue(matcher.contains(SCANNER.normalize_contact_sequence("Call 017-123-45678")))
+        self.assertTrue(SCANNER.contains_source_contact("Call 017-123-45678", matcher))
+        self.assertFalse(SCANNER.contains_source_contact("ticket 017 and item 12345678", matcher))
+
+    def test_redacted_inputs_reject_email_addresses(self):
+        matcher = SCANNER.LiteralMatcher({"synthetic customer question"})
+
+        self.assertEqual(SCANNER.collect_source_text_matches(
+            {"inputRedacted": "Email buyer@example.com about a synthetic customer question"},
+            matcher,
+            None,
+        ), (1, 0))
 
     def test_sensitive_text_scan_ignores_static_code_but_keeps_html_text(self):
         self.assertEqual(SCANNER.sensitive_text_for_scan(Path("bundle.js"), "const phone = /01712345678/;"), "")
         self.assertEqual(SCANNER.sensitive_text_for_scan(
             Path("report.html"), "<p>Visible 01712345678</p><script>01712345678</script>"
         ), "<p>Visible 01712345678</p> ")
+
+    def test_sensitive_pattern_scan_does_not_treat_sha256_digest_as_contact(self):
+        digest = "01312345678" + "a" * 53
+
+        self.assertEqual(len(digest), 64)
+        self.assertIsNotNone(SCANNER.BANGLADESH_CONTACT_PATTERN.search(digest))
+        self.assertEqual(SCANNER.collect_sensitive_pattern_matches({"artifactSha256": digest}, None), 0)
+        self.assertEqual(SCANNER.count_sensitive_pattern_matches(digest, None), 0)
+        self.assertFalse(SCANNER.contains_source_contact(digest, SCANNER.LiteralMatcher({"01312345678"})))
+
+    def test_playwright_archive_discovery_uses_the_artifact_root(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            artifact_root = Path(temporary_directory)
+            playwright = artifact_root / "playwright" / "test-results"
+            playwright.mkdir(parents=True)
+            trace = playwright / "trace.zip"
+            trace.write_bytes(b"trace")
+
+            self.assertEqual(SCANNER.playwright_archive_files(artifact_root), [trace])
 
     def test_archive_scan_checks_members_after_an_exact_match(self):
         payload = BytesIO()

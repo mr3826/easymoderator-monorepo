@@ -25,7 +25,8 @@ describe('V1.3 proof Markdown rendering', () => {
             realComparison: null,
         });
 
-        expect(markdown).toContain('Estimated matched-pair provider cost: NOT_RUN.');
+        expect(markdown).toContain('Estimated matched-pair provider cost from priced usage: NOT_RUN.');
+        expect(markdown).toContain('Candidate unpriced provider calls: NOT_RUN.');
         expect(markdown).toContain('Real Gemini vision evaluation: NOT_RUN.');
     });
 
@@ -42,11 +43,14 @@ describe('V1.3 proof Markdown rendering', () => {
             sourceComparison: null,
             heldoutComparison: null,
             realComparison: { model: 'gemini-3.1-flash-lite' },
+            realCandidate: { verifiedCorrectAnswers: 4, unpricedProviderCalls: 1 },
             photosTested: 3,
             photoCategoryMatches: 2,
             photoColorMatches: 1,
         });
 
-        expect(markdown).toContain('Estimated matched-pair provider cost: $0.12345678.');
+        expect(markdown).toContain('Estimated matched-pair provider cost from priced usage: $0.12345678.');
+        expect(markdown).toContain('Candidate unpriced provider calls: 1.');
+        expect(markdown).toContain('candidate estimate may be incomplete.');
     });
 });

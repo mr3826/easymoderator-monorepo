@@ -205,20 +205,29 @@ const main = async () => {
     steps.push(await runStep('local-test-lab-playwright', NODE, [path.join(__dirname, 'run-lab-playwright.js')], playwrightEnv, 10 * 60 * 1000));
     steps.push(await runStep('privacy-scanner-unit-tests', 'python', [path.join(__dirname, 'test_scan_artifact_privacy.py')], offline));
     steps.push(await runStep('trace-sanitizer-unit-tests', 'python', [path.join(__dirname, 'test_sanitize_playwright_traces.py')], offline));
+    const traceSanitizationOutput = path.join(ARTIFACT_ROOT, 'security', 'playwright-trace-sanitization.json');
+    steps.push(await runStep('playwright-trace-sanitization', 'python', [
+        path.join(__dirname, 'sanitize-playwright-traces.py'),
+        '--csv', SOURCE_CSV,
+        '--artifacts', path.join(ARTIFACT_ROOT, 'playwright'),
+        '--output', traceSanitizationOutput,
+    ], offline, 10 * 60 * 1000));
 
     const privacyOutput = path.join(ARTIFACT_ROOT, 'security', 'artifact-privacy-scan.json');
     const privacyManifest = path.join(ARTIFACT_ROOT, 'security', 'artifact-checksum-manifest.txt');
-    steps.push(await runStep('artifact-privacy-scan-and-checksum-manifest', 'python', [
+    const privacyScanArgs = [
         path.join(__dirname, 'scan-artifact-privacy.py'),
         '--csv', SOURCE_CSV,
         '--artifacts', ARTIFACT_ROOT,
         '--output', privacyOutput,
         '--manifest', privacyManifest,
-    ], offline, 10 * 60 * 1000));
+    ];
+    steps.push(await runStep('artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000));
 
     const generator = path.join(__dirname, 'generate-product-engine-v1-3-proof.js');
     const proofStep = await runStep('consolidated-cost-and-proof-generation', NODE, [generator], offline, 60_000);
     steps.push(proofStep);
+    steps.push(await runStep('final-artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000));
 
     const overall = steps.every(step => step.status === 'PASS'
         || step.status === 'NOT_RUN_OFFLINE_DEFAULT');

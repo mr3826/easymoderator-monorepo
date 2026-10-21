@@ -241,17 +241,21 @@ const main = async () => {
         })),
         sourceProvenance: (() => {
             const provenancePath = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-2', 'artifacts', 'runs', 'local-route-comparison.json');
+            const realGeminiCandidateRunId = process.env.LAB_REAL_GEMINI_RUN_ID || null;
             try {
                 const comparison = JSON.parse(fs.readFileSync(provenancePath, 'utf8'));
                 return {
-                    candidateEngineSourceRevision: comparison.candidate?.engineSourceRevision || null,
-                    candidateEngineSourceSha256: comparison.candidate?.engineSourceSha256 || null,
-                    candidateRunnerRevision: comparison.candidate?.runnerRevision || null,
-                    candidateRunnerSourceSha256: comparison.candidate?.runnerSourceSha256 || null,
-                    candidateRunId: comparison.candidate?.runId || null,
-                    datasetSha256: comparison.datasetSha256 || null,
+                    realGeminiCandidateRunId,
+                    localV1_2RouteComparison: {
+                        candidateEngineSourceRevision: comparison.candidate?.engineSourceRevision || null,
+                        candidateEngineSourceSha256: comparison.candidate?.engineSourceSha256 || null,
+                        candidateRunnerRevision: comparison.candidate?.runnerRevision || null,
+                        candidateRunnerSourceSha256: comparison.candidate?.runnerSourceSha256 || null,
+                        candidateRunId: comparison.candidate?.runId || null,
+                        datasetSha256: comparison.datasetSha256 || null,
+                    },
                 };
-            } catch (_) { return null; }
+            } catch (_) { return { realGeminiCandidateRunId, localV1_2RouteComparison: null }; }
         })(),
         accessibility: (() => {
             const reports = browsers.flatMap(browser => {

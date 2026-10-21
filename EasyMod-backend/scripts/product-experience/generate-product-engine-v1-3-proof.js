@@ -298,6 +298,7 @@ const main = () => {
             textRequestsBothEngines: realTextRequests,
             visionRequestsBothEngines: realVisionRequests,
             estimatedProviderChargeUsdBothEngines: realEstimatedSpend,
+            candidateUnpricedProviderCalls: realCandidate?.unpricedProviderCalls ?? null,
             candidate: realCandidate,
             photosTested: photosTested,
             photoCategoryMatches,
@@ -465,9 +466,13 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const browserBlock = details.playwright
         ? `Playwright exit code: ${details.playwright.playwrightExitCode}; result: ${JSON.stringify(details.playwright.tests || {})}. Evidence: [execution.json](artifacts/playwright/execution.json).`
         : 'Playwright: NOT_RUN.';
+    const unpricedCandidateCalls = Number(details.realCandidate?.unpricedProviderCalls) || 0;
     const geminiBlock = details.realComparison
-        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated pair spend: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate verified answers: ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}.`
+        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate verified answers: ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls ? 'candidate estimate may be incomplete.' : 'all candidate provider calls were priced.'}`
         : 'Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.';
+    const unpricedCostNote = details.realComparison
+        ? `Candidate unpriced provider calls: ${unpricedCandidateCalls}. ${unpricedCandidateCalls ? 'The candidate estimate may be incomplete.' : 'All candidate calls were priced.'}`
+        : 'Candidate unpriced provider calls: NOT_RUN.';
     const campaignBlock = details.campaign
         ? `Cumulative campaign: ${details.campaign.requestCount}/${details.campaign.maxRequests} requests, ${details.campaign.visionRequestCount}/${details.campaign.maxVisionRequests} vision requests, estimated $${Number(details.campaign.estimatedProviderChargeUsd || 0).toFixed(8)} of $${Number(details.campaign.ceilingUsd || 2).toFixed(2)} reserved ceiling. Invoice unavailable.`
         : 'No campaign ledger is available.';
@@ -562,7 +567,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost: ${details.realComparison ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. Candidate cost per verified answer: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost from priced usage: ${details.realComparison ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. ${unpricedCostNote} Candidate cost per verified answer: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 

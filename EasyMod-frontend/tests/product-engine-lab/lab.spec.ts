@@ -268,10 +268,16 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
     await expect(page.locator('#replay-run-bar')).toContainText(realRunId);
     await tracePanel.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-live-gemini-trace.png`), caret: 'initial' });
     await page.getByRole('tab', { name: /Cost & Latency/ }).click();
-    const spend = String(realReceipt.performance.providerReportedSpendUsd);
+    expect(realReceipt.performance.estimatedProviderChargeUsd).not.toBeNull();
+    const spend = String(realReceipt.performance.estimatedProviderChargeUsd);
     const callCount = String(realReceipt.evaluationBudget.requestCount);
-    await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Provider reported spend (USD)' })).toContainText(spend);
+    const unpricedCalls = Number(realReceipt.performance.unpricedProviderCalls) || 0;
+    await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Estimated provider charge (USD)' })).toContainText(spend);
     await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Provider calls' })).toContainText(callCount);
+    if (unpricedCalls > 0) {
+      const unpricedNote = `${unpricedCalls} provider call${unpricedCalls === 1 ? ' is' : 's are'} unpriced`;
+      await expect(page.locator('#cost-results')).toContainText(unpricedNote);
+    }
     await expect(page.locator('#cost-results')).toContainText('real-gemini-evaluation');
   }
 
