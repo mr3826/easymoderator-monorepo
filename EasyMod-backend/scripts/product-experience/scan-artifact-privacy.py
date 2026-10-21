@@ -9,6 +9,7 @@ import codecs
 import csv
 from datetime import datetime, timezone
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -41,6 +42,7 @@ ARCHIVE_TEXT_EXTENSIONS = {".txt", ".json", ".html", ".trace", ".network", ".sta
 TEXT_EXTENSIONS = ARCHIVE_TEXT_EXTENSIONS - {".json"}
 ARCHIVE_SCAN_CHUNK_BYTES = 1024 * 1024
 ARCHIVE_SENSITIVE_OVERLAP_CHARS = 4096
+ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
 
 
 class LiteralMatcher:
@@ -144,20 +146,53 @@ def scan_archive_members(
     exact_matcher: LiteralMatcher,
     source_contact_matcher: LiteralMatcher,
     profile_pattern: re.Pattern[str] | None,
+    depth: int = 0,
 ) -> tuple[bool, bool, bool, int]:
     """Scan every text member and aggregate signals without retaining matched text."""
+    if depth > 4:
+        raise ValueError("Nested Playwright archive depth exceeds the privacy scanner limit.")
     exact_match = False
     sensitive_match = False
     source_contact_match = False
     raster_members = 0
+    archive_comment = archive.comment.decode("utf-8", errors="ignore")
+    exact_match |= exact_matcher.contains(archive_comment)
+    source_contact_match |= source_contact_matcher.contains(normalize_contact_sequence(archive_comment))
+    sensitive_match |= bool(count_sensitive_pattern_matches(archive_comment, profile_pattern))
     for member in archive.infolist():
+        metadata_text = "\n".join((
+            member.filename,
+            member.comment.decode("utf-8", errors="ignore"),
+            member.extra.decode("utf-8", errors="ignore"),
+        ))
+        exact_match |= exact_matcher.contains(metadata_text)
+        source_contact_match |= source_contact_matcher.contains(normalize_contact_sequence(metadata_text))
+        sensitive_match |= bool(count_sensitive_pattern_matches(metadata_text, profile_pattern))
         if member.is_dir():
             continue
         member_extension = Path(member.filename).suffix.casefold()
         if member_extension in RASTER_EXTENSIONS:
             raster_members += 1
             continue
-        if member_extension not in ARCHIVE_TEXT_EXTENSIONS:
+        with archive.open(member) as stream:
+            archive_prefix = stream.read(4)
+        if member_extension == ".zip" or archive_prefix.startswith(ZIP_SIGNATURES):
+            with zipfile.ZipFile(BytesIO(archive.read(member))) as nested_archive:
+                nested_exact, nested_sensitive, nested_contact, nested_rasters = scan_archive_members(
+                    nested_archive,
+                    exact_matcher,
+                    source_contact_matcher,
+                    profile_pattern,
+                    depth + 1,
+                )
+            exact_match |= nested_exact
+            sensitive_match |= nested_sensitive
+            source_contact_match |= nested_contact
+            raster_members += nested_rasters
+            continue
+        if member_extension not in ARCHIVE_TEXT_EXTENSIONS and not archive_member_is_utf8_text(
+            archive, member
+        ):
             continue
         member_exact, member_sensitive, member_contact = scan_archive_member(
             archive, member, exact_matcher, source_contact_matcher, profile_pattern
@@ -166,6 +201,22 @@ def scan_archive_members(
         sensitive_match |= member_sensitive
         source_contact_match |= member_contact
     return exact_match, sensitive_match, source_contact_match, raster_members
+
+
+def archive_member_is_utf8_text(archive: zipfile.ZipFile, member: zipfile.ZipInfo) -> bool:
+    """Recognize extensionless trace resources without decoding binary blobs as text."""
+    with archive.open(member) as stream:
+        sample = stream.read(8192)
+    if not sample or b"\x00" in sample:
+        return False
+    try:
+        decoded = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    control_characters = sum(
+        ord(character) < 32 and character not in "\n\r\t\f\b" for character in decoded
+    )
+    return control_characters <= max(1, len(decoded) // 100)
 
 
 def collect_denied_keys(value: object) -> int:

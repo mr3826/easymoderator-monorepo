@@ -15,7 +15,7 @@
 
 ## Decision log
 
-1. **Real-model evaluation follows the user's later credential instruction.** The initial process and User-scope check found no `EM-GEMINI-KEY`. A later direct user message said to try with User-scope `EM-GEMINI-KEY`; the key became available and was passed only to isolated evaluation processes. An earlier diagnostic replay used a $7.50 run ceiling. The final guarded replay uses a $0.65 run ceiling, no retries, single-call concurrency, a one-use reservation-bound request permit, and a Gemini-only egress guard. Run IDs, provider-reported usage, cumulative exposure accounting, and the final guarded receipt are recorded in `VERIFIED_COMMERCE_FOUNDATION_PROOF.md`.
+1. **Real-model evaluation follows the user's credential-scope instruction.** The successful guarded replay used a host-injected Process-scope `EM-GEMINI-KEY`; it was not a User-scope replay. After the user's later request to retry with User scope, a fresh scope check still found no User-scope value, while the host-injected Process value remained present. No new User-scope-only paid replay was available or performed. An earlier diagnostic replay used a $7.50 run ceiling. The final guarded replay uses a $0.65 per-run ceiling, no retries, single-call concurrency, a one-use reservation-bound request permit, and a Gemini-only egress guard. Run IDs, provider-reported usage, cumulative exposure accounting, and the final guarded receipt are recorded in `VERIFIED_COMMERCE_FOUNDATION_PROOF.md`.
 2. **Use `gemini-3.1-flash-lite` for the bounded evaluation adapter.** Google’s current model documentation lists text/image input and stable model ID; the pricing page lists paid standard input at $0.25/1M text/image tokens and output at $1.50/1M tokens. Existing `llm.service` already implements GenerateContent and raster conversion, so reuse it instead of adding a second SDK stack. Keep production model selection unchanged.
 3. **Do not count existing SVG substitutes as vision images.** The CSV contains image IDs but no source paths. Existing fixtures identify themselves as substitutes and the production media loader rejects SVG. Any real vision claim would be false until authorized raster inputs exist.
 4. **Keep 200-turn results scoped.** The CSV replay can prove parser/oracle/replay coverage and deterministic/mock route behavior only. It cannot become 200 real Gemini results or broader catalog fact accuracy. Add an independent catalog suite with its own denominator.
@@ -62,3 +62,12 @@
 - **Browser:** only loopback Lab traffic; reports and skips accurately described.
 - **Independent review:** verifier inspects source and independently reruns selected critical tests; disagreements and residual limitations appear in the proof.
 - **Release isolation:** local branch only; clean final worktree after commit; no push/merge/deployment.
+
+## Execution outcome
+
+- Implementation commit: `dd04c079f2b752725d372e879cb1549a8459b8d1`; evidence and privacy tooling are committed locally on top of it.
+- Real-model replay: `471add4a-f2c5-44c8-8a9f-2e156a731a10`, 200 turns, 68 provider calls, `$0.01465225` committed. It used the host-injected Process-scope key because User scope was absent; no User-only retry was made.
+- Browser: latest three-engine Playwright receipt `0a2e2320-569e-479d-9878-2a40030a0519` passed 6/6 with zero page, console, or failed-request observations. The download waiter was moved to immediately precede the export click after the previous WebKit run exposed a timing defect.
+- Privacy: sanitized trace archives are retained; raw originals and embedded raster/opaque members are not. The final recursive scanner and independent checksum review passed.
+- Integration: historical receipt `e4008ad7-468b-4a4f-9e09-fdd55a7494a1` passed 12 selected integration tests and 46 webhook tests, but records baseline SHA `78b6250a`. A current-candidate refresh did not start because Docker Desktop's local service/API was unavailable. Current-commit local integration therefore remains `NOT_RUN`.
+- Final scope: local implementation is complete with limitations; broad semantic/context evaluation, real merchant/customer image evaluation, current-commit PostgreSQL/Redis integration, live Meta, payment/courier, production release, and merchant ROI remain unverified.

@@ -1,6 +1,7 @@
 import importlib.util
 from io import BytesIO
 from pathlib import Path
+import struct
 import unittest
 import zipfile
 
@@ -78,6 +79,69 @@ class LiteralMatcherTests(unittest.TestCase):
         self.assertTrue(contact)
         self.assertTrue(sensitive)
         self.assertEqual(raster_count, 1)
+
+    def test_archive_scan_checks_utf8_resources_without_a_filename_extension(self):
+        payload = BytesIO()
+        with zipfile.ZipFile(payload, "w") as archive:
+            archive.writestr("resources/opaque-id", "synthetic exact source phrase")
+
+        with zipfile.ZipFile(BytesIO(payload.getvalue())) as archive:
+            exact, sensitive, contact, raster_count = SCANNER.scan_archive_members(
+                archive,
+                SCANNER.LiteralMatcher({"synthetic exact source phrase"}),
+                SCANNER.LiteralMatcher(set()),
+                None,
+            )
+
+        self.assertTrue(exact)
+        self.assertFalse(sensitive)
+        self.assertFalse(contact)
+        self.assertEqual(raster_count, 0)
+
+    def test_archive_scan_recurses_into_nested_trace_archives(self):
+        nested_payload = BytesIO()
+        with zipfile.ZipFile(nested_payload, "w") as nested:
+            nested.writestr("resources/opaque-id", "synthetic exact source phrase")
+            nested.writestr("resources/capture.jpeg", b"synthetic raster")
+        outer_payload = BytesIO()
+        with zipfile.ZipFile(outer_payload, "w") as outer:
+            outer.writestr("attachment.bin", nested_payload.getvalue())
+
+        with zipfile.ZipFile(BytesIO(outer_payload.getvalue())) as archive:
+            exact, sensitive, contact, raster_count = SCANNER.scan_archive_members(
+                archive,
+                SCANNER.LiteralMatcher({"synthetic exact source phrase"}),
+                SCANNER.LiteralMatcher(set()),
+                None,
+            )
+
+        self.assertTrue(exact)
+        self.assertFalse(sensitive)
+        self.assertFalse(contact)
+        self.assertEqual(raster_count, 1)
+
+    def test_archive_scan_checks_member_names_comments_and_extra_fields(self):
+        phrase = "synthetic exact source phrase"
+        payload = BytesIO()
+        with zipfile.ZipFile(payload, "w") as archive:
+            archive.comment = b"Call 01712345678"
+            member = zipfile.ZipInfo(f"resources/{phrase}.txt")
+            member.comment = phrase.encode()
+            member.extra = struct.pack("<HH", 0xCAFE, len(phrase)) + phrase.encode()
+            archive.writestr(member, "safe body")
+
+        with zipfile.ZipFile(BytesIO(payload.getvalue())) as archive:
+            exact, sensitive, contact, raster_count = SCANNER.scan_archive_members(
+                archive,
+                SCANNER.LiteralMatcher({phrase}),
+                SCANNER.LiteralMatcher({"01712345678"}),
+                None,
+            )
+
+        self.assertTrue(exact)
+        self.assertTrue(contact)
+        self.assertTrue(sensitive)
+        self.assertEqual(raster_count, 0)
 
 
 if __name__ == "__main__":

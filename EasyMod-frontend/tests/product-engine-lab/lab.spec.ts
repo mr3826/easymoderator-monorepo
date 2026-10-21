@@ -274,19 +274,16 @@ test('local Test Lab journeys, data boundaries, run history, and responsive cont
 
   const exportDir = resolve(screenshotRoot, '../exports');
   mkdirSync(exportDir, { recursive: true });
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    (async () => {
-      await page.getByRole('tab', { name: /Run History/ }).click();
-      const exportRunRow = page.getByRole('row').filter({ hasText: fullCandidateId });
-      await expect(exportRunRow).toHaveCount(1);
-      await exportRunRow.getByRole('button', { name: 'Open run' }).click();
-      await expect(page.locator('#replay-run-bar')).toContainText(fullCandidateId);
-      await page.getByRole('tab', { name: /Conversation Replay/ }).click();
-      await inspectAccessibility('Conversation Replay');
-      await page.getByRole('link', { name: 'Export JSON' }).click();
-    })(),
-  ]);
+  await page.getByRole('tab', { name: /Run History/ }).click();
+  const exportRunRow = page.getByRole('row').filter({ hasText: fullCandidateId });
+  await expect(exportRunRow).toHaveCount(1);
+  await exportRunRow.getByRole('button', { name: 'Open run' }).click();
+  await expect(page.locator('#replay-run-bar')).toContainText(fullCandidateId);
+  await page.getByRole('tab', { name: /Conversation Replay/ }).click();
+  await inspectAccessibility('Conversation Replay');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Export JSON' }).click();
+  const download = await downloadPromise;
   const exportPath = resolve(exportDir, `${fullCandidateId}.json`);
   await download.saveAs(exportPath);
   const exported = JSON.parse(await (await import('node:fs/promises')).readFile(exportPath, 'utf8'));

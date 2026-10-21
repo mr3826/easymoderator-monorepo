@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "runId": "26021bca-7d66-498e-879a-70160cd999d6",
+  "runId": "0a2e2320-569e-479d-9878-2a40030a0519",
   "status": "PASS",
-  "startedAt": "2026-10-21T11:16:38.129Z",
-  "completedAt": "2026-10-21T11:24:38.007Z",
-  "sourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7",
-  "localUrl": "http://127.0.0.1:7865",
+  "startedAt": "2026-10-21T12:31:43.656Z",
+  "completedAt": "2026-10-21T12:37:35.433Z",
+  "sourceRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1",
+  "localUrl": "http://127.0.0.1:3411",
   "browsersAvailable": [
     "chromium",
     "firefox",
@@ -26,37 +26,37 @@
         "status": "passed",
         "project": "chromium",
         "title": "tests\\product-engine-lab\\lab.spec.ts:41:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
-        "duration": "2.2m"
+        "duration": "1.6m"
       },
       {
         "status": "passed",
         "project": "chromium",
-        "title": "tests\\product-engine-lab\\lab.spec.ts:379:1 › loads the real Lab shell on every installed browser engine",
-        "duration": "798ms"
+        "title": "tests\\product-engine-lab\\lab.spec.ts:376:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "550ms"
       },
       {
         "status": "passed",
         "project": "firefox",
         "title": "tests\\product-engine-lab\\lab.spec.ts:41:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
-        "duration": "2.5m"
+        "duration": "1.9m"
       },
       {
         "status": "passed",
         "project": "firefox",
-        "title": "tests\\product-engine-lab\\lab.spec.ts:379:1 › loads the real Lab shell on every installed browser engine",
-        "duration": "976ms"
+        "title": "tests\\product-engine-lab\\lab.spec.ts:376:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "679ms"
       },
       {
         "status": "passed",
         "project": "webkit",
         "title": "tests\\product-engine-lab\\lab.spec.ts:41:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
-        "duration": "2.6m"
+        "duration": "2.0m"
       },
       {
         "status": "passed",
         "project": "webkit",
-        "title": "tests\\product-engine-lab\\lab.spec.ts:379:1 › loads the real Lab shell on every installed browser engine",
-        "duration": "909ms"
+        "title": "tests\\product-engine-lab\\lab.spec.ts:376:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "685ms"
       }
     ]
   },
@@ -64,17 +64,17 @@
     "chromium": {
       "fullWorkflow": "passed",
       "shellSmoke": "passed",
-      "realGeminiTraceUi": true
+      "realGeminiTraceUi": false
     },
     "firefox": {
       "fullWorkflow": "passed",
       "shellSmoke": "passed",
-      "realGeminiTraceUi": true
+      "realGeminiTraceUi": false
     },
     "webkit": {
       "fullWorkflow": "passed",
       "shellSmoke": "passed",
-      "realGeminiTraceUi": true
+      "realGeminiTraceUi": false
     }
   },
   "browserObservations": [
@@ -83,50 +83,50 @@
       "pageErrors": 0,
       "consoleErrors": 0,
       "failedRequests": 0,
-      "artifact": "browser-observations-26021bca-7d66-498e-879a-70160cd999d6-chromium.json"
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-chromium.json"
     },
     {
       "suite": "chromium-shell",
       "pageErrors": 0,
       "consoleErrors": 0,
       "failedRequests": 0,
-      "artifact": "browser-observations-26021bca-7d66-498e-879a-70160cd999d6-chromium-shell.json"
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-chromium-shell.json"
     },
     {
       "suite": "firefox",
       "pageErrors": 0,
       "consoleErrors": 0,
       "failedRequests": 0,
-      "artifact": "browser-observations-26021bca-7d66-498e-879a-70160cd999d6-firefox.json"
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-firefox.json"
     },
     {
       "suite": "firefox-shell",
       "pageErrors": 0,
       "consoleErrors": 0,
       "failedRequests": 0,
-      "artifact": "browser-observations-26021bca-7d66-498e-879a-70160cd999d6-firefox-shell.json"
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-firefox-shell.json"
     },
     {
       "suite": "webkit",
       "pageErrors": 0,
       "consoleErrors": 0,
       "failedRequests": 0,
-      "artifact": "browser-observations-26021bca-7d66-498e-879a-70160cd999d6-webkit.json"
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-webkit.json"
     },
     {
       "suite": "webkit-shell",
       "pageErrors": 0,
       "consoleErrors": 0,
       "failedRequests": 0,
-      "artifact": "browser-observations-26021bca-7d66-498e-879a-70160cd999d6-webkit-shell.json"
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-webkit-shell.json"
     }
   ],
   "sourceProvenance": {
-    "candidateEngineSourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7+backend-src-sha256:d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
+    "candidateEngineSourceRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+backend-src-sha256:d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
     "candidateEngineSourceSha256": "d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
-    "candidateRunnerRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7+runner-sha256:3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "candidateRunnerRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+runner-sha256:3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
     "candidateRunnerSourceSha256": "3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
-    "candidateRunId": "83871a37-aefa-4366-9c22-ea4bac645e77",
+    "candidateRunId": "e9f1b90e-1036-40ed-bae0-54361382cfe7",
     "datasetSha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6"
   },
   "accessibility": {
@@ -147,7 +147,7 @@
           "Conversation Replay",
           "Playground"
         ],
-        "report": "axe-accessibility-report-26021bca-7d66-498e-879a-70160cd999d6-chromium.json"
+        "report": "axe-accessibility-report-0a2e2320-569e-479d-9878-2a40030a0519-chromium.json"
       },
       {
         "browser": "firefox",
@@ -164,7 +164,7 @@
           "Conversation Replay",
           "Playground"
         ],
-        "report": "axe-accessibility-report-26021bca-7d66-498e-879a-70160cd999d6-firefox.json"
+        "report": "axe-accessibility-report-0a2e2320-569e-479d-9878-2a40030a0519-firefox.json"
       },
       {
         "browser": "webkit",
@@ -181,7 +181,7 @@
           "Conversation Replay",
           "Playground"
         ],
-        "report": "axe-accessibility-report-26021bca-7d66-498e-879a-70160cd999d6-webkit.json"
+        "report": "axe-accessibility-report-0a2e2320-569e-479d-9878-2a40030a0519-webkit.json"
       }
     ],
     "criticalOrSeriousViolationCount": 0
