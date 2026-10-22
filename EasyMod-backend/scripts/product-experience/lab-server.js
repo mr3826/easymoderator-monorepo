@@ -96,6 +96,7 @@ const hashLabRunnerSources = () => {
         'EasyMod-backend/scripts/product-experience/genuine-photo-fixtures.js',
         'docs/ai/product-experience-v1-3/media/genuine/Genuine_Photo_Manifest.json',
         'EasyMod-backend/scripts/product-experience/synthetic-media-fixtures.js',
+        'EasyMod-backend/scripts/product-experience/turn-evidence-metrics.js',
         'EasyMod-backend/scripts/product-experience/lab-scorer.js',
         'EasyMod-backend/scripts/product-experience/replay.js',
         'EasyMod-backend/scripts/product-experience/evaluation-budget.js',

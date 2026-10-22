@@ -183,10 +183,10 @@ describe('artifact privacy status mapping', () => {
 describe('V1.3 proof Markdown rendering', () => {
     const proof = {
         generatedAt: '2026-10-22T00:00:00.000Z',
-        candidate: { worktree: 'isolated', backendSourceSha256: 'a'.repeat(64), cleanAtVerificationStart: true },
+        candidate: { worktree: 'isolated', evidenceRoot: 'D:\\evidence', backendSourceSha256: 'a'.repeat(64), cleanAtVerificationStart: true },
         benchmark: { eligibleFactSlots: 18, sourceCorpusSha256: 'b'.repeat(64) },
         measured: { estimatedCostPerCandidateVerifiedAnswerUsd: null },
-        security: { egress: { guard: 'PASS', blockedNonLoopbackAttempts: 0 } },
+        security: { egress: { guard: 'PASS', blockedNonLoopbackAttempts: 0 }, privacyScan: { checkedAt: '2026-10-22T00:00:00Z' } },
     };
     const status = {
         AUTOMATED_QA_VERDICT: 'BLOCKED',
@@ -210,6 +210,8 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('Real Gemini vision evaluation: NOT_RUN.');
         expect(markdown).toContain('Deterministic source truth (zero provider calls) | PASS');
         expect(markdown).toContain('Real Gemini candidate quality | FAIL');
+        expect(markdown).toContain('Evidence package root: `D:\\evidence`');
+        expect(markdown).toContain('Pre-proof artifact privacy scan');
         expect(markdown).toContain('This verdict covers the zero-provider-call replay against the source oracle only.');
     });
 

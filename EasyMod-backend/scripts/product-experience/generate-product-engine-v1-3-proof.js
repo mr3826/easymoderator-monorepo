@@ -170,6 +170,7 @@ const safeExamples = run => {
 const main = () => {
     const head = git('rev-parse', 'HEAD');
     const branch = git('branch', '--show-current');
+    const worktreeCleanAtStart = !git('status', '--porcelain');
     const currentRunnerSourceSha256 = require('./lab-server').getSourceProvenance().runnerSourceSha256;
     const currentEngineHash = backendSourceSha256();
     const sourceBytes = fs.readFileSync(SOURCE_PATH);
@@ -313,7 +314,7 @@ const main = () => {
         V1_2_BASE_SHA: BASELINE_SHA,
         V1_3_BRANCH: branch,
         V1_3_FINAL_SHA: verificationReceipt?.candidateCommit || head,
-        WORKTREE_CLEAN: verificationReceipt?.worktreeCleanAtStart === true || !git('status', '--porcelain'),
+        WORKTREE_CLEAN: verificationReceipt?.worktreeCleanAtStart ?? worktreeCleanAtStart,
         SOURCE_PERSONAS: sourceOracle?.source?.personas ?? 'UNKNOWN',
         SOURCE_TURNS: sourceOracle?.source?.turns ?? 'UNKNOWN',
         ELIGIBLE_PRODUCT_TURNS: sourceOracle ? textProductTurns.length : 'UNKNOWN',
@@ -436,10 +437,11 @@ const main = () => {
             evidenceRepositoryHead: head,
             branch,
             worktree: REPO_ROOT,
+            evidenceRoot: ARTIFACT_ROOT,
             backendSourceSha256: currentEngineHash,
             currentRunnerSourceSha256,
             baselineSha: BASELINE_SHA,
-            cleanAtVerificationStart: verificationReceipt?.worktreeCleanAtStart ?? null,
+            cleanAtVerificationStart: verificationReceipt?.worktreeCleanAtStart ?? worktreeCleanAtStart,
         },
         benchmark: {
             sourceCorpusSha256: sourceHash,
@@ -582,10 +584,10 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         ? `The paid matched run evaluated ${details.photosTested ?? 'unknown'} unique licensed public photos. Category matches: ${details.photoCategoryMatches}/${details.photosTested ?? 'unknown'}; visible-color matches: ${details.photoColorMatches}/${details.photosTested ?? 'unknown'}. These are a small public-photo probe, not customer-upload accuracy evidence.`
         : 'Real Gemini vision evaluation: NOT_RUN.';
     const integrationBlock = details.integration
-        ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}.`
+        ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
         : 'Local integration: NOT_RUN.';
     const browserBlock = details.playwright
-        ? `Playwright exit code: ${details.playwright.playwrightExitCode}; result: ${JSON.stringify(details.playwright.tests || {})}. Evidence: [execution.json](artifacts/playwright/execution.json).`
+        ? `Playwright exit code: ${details.playwright.playwrightExitCode}; result: ${JSON.stringify(details.playwright.tests || {})}. Evidence: \`${proof.candidate.evidenceRoot}\\playwright\\execution.json\`.`
         : 'Playwright: NOT_RUN.';
     const unpricedCandidateCalls = Number(details.realCandidate?.unpricedProviderCalls) || 0;
     const geminiBlock = details.realComparison
@@ -627,8 +629,9 @@ The candidate is ${status.INTEGRATION_READY === 'YES' ? 'eligible for scoped int
 - V1.2 baseline: \`${status.V1_2_BASE_SHA}\`.
 - V1.3 tested code commit: \`${status.V1_3_FINAL_SHA}\` on \`${status.V1_3_BRANCH}\`.
 - Evidence checkout: \`${proof.candidate.worktree}\`.
+- Evidence package root: \`${proof.candidate.evidenceRoot}\`.
 - Backend source SHA-256: \`${proof.candidate.backendSourceSha256}\`.
-- Worktree clean at verification start: **${proof.candidate.cleanAtVerificationStart === true ? 'YES' : 'UNKNOWN'}**.
+- Worktree clean at verification start: **${proof.candidate.cleanAtVerificationStart === true ? 'YES' : proof.candidate.cleanAtVerificationStart === false ? 'NO' : 'UNKNOWN'}**.
 - Other agent worktrees touched: **NO**. Production changed: **NO**. Push, merge and deploy: **NO**.
 - Production release remains unauthorized.
 
@@ -696,7 +699,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 - Security tests: **${status.SECURITY_TESTS}**. Egress guard: ${proof.security.egress?.guard || 'NOT_RUN'}; blocked non-loopback attempts: ${proof.security.egress?.blockedNonLoopbackAttempts ?? 'NOT_MEASURED'}.
 - Tenant violations: ${details.sourceCandidate?.tenantViolations ?? 'NOT_RUN'}; unscoped catalog reads: ${details.sourceCandidate?.unscopedReads ?? 'NOT_RUN'}.
-- Artifact privacy scan: **${status.PRIVACY_SCAN}**.
+- Pre-proof artifact privacy scan: **${status.PRIVACY_SCAN}** at ${proof.security.privacyScan?.checkedAt || 'NOT_RECORDED'}. The proof-inclusive post-generation scan and checksum manifest are \`${proof.candidate.evidenceRoot}\\security\\artifact-privacy-scan.json\` and \`${proof.candidate.evidenceRoot}\\security\\artifact-checksum-manifest.txt\`.
 - No credential values are stored in the proof package.
 
 ## J. Cost and merchant economics
@@ -740,7 +743,7 @@ The opt-in run uses a persistent campaign ledger capped at $2, 256 requests and 
 
 ## Machine-readable status
 
-See [product-engine-v1.3-proof.json](artifacts/product-engine-v1.3-proof.json) for the complete structured evidence and exact required status fields.
+Machine-readable proof: \`${proof.candidate.evidenceRoot}\\product-engine-v1.3-proof.json\`.
 `;
 }
 
