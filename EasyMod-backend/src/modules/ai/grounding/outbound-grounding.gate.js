@@ -1038,7 +1038,9 @@ const unsupportedStockClaim = (candidate, evidence) => {
     }
     for (const clause of splitClaimClauses(candidate)) {
         const expected = availabilityAssertion(clause);
-        if (!expected || DELIVERY_TERMS.test(clause)) continue;
+        const deliveryOnlyAvailability = DELIVERY_ASSERTION.test(clause)
+            || DELIVERY_NEGATIVE_ASSERTION.test(clause);
+        if (!expected || deliveryOnlyAvailability) continue;
         if (isMaterialUncertaintyClause(clause, evidence)) continue;
         if (/\b(?:material|fabric|photo|picture|image)\b|ছবি/i.test(clause) && !OPTION_LABEL.test(clause)) continue;
         const claimProducts = productsForProductClaim(clause, evidence);

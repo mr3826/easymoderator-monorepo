@@ -1638,6 +1638,30 @@ describe('product evidence trust boundaries', () => {
         expect(result.violations).toContain('unsupported_stock_claim');
     });
 
+    test.each([
+        ['Delivery Jacket', 'Delivery Jacket is available.'],
+        ['Shipping Jacket', 'Shipping Jacket is available.'],
+        ['Courier Jacket', 'Courier Jacket is available.'],
+        ['Classic Blue Denim Jacket', 'Classic Blue Denim Jacket is available for delivery.'],
+    ])('delivery wording does not bypass verified out-of-stock evidence for %s', (name, candidate) => {
+        const evidence = evidenceForProducts([{ product: catalogProduct({
+            name,
+            in_stock: false,
+            track_quantity: true,
+            quantity: 0,
+        }) }]);
+
+        const result = evaluateCandidate({
+            candidate,
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_stock_claim');
+    });
+
     test.each(['Available.', 'In stock.', 'All sizes are available.', 'Available in all sizes.'])(
         'subjectless product availability still requires evidence: %s',
         (candidate) => {
