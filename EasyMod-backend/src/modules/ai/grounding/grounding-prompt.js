@@ -52,6 +52,22 @@ const productImageNoProductReply = (language) => pick({
     mixed: 'Ei product ta amader catalog e pacchi na, tai chobi pathate parchi na. Product er nam bolle check kore boli.',
 }, language);
 
+/** A customer photo produced only a partial catalog match, not a product identity. */
+const productPhotoCatalogNoMatchReply = (language, { onlyFirstPhoto = false } = {}) => {
+    const reply = pick({
+        bn: 'এই ছবির সঙ্গে দোকানের ক্যাটালগের কোনো পণ্য নিশ্চিতভাবে মেলাতে পারছি না। পণ্যের নাম বা ট্যাগের পরিষ্কার ছবি দিলে দেখে বলতে পারি।',
+        en: "I can't confidently match this photo to a product in the shop's catalog. Please share the product name or a clear photo of its tag so I can check.",
+        mixed: 'Ei chobir sathe shop-er catalog-er kono product nishchitvabe match korte parchi na. Product-er nam ba tag-er clear photo dile check kore bolte parbo.',
+    }, language);
+    if (!onlyFirstPhoto) return reply;
+    const note = pick({
+        bn: 'আমি শুধু প্রথম ছবিটি দেখেছি।',
+        en: 'I only checked the first photo.',
+        mixed: 'Ami shudhu prothom chobita check korechi.',
+    }, language);
+    return `${reply} ${note}`;
+};
+
 /** Retrieval failed — the isolated autonomous Lab never promises human follow-up. */
 const retrievalFailedReply = (language) => pick(autonomousProductLab() ? {
     bn: 'দুঃখিত, পণ্যের তথ্য এখন যাচাই করা যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।',
@@ -228,6 +244,7 @@ module.exports = {
     productNotFoundReply,
     productImageUnavailableReply,
     productImageNoProductReply,
+    productPhotoCatalogNoMatchReply,
     whichProductReply,
     retrievalFailedReply,
     knowledgeNotFoundReply,
