@@ -1,6 +1,77 @@
 'use strict';
 
-const { matchesCurrentVerificationCommit, privacyScanPassed, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+const { assessRealGeminiQuality, independentVerificationMatches, matchesCurrentVerificationCommit, privacyScanPassed, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+
+describe('paid Gemini quality readiness gate', () => {
+    const validComparison = { comparisonValid: true };
+    const expectedDenominators = { eligibleFactSlots: 18, answerableProductTurns: 15 };
+
+    test('passes only when every candidate quality metric is measured and zero', () => {
+        expect(assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            contextResolutionFailures: 0,
+            unsafeCrossDomainHandoffs: 0,
+            verifiedCorrectAnswers: 18,
+            eligibleFactSlots: 18,
+            evaluatedFactSlots: 18,
+            verifiedCorrectTurns: 15,
+            evaluatedAnswerableProductTurns: 15,
+        }, expectedDenominators)).toEqual({ status: 'PASS', metricsAvailable: true, missingMetrics: [], failedMetrics: [] });
+    });
+
+    test('fails on measured paid-run context or handoff failures', () => {
+        expect(assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            contextResolutionFailures: 3,
+            unsafeCrossDomainHandoffs: 1,
+            verifiedCorrectAnswers: 16,
+            eligibleFactSlots: 18,
+            evaluatedFactSlots: 18,
+            verifiedCorrectTurns: 13,
+            evaluatedAnswerableProductTurns: 15,
+        }, expectedDenominators)).toEqual({ status: 'FAIL', metricsAvailable: true, missingMetrics: [], failedMetrics: ['contextResolutionFailures', 'unsafeCrossDomainHandoffs', 'factSlotCoverage', 'turnCoverage'] });
+    });
+
+    test('keeps missing quality metrics blocked instead of passing', () => {
+        expect(assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+        })).toEqual({ status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics: [
+            'contextResolutionFailures', 'unsafeCrossDomainHandoffs', 'verifiedCorrectAnswers', 'eligibleFactSlots',
+            'evaluatedFactSlots', 'verifiedCorrectTurns', 'evaluatedAnswerableProductTurns',
+        ], failedMetrics: [] });
+    });
+
+    test('fails on paid-run incomplete fact or answerable-turn coverage', () => {
+        expect(assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            contextResolutionFailures: 0,
+            unsafeCrossDomainHandoffs: 0,
+            verifiedCorrectAnswers: 17,
+            eligibleFactSlots: 18,
+            evaluatedFactSlots: 18,
+            verifiedCorrectTurns: 15,
+            evaluatedAnswerableProductTurns: 15,
+        }, expectedDenominators).failedMetrics).toEqual(['factSlotCoverage']);
+    });
+
+    test('fails a structurally valid but empty benchmark denominator', () => {
+        expect(assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            contextResolutionFailures: 0,
+            unsafeCrossDomainHandoffs: 0,
+            verifiedCorrectAnswers: 0,
+            eligibleFactSlots: 0,
+            evaluatedFactSlots: 0,
+            verifiedCorrectTurns: 0,
+            evaluatedAnswerableProductTurns: 0,
+        }).failedMetrics).toEqual(['nonEmptyDenominators']);
+    });
+});
 
 describe('artifact privacy status mapping', () => {
     test('uses the scanner report privacyGateStatus field', () => {
@@ -73,5 +144,17 @@ describe('current verification receipt selection', () => {
 
         expect(matchesCurrentVerificationCommit(oldReceipt, 'current-commit')).toBe(false);
         expect(matchesCurrentVerificationCommit({ ...oldReceipt, candidateCommit: 'current-commit' }, 'current-commit')).toBe(true);
+    });
+
+    test('requires independent review of the current evidence head and backend source', () => {
+        const review = {
+            verdict: 'PASS',
+            reviewedCodeCommit: 'current-head',
+            reviewedBackendSourceSha256: 'a'.repeat(64),
+        };
+
+        expect(independentVerificationMatches(review, 'current-head', 'a'.repeat(64))).toBe(true);
+        expect(independentVerificationMatches(review, 'tested-code-head', 'a'.repeat(64))).toBe(false);
+        expect(independentVerificationMatches(review, 'current-head', 'b'.repeat(64))).toBe(false);
     });
 });

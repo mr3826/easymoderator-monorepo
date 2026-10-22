@@ -43,7 +43,9 @@ Important distinctions in the reports:
 - Three licensed public photos are a small vision probe. They are not source-dataset photos or a representative customer-upload accuracy study.
 - Synthetic conversations do not establish customer acceptance, merchant time saved, sales conversion, adoption, or ROI.
 
-`AUTOMATED_QA_VERDICT=PASS` means the recorded local gates passed. `INTEGRATION_READY=YES` additionally requires the independent review and the defined product-quality gates. Neither status authorizes a production release.
+The proof quality gate requires zero unsupported price claims, false refusals, context-resolution failures, and unsafe cross-domain handoffs, plus complete correct coverage of the oracle's fact slots and answerable turns. It applies to deterministic source evidence and the paid Gemini candidate when recorded. Empty or missing denominators, incomplete quality metrics, or paid-run/current evaluation-runner hash drift cannot produce a readiness pass; a measured quality regression produces `AUTOMATED_QA_VERDICT=FAIL`.
+
+`AUTOMATED_QA_VERDICT=PASS` means the recorded local gates passed. `INTEGRATION_READY=YES` additionally requires matching paid-run runner provenance, all three photo category/color checks, and the independent review. Neither status authorizes a production release.
 
 ## Artifacts
 

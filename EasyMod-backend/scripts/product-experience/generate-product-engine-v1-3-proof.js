@@ -55,6 +55,9 @@ const newestMatching = (directory, predicate) => jsonFiles(directory)
     .sort((left, right) => String(right.value.completedAt || right.value.updatedAt || '').localeCompare(String(left.value.completedAt || left.value.updatedAt || '')))[0] || null;
 
 const matchesCurrentVerificationCommit = (receipt, head) => receipt?.candidateCommit === head;
+const independentVerificationMatches = (review, head, backendSourceSha) => review?.verdict === 'PASS'
+    && review?.reviewedCodeCommit === head
+    && review?.reviewedBackendSourceSha256 === backendSourceSha;
 
 const pathInside = (root, relativePath) => {
     const target = path.resolve(root, relativePath);
@@ -69,6 +72,31 @@ const matchingComparison = (mode, dataset, sourceHash, oracleSha, engineHash) =>
 });
 
 const comparisonSummary = (entry, engineName) => entry?.value.results?.find(result => result.engine === engineName)?.summary || null;
+const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
+    if (!comparison) return { status: 'NOT_RUN', metricsAvailable: false, missingMetrics: [], failedMetrics: [] };
+    if (comparison.comparisonValid !== true) return { status: 'FAIL', metricsAvailable: false, missingMetrics: [], failedMetrics: ['comparisonValid'] };
+    const requiredMetrics = [
+        'unsupportedClaimsSent', 'falseRefusalSlots', 'contextResolutionFailures', 'unsafeCrossDomainHandoffs',
+        'verifiedCorrectAnswers', 'eligibleFactSlots', 'evaluatedFactSlots',
+        'verifiedCorrectTurns', 'evaluatedAnswerableProductTurns',
+    ];
+    const missingMetrics = requiredMetrics.filter(name => !Number.isFinite(candidate?.[name]));
+    if (missingMetrics.length) return { status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics, failedMetrics: [] };
+    const zeroRequired = ['unsupportedClaimsSent', 'falseRefusalSlots', 'contextResolutionFailures', 'unsafeCrossDomainHandoffs'];
+    const failedMetrics = zeroRequired.filter(name => candidate[name] !== 0);
+    if (candidate.eligibleFactSlots <= 0 || candidate.evaluatedFactSlots <= 0 || candidate.evaluatedAnswerableProductTurns <= 0) {
+        failedMetrics.push('nonEmptyDenominators');
+    }
+    if (candidate.verifiedCorrectAnswers !== candidate.eligibleFactSlots
+        || candidate.evaluatedFactSlots !== candidate.eligibleFactSlots) failedMetrics.push('factSlotCoverage');
+    if (candidate.verifiedCorrectTurns !== candidate.evaluatedAnswerableProductTurns) failedMetrics.push('turnCoverage');
+    if (expected?.eligibleFactSlots !== undefined && candidate.eligibleFactSlots !== expected.eligibleFactSlots) {
+        failedMetrics.push('oracleFactSlotDenominator');
+    }
+    if (expected?.answerableProductTurns !== undefined
+        && candidate.evaluatedAnswerableProductTurns !== expected.answerableProductTurns) failedMetrics.push('oracleTurnDenominator');
+    return { status: failedMetrics.length ? 'FAIL' : 'PASS', metricsAvailable: true, missingMetrics: [], failedMetrics };
+};
 const runArtifactFor = (entry, engineName) => {
     const result = entry?.value.results?.find(item => item.engine === engineName);
     const filename = result?.artifactPath ? pathInside(ARTIFACT_ROOT, result.artifactPath) : null;
@@ -114,6 +142,7 @@ const safeExamples = run => {
 const main = () => {
     const head = git('rev-parse', 'HEAD');
     const branch = git('branch', '--show-current');
+    const currentRunnerSourceSha256 = require('./lab-server').getSourceProvenance().runnerSourceSha256;
     const currentEngineHash = backendSourceSha256();
     const sourceBytes = fs.readFileSync(SOURCE_PATH);
     const sourceHash = sha256(sourceBytes);
@@ -142,6 +171,10 @@ const main = () => {
     const realCandidate = comparisonSummary(realComparisonEntry, 'candidate-v1-3');
     const sourceRun = runArtifactFor(sourceComparisonEntry, 'candidate-v1-3');
     const realRun = runArtifactFor(realComparisonEntry, 'candidate-v1-3');
+    const paidRunnerSourceSha256 = realRun?.runnerSourceSha256 || null;
+    const runnerProvenanceStatus = !realComparison ? 'NOT_RUN'
+        : !paidRunnerSourceSha256 ? 'NOT_MEASURED'
+            : paidRunnerSourceSha256 === currentRunnerSourceSha256 ? 'PASS' : 'DIFFERENT';
     const integrationEntry = newestMatching(path.join(ARTIFACT_ROOT, 'integration'), item => item.candidateBackendSourceSha256 === currentEngineHash);
     const integration = integrationEntry?.value || null;
     const regressionEntry = newestMatching(path.join(ARTIFACT_ROOT, 'regression'), item => matchesCurrentVerificationCommit(item, head));
@@ -200,24 +233,29 @@ const main = () => {
     const backendSecurityPass = backendSecurityStep?.status === 'PASS';
     const securityPass = integration ? integration.egress?.guard === 'PASS' && backendRegressionPass && backendSecurityPass : null;
     const realGeminiStatus = realComparison ? (realComparison.comparisonValid ? 'PASS' : 'FAIL') : 'NOT_RUN';
+    const expectedCustomerDenominators = {
+        eligibleFactSlots,
+        answerableProductTurns: textAnswerableTurns.length,
+    };
+    const sourceTruthQuality = assessRealGeminiQuality(sourceComparison, sourceCandidate, expectedCustomerDenominators);
+    const realGeminiQuality = assessRealGeminiQuality(realComparison, realCandidate, expectedCustomerDenominators);
     const sourceTruthMetricsAvailable = Boolean(sourceComparisonValid && sourceCandidate);
     const unsupportedClaims = sourceCandidate?.unsupportedClaimsSent ?? null;
     const falseRefusals = sourceCandidate?.falseRefusalSlots ?? null;
     const contextFailures = sourceCandidate?.contextResolutionFailures ?? null;
     const unsafeCrossDomain = sourceCandidate?.unsafeCrossDomainHandoffs ?? null;
-    const qualityPass = sourceTruthMetricsAvailable && unsupportedClaims === 0 && falseRefusals === 0
-        && contextFailures === 0 && unsafeCrossDomain === 0;
-    const independentPass = independent?.verdict === 'PASS'
-        && independent?.reviewedCodeCommit === (verificationReceipt?.candidateCommit || head)
-        && independent?.reviewedBackendSourceSha256 === currentEngineHash;
+    const qualityPass = sourceTruthMetricsAvailable && sourceTruthQuality.status === 'PASS';
+    const independentPass = independentVerificationMatches(independent, head, currentEngineHash);
     const automatedStepsPass = verificationReceipt?.status === 'PASS'
         && Array.isArray(verificationReceipt.steps)
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
     const requiredEvidencePresent = sourceComparisonValid && heldoutComparisonValid && integrationPass && playwrightPass
-        && securityPass && privacyPass && realGeminiStatus === 'PASS' && independentPass;
+        && securityPass && privacyPass && realGeminiStatus === 'PASS' && realGeminiQuality.status === 'PASS'
+        && runnerProvenanceStatus === 'PASS' && independentPass;
     const hasAutomatedFailure = verificationReceipt?.status === 'FAIL' || regression?.status === 'FAIL'
         || [sourceComparison, heldoutComparison, realComparison, integration, playwright, privacy]
-            .some(item => (item && item.status === 'FAIL') || (item && item.comparisonValid === false));
+            .some(item => (item && item.status === 'FAIL') || (item && item.comparisonValid === false))
+        || realGeminiQuality.status === 'FAIL';
     const automatedQaVerdict = hasAutomatedFailure || (sourceTruthMetricsAvailable && !qualityPass) ? 'FAIL'
         : requiredEvidencePresent && automatedStepsPass ? 'PASS' : 'BLOCKED';
     const integrationReady = automatedQaVerdict === 'PASS' && qualityPass && photosTested === 3
@@ -251,6 +289,8 @@ const main = () => {
         REAL_GEMINI_TEXT_REQUESTS: realComparison ? (realTextRequests ?? 0) : 'NOT_RUN',
         REAL_GEMINI_VISION_REQUESTS: realComparison ? (realVisionRequests ?? 0) : 'NOT_RUN',
         REAL_PROVIDER_ESTIMATED_COST_USD: realComparison ? (realEstimatedSpend ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_QUALITY_VERDICT: realGeminiQuality.status,
+        REAL_GEMINI_RUNNER_PROVENANCE: runnerProvenanceStatus,
         PROVIDER_BUDGET_EXHAUSTED: campaignBudgetExhausted === null ? 'UNKNOWN' : campaignBudgetExhausted ? 'YES' : 'NO',
         POSTGRES_INTEGRATION: passState(postgresPass),
         REDIS_INTEGRATION: passState(redisPass),
@@ -280,6 +320,7 @@ const main = () => {
         deterministicSource: sourceComparison ? {
             comparisonId: sourceComparison.comparisonId,
             valid: sourceComparison.comparisonValid,
+            quality: sourceTruthQuality,
             candidateCommit: sourceComparison.candidateCommit,
             oracleSha256: sourceComparison.oracleSha256,
             baseline: sourceBaseline,
@@ -296,6 +337,13 @@ const main = () => {
         realGemini: realComparison ? {
             comparisonId: realComparison.comparisonId,
             valid: realComparison.comparisonValid,
+            quality: realGeminiQuality,
+            runnerProvenance: {
+                status: runnerProvenanceStatus,
+                paidCandidateRunnerSha256: paidRunnerSourceSha256,
+                currentRunnerSha256: currentRunnerSourceSha256,
+                matchesCurrent: runnerProvenanceStatus === 'PASS',
+            },
             model: realComparison.model,
             textRequestsBothEngines: realTextRequests,
             visionRequestsBothEngines: realVisionRequests,
@@ -330,6 +378,7 @@ const main = () => {
             branch,
             worktree: REPO_ROOT,
             backendSourceSha256: currentEngineHash,
+            currentRunnerSourceSha256,
             baselineSha: BASELINE_SHA,
             cleanAtVerificationStart: verificationReceipt?.worktreeCleanAtStart ?? null,
         },
@@ -432,6 +481,8 @@ const main = () => {
         sourceComparisonValid,
         heldoutComparisonValid,
         realGeminiStatus,
+        realGeminiQualityStatus: realGeminiQuality.status,
+        runnerProvenanceStatus,
         integrationReady: integrationReady ? 'YES' : 'NO',
         automatedQaVerdict,
         sourcePersonas: machineStatus.SOURCE_PERSONAS,
@@ -470,7 +521,7 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         : 'Playwright: NOT_RUN.';
     const unpricedCandidateCalls = Number(details.realCandidate?.unpricedProviderCalls) || 0;
     const geminiBlock = details.realComparison
-        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate verified answers: ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls ? 'candidate estimate may be incomplete.' : 'all candidate provider calls were priced.'}`
+        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'}; unsafe cross-domain handoffs ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'}. Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls ? 'candidate estimate may be incomplete.' : 'all candidate provider calls were priced.'}`
         : 'Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.';
     const unpricedCostNote = details.realComparison
         ? `Candidate unpriced provider calls: ${unpricedCandidateCalls}. ${unpricedCandidateCalls ? 'The candidate estimate may be incomplete.' : 'All candidate calls were priced.'}`
@@ -619,4 +670,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { backendSourceSha256, matchesCurrentVerificationCommit, matchingComparison, privacyScanPassed, renderMarkdown, safeExamples };
+module.exports = { assessRealGeminiQuality, backendSourceSha256, independentVerificationMatches, matchesCurrentVerificationCommit, matchingComparison, privacyScanPassed, renderMarkdown, safeExamples };
