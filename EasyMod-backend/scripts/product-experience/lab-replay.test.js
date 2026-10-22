@@ -20,7 +20,8 @@ const { loadGenuinePhotoFixture, GENUINE_PHOTO_MANIFEST } = require('./genuine-p
 const { loadSyntheticMediaFixture, SYNTHETIC_MEDIA_MANIFEST } = require('./synthetic-media-fixtures');
 const { buildDatasetIndex, classifyOracleTurn, createOracleContextTracker } = require('./lab-contracts');
 const { referencesForReplayTurn } = require('./replay-context');
-const { responseContainsFact, isSafeCrossDomainHandoff } = require('./lab-scorer');
+const { responseContainsFact, isSafeCrossDomainHandoff, isUnnecessaryProductRefusal } = require('./lab-scorer');
+const { summarizeTurnEvidence } = require('./turn-evidence-metrics');
 const { scrubPII } = require('../../src/modules/ai/prompt-sanitizer.service');
 
 let mockCatalog = createCatalog();
@@ -1269,7 +1270,12 @@ describe('Product Engine local Test Lab route replay', () => {
                         eligibleSlots: shownFacts.length,
                         correctEvidenceSlots: routeFailureCode ? null : correctSlots.length,
                         correctAnsweredSlots: routeFailureCode ? null : correctAnsweredSlots.length,
-                        unnecessaryRefusalSlots: routeFailureCode ? null : (verdict.decision === grounding.GroundingDecision.SEND ? 0 : shownFacts.length),
+                        unnecessaryRefusalSlots: routeFailureCode ? null : (isUnnecessaryProductRefusal({
+                            response: rawResponse,
+                            disposition: verdict.decision,
+                            answerableSlots: shownFacts.length,
+                            correctAnsweredSlots: correctAnsweredSlots.length,
+                        }) ? shownFacts.length : 0),
                         incorrectOrUnansweredSlots: routeFailureCode ? null : shownFacts.length - correctAnsweredSlots.length,
                         unsupportedPriceClaimsSent: unsafePriceClaims,
                     },
@@ -1328,12 +1334,7 @@ describe('Product Engine local Test Lab route replay', () => {
         const imageBearingEligibleTurns = imageBearingTurns.filter(item => item.oracle.eligibility === 'ANSWERABLE');
         const eligibleSlots = eligibleTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
         const evaluatedEligibleSlots = evaluatedEligibleTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
-        const contextDependentAnswerableTurns = turnResults.filter(item => item.oracle.sourceContextProductId
-            && item.oracle.eligibility === 'ANSWERABLE');
-        const contextResolutionFailures = contextDependentAnswerableTurns.filter(item =>
-            !item.productEvidence.productIds.includes(String(item.oracle.productId))).length;
-        const crossDomainTurns = turnResults.filter(item => item.oracle.crossDomainHandoffs.length > 0);
-        const safeCrossDomainHandoffs = crossDomainTurns.filter(item => item.oracle.safeCrossDomainHandoff === true).length;
+        const turnEvidenceMetrics = summarizeTurnEvidence(turnResults);
         if (scope === 'full' && frozenOracle) {
             const oracleAnswerableRows = [...frozenOracle.rows.values()].filter(row => row.textOnlyMetricEligible === true
                 && row.eligibility === 'ANSWERABLE');
@@ -1343,7 +1344,7 @@ describe('Product Engine local Test Lab route replay', () => {
         }
         const imageBearingFactSlotsExcluded = imageBearingTurns.reduce((sum, item) => sum + item.factScores.eligibleSlots, 0);
         const correctSlots = evaluatedEligibleTurns.reduce((sum, item) => sum + (item.factScores.correctAnsweredSlots || 0), 0);
-        const falseRefusalSlots = evaluatedEligibleTurns.reduce((sum, item) => sum + (item.factScores.unnecessaryRefusalSlots || 0), 0);
+        const falseRefusalSlots = turnEvidenceMetrics.falseRefusalSlots;
         const sentUnsupportedClaims = turnResults.reduce((sum, item) => sum + item.factScores.unsupportedPriceClaimsSent, 0);
         const fullyAnsweredTurns = evaluatedEligibleTurns.filter(item => item.factScores.eligibleSlots > 0
             && item.factScores.correctAnsweredSlots === item.factScores.eligibleSlots).length;
@@ -1456,11 +1457,7 @@ describe('Product Engine local Test Lab route replay', () => {
                 correctVerifiedProductAnswers: correctSlots,
                 unnecessaryRefusalSlots: falseRefusalSlots,
                 unsupportedClaimsSent: sentUnsupportedClaims,
-                contextDependentAnswerableTurns: contextDependentAnswerableTurns.length,
-                contextResolutionFailures,
-                crossDomainHandoffTurns: crossDomainTurns.length,
-                safeCrossDomainHandoffs,
-                unsafeCrossDomainHandoffs: crossDomainTurns.length - safeCrossDomainHandoffs,
+                ...turnEvidenceMetrics,
                 blockedMockUnsupportedCandidates: turnResults.filter(item => item.provider.calls > 0 && item.disposition !== grounding.GroundingDecision.SEND).length,
                 safeFallbacks: turnResults.filter(item => item.disposition === grounding.GroundingDecision.SAFE_FALLBACK).length,
                 routeExecutedTurns: evaluatedTurns.length,

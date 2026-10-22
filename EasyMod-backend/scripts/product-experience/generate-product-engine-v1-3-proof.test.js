@@ -1,15 +1,42 @@
 'use strict';
 
-const { assessRealGeminiQuality, independentVerificationMatches, matchesCurrentVerificationCommit, privacyScanPassed, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { assessRealGeminiQuality, independentVerificationMatches, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, renderMarkdown } = require('./generate-product-engine-v1-3-proof');
+
+describe('evidence artifact selection', () => {
+    test('uses file modification time for receipts without a recorded timestamp', () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-evidence-order-'));
+        try {
+            const older = path.join(directory, 'older.json');
+            const newer = path.join(directory, 'newer.json');
+            fs.writeFileSync(older, JSON.stringify({ kind: 'comparison' }));
+            fs.writeFileSync(newer, JSON.stringify({ kind: 'comparison' }));
+            fs.utimesSync(older, new Date('2020-01-01T00:00:00.000Z'), new Date('2020-01-01T00:00:00.000Z'));
+            fs.utimesSync(newer, new Date('2021-01-01T00:00:00.000Z'), new Date('2021-01-01T00:00:00.000Z'));
+
+            expect(path.basename(newestMatching(directory, item => item.kind === 'comparison').filename)).toBe('newer.json');
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
+    });
+});
 
 describe('paid Gemini quality readiness gate', () => {
     const validComparison = { comparisonValid: true };
-    const expectedDenominators = { eligibleFactSlots: 18, answerableProductTurns: 15 };
+    const expectedDenominators = {
+        eligibleFactSlots: 18, answerableProductTurns: 15,
+        falseRefusalExpectedTurns: 15,
+        contextDependentAnswerableTurns: 2, crossDomainHandoffTurns: 2,
+    };
 
     test('passes only when every candidate quality metric is measured and zero', () => {
         expect(assessRealGeminiQuality(validComparison, {
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 15,
+            falseRefusalEvaluatedTurns: 15,
             contextResolutionFailures: 0,
             unsafeCrossDomainHandoffs: 0,
             verifiedCorrectAnswers: 18,
@@ -17,6 +44,10 @@ describe('paid Gemini quality readiness gate', () => {
             evaluatedFactSlots: 18,
             verifiedCorrectTurns: 15,
             evaluatedAnswerableProductTurns: 15,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 2,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 2,
         }, expectedDenominators)).toEqual({ status: 'PASS', metricsAvailable: true, missingMetrics: [], failedMetrics: [] });
     });
 
@@ -24,6 +55,8 @@ describe('paid Gemini quality readiness gate', () => {
         expect(assessRealGeminiQuality(validComparison, {
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 15,
+            falseRefusalEvaluatedTurns: 15,
             contextResolutionFailures: 3,
             unsafeCrossDomainHandoffs: 1,
             verifiedCorrectAnswers: 16,
@@ -31,6 +64,10 @@ describe('paid Gemini quality readiness gate', () => {
             evaluatedFactSlots: 18,
             verifiedCorrectTurns: 13,
             evaluatedAnswerableProductTurns: 15,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 2,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 2,
         }, expectedDenominators)).toEqual({ status: 'FAIL', metricsAvailable: true, missingMetrics: [], failedMetrics: ['contextResolutionFailures', 'unsafeCrossDomainHandoffs', 'factSlotCoverage', 'turnCoverage'] });
     });
 
@@ -39,8 +76,12 @@ describe('paid Gemini quality readiness gate', () => {
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
         })).toEqual({ status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics: [
-            'contextResolutionFailures', 'unsafeCrossDomainHandoffs', 'verifiedCorrectAnswers', 'eligibleFactSlots',
+            'contextResolutionFailures', 'unsafeCrossDomainHandoffs',
+            'falseRefusalExpectedTurns', 'falseRefusalEvaluatedTurns',
+            'verifiedCorrectAnswers', 'eligibleFactSlots',
             'evaluatedFactSlots', 'verifiedCorrectTurns', 'evaluatedAnswerableProductTurns',
+            'contextDependentAnswerableTurns', 'evaluatedContextDependentAnswerableTurns',
+            'crossDomainHandoffTurns', 'evaluatedCrossDomainHandoffTurns',
         ], failedMetrics: [] });
     });
 
@@ -48,6 +89,8 @@ describe('paid Gemini quality readiness gate', () => {
         expect(assessRealGeminiQuality(validComparison, {
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 15,
+            falseRefusalEvaluatedTurns: 15,
             contextResolutionFailures: 0,
             unsafeCrossDomainHandoffs: 0,
             verifiedCorrectAnswers: 17,
@@ -55,6 +98,10 @@ describe('paid Gemini quality readiness gate', () => {
             evaluatedFactSlots: 18,
             verifiedCorrectTurns: 15,
             evaluatedAnswerableProductTurns: 15,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 2,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 2,
         }, expectedDenominators).failedMetrics).toEqual(['factSlotCoverage']);
     });
 
@@ -62,6 +109,8 @@ describe('paid Gemini quality readiness gate', () => {
         expect(assessRealGeminiQuality(validComparison, {
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 0,
+            falseRefusalEvaluatedTurns: 0,
             contextResolutionFailures: 0,
             unsafeCrossDomainHandoffs: 0,
             verifiedCorrectAnswers: 0,
@@ -69,7 +118,57 @@ describe('paid Gemini quality readiness gate', () => {
             evaluatedFactSlots: 0,
             verifiedCorrectTurns: 0,
             evaluatedAnswerableProductTurns: 0,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 2,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 2,
         }).failedMetrics).toEqual(['nonEmptyDenominators']);
+    });
+
+    test('fails when the paid route leaves context or handoff turns unexecuted', () => {
+        const result = assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 15,
+            falseRefusalEvaluatedTurns: 15,
+            contextResolutionFailures: 0,
+            unsafeCrossDomainHandoffs: 0,
+            verifiedCorrectAnswers: 18,
+            eligibleFactSlots: 18,
+            evaluatedFactSlots: 18,
+            verifiedCorrectTurns: 15,
+            evaluatedAnswerableProductTurns: 15,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 1,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 1,
+        }, expectedDenominators);
+
+        expect(result.status).toBe('FAIL');
+        expect(result.failedMetrics).toEqual(['contextTurnCoverage', 'crossDomainHandoffCoverage']);
+    });
+
+    test('fails when expected false-refusal turns were not evaluable', () => {
+        const result = assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 15,
+            falseRefusalEvaluatedTurns: 13,
+            contextResolutionFailures: 0,
+            unsafeCrossDomainHandoffs: 0,
+            verifiedCorrectAnswers: 18,
+            eligibleFactSlots: 18,
+            evaluatedFactSlots: 18,
+            verifiedCorrectTurns: 15,
+            evaluatedAnswerableProductTurns: 15,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 2,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 2,
+        }, expectedDenominators);
+
+        expect(result.status).toBe('FAIL');
+        expect(result.failedMetrics).toEqual(['falseRefusalCoverage']);
     });
 });
 
@@ -156,10 +255,12 @@ describe('current verification receipt selection', () => {
             verdict: 'PASS',
             reviewedCodeCommit: 'current-head',
             reviewedBackendSourceSha256: 'a'.repeat(64),
+            reviewedRunnerSourceSha256: 'c'.repeat(64),
         };
 
-        expect(independentVerificationMatches(review, 'current-head', 'a'.repeat(64))).toBe(true);
-        expect(independentVerificationMatches(review, 'tested-code-head', 'a'.repeat(64))).toBe(false);
-        expect(independentVerificationMatches(review, 'current-head', 'b'.repeat(64))).toBe(false);
+        expect(independentVerificationMatches(review, 'current-head', 'a'.repeat(64), 'c'.repeat(64))).toBe(true);
+        expect(independentVerificationMatches(review, 'tested-code-head', 'a'.repeat(64), 'c'.repeat(64))).toBe(false);
+        expect(independentVerificationMatches(review, 'current-head', 'b'.repeat(64), 'c'.repeat(64))).toBe(false);
+        expect(independentVerificationMatches(review, 'current-head', 'a'.repeat(64), 'd'.repeat(64))).toBe(false);
     });
 });

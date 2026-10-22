@@ -1,8 +1,20 @@
 'use strict';
 
-const { responseContainsFact, isSafeCrossDomainHandoff } = require('./lab-scorer');
+const { responseContainsFact, isSafeCrossDomainHandoff, isUnnecessaryProductRefusal } = require('./lab-scorer');
 
 describe('Product Engine Lab multilingual fact scoring', () => {
+    test.each([
+        ["Sorry — I couldn't find that product in our current catalog.", 'SEND', 0, true],
+        ['দুঃখিত, পণ্যটি বর্তমান ক্যাটালগে খুঁজে পাইনি।', 'SEND', 0, true],
+        ['Sorry, product ta current catalog e pacchi na.', 'SEND', 0, true],
+        ['Size M is in stock. I cannot confirm an order from this chat.', 'SEND', 1, false],
+        ['This size is currently out of stock.', 'SEND', 0, false],
+    ])('classifies explicit no-answer replies only when no answerable fact was supplied: %s', (response, disposition, correctAnsweredSlots, expected) => {
+        expect(isUnnecessaryProductRefusal({
+            response, disposition, answerableSlots: 1, correctAnsweredSlots,
+        })).toBe(expected);
+    });
+
     test('recognizes a grounded Bangla stock answer', () => {
         expect(responseContainsFact({
             response: 'কালো পাঞ্জাবিটি স্টকে আছে।', field: 'stock', expectedValue: 'IN_STOCK',

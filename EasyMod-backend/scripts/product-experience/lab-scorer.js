@@ -74,6 +74,17 @@ const isSafeCrossDomainHandoff = ({ response, disposition, crossDomainHandoffs, 
     return hasPolicyUncertainty(text) && correctAnsweredSlots === answerableSlots;
 };
 
+const isUnnecessaryProductRefusal = ({ response, disposition, answerableSlots = 0, correctAnsweredSlots = 0 }) => {
+    if (!Number.isFinite(answerableSlots) || answerableSlots <= 0 || correctAnsweredSlots > 0) return false;
+    if (disposition !== 'SEND') return true;
+    const text = String(response || '');
+    const cannotFindProduct = /\b(?:couldn['’]t|could not|can['’]t|cannot|unable to|not able to)\s+(?:find|locate|identify)\s+(?:(?:that|this|the|any)\s+)?(?:product|item)\b/i.test(text)
+        || /\bproduct\b.{0,48}\b(?:couldn['’]t|could not|can['’]t|cannot)\s+(?:find|locate)\b/i.test(text)
+        || /(?:পণ্য|প্রোডাক্ট)(?:টি|টা|টিকে)?\s*.{0,48}(?:খুঁজে\s*(?:পাইনি|পাচ্ছি\s*না)|পাওয়া\s*যাচ্ছে\s*না|পাওয়া\s*যাচ্ছে\s*না)/u.test(text)
+        || /\bproduct\b.{0,48}(?:pacchi\s+na|paini)/i.test(text);
+    return cannotFindProduct;
+};
+
 module.exports = {
     normalizeForMatch,
     responseContainsValue,
@@ -81,4 +92,5 @@ module.exports = {
     hasPolicyUncertainty,
     hasUnsupportedPolicyAssertion,
     isSafeCrossDomainHandoff,
+    isUnnecessaryProductRefusal,
 };

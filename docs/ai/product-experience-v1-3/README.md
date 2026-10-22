@@ -37,13 +37,14 @@ The original `customer-simulator.csv` remains outside the repository and is read
 Important distinctions in the reports:
 
 - `VERIFIED_CORRECT_ANSWERS` counts answerable fact slots whose expected catalog value was included in a sent response. Fully answered turns are reported separately.
+- False refusals count eligible product fact slots on an executed answerable turn when the router withholds the answer or says it cannot find the product despite the oracle marking that turn answerable. The report includes expected, evaluated, and not-evaluable turn counts; provider failures and budget-skipped turns are not scored as model responses.
 - `INCORRECT_PRODUCT_ANSWERS` is not separately measured. The proof reports `incorrectOrUnansweredFactSlots`, which includes partial answers and false refusals; it must not be read as a count of incorrect answers.
 - The measured unsupported-claim counter is specifically unsupported price claims sent. Other unverified assertions are subject to the outbound grounding gate and security tests.
 - Provider costs are token-based estimates, not billing records. Router timings exclude webhook, queue, database, and customer network latency.
 - Three licensed public photos are a small vision probe. They are not source-dataset photos or a representative customer-upload accuracy study.
 - Synthetic conversations do not establish customer acceptance, merchant time saved, sales conversion, adoption, or ROI.
 
-The proof quality gate requires zero unsupported price claims, false refusals, context-resolution failures, and unsafe cross-domain handoffs, plus complete correct coverage of the oracle's fact slots and answerable turns. It applies to deterministic source evidence and the paid Gemini candidate when recorded. Empty or missing denominators, incomplete quality metrics, or paid-run/current evaluation-runner hash drift cannot produce a readiness pass; a measured quality regression produces `AUTOMATED_QA_VERDICT=FAIL`.
+The proof quality gate requires zero unsupported price claims, false refusals, context-resolution failures, and unsafe cross-domain handoffs, plus complete correct coverage of the oracle's fact slots and answerable turns. It also requires complete evaluated-turn coverage for false-refusal, context-resolution, and cross-domain handoff metrics; skipped or incomplete turns are reported as not evaluable. It applies to deterministic source evidence and the paid Gemini candidate when recorded. Empty or missing denominators, incomplete quality metrics, or paid-run/current evaluation-runner hash drift cannot produce a readiness pass; a measured quality regression produces `AUTOMATED_QA_VERDICT=FAIL`.
 
 The proof labels the zero-provider replay result `DETERMINISTIC_SOURCE_TRUTH_VERDICT` and reports paid-run quality separately as `REAL_GEMINI_QUALITY_VERDICT`. The compatibility field `CUSTOMER_TRUTH_VERDICT` is scoped to deterministic source replay only; it does not summarize paid Gemini performance.
 

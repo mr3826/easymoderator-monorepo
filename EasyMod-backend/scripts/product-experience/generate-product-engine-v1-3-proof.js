@@ -15,6 +15,7 @@ const RUN_ROOT = path.join(ARTIFACT_ROOT, 'runs');
 const SOURCE_PATH = path.join(WORKSPACE_ROOT, 'customer-simulator.csv');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
 const CAMPAIGN_ID = 'v13-cf6f18b2-2a9a-4831-ad42-2b8509bfcd35';
+const { summarizeTurnEvidence } = require('./turn-evidence-metrics');
 const PROOF_JSON = path.join(ARTIFACT_ROOT, 'product-engine-v1.3-proof.json');
 const PROOF_MARKDOWN = path.join(DOC_ROOT, 'PRODUCT_ENGINE_V1_3_INTEGRATION_CUSTOMER_TRUTH_PROOF.md');
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -49,15 +50,24 @@ const jsonFiles = directory => fs.existsSync(directory)
 
 const newestMatching = (directory, predicate) => jsonFiles(directory)
     .map(filename => {
-        try { return { filename, value: readJson(filename) }; } catch (_) { return null; }
+        try {
+            const value = readJson(filename);
+            const recordedTime = Date.parse(value.completedAt || value.updatedAt || value.generatedAt || '');
+            return {
+                filename,
+                value,
+                sortTime: Number.isFinite(recordedTime) ? recordedTime : fs.statSync(filename).mtimeMs,
+            };
+        } catch (_) { return null; }
     })
     .filter(item => item && predicate(item.value, item.filename))
-    .sort((left, right) => String(right.value.completedAt || right.value.updatedAt || '').localeCompare(String(left.value.completedAt || left.value.updatedAt || '')))[0] || null;
+    .sort((left, right) => right.sortTime - left.sortTime)[0] || null;
 
 const matchesCurrentVerificationCommit = (receipt, head) => receipt?.candidateCommit === head;
-const independentVerificationMatches = (review, head, backendSourceSha) => review?.verdict === 'PASS'
+const independentVerificationMatches = (review, head, backendSourceSha, runnerSourceSha) => review?.verdict === 'PASS'
     && review?.reviewedCodeCommit === head
-    && review?.reviewedBackendSourceSha256 === backendSourceSha;
+    && review?.reviewedBackendSourceSha256 === backendSourceSha
+    && review?.reviewedRunnerSourceSha256 === runnerSourceSha;
 
 const pathInside = (root, relativePath) => {
     const target = path.resolve(root, relativePath);
@@ -77,8 +87,11 @@ const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
     if (comparison.comparisonValid !== true) return { status: 'FAIL', metricsAvailable: false, missingMetrics: [], failedMetrics: ['comparisonValid'] };
     const requiredMetrics = [
         'unsupportedClaimsSent', 'falseRefusalSlots', 'contextResolutionFailures', 'unsafeCrossDomainHandoffs',
+        'falseRefusalExpectedTurns', 'falseRefusalEvaluatedTurns',
         'verifiedCorrectAnswers', 'eligibleFactSlots', 'evaluatedFactSlots',
         'verifiedCorrectTurns', 'evaluatedAnswerableProductTurns',
+        'contextDependentAnswerableTurns', 'evaluatedContextDependentAnswerableTurns',
+        'crossDomainHandoffTurns', 'evaluatedCrossDomainHandoffTurns',
     ];
     const missingMetrics = requiredMetrics.filter(name => !Number.isFinite(candidate?.[name]));
     if (missingMetrics.length) return { status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics, failedMetrics: [] };
@@ -90,11 +103,26 @@ const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
     if (candidate.verifiedCorrectAnswers !== candidate.eligibleFactSlots
         || candidate.evaluatedFactSlots !== candidate.eligibleFactSlots) failedMetrics.push('factSlotCoverage');
     if (candidate.verifiedCorrectTurns !== candidate.evaluatedAnswerableProductTurns) failedMetrics.push('turnCoverage');
+    if (candidate.evaluatedContextDependentAnswerableTurns !== candidate.contextDependentAnswerableTurns) {
+        failedMetrics.push('contextTurnCoverage');
+    }
+    if (candidate.falseRefusalEvaluatedTurns !== candidate.falseRefusalExpectedTurns) {
+        failedMetrics.push('falseRefusalCoverage');
+    }
+    if (candidate.evaluatedCrossDomainHandoffTurns !== candidate.crossDomainHandoffTurns) {
+        failedMetrics.push('crossDomainHandoffCoverage');
+    }
     if (expected?.eligibleFactSlots !== undefined && candidate.eligibleFactSlots !== expected.eligibleFactSlots) {
         failedMetrics.push('oracleFactSlotDenominator');
     }
     if (expected?.answerableProductTurns !== undefined
         && candidate.evaluatedAnswerableProductTurns !== expected.answerableProductTurns) failedMetrics.push('oracleTurnDenominator');
+    if (expected?.falseRefusalExpectedTurns !== undefined
+        && candidate.falseRefusalExpectedTurns !== expected.falseRefusalExpectedTurns) failedMetrics.push('oracleFalseRefusalTurnDenominator');
+    if (expected?.contextDependentAnswerableTurns !== undefined
+        && candidate.contextDependentAnswerableTurns !== expected.contextDependentAnswerableTurns) failedMetrics.push('oracleContextTurnDenominator');
+    if (expected?.crossDomainHandoffTurns !== undefined
+        && candidate.crossDomainHandoffTurns !== expected.crossDomainHandoffTurns) failedMetrics.push('oracleCrossDomainHandoffDenominator');
     return { status: failedMetrics.length ? 'FAIL' : 'PASS', metricsAvailable: true, missingMetrics: [], failedMetrics };
 };
 const runArtifactFor = (entry, engineName) => {
@@ -168,9 +196,17 @@ const main = () => {
     const sourceBaseline = comparisonSummary(sourceComparisonEntry, 'baseline-v1-2');
     const heldoutCandidate = comparisonSummary(heldoutComparisonEntry, 'candidate-v1-3');
     const heldoutBaseline = comparisonSummary(heldoutComparisonEntry, 'baseline-v1-2');
-    const realCandidate = comparisonSummary(realComparisonEntry, 'candidate-v1-3');
+    const realCandidateRaw = comparisonSummary(realComparisonEntry, 'candidate-v1-3');
     const sourceRun = runArtifactFor(sourceComparisonEntry, 'candidate-v1-3');
     const realRun = runArtifactFor(realComparisonEntry, 'candidate-v1-3');
+    const realCandidate = realCandidateRaw && Array.isArray(realRun?.turns)
+        ? {
+            ...realCandidateRaw,
+            ...summarizeTurnEvidence(realRun.turns),
+            routeExecutedTurns: realRun.summary?.routeExecutedTurns ?? null,
+            routeNotRunTurns: realRun.summary?.routeNotRunTurns ?? null,
+        }
+        : realCandidateRaw;
     const paidRunnerSourceSha256 = realRun?.runnerSourceSha256 || null;
     const runnerProvenanceStatus = !realComparison ? 'NOT_RUN'
         : !paidRunnerSourceSha256 ? 'NOT_MEASURED'
@@ -236,6 +272,9 @@ const main = () => {
     const expectedCustomerDenominators = {
         eligibleFactSlots,
         answerableProductTurns: textAnswerableTurns.length,
+        falseRefusalExpectedTurns: textAnswerableTurns.length,
+        contextDependentAnswerableTurns: sourceCandidate?.contextDependentAnswerableTurns,
+        crossDomainHandoffTurns: sourceCandidate?.crossDomainHandoffTurns,
     };
     const sourceTruthQuality = assessRealGeminiQuality(sourceComparison, sourceCandidate, expectedCustomerDenominators);
     const realGeminiQuality = assessRealGeminiQuality(realComparison, realCandidate, expectedCustomerDenominators);
@@ -245,7 +284,7 @@ const main = () => {
     const contextFailures = sourceCandidate?.contextResolutionFailures ?? null;
     const unsafeCrossDomain = sourceCandidate?.unsafeCrossDomainHandoffs ?? null;
     const qualityPass = sourceTruthMetricsAvailable && sourceTruthQuality.status === 'PASS';
-    const independentPass = independentVerificationMatches(independent, head, currentEngineHash);
+    const independentPass = independentVerificationMatches(independent, head, currentEngineHash, currentRunnerSourceSha256);
     const automatedStepsPass = verificationReceipt?.status === 'PASS'
         && Array.isArray(verificationReceipt.steps)
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
@@ -283,11 +322,29 @@ const main = () => {
         INCORRECT_PRODUCT_ANSWERS: 'NOT_SEPARATELY_MEASURED',
         UNSUPPORTED_CLAIMS: unsupportedClaims ?? 'NOT_RUN',
         FALSE_REFUSALS: falseRefusals ?? 'NOT_RUN',
-        CONTEXT_FAILURES: contextFailures ?? 'NOT_RUN',
-        SAFE_CROSS_DOMAIN_HANDOFFS: sourceCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
+        FALSE_REFUSAL_TURNS_EXPECTED: sourceCandidate?.falseRefusalExpectedTurns ?? 'NOT_RUN',
+        FALSE_REFUSAL_TURNS_EVALUATED: sourceCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_RUN',
+        FALSE_REFUSAL_TURNS_NOT_EVALUABLE: sourceCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN',
+        SOURCE_CONTEXT_FAILURES: contextFailures ?? 'NOT_RUN',
+        REAL_GEMINI_CONTEXT_FAILURES: realCandidate?.contextResolutionFailures ?? 'NOT_RUN',
+        REAL_GEMINI_CONTEXT_TURNS_EXPECTED: realCandidate?.contextDependentAnswerableTurns ?? 'NOT_RUN',
+        REAL_GEMINI_CONTEXT_TURNS_EVALUATED: realCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_RUN',
+        REAL_GEMINI_CONTEXT_TURNS_NOT_EVALUABLE: realCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_RUN',
+        CROSS_DOMAIN_HANDOFFS_EXPECTED: realCandidate?.crossDomainHandoffTurns ?? 'NOT_RUN',
+        CROSS_DOMAIN_HANDOFFS_EVALUATED: realCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_RUN',
+        CROSS_DOMAIN_HANDOFFS_NOT_RUN: realCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN',
+        SOURCE_SAFE_CROSS_DOMAIN_HANDOFFS: sourceCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
+        REAL_GEMINI_SAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
+        REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_RUN',
         GENUINE_PHOTOS_TESTED: realComparison ? (photosTested ?? 'NOT_RUN') : 'NOT_RUN',
         REAL_GEMINI_TEXT_REQUESTS: realComparison ? (realTextRequests ?? 0) : 'NOT_RUN',
         REAL_GEMINI_VISION_REQUESTS: realComparison ? (realVisionRequests ?? 0) : 'NOT_RUN',
+        REAL_GEMINI_ROUTE_EXECUTED_TURNS: realCandidate?.routeExecutedTurns ?? 'NOT_RUN',
+        REAL_GEMINI_ROUTE_NOT_RUN_TURNS: realCandidate?.routeNotRunTurns ?? 'NOT_RUN',
+        REAL_GEMINI_FALSE_REFUSAL_SLOTS: realCandidate?.falseRefusalSlots ?? 'NOT_RUN',
+        REAL_GEMINI_FALSE_REFUSAL_TURNS_EXPECTED: realCandidate?.falseRefusalExpectedTurns ?? 'NOT_RUN',
+        REAL_GEMINI_FALSE_REFUSAL_TURNS_EVALUATED: realCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_RUN',
+        REAL_GEMINI_FALSE_REFUSAL_TURNS_NOT_EVALUABLE: realCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN',
         REAL_PROVIDER_ESTIMATED_COST_USD: realComparison ? (realEstimatedSpend ?? 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_QUALITY_VERDICT: realGeminiQuality.status,
         REAL_GEMINI_RUNNER_PROVENANCE: runnerProvenanceStatus,
@@ -302,7 +359,7 @@ const main = () => {
         PLAYWRIGHT_E2E: playwrightPass ? 'PASS' : playwright ? 'FAIL' : 'NOT_RUN',
         SECURITY_TESTS: securityPass === null ? 'NOT_RUN' : securityPass ? 'PASS' : 'FAIL',
         PRIVACY_SCAN: privacyPass ? 'PASS' : privacy ? 'FAIL' : 'NOT_RUN',
-        INDEPENDENT_VERIFICATION: independentPass ? 'PASS' : independent?.verdict || 'NOT_RUN',
+        INDEPENDENT_VERIFICATION: independentPass ? 'PASS' : independent ? 'STALE' : 'NOT_RUN',
         BASELINE_COMPARISON_VALID: sourceComparisonValid ? 'YES' : sourceComparison ? 'NO' : 'NOT_RUN',
         DETERMINISTIC_SOURCE_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
         CUSTOMER_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
@@ -402,10 +459,19 @@ const main = () => {
             verifiedCorrectAnswers: sourceCandidate?.verifiedCorrectAnswers ?? null,
             verifiedCorrectTurns: sourceCandidate?.verifiedCorrectTurns ?? null,
             falseRefusalSlots: falseRefusals,
+            falseRefusalExpectedTurns: sourceCandidate?.falseRefusalExpectedTurns ?? null,
+            falseRefusalEvaluatedTurns: sourceCandidate?.falseRefusalEvaluatedTurns ?? null,
+            falseRefusalNotEvaluableTurns: sourceCandidate?.falseRefusalNotEvaluableTurns ?? null,
             unsupportedPriceClaimsSent: unsupportedClaims,
             contextResolutionFailures: contextFailures,
+            contextDependentAnswerableTurns: sourceCandidate?.contextDependentAnswerableTurns ?? null,
+            evaluatedContextDependentAnswerableTurns: sourceCandidate?.evaluatedContextDependentAnswerableTurns ?? null,
+            contextResolutionNotEvaluableTurns: sourceCandidate?.contextResolutionNotEvaluableTurns ?? null,
             safeCrossDomainHandoffs: sourceCandidate?.safeCrossDomainHandoffs ?? null,
             unsafeCrossDomainHandoffs: unsafeCrossDomain,
+            crossDomainHandoffTurns: sourceCandidate?.crossDomainHandoffTurns ?? null,
+            evaluatedCrossDomainHandoffTurns: sourceCandidate?.evaluatedCrossDomainHandoffTurns ?? null,
+            crossDomainHandoffNotRunTurns: sourceCandidate?.crossDomainHandoffNotRunTurns ?? null,
             incorrectOrUnansweredFactSlots: totalIncorrectOrUnansweredSlots,
             incorrectProductAnswersSeparatelyMeasured: false,
             candidateP50RouteMs: sourceCandidate?.p50RouteMs ?? null,
@@ -507,7 +573,7 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         ? `${details.sourceOracle.source.personas} personas, ${details.sourceOracle.source.turns} turns, ${status.ELIGIBLE_PRODUCT_TURNS} text product turns, ${status.ANSWERABLE_PRODUCT_TURNS} answerable turns, and ${proof.benchmark.eligibleFactSlots} answerable fact slots.`
         : 'Source oracle is not available.';
     const sourceComparisonBlock = details.sourceComparison
-        ? `Valid: **${details.sourceComparison.comparisonValid ? 'YES' : 'NO'}**. V1.2 verified answers: ${details.sourceBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'}; V1.3 verified answers: ${details.sourceCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'}. V1.2 context failures: ${details.sourceBaseline?.contextResolutionFailures ?? 'NOT_RUN'}; V1.3: ${details.sourceCandidate?.contextResolutionFailures ?? 'NOT_RUN'}.`
+        ? `Valid: **${details.sourceComparison.comparisonValid ? 'YES' : 'NO'}**. V1.2 verified answers: ${details.sourceBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'}; V1.3 verified answers: ${details.sourceCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'}. V1.2 context failures: ${details.sourceBaseline?.contextResolutionFailures ?? 'NOT_RUN'}; V1.3: ${details.sourceCandidate?.contextResolutionFailures ?? 'NOT_RUN'} across ${details.sourceCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_RUN'}/${details.sourceCandidate?.contextDependentAnswerableTurns ?? 'NOT_RUN'} complete conversation chains. V1.3 context turns not evaluable: ${details.sourceCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_RUN'}.`
         : 'No valid source comparison is available.';
     const heldoutBlock = details.heldoutComparison
         ? `Valid: **${details.heldoutComparison.comparisonValid ? 'YES' : 'NO'}**. V1.2 verified answers: ${details.heldoutBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'}; V1.3 verified answers: ${details.heldoutCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'}.`
@@ -523,16 +589,19 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         : 'Playwright: NOT_RUN.';
     const unpricedCandidateCalls = Number(details.realCandidate?.unpricedProviderCalls) || 0;
     const geminiBlock = details.realComparison
-        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'}; unsafe cross-domain handoffs ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'}. Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls ? 'candidate estimate may be incomplete.' : 'all candidate provider calls were priced.'}`
+        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate route coverage: ${details.realCandidate?.routeExecutedTurns ?? 'NOT_MEASURED'}/200 executed, ${details.realCandidate?.routeNotRunTurns ?? 'NOT_MEASURED'} not run. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context resolution failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'} across ${details.realCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.contextDependentAnswerableTurns ?? 'NOT_MEASURED'} fully executed conversation chains (${details.realCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable); cross-domain safety ${details.realCandidate?.safeCrossDomainHandoffs ?? 'NOT_MEASURED'} safe, ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'} unsafe across ${details.realCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.crossDomainHandoffTurns ?? 'NOT_MEASURED'} executed turns (${details.realCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_MEASURED'} not run). Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls ? 'candidate estimate may be incomplete.' : 'all candidate provider calls were priced.'}`
         : 'Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.';
     const unpricedCostNote = details.realComparison
         ? `Candidate unpriced provider calls: ${unpricedCandidateCalls}. ${unpricedCandidateCalls ? 'The candidate estimate may be incomplete.' : 'All candidate calls were priced.'}`
         : 'Candidate unpriced provider calls: NOT_RUN.';
+    const falseRefusalBlock = details.realComparison
+        ? `Candidate false refusals: ${details.realCandidate?.falseRefusalSlots ?? 'NOT_MEASURED'} slots across ${details.realCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.falseRefusalExpectedTurns ?? 'NOT_MEASURED'} evaluated/expected answerable turns (${details.realCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable).`
+        : 'Candidate false refusals: NOT_RUN.';
     const campaignBlock = details.campaign
         ? `Cumulative campaign: ${details.campaign.requestCount}/${details.campaign.maxRequests} requests, ${details.campaign.visionRequestCount}/${details.campaign.maxVisionRequests} vision requests, estimated $${Number(details.campaign.estimatedProviderChargeUsd || 0).toFixed(8)} of $${Number(details.campaign.ceilingUsd || 2).toFixed(2)} reserved ceiling. Invoice unavailable.`
         : 'No campaign ledger is available.';
     const independentBlock = details.independent
-        ? `Verdict: **${details.independent.verdict}**; reviewer: ${details.independent.reviewer || 'not recorded'}; reviewed code commit: ${details.independent.reviewedCodeCommit || 'not recorded'}.`
+        ? `Verdict: **${status.INDEPENDENT_VERIFICATION}**; reviewer: ${details.independent.reviewer || 'not recorded'}; reviewed code commit: ${details.independent.reviewedCodeCommit || 'not recorded'}; reviewed runner hash: ${details.independent.reviewedRunnerSourceSha256 || 'not recorded'}.`
         : 'Independent review: NOT_RUN. The proof remains blocked until a separate read-only review is recorded.';
     const costPerAnswer = proof.measured.estimatedCostPerCandidateVerifiedAnswerUsd;
     return `# EasyModerator Product Engine V1.3 — Integration & Customer Truth Proof
@@ -582,9 +651,14 @@ The source CSV SHA-256 is \`${proof.benchmark.sourceCorpusSha256}\`. Its advisor
 | Verified correct fact answers | ${details.sourceBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'} | ${details.sourceCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'} |
 | Fully answered product turns | ${details.sourceBaseline?.verifiedCorrectTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.verifiedCorrectTurns ?? 'NOT_RUN'} |
 | False refusal slots | ${details.sourceBaseline?.falseRefusalSlots ?? 'NOT_RUN'} | ${details.sourceCandidate?.falseRefusalSlots ?? 'NOT_RUN'} |
+| False-refusal turns evaluated / expected (not evaluable) | ${details.sourceBaseline?.falseRefusalEvaluatedTurns ?? 'NOT_RUN'} / ${details.sourceBaseline?.falseRefusalExpectedTurns ?? 'NOT_RUN'} (${details.sourceBaseline?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN'}) | ${details.sourceCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_RUN'} / ${details.sourceCandidate?.falseRefusalExpectedTurns ?? 'NOT_RUN'} (${details.sourceCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN'}) |
 | Unsupported price claims sent | ${details.sourceBaseline?.unsupportedClaimsSent ?? 'NOT_RUN'} | ${details.sourceCandidate?.unsupportedClaimsSent ?? 'NOT_RUN'} |
 | Context-resolution failures | ${details.sourceBaseline?.contextResolutionFailures ?? 'NOT_RUN'} | ${details.sourceCandidate?.contextResolutionFailures ?? 'NOT_RUN'} |
+| Context turns evaluated / expected | ${details.sourceBaseline?.evaluatedContextDependentAnswerableTurns ?? 'NOT_RUN'} / ${details.sourceBaseline?.contextDependentAnswerableTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_RUN'} / ${details.sourceCandidate?.contextDependentAnswerableTurns ?? 'NOT_RUN'} |
+| Context turns not evaluable | ${details.sourceBaseline?.contextResolutionNotEvaluableTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_RUN'} |
 | Safe cross-domain handoffs | ${details.sourceBaseline?.safeCrossDomainHandoffs ?? 'NOT_RUN'} | ${details.sourceCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN'} |
+| Cross-domain handoffs evaluated / expected | ${details.sourceBaseline?.evaluatedCrossDomainHandoffTurns ?? 'NOT_RUN'} / ${details.sourceBaseline?.crossDomainHandoffTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_RUN'} / ${details.sourceCandidate?.crossDomainHandoffTurns ?? 'NOT_RUN'} |
+| Cross-domain handoffs not run | ${details.sourceBaseline?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN'} |
 
 Incorrect product answers are **not separately measured**. The artifact records ${details.totalIncorrectOrUnansweredSlots ?? 'NOT_MEASURED'} answerable fact slots that were partial, unanswered or incorrect; this total includes false refusals and must not be presented as a wrong-answer count. The currently measured unsupported-claim counter is specifically an unsupported-price-claim check.
 
@@ -593,6 +667,8 @@ ${exampleText}
 ## E. Gemini
 
 ${geminiBlock}
+
+${falseRefusalBlock}
 
 ${campaignBlock}
 
@@ -675,4 +751,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessRealGeminiQuality, backendSourceSha256, independentVerificationMatches, matchesCurrentVerificationCommit, matchingComparison, privacyScanPassed, renderMarkdown, safeExamples };
+module.exports = { assessRealGeminiQuality, backendSourceSha256, independentVerificationMatches, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples };
