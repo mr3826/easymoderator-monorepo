@@ -171,6 +171,17 @@ const splitClaimClauses = (text, includeConjunctions = true) => {
     return String(text || '').split(separators).map(value => value.trim()).filter(Boolean);
 };
 
+const isDeliveryPolicyAssertion = (text) => DELIVERY_ASSERTION.test(text)
+    || DELIVERY_NEGATIVE_ASSERTION.test(text);
+
+/** Keep a separate delivery-policy aside from suppressing a product claim. */
+const splitAvailabilityClauses = (text) => {
+    let value = String(text || '').replace(/\(([^()]*)\)/g, (parenthetical, inner) =>
+        isDeliveryPolicyAssertion(inner) ? `; ${inner}; ` : parenthetical);
+    value = value.replace(/\s+[—–]\s+/g, '; ');
+    return splitClaimClauses(value);
+};
+
 const claimClauseAt = (text, index) => {
     const prefix = String(text || '').slice(0, index);
     const suffix = String(text || '').slice(index);
@@ -852,9 +863,9 @@ const isMaterialUncertaintyClause = (clause, evidence) => {
 const unsupportedVariantClaims = (candidate, evidence) => {
     if (!evidence.verifiedProducts?.length) return [];
     const violations = [];
-    for (const clause of splitClaimClauses(candidate)) {
+    for (const clause of splitAvailabilityClauses(candidate)) {
         const expected = availabilityAssertion(clause);
-        if (!expected || DELIVERY_TERMS.test(clause)) continue;
+        if (!expected || isDeliveryPolicyAssertion(clause)) continue;
         if (isMaterialUncertaintyClause(clause, evidence)) continue;
         if (/\b(?:material|fabric|photo|picture|image)\b/i.test(clause) && !OPTION_LABEL.test(clause)) continue;
         const claimProducts = productsForProductClaim(clause, evidence);
@@ -1024,7 +1035,7 @@ const deliveryTimelineScopeMatches = (candidateClause, policySentence, allPolicy
 const unsupportedStockClaim = (candidate, evidence) => {
     if (!evidence.verifiedProducts.length) {
         if (evidence.productStatus !== ProductEvidenceStatus.NONE) return false;
-        return splitClaimClauses(candidate).some(clause => {
+        return splitAvailabilityClauses(candidate).some(clause => {
             if (!availabilityAssertion(clause)) return false;
             const subjectTerms = availabilitySubjectTerms(clause);
             const pureDeliveryPolicy = (DELIVERY_ASSERTION.test(clause)
@@ -1036,10 +1047,9 @@ const unsupportedStockClaim = (candidate, evidence) => {
             return true;
         });
     }
-    for (const clause of splitClaimClauses(candidate)) {
+    for (const clause of splitAvailabilityClauses(candidate)) {
         const expected = availabilityAssertion(clause);
-        const deliveryOnlyAvailability = DELIVERY_ASSERTION.test(clause)
-            || DELIVERY_NEGATIVE_ASSERTION.test(clause);
+        const deliveryOnlyAvailability = isDeliveryPolicyAssertion(clause);
         if (!expected || deliveryOnlyAvailability) continue;
         if (isMaterialUncertaintyClause(clause, evidence)) continue;
         if (/\b(?:material|fabric|photo|picture|image)\b|ছবি/i.test(clause) && !OPTION_LABEL.test(clause)) continue;
@@ -1228,7 +1238,7 @@ const evaluateCandidate = ({
             return deny(ReasonCode.PRODUCT_NOT_FOUND);
         }
 
-        const assertsAvailability = splitClaimClauses(candidate).some((clause) => {
+        const assertsAvailability = splitAvailabilityClauses(candidate).some((clause) => {
             const productAndDeliveryInfo = PRODUCT_TERMS.test(clause)
                 && DELIVERY_TERMS.test(clause)
                 && PRODUCT_INFORMATION_TERMS.test(clause);

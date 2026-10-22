@@ -788,6 +788,26 @@ describe('product evidence trust boundaries', () => {
         expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
     });
 
+    test('a supported delivery assertion does not hide an unavailable variant claim', () => {
+        const evidence = grounding.resolveProductEvidence({
+            shopId: SHOP,
+            message: 'Classic Blue Denim Jacket size XL available?',
+            candidates: [catalogProduct({
+                variants: [{ id: 'variant-xl', option_name: 'Size', option_value: 'XL', price: null, quantity: 0, is_active: true }],
+            })],
+        });
+        grounding.withPolicyText(evidence, 'Delivery: available nationwide across Bangladesh.');
+
+        const verdict = evaluateCandidate({
+            candidate: 'XL size available (delivery options are available).',
+            evidence,
+            language: 'mixed',
+        });
+
+        expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(verdict.reasonCode).toBe(grounding.ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+    });
+
     test('a truthful product-level not-available reply is accepted', () => {
         const evidence = grounding.resolveProductEvidence({
             shopId: SHOP,
@@ -1660,6 +1680,50 @@ describe('product evidence trust boundaries', () => {
 
         expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
         expect(result.violations).toContain('unsupported_stock_claim');
+    });
+
+    test.each([
+        'Classic Blue Denim Jacket is available (delivery options are available).',
+        'Classic Blue Denim Jacket is available — delivery options are available.',
+        'Delivery options are available — Classic Blue Denim Jacket is available.',
+    ])('a separate supported delivery assertion does not hide an out-of-stock product claim: %s', (candidate) => {
+        const evidence = evidenceForProducts([{ product: catalogProduct({
+            in_stock: false,
+            track_quantity: true,
+            quantity: 0,
+        }) }]);
+        grounding.withPolicyText(evidence, 'Delivery: available nationwide across Bangladesh.');
+
+        const result = evaluateCandidate({
+            candidate,
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_stock_claim');
+        expect(result.violations).not.toContain('unsupported_delivery_commitment');
+    });
+
+    test.each([
+        'Classic Blue Denim Jacket is available (delivery options are available).',
+        'Classic Blue Denim Jacket is available — delivery options are available.',
+    ])('a separate supported delivery assertion does not hide a NOT_FOUND product claim: %s', (candidate) => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.productStatus = grounding.ProductEvidenceStatus.NOT_FOUND;
+        grounding.withPolicyText(evidence, 'Delivery: available nationwide across Bangladesh.');
+
+        const result = evaluateCandidate({
+            candidate,
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.reasonCode).toBe(grounding.ReasonCode.PRODUCT_NOT_FOUND);
+        expect(result.violations).toContain('availability_asserted_for_absent_product');
     });
 
     test.each(['Available.', 'In stock.', 'All sizes are available.', 'Available in all sizes.'])(
