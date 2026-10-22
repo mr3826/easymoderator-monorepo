@@ -1654,6 +1654,63 @@ describe('product evidence trust boundaries', () => {
         expect(result.decision).toBe(grounding.GroundingDecision.SEND);
     });
 
+    test.each([
+        ['bKash is available.', 'Accepted payment: Cash on Delivery (COD), and advance payment via bKash to the personal number 01711111111.'],
+        ['Nagad is available.', 'Accepted payment: Cash on Delivery (COD), and advance payment via Nagad to the personal number 01711111111.'],
+    ])('a bare payment-method availability statement reaches payment policy: %s', (candidate, policy) => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence, `--- SHOP PAYMENT & DELIVERY (authoritative) ---\n${policy}`);
+
+        const result = evaluateCandidate({
+            candidate,
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('an unsupported bare payment-method availability statement reaches payment policy', () => {
+        const result = evaluateCandidate({
+            candidate: 'bKash is available.',
+            evidence: grounding.emptyEvidence(SHOP),
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_payment_method:bkash');
+        expect(result.violations).not.toContain('unsupported_stock_claim');
+    });
+
+    test('generic delivery options availability reaches delivery policy', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence, '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nDelivery: available nationwide across Bangladesh.');
+
+        const result = evaluateCandidate({
+            candidate: 'Delivery options are available.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('unsupported generic delivery options availability reaches delivery policy', () => {
+        const result = evaluateCandidate({
+            candidate: 'Delivery options are available.',
+            evidence: grounding.emptyEvidence(SHOP),
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_delivery_commitment');
+        expect(result.violations).not.toContain('unsupported_stock_claim');
+    });
+
     test('an unsupported payment availability claim reaches the payment policy check', () => {
         const result = evaluateCandidate({
             candidate: 'bKash payment is available.',

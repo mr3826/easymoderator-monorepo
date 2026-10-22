@@ -88,7 +88,7 @@ const DELIVERY_TERMS = /\b(?:delivery|deliver|shipping|ship|courier|dispatch|rid
 const PRODUCT_TERMS = /\b(?:products?|items?|catalog(?:ue)?|merchandise|ponno)\b|পণ্য|প্রোডাক্ট|আইটেম|জিনিস|মালামাল/i;
 const PRODUCT_INFORMATION_TERMS = /\b(?:information|info|details|data|records?)\b|তথ্য|বিবরণ|বিস্তারিত/i;
 const PRODUCT_ABSENCE_ASSERTION = /\b(?:there\s+(?:are|is)\s+)?(?:no|zero)\s+(?:products?|items?|merchandise)\b|\bwe\s+(?:(?:do|does)\s+not|don't|doesn't)\s+have\s+(?:(?:any|this|that|these|those|the)\s+)?(?:products?|items?|merchandise)\b|\b(?:our|the)\s+catalog(?:ue)?\s+(?:is|looks?)\s+(?:empty|blank)\b|\b(?:our|the)\s+(?:shop|store)\s+(?:has|have)\s+(?:no|zero|not\s+any)\s+(?:products?|items?)\b|(?:আমাদের|দোকানে|শপে)\s*(?:কোনো|কোন|একটিও)?\s*(?:পণ্য|প্রোডাক্ট|আইটেম|জিনিস)\s*(?:নেই|নাই)|ক্যাটালগে?.{0,24}(?:পণ্য|প্রোডাক্ট|আইটেম)\s*(?:নেই|নাই)|(?:ক্যাটালগ|ক্যাটালগে)\s*(?:খালি|ফাঁকা)/i;
-const DELIVERY_ASSERTION = /\b(?:we\s+(?:can|will|do)\s+(?:deliver|ship)|delivery\s+(?:is\s+)?available|nationwide\s+delivery|will\s+arrive|can\s+arrive|ships?\s+to)\b|ডেলিভারি\s*(?:হবে|পাবেন|দেওয়া হয়|দেওয়া হয়)/i;
+const DELIVERY_ASSERTION = /\b(?:we\s+(?:can|will|do)\s+(?:deliver|ship)|delivery\s+(?:(?:options?|services?)\s+)?(?:is\s+|are\s+)?available|nationwide\s+delivery|will\s+arrive|can\s+arrive|ships?\s+to)\b|ডেলিভারি\s*(?:হবে|পাবেন|দেওয়া হয়|দেওয়া হয়)/i;
 const DELIVERY_NEGATIVE_ASSERTION = /\b(?:delivery|shipping|courier)\s+(?:is\s+)?(?:not\s+available|unavailable|not\s+supported|not\s+offered|not\s+possible)|\bwe\s+(?:cannot|can't|won't|do\s+not|don't)\s+(?:deliver|ship)\b|ডেলিভারি\s*(?:হবে না|পাবেন না|দেওয়া হয় না|দেওয়া হয় না)/i;
 const COMMITMENT_TIMELINE = /(?:(?<![\p{L}\p{N}])[0-9০-৯]{1,2}\s*(?:[-–]\s*[0-9০-৯]{1,2}\s*)?(?:(?:(?:business|working)\s+)?(?:minutes?|hours?|days?|weeks?)|মিনিট|ঘণ্টা|ঘন্টা|দিন(?:ে)?|সপ্তাহ(?:ে)?)(?![\p{L}\p{N}])|\b(?:today|tomorrow|same[- ]day|next day|within 24 hours|one day|two days|three days)\b|আজ|আগামীকাল|২৪\s*ঘণ্টা|এক\s*দিন|দুই\s*দিন|তিন\s*দিন)/giu;
 const ORDER_CONFIRMATION_CLAIM = /\b(?:order\s+(?:is\s+)?(?:confirmed|placed|created|received|processing)|(?:confirmed|placed)\s+(?:your\s+)?order|we\s+(?:have\s+)?(?:confirmed|placed)\s+your\s+order)\b|অর্ডার\s*(?:কনফার্ম|নিশ্চিত|হয়ে গেছে|হয়ে গেছে)/i;
@@ -110,6 +110,9 @@ const PAYMENT_METHOD_PATTERNS = Object.freeze({
 const PAYMENT_METHOD_ASSERTION = /\b(?:payment|pay|paid|accept|accepted|take|takes|transfer|send|advance|cash|cod|transaction|use|via|by|available|option|method|support|supports)\b|পেমেন্ট|টাকা|গ্রহণ|পাঠান|দেন|দিতে|পাবেন/i;
 const PAYMENT_METHOD_CLAIM_CONTEXT = /\b(?:accept|accepted|support|supports)\b|\btakes?\s+[A-Za-z][A-Za-z-]*|\b(?:pay|payment)\s+(?:by|via|with|using|through)\b|(?:পেমেন্ট|টাকা)\s*(?:করুন|দিন|দেন|পাঠান|গ্রহণ|দিতে|নিন)|(?:গ্রহণ|নিন|দেন|পাঠান)\s*.{0,12}(?:পেমেন্ট|টাকা)/i;
 const PAYMENT_SEMANTIC_CONTEXT = /\b(?:payment|payments|pay|paid|transaction|cash|cod|advance|mfs)\b|পেমেন্ট|টাকা|লেনদেন/i;
+const BARE_PAYMENT_AVAILABILITY_METHODS = new Set(['bkash', 'nagad']);
+const hasBarePaymentMethodAvailability = (value) => PAYMENT_METHOD_ASSERTION.test(value)
+    && [...BARE_PAYMENT_AVAILABILITY_METHODS].some(method => PAYMENT_METHOD_PATTERNS[method].test(value));
 const NON_PAYMENT_ACCEPTANCE_CONTEXT = /\b(?:returns?|exchanges?|refunds?|replacements?|cancellations?|orders?|bookings?)\b/i;
 const PAYMENT_METHOD_ROUTE_TARGET = /\b(?:via|through|using|by)\s+(?:(?:a|an|the)\s+)?([A-Za-z][A-Za-z-]*)/gi;
 const PAYMENT_METHOD_ACCEPTANCE_ROUTE_TARGET = /\b(?:orders?|bookings?|returns?|exchanges?|refunds?|replacements?|cancellations?)\s+(?:with|to)\s+(?:(?:a|an|the|our|local)\s+)?([A-Za-z][A-Za-z-]*)/gi;
@@ -207,7 +210,7 @@ const AVAILABILITY_CONTEXT_FILLERS = new Set([
 const availabilitySubjectTerms = (clause) => {
     let value = String(clause || '')
         .replace(new RegExp(LOCATION_SCOPE_PATTERN.source, 'gi'), ' ');
-    if (PAYMENT_SEMANTIC_CONTEXT.test(value)) {
+    if (PAYMENT_SEMANTIC_CONTEXT.test(value) || hasBarePaymentMethodAvailability(value)) {
         value = Object.values(PAYMENT_METHOD_PATTERNS)
             .reduce((text, pattern) => text.replace(pattern, ' '), value);
     }
@@ -1014,7 +1017,7 @@ const unsupportedStockClaim = (candidate, evidence) => {
                 || DELIVERY_NEGATIVE_ASSERTION.test(clause))
                 && DELIVERY_TERMS.test(clause)
                 && !subjectTerms.length;
-            const purePaymentPolicy = PAYMENT_SEMANTIC_CONTEXT.test(clause)
+            const purePaymentPolicy = (PAYMENT_SEMANTIC_CONTEXT.test(clause) || hasBarePaymentMethodAvailability(clause))
                 && !subjectTerms.length;
             if (pureDeliveryPolicy || purePaymentPolicy) return false;
             return true;
