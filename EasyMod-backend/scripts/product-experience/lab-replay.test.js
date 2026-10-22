@@ -304,8 +304,8 @@ describe('registered genuine photo routing seam', () => {
             const isBaselineRouter = process.env.LAB_BASELINE_ROUTER_ONLY === '1'
                 || process.env.LAB_ENGINE_LABEL === 'baseline-v1-2';
             if (!isBaselineRouter) {
-                expect(imageCalls[0].systemPrompt).toContain('For a South Asian tunic whose visible body extends below the hip toward the upper thigh or knee');
-                expect(imageCalls[0].systemPrompt).toContain('If cropping hides the lower hem and the silhouette is ambiguous, use null rather than guessing');
+                expect(imageCalls[0].systemPrompt).toContain('Classify from the garment\'s complete visible silhouette and hemline before using neckline or construction details');
+                expect(imageCalls[0].systemPrompt).toContain('If a South Asian tunic\'s visible hem falls below mid-thigh, classify it as "kurta/panjabi"');
             }
             expect(imageCalls[0].messages[0].content.find(part => part.type === 'image_url').url).toBe(fixture.dataUrl);
             expect(result).toEqual(expect.objectContaining({ response: expect.any(String), grounding: expect.any(Object) }));
