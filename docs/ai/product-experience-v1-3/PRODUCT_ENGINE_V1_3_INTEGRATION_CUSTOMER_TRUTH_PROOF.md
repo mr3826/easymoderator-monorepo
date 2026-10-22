@@ -1,21 +1,21 @@
 # EasyModerator Product Engine V1.3 — Integration & Customer Truth Proof
 
-Generated: 2026-10-22T18:00:56.836Z
+Generated: 2026-10-22T19:29:35.787Z
 
 ## A. Executive verdict
 
 | Gate | Result |
 |---|---|
-| Automated QA | BLOCKED |
+| Automated QA | FAIL |
 | Integration ready | NO |
 | Deterministic source truth (zero provider calls) | PASS |
-| Gemini comparison | NOT_RUN |
-| Gemini credential | NOT_RUN |
-| Real Gemini candidate quality | NOT_RUN |
-| Real Gemini photo acceptance | NOT_RUN |
+| Gemini comparison | PASS |
+| Gemini credential | AUTHENTICATED |
+| Real Gemini candidate quality | PASS |
+| Real Gemini photo acceptance | FAIL |
 | Browser QA | PASS |
 | Backend security tests | PASS |
-| Verification receipt | PASS (YES complete) |
+| Verification receipt | FAIL (YES complete) |
 **Commercial evidence:** NOT_ESTABLISHED
 
 This local verification evaluates the existing V1.2 Product Engine against an independently generated catalog oracle, a synthetic held-out set, the disposable local PostgreSQL/Redis/worker path, and baseline/candidate replays. Each result is limited to its recorded receipt. Production, live Meta delivery, merchant outcomes, conversion and ROI were not tested.
@@ -25,12 +25,12 @@ The candidate is not eligible for integration readiness yet. The evidence below 
 ## B. Source control and isolation
 
 - V1.2 baseline: `957bb991a18db1949369a6f805822b8c8b69889b`.
-- V1.3 tested code commit: `cd080b7b69508bfe142a3c9b99ef1e8c45039ca6` on `feature/product-engine-v1.3-customer-truth`.
+- V1.3 tested code commit: `bc48f08b0a8fedb03bc3ec36643bc7e8466cdc22` on `feature/product-engine-v1.3-customer-truth`.
 - Evidence checkout: `D:\easymod\_wt-product-engine-v1-3`.
-- Evidence package root: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11`.
-- Backend source SHA-256: `8c2736021a3aeff9d69ab38782eab3a4803b8708d7d20b76cb246fb43d8ddeb7`.
+- Evidence package root: `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04`.
+- Backend source SHA-256: `e418986acb6fbc7e5c0d658e4013dc0c3024f8d86bcb3a971a027b9153d99c31`.
 - Worktree clean at verification start: **YES**.
-- Worktree clean when the proof was generated: **NO**. Verification receipt: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\regression\verify-8dd814bb-3c14-418f-84a4-003af6c4ce62.json`.
+- Worktree clean when the proof was generated: **NO**. Verification receipt: `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\regression\verify-2df95ab4-6dc8-41b6-812a-a2b098557713.json`.
 - Other agent worktrees touched: **NO**. Production changed: **NO**. Push, merge and deploy: **NO**.
 - Production release remains unauthorized.
 
@@ -42,7 +42,7 @@ Order creation, payment confirmation, stock reservation, courier booking, live M
 
 ## D. Deterministic source truth
 
-This verdict covers the zero-provider-call replay against the source oracle only. The paid Gemini candidate quality gate is NOT_RUN.
+This verdict covers the zero-provider-call replay against the source oracle only. The paid Gemini candidate quality gate is PASS.
 
 20 personas, 200 turns, 65 text product turns, 15 answerable turns, and 18 answerable fact slots.
 
@@ -67,15 +67,15 @@ The source CSV SHA-256 is `892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44
 | Metric | Deterministic source candidate | Paid Gemini candidate | Scope / limitation |
 |---|---|---|---|
 | PRODUCT_IDENTITY_ACCURACY | NOT_MEASURED | NOT_MEASURED | Identity-only accuracy is not isolated from the aggregate fact-slot score. |
-| ANSWERABLE_PRODUCT_RESOLUTION_RATE | 15/15 (100.0%); evaluated 15 | NOT_MEASURED |  |
-| VERIFIED_FACTUAL_ACCURACY | 18/18 (100.0%); evaluated 18 | NOT_MEASURED |  |
+| ANSWERABLE_PRODUCT_RESOLUTION_RATE | 15/15 (100.0%); evaluated 15 | 15/15 (100.0%); evaluated 15 |  |
+| VERIFIED_FACTUAL_ACCURACY | 18/18 (100.0%); evaluated 18 | 18/18 (100.0%); evaluated 18 |  |
 | VARIANT_ACCURACY | NOT_MEASURED | NOT_MEASURED | Variant-only outcomes are not reported as a separate numerator and denominator. |
-| MULTI_TURN_CONTEXT_ACCURACY | 13/13 (100.0%); evaluated 13 | NOT_MEASURED |  |
+| MULTI_TURN_CONTEXT_ACCURACY | 13/13 (100.0%); evaluated 13 | 13/13 (100.0%); evaluated 13 |  |
 | UNKNOWN_HANDLING_ACCURACY | NOT_MEASURED | NOT_MEASURED | Unknown-answer cases do not have a separately reported accuracy denominator. |
-| FALSE_REFUSAL_RATE | 0/18 (0.0%); evaluated 15 | NOT_MEASURED | eligible answerable fact slots; evaluated-turn coverage is reported separately |
-| UNSUPPORTED_CLAIM_RATE | NOT_MEASURED | NOT_MEASURED | General claim rate not measured. Unsupported price claims with SEND: 0/200 (0.0%) deterministic; NOT_MEASURED paid. |
-| SAFE_CROSS_DOMAIN_ROUTING_RATE | 4/4 (100.0%); evaluated 4 | NOT_MEASURED |  |
-| GENUINE_IMAGE_MATCH_ACCURACY | NOT_APPLICABLE | NOT_RUN; visible category NOT_MEASURED; visible color NOT_MEASURED; catalog SKU identity NOT_MEASURED | Visible category and color are supporting attributes, not catalog SKU identity accuracy. |
+| FALSE_REFUSAL_RATE | 0/18 (0.0%); evaluated 15 | 0/18 (0.0%); evaluated 15 | eligible answerable fact slots; evaluated-turn coverage is reported separately |
+| UNSUPPORTED_CLAIM_RATE | NOT_MEASURED | NOT_MEASURED | General claim rate not measured. Unsupported price claims with SEND: 0/200 (0.0%) deterministic; 0/200 (0.0%) paid. |
+| SAFE_CROSS_DOMAIN_ROUTING_RATE | 4/4 (100.0%); evaluated 4 | 4/4 (100.0%); evaluated 4 |  |
+| GENUINE_IMAGE_MATCH_ACCURACY | NOT_APPLICABLE | FAIL; visible category 2/3 (66.7%); visible color 3/3 (100.0%); catalog SKU identity NOT_MEASURED | Visible category and color are supporting attributes, not catalog SKU identity accuracy. |
 | CUSTOMER_USEFULNESS_SCORE | NOT_MEASURED | NOT_MEASURED | No blinded, separately configured semantic evaluator or usefulness score was recorded. |
 
 No population confidence intervals were calculated. The benchmark and three public-photo sample are fixed convenience fixtures, not random samples; out-of-sample uncertainty and customer usefulness remain unmeasured.
@@ -110,11 +110,11 @@ Disposition: SEND; correct answer slots: 1/1.
 
 ## E. Gemini
 
-Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.
+Credential status: AUTHENTICATED; the process-scoped value is not recorded. Model: gemini-3.1-flash-lite. Provider-reported traffic across matched arms: 158 text and 6 vision calls. Request attempts across matched arms: 158 text and 6 vision. Candidate run ledger: 109 request attempts, 109 provider usage records, 0 rejected reservations. Estimated matched-pair spend from priced usage: $0.03300825; provider invoice: NOT_AVAILABLE. Candidate route coverage: 200/200 executed, 0 not run. Candidate quality gate: PASS; 18/18 fact slots and 15/15 answerable turns verified; context resolution failures 0 across 13/13 fully executed conversation chains (0 not evaluable); cross-domain safety 4 safe, 0 unsafe across 4/4 executed turns (0 not run). Runner provenance: PASS; paid/current runner hashes 78a58143310ad432fc33a237eb0a6cb8ce83fd1e7b71b625d81a3148a64de356/78a58143310ad432fc33a237eb0a6cb8ce83fd1e7b71b625d81a3148a64de356. Candidate unpriced provider calls: 0; all recorded candidate provider usage was priced.
 
-Candidate false refusals: NOT_RUN.
+Candidate false refusals: 0 slots across 15/15 evaluated/expected answerable turns (0 not evaluable).
 
-No campaign ledger is available.
+Observed campaign activity remains in the cumulative ledger: 164/256 requests, 6/12 vision requests, 164 provider-reported calls and 0 unpriced or pending request(s). Estimated priced usage: $0.03300825; worst-case reserved: $0.29028375 of $2.00 ceiling. Invoice unavailable.
 
 Supplementary Pro diagnostic: NOT_RUN.
 
@@ -122,7 +122,7 @@ Provider estimates use reported token usage and a pinned local rate calculation.
 
 ## F. Images
 
-Real Gemini vision evaluation: NOT_RUN.
+Photo acceptance verdict: **FAIL**. The matched paid Gemini run evaluated 3 licensed public photos. Category matches: 2/3; visible-color matches: 3/3; catalog identity: NOT SCORED. The matched comparison originally reported 0/3 categories with the slash-rejecting scorer; the follow-up stores the actual redacted provider outputs. The fixtures represent only 1 of the 15 required visual case types (one clean, single-product photograph); the other 14 case types are not covered. No catalog SKU identity score exists. These public-photo results are not customer-upload accuracy evidence.
 
 Supplementary Gemini Pro photo diagnostics: NOT_RUN.
 
@@ -152,17 +152,17 @@ Represented case types: 0/15. A case counts as represented only when its fixture
 
 Required output coverage is partial: the run records fixture provenance/checksum, visible category/color, redacted provider output, redacted customer response, latency, estimated token cost, and an unverified-material flag. It does not record independently known catalog SKU identity, retrieved catalog candidates, a final SKU match, calibrated confidence/ambiguity, or a complete per-attribute reliability annotation. Catalog product identity accuracy is therefore NOT_MEASURED.
 
-No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. No completed per-photo comparison is reported.
+No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. The detailed provenance and per-photo observations are in the machine-readable proof.
 
 ## G. Backend integration
 
-Receipt status: **PASS**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: 12 passed, 12 total; webhook pipeline: 46 passed, 46 total; full backend regression: 2 skipped, 3997 passed, 3999 total. Receipts: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\integration`.
+Receipt status: **PASS**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: 12 passed, 12 total; webhook pipeline: 46 passed, 46 total; full backend regression: 2 skipped, 3997 passed, 3999 total. Receipts: `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\integration`.
 
-Product search: **PASS**. Fake Meta transport: **PASS**. These checks do not establish production database behavior or live Meta delivery. Disposable service receipts: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\integration`.
+Product search: **PASS**. Fake Meta transport: **PASS**. These checks do not establish production database behavior or live Meta delivery. Disposable service receipts: `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\integration`.
 
 ## H. Browser QA
 
-Playwright exit code: 0; result: {"total":6,"passed":6,"failed":0,"skipped":0,"results":[{"status":"passed","project":"chromium","title":"tests\\product-engine-lab\\lab.spec.ts:44:1 › local Test Lab journeys, data boundaries, run history, and responsive controls","duration":"1.6m"},{"status":"passed","project":"chromium","title":"tests\\product-engine-lab\\lab.spec.ts:385:1 › loads the real Lab shell on every installed browser engine","duration":"496ms"},{"status":"passed","project":"firefox","title":"tests\\product-engine-lab\\lab.spec.ts:44:1 › local Test Lab journeys, data boundaries, run history, and responsive controls","duration":"1.9m"},{"status":"passed","project":"firefox","title":"tests\\product-engine-lab\\lab.spec.ts:385:1 › loads the real Lab shell on every installed browser engine","duration":"677ms"},{"status":"passed","project":"webkit","title":"tests\\product-engine-lab\\lab.spec.ts:44:1 › local Test Lab journeys, data boundaries, run history, and responsive controls","duration":"1.9m"},{"status":"passed","project":"webkit","title":"tests\\product-engine-lab\\lab.spec.ts:385:1 › loads the real Lab shell on every installed browser engine","duration":"771ms"}]}. Evidence: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\playwright\execution.json`.
+Playwright exit code: 0; result: {"total":6,"passed":6,"failed":0,"skipped":0,"results":[{"status":"passed","project":"chromium","title":"tests\\product-engine-lab\\lab.spec.ts:44:1 › local Test Lab journeys, data boundaries, run history, and responsive controls","duration":"1.6m"},{"status":"passed","project":"chromium","title":"tests\\product-engine-lab\\lab.spec.ts:385:1 › loads the real Lab shell on every installed browser engine","duration":"486ms"},{"status":"passed","project":"firefox","title":"tests\\product-engine-lab\\lab.spec.ts:44:1 › local Test Lab journeys, data boundaries, run history, and responsive controls","duration":"1.9m"},{"status":"passed","project":"firefox","title":"tests\\product-engine-lab\\lab.spec.ts:385:1 › loads the real Lab shell on every installed browser engine","duration":"736ms"},{"status":"passed","project":"webkit","title":"tests\\product-engine-lab\\lab.spec.ts:44:1 › local Test Lab journeys, data boundaries, run history, and responsive controls","duration":"2.0m"},{"status":"passed","project":"webkit","title":"tests\\product-engine-lab\\lab.spec.ts:385:1 › loads the real Lab shell on every installed browser engine","duration":"874ms"}]}. Evidence: `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\playwright\execution.json`.
 
 The Playwright runner starts a loopback Test Lab for the browser run and stops it afterward; no persistent Test Lab URL is claimed by this report.
 
@@ -170,14 +170,14 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 - Security tests: **PASS**. Egress guard: PASS; blocked non-loopback attempts: 0.
 - Tenant violations: 0; unscoped catalog reads: 0.
-- Pre-proof artifact privacy scan: **PASS** at 2026-10-22T18:00:55.565318Z. The final scan report and checksum manifest are generated after this proof; inspect their timestamps and entries to confirm coverage. The proof Markdown is at `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\reports\product-engine-v1.3-proof.md`, and the machine proof is at `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\product-engine-v1.3-proof.json`.
+- Pre-proof artifact privacy scan: **PASS** at 2026-10-22T19:29:34.752511Z. The final scan report and checksum manifest are generated after this proof; inspect their timestamps and entries to confirm coverage. The proof Markdown is at `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\reports\product-engine-v1.3-proof.md`, and the machine proof is at `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\product-engine-v1.3-proof.json`.
 - No credential values are stored in the proof package.
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost from priced usage: NOT_RUN. Candidate unpriced provider calls: NOT_RUN. Candidate cost per verified product-answer turn: NOT_MEASURED; per verified fact slot: NOT_MEASURED. Deterministic source replay router p50/p95: 1.037 ms / 2.841 ms. Paid candidate and provider route timings: NOT_MEASURED. These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost from priced usage: $0.03300825. Candidate unpriced provider calls: 0. Rejected campaign ledger attempts: 0 (blocked before provider usage). All recorded provider usage was priced. Candidate cost per verified product-answer turn: $0.00142580; per verified fact slot: $0.00118817. Deterministic source replay router p50/p95: 1.026 ms / 2.942 ms. Paid candidate route p50/p95: 4244.793 ms / 5474.157 ms; baseline: 1.528 ms / 5311.009 ms. Paid candidate provider p50/p95: 1142 ms / 2014 ms (baseline 1276 ms / 1965 ms). These route timings exclude webhook, queue, database and customer-facing network latency.
 
-Deduplicated latest ledgers across 11 V1.3 campaigns record 1307 requests, 67 vision requests, 5 unknown-usage calls, $0.34461376 priced-token estimate and $2.738135011 reserved exposure. The sum of their individual ceilings is $16.82; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $2.33973275 conservative task-series exposure, for combined reserve $5.077867761 and $4.922132239 remaining against the $10.00 authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: `_wt-verified-commerce-v1-2/docs/ai/product-experience-v1-2/verified-commerce-proof.json`; V1.3 ledger file hashes and paths are in the machine proof.
+Deduplicated latest ledgers across 15 V1.3 campaigns record 1641 requests, 85 vision requests, 5 unknown-usage calls, $0.41359726 priced-token estimate and $3.348410013 reserved exposure. The sum of their individual ceilings is $21.42; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $2.33973275 conservative task-series exposure, for combined reserve $5.688142763 and $4.311857237 remaining against the $10.00 authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: `_wt-verified-commerce-v1-2/docs/ai/product-experience-v1-2/verified-commerce-proof.json`; V1.3 ledger file hashes and paths are in the machine proof.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -185,7 +185,7 @@ No merchant time saved, adoption, order outcomes, conversion or ROI data exists 
 
 - Source comparison: Valid: **YES**. V1.2 verified answers: 7; V1.3 verified answers: 18. V1.2 context failures: 11; V1.3: 0 across 13/13 complete conversation chains. V1.3 context turns not evaluable: 0.
 - Held-out comparison: Valid: **YES**. V1.2 verified answers: 28; V1.3 verified answers: 37.
-- Paid Gemini baseline comparison: NOT_MEASURED.
+- Paid Gemini source comparison: verified fact answers 7/18 baseline to 18/18 candidate; fully answered turns 5/15 baseline to 15/15 candidate. Quality verdict: PASS. Paid matched-pair estimated cost: $0.03300825; candidate $0.02138700 vs baseline $0.01162125 (REGRESSED). Paid route p95 outcome: REGRESSED; provider p95 outcome: REGRESSED. Paid public-photo probe: category 2/3, visible color 3/3; catalog identity NOT SCORED.
 - Deterministic and paid model results are kept separate. Comparison outputs include dataset, oracle, catalog, engine-source and runner hashes.
 
 ## L. Independent verification
@@ -198,7 +198,7 @@ The review applies to the exact code SHA and runner hash recorded above. Any cod
 
 | Task | Classification | Evidence/status |
 |---|---|---|
-| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: PASS; paid Gemini quality: NOT_RUN; vision results are listed above. |
+| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: PASS; paid Gemini quality: PASS; vision results are listed above. |
 | Complete the required visual case matrix and score catalog identity | Required before integration | 0/15 case types represented; catalog SKU identity NOT_MEASURED. |
 | Measure held-out Gemini usefulness and separately score customer-answer quality metrics | Required before integration | Held-out Gemini NOT_RUN; customer usefulness NOT_MEASURED; metric coverage table is in Section D. |
 | Repeat final independent review after any correction | Required before integration | Independent verification: STALE. |
@@ -219,7 +219,7 @@ The opt-in run uses a persistent campaign ledger capped at $2, 256 requests and 
 
 ## Machine-readable status
 
-Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-11\product-engine-v1.3-proof.json`.
+Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261023-04\product-engine-v1.3-proof.json`.
 
 | Status key | Value |
 |---|---|
@@ -228,11 +228,11 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022
 | `GOAL` | Integration & Customer Truth Verification |
 | `V1_2_BASE_SHA` | 957bb991a18db1949369a6f805822b8c8b69889b |
 | `V1_3_BRANCH` | feature/product-engine-v1.3-customer-truth |
-| `V1_3_FINAL_SHA` | cd080b7b69508bfe142a3c9b99ef1e8c45039ca6 |
+| `V1_3_FINAL_SHA` | bc48f08b0a8fedb03bc3ec36643bc7e8466cdc22 |
 | `WORKTREE_CLEAN` | false |
 | `WORKTREE_CLEAN_AT_VERIFICATION_START` | true |
 | `WORKTREE_CLEAN_AT_PROOF_GENERATION` | false |
-| `VERIFICATION_ENTRYPOINT_STATUS` | PASS |
+| `VERIFICATION_ENTRYPOINT_STATUS` | FAIL |
 | `VERIFICATION_ENTRYPOINT_COMPLETE` | YES |
 | `SOURCE_PERSONAS` | 20 |
 | `SOURCE_TURNS` | 200 |
@@ -246,48 +246,48 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022
 | `FALSE_REFUSAL_TURNS_EVALUATED` | 15 |
 | `FALSE_REFUSAL_TURNS_NOT_EVALUABLE` | 0 |
 | `SOURCE_CONTEXT_FAILURES` | 0 |
-| `REAL_GEMINI_CONTEXT_FAILURES` | NOT_RUN |
-| `REAL_GEMINI_CONTEXT_TURNS_EXPECTED` | NOT_RUN |
-| `REAL_GEMINI_CONTEXT_TURNS_EVALUATED` | NOT_RUN |
-| `REAL_GEMINI_CONTEXT_TURNS_NOT_EVALUABLE` | NOT_RUN |
-| `CROSS_DOMAIN_HANDOFFS_EXPECTED` | NOT_RUN |
-| `CROSS_DOMAIN_HANDOFFS_EVALUATED` | NOT_RUN |
-| `CROSS_DOMAIN_HANDOFFS_NOT_RUN` | NOT_RUN |
+| `REAL_GEMINI_CONTEXT_FAILURES` | 0 |
+| `REAL_GEMINI_CONTEXT_TURNS_EXPECTED` | 13 |
+| `REAL_GEMINI_CONTEXT_TURNS_EVALUATED` | 13 |
+| `REAL_GEMINI_CONTEXT_TURNS_NOT_EVALUABLE` | 0 |
+| `CROSS_DOMAIN_HANDOFFS_EXPECTED` | 4 |
+| `CROSS_DOMAIN_HANDOFFS_EVALUATED` | 4 |
+| `CROSS_DOMAIN_HANDOFFS_NOT_RUN` | 0 |
 | `SOURCE_SAFE_CROSS_DOMAIN_HANDOFFS` | 4 |
-| `REAL_GEMINI_SAFE_CROSS_DOMAIN_HANDOFFS` | NOT_RUN |
-| `REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS` | NOT_RUN |
-| `GENUINE_PHOTOS_TESTED` | NOT_RUN |
-| `REAL_GEMINI_VISION_VERDICT` | NOT_RUN |
+| `REAL_GEMINI_SAFE_CROSS_DOMAIN_HANDOFFS` | 4 |
+| `REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS` | 0 |
+| `GENUINE_PHOTOS_TESTED` | 3 |
+| `REAL_GEMINI_VISION_VERDICT` | FAIL |
 | `REQUIRED_VISUAL_CASE_TYPES` | 15 |
-| `REPRESENTED_VISUAL_CASE_TYPES` | 0 |
+| `REPRESENTED_VISUAL_CASE_TYPES` | 1 |
 | `REQUIRED_VISUAL_CASES_COMPLETE` | NO |
 | `GENUINE_IMAGE_CATALOG_IDENTITY_SCORED` | NO |
-| `REAL_GEMINI_COMPARISON_VALID` | NOT_RUN |
-| `REAL_GEMINI_CREDENTIAL_STATUS` | NOT_RUN |
-| `REAL_GEMINI_TEXT_REQUESTS` | NOT_RUN |
-| `REAL_GEMINI_VISION_REQUESTS` | NOT_RUN |
-| `REAL_GEMINI_OBSERVED_TEXT_PROVIDER_CALLS` | NOT_RUN |
-| `REAL_GEMINI_OBSERVED_VISION_PROVIDER_CALLS` | NOT_RUN |
-| `REAL_GEMINI_TEXT_REQUEST_ATTEMPTS` | NOT_RUN |
-| `REAL_GEMINI_VISION_REQUEST_ATTEMPTS` | NOT_RUN |
-| `REAL_GEMINI_OBSERVED_REQUEST_ATTEMPTS` | NOT_RUN |
-| `REAL_GEMINI_OBSERVED_PROVIDER_USAGE_RECORDS` | NOT_RUN |
-| `REAL_GEMINI_CAMPAIGN_UNPRICED_OR_PENDING_REQUESTS` | NOT_RUN |
-| `REAL_GEMINI_ROUTE_EXECUTED_TURNS` | NOT_RUN |
-| `REAL_GEMINI_ROUTE_NOT_RUN_TURNS` | NOT_RUN |
-| `REAL_GEMINI_FALSE_REFUSAL_SLOTS` | NOT_RUN |
-| `REAL_GEMINI_PROVIDER_USAGE_RECORDS` | NOT_RUN |
-| `REAL_GEMINI_REQUEST_ATTEMPTS` | NOT_RUN |
-| `REAL_GEMINI_UNPRICED_PROVIDER_CALLS` | NOT_RUN |
-| `REAL_GEMINI_REJECTED_CAMPAIGN_ATTEMPTS` | NOT_RUN |
-| `REAL_GEMINI_FALSE_REFUSAL_TURNS_EXPECTED` | NOT_RUN |
-| `REAL_GEMINI_FALSE_REFUSAL_TURNS_EVALUATED` | NOT_RUN |
-| `REAL_GEMINI_FALSE_REFUSAL_TURNS_NOT_EVALUABLE` | NOT_RUN |
-| `REAL_PROVIDER_ESTIMATED_COST_USD` | NOT_RUN |
+| `REAL_GEMINI_COMPARISON_VALID` | YES |
+| `REAL_GEMINI_CREDENTIAL_STATUS` | AUTHENTICATED |
+| `REAL_GEMINI_TEXT_REQUESTS` | 158 |
+| `REAL_GEMINI_VISION_REQUESTS` | 6 |
+| `REAL_GEMINI_OBSERVED_TEXT_PROVIDER_CALLS` | 158 |
+| `REAL_GEMINI_OBSERVED_VISION_PROVIDER_CALLS` | 6 |
+| `REAL_GEMINI_TEXT_REQUEST_ATTEMPTS` | 158 |
+| `REAL_GEMINI_VISION_REQUEST_ATTEMPTS` | 6 |
+| `REAL_GEMINI_OBSERVED_REQUEST_ATTEMPTS` | 164 |
+| `REAL_GEMINI_OBSERVED_PROVIDER_USAGE_RECORDS` | 164 |
+| `REAL_GEMINI_CAMPAIGN_UNPRICED_OR_PENDING_REQUESTS` | 0 |
+| `REAL_GEMINI_ROUTE_EXECUTED_TURNS` | 200 |
+| `REAL_GEMINI_ROUTE_NOT_RUN_TURNS` | 0 |
+| `REAL_GEMINI_FALSE_REFUSAL_SLOTS` | 0 |
+| `REAL_GEMINI_PROVIDER_USAGE_RECORDS` | 109 |
+| `REAL_GEMINI_REQUEST_ATTEMPTS` | 109 |
+| `REAL_GEMINI_UNPRICED_PROVIDER_CALLS` | 0 |
+| `REAL_GEMINI_REJECTED_CAMPAIGN_ATTEMPTS` | 0 |
+| `REAL_GEMINI_FALSE_REFUSAL_TURNS_EXPECTED` | 15 |
+| `REAL_GEMINI_FALSE_REFUSAL_TURNS_EVALUATED` | 15 |
+| `REAL_GEMINI_FALSE_REFUSAL_TURNS_NOT_EVALUABLE` | 0 |
+| `REAL_PROVIDER_ESTIMATED_COST_USD` | 0.03300825 |
 | `REAL_OBSERVED_PRICED_USAGE_ESTIMATE_USD` | NOT_APPLICABLE |
-| `REAL_GEMINI_STATUS` | NOT_RUN |
-| `REAL_GEMINI_QUALITY_VERDICT` | NOT_RUN |
-| `REAL_GEMINI_RUNNER_PROVENANCE` | NOT_RUN |
+| `REAL_GEMINI_STATUS` | PASS |
+| `REAL_GEMINI_QUALITY_VERDICT` | PASS |
+| `REAL_GEMINI_RUNNER_PROVENANCE` | PASS |
 | `SUPPLEMENTARY_GEMINI_PRO_DIAGNOSTIC_RUNS` | NOT_RUN |
 | `SUPPLEMENTARY_GEMINI_PRO_REQUESTS` | 0 |
 | `SUPPLEMENTARY_GEMINI_PRO_VISION_REQUESTS` | 0 |
@@ -304,19 +304,19 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022
 | `GEMINI_LITE_PHOTO_FOLLOW_UP_IDENTITY_SCORED` | NO |
 | `REAL_GEMINI_HELDOUT_EVALUATION` | NOT_RUN |
 | `CUSTOMER_USEFULNESS_SCORE` | NOT_MEASURED |
-| `V13_DISTINCT_CAMPAIGN_LEDGER_COUNT` | 11 |
-| `V13_AGGREGATE_CAMPAIGN_REQUESTS` | 1307 |
-| `V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS` | 67 |
+| `V13_DISTINCT_CAMPAIGN_LEDGER_COUNT` | 15 |
+| `V13_AGGREGATE_CAMPAIGN_REQUESTS` | 1641 |
+| `V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS` | 85 |
 | `V13_AGGREGATE_UNKNOWN_USAGE_REQUESTS` | 5 |
-| `V13_AGGREGATE_ESTIMATED_COST_USD` | 0.34461376 |
-| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 2.7381350109999993 |
-| `V13_SUM_OF_CAMPAIGN_CEILINGS_USD` | 16.82 |
+| `V13_AGGREGATE_ESTIMATED_COST_USD` | 0.41359726499999994 |
+| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 3.348410012999999 |
+| `V13_SUM_OF_CAMPAIGN_CEILINGS_USD` | 21.42 |
 | `V12_CONSERVATIVE_TASK_SERIES_EXPOSURE_USD` | 2.33973275 |
 | `AUTHORIZED_AGGREGATE_BUDGET_USD` | 10 |
-| `COMBINED_RESERVED_EXPOSURE_USD` | 5.077867760999999 |
-| `REMAINING_AGGREGATE_AUTHORIZATION_USD` | 4.922132239000001 |
+| `COMBINED_RESERVED_EXPOSURE_USD` | 5.688142762999999 |
+| `REMAINING_AGGREGATE_AUTHORIZATION_USD` | 4.311857237000001 |
 | `AGGREGATE_BUDGET_RECONCILIATION` | WITHIN_AUTHORIZATION_BY_MANUAL_RECONCILIATION |
-| `PROVIDER_BUDGET_EXHAUSTED` | UNKNOWN |
+| `PROVIDER_BUDGET_EXHAUSTED` | NO |
 | `POSTGRES_INTEGRATION` | PASS |
 | `REDIS_INTEGRATION` | PASS |
 | `MESSAGE_WORKER_INTEGRATION` | PASS |
@@ -333,7 +333,7 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022
 | `CUSTOMER_TRUTH_VERDICT` | PASS |
 | `CUSTOMER_TRUTH_VERDICT_SCOPE` | DETERMINISTIC_SOURCE_REPLAY_ONLY |
 | `COMMERCIAL_EVIDENCE_VERDICT` | NOT_ESTABLISHED |
-| `AUTOMATED_QA_VERDICT` | BLOCKED |
+| `AUTOMATED_QA_VERDICT` | FAIL |
 | `INTEGRATION_READY` | NO |
 | `OTHER_AGENT_WORKTREES_TOUCHED` | NO |
 | `PRODUCTION_CHANGED` | NO |
