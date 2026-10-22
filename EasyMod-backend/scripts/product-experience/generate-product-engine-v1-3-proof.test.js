@@ -215,6 +215,18 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('This verdict covers the zero-provider-call replay against the source oracle only.');
     });
 
+    test('renders the integration receipt path from the selected evidence package', () => {
+        const markdown = renderMarkdown(proof, status, [], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+        });
+
+        expect(markdown).toContain('Disposable service receipts: `D:\\evidence\\integration`.');
+        expect(markdown).not.toContain('[artifacts/integration](artifacts/integration/)');
+    });
+
     test('uses the recorded paid comparison for matched-pair cost', () => {
         const markdown = renderMarkdown(proof, status, [], {
             realGemini: {

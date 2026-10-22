@@ -687,7 +687,7 @@ No source-corpus image pixels were available. The three independent photos are l
 
 ${integrationBlock}
 
-Product search: **${status.PRODUCT_SEARCH_INTEGRATION}**. Fake Meta transport: **${status.FAKE_META_TRANSPORT}**. These checks do not establish production database behavior or live Meta delivery. Disposable service receipts are in [artifacts/integration](artifacts/integration/).
+Product search: **${status.PRODUCT_SEARCH_INTEGRATION}**. Fake Meta transport: **${status.FAKE_META_TRANSPORT}**. These checks do not establish production database behavior or live Meta delivery. Disposable service receipts: \`${proof.candidate.evidenceRoot}\\integration\`.
 
 ## H. Browser QA
 
