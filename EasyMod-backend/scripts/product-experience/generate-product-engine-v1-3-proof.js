@@ -746,8 +746,8 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const metricTable = Object.entries(status).map(([key, value]) => `| \`${key}\` | ${String(value)} |`).join('\n');
     const exampleText = examples.length ? examples.map(example => [
         `### ${example.label} — ${example.scenarioId}`,
-        `Customer message (redacted): “${example.customerMessageRedacted || '[empty]'}”`,
-        `Engine response (redacted): “${example.engineResponseRedacted || '[empty]'}”`,
+        'Customer message: [source text withheld]',
+        'Engine response: [reply text withheld]',
         `Disposition: ${example.disposition}; correct answer slots: ${example.correctAnsweredSlots ?? 'NOT_MEASURED'}/${example.eligibleSlots ?? 'NOT_MEASURED'}.`,
     ].join('\n\n')).join('\n\n') : 'No current, provenance-matched source comparison is available.';
     const sourceLine = details.sourceOracle

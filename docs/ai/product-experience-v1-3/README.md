@@ -67,10 +67,11 @@ Reproducible outputs are grouped under `artifacts/`:
 - `integration/` — disposable database, Redis, webhook, worker, and full backend receipts.
 - `playwright/` — browser result, screenshots, and sanitized traces.
 - `security/` — trace-sanitization report, privacy scan, egress evidence, and checksum manifest. The verifier redacts simulator text from Playwright archives before scanning and records unpriced provider calls with the estimate.
+- `reports/` — a synchronized proof Markdown copy that is included in the privacy scan and checksum manifest.
 - `regression/` — verification entrypoint receipts.
 - `campaigns/` — cumulative provider-call and cost ledger.
 
-The source CSV itself, secret values, raw provider credentials, production records, and live Meta messages are not copied into the evidence package.
+The proof Markdown reports scenario IDs and measured outcomes without printing literal source customer messages or model replies. Its evidence-root copy is scanned and checksummed. The source CSV itself, secret values, raw provider credentials, production records, and live Meta messages are not copied into the evidence package.
 
 ## Decision record
 

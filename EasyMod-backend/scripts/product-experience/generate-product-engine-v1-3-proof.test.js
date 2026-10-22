@@ -236,6 +236,30 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('This verdict covers the zero-provider-call replay against the source oracle only.');
     });
 
+    test('does not print literal source messages or replies in Markdown examples', () => {
+        const sourceMessage = 'Private simulator question asks for exact stock of a named product.';
+        const sourceReply = 'Private simulator reply repeats the unverified product availability.';
+        const markdown = renderMarkdown(proof, status, [{
+            scenarioId: 'scenario-privacy-check',
+            label: 'Verified product answer',
+            customerMessageRedacted: sourceMessage,
+            engineResponseRedacted: sourceReply,
+            disposition: 'SEND',
+            correctAnsweredSlots: 1,
+            eligibleSlots: 1,
+        }], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+        });
+
+        expect(markdown).not.toContain(sourceMessage);
+        expect(markdown).not.toContain(sourceReply);
+        expect(markdown).toContain('Customer message: [source text withheld]');
+        expect(markdown).toContain('Engine response: [reply text withheld]');
+    });
+
     test('labels an invalid Gemini comparison as incomplete without claiming a matched photo result', () => {
         const markdown = renderMarkdown({
             ...proof,

@@ -306,6 +306,18 @@ const main = async () => {
     const generator = path.join(__dirname, 'generate-product-engine-v1-3-proof.js');
     writeReceiptSnapshot(false);
     const proofStep = await runStep('consolidated-cost-and-proof-generation', NODE, [generator], offline, 60_000);
+    const proofMarkdownPath = path.join(REPO_ROOT, 'docs', 'ai', 'product-experience-v1-3', 'PRODUCT_ENGINE_V1_3_INTEGRATION_CUSTOMER_TRUTH_PROOF.md');
+    const archivedProofMarkdownPath = path.join(ARTIFACT_ROOT, 'reports', 'product-engine-v1.3-proof.md');
+    try {
+        if (!fs.existsSync(proofMarkdownPath)) throw new Error('Proof Markdown is missing.');
+        fs.mkdirSync(path.dirname(archivedProofMarkdownPath), { recursive: true });
+        fs.copyFileSync(proofMarkdownPath, archivedProofMarkdownPath);
+        proofStep.proofMarkdownArchive = { status: 'PASS', path: archivedProofMarkdownPath };
+    } catch (_) {
+        proofStep.proofMarkdownArchive = { status: 'FAIL' };
+        proofStep.status = 'FAIL';
+        proofStep.failureCode = proofStep.failureCode || 'PROOF_MARKDOWN_ARCHIVE_FAILED';
+    }
     steps.push(proofStep);
     steps.push(await runStep('final-artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000));
 
