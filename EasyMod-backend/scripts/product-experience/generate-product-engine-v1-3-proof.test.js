@@ -92,6 +92,8 @@ describe('V1.3 proof Markdown rendering', () => {
     const status = {
         AUTOMATED_QA_VERDICT: 'BLOCKED',
         INTEGRATION_READY: 'NO',
+        DETERMINISTIC_SOURCE_TRUTH_VERDICT: 'PASS',
+        REAL_GEMINI_QUALITY_VERDICT: 'FAIL',
         CUSTOMER_TRUTH_VERDICT: 'PASS',
         COMMERCIAL_EVIDENCE_VERDICT: 'NOT_ESTABLISHED',
     };
@@ -107,6 +109,9 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('Estimated matched-pair provider cost from priced usage: NOT_RUN.');
         expect(markdown).toContain('Candidate unpriced provider calls: NOT_RUN.');
         expect(markdown).toContain('Real Gemini vision evaluation: NOT_RUN.');
+        expect(markdown).toContain('Deterministic source truth (zero provider calls) | PASS');
+        expect(markdown).toContain('Real Gemini candidate quality | FAIL');
+        expect(markdown).toContain('This verdict covers the zero-provider-call replay against the source oracle only.');
     });
 
     test('uses the recorded paid comparison for matched-pair cost', () => {

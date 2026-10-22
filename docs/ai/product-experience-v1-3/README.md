@@ -45,6 +45,8 @@ Important distinctions in the reports:
 
 The proof quality gate requires zero unsupported price claims, false refusals, context-resolution failures, and unsafe cross-domain handoffs, plus complete correct coverage of the oracle's fact slots and answerable turns. It applies to deterministic source evidence and the paid Gemini candidate when recorded. Empty or missing denominators, incomplete quality metrics, or paid-run/current evaluation-runner hash drift cannot produce a readiness pass; a measured quality regression produces `AUTOMATED_QA_VERDICT=FAIL`.
 
+The proof labels the zero-provider replay result `DETERMINISTIC_SOURCE_TRUTH_VERDICT` and reports paid-run quality separately as `REAL_GEMINI_QUALITY_VERDICT`. The compatibility field `CUSTOMER_TRUTH_VERDICT` is scoped to deterministic source replay only; it does not summarize paid Gemini performance.
+
 `AUTOMATED_QA_VERDICT=PASS` means the recorded local gates passed. `INTEGRATION_READY=YES` additionally requires matching paid-run runner provenance, all three photo category/color checks, and the independent review. Neither status authorizes a production release.
 
 ## Artifacts

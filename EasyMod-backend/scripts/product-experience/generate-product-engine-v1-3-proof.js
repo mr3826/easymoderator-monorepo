@@ -304,7 +304,9 @@ const main = () => {
         PRIVACY_SCAN: privacyPass ? 'PASS' : privacy ? 'FAIL' : 'NOT_RUN',
         INDEPENDENT_VERIFICATION: independentPass ? 'PASS' : independent?.verdict || 'NOT_RUN',
         BASELINE_COMPARISON_VALID: sourceComparisonValid ? 'YES' : sourceComparison ? 'NO' : 'NOT_RUN',
+        DETERMINISTIC_SOURCE_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
         CUSTOMER_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
+        CUSTOMER_TRUTH_VERDICT_SCOPE: 'DETERMINISTIC_SOURCE_REPLAY_ONLY',
         COMMERCIAL_EVIDENCE_VERDICT: 'NOT_ESTABLISHED',
         AUTOMATED_QA_VERDICT: automatedQaVerdict,
         INTEGRATION_READY: integrationReady ? 'YES' : 'NO',
@@ -543,7 +545,8 @@ Generated: ${proof.generatedAt}
 |---|---|
 | Automated QA | ${status.AUTOMATED_QA_VERDICT} |
 | Integration ready | ${status.INTEGRATION_READY} |
-| Customer truth | ${status.CUSTOMER_TRUTH_VERDICT} |
+| Deterministic source truth (zero provider calls) | ${status.DETERMINISTIC_SOURCE_TRUTH_VERDICT} |
+| Real Gemini candidate quality | ${status.REAL_GEMINI_QUALITY_VERDICT} |
 **Commercial evidence:** ${status.COMMERCIAL_EVIDENCE_VERDICT}
 
 This local milestone tested the existing V1.2 Product Engine against an independently generated catalog oracle, a synthetic held-out set, the real local PostgreSQL/Redis/worker path, and matched baseline/candidate replays. Production, live Meta delivery, merchant outcomes, conversion and ROI were not tested.
@@ -566,7 +569,9 @@ The candidate extends the existing intent router, product evidence and Test Lab.
 
 Order creation, payment confirmation, stock reservation, courier booking, live Meta delivery and new provider architecture remain outside the Product Engine boundary.
 
-## D. Customer truth
+## D. Deterministic source truth
+
+This verdict covers the zero-provider-call replay against the source oracle only. The paid Gemini candidate has a separate quality verdict in Section E and does not pass.
 
 ${sourceLine}
 
@@ -640,7 +645,7 @@ The separate read-only reviewer must inspect the final code SHA and reproduce cr
 
 | Task | Classification | Evidence/status |
 |---|---|---|
-| Resolve any remaining text, context or vision failures | Required before integration | Customer truth: ${status.CUSTOMER_TRUTH_VERDICT}; vision results are listed above. |
+| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: ${status.DETERMINISTIC_SOURCE_TRUTH_VERDICT}; paid Gemini quality: ${status.REAL_GEMINI_QUALITY_VERDICT}; vision results are listed above. |
 | Repeat final independent review after any correction | Required before integration | Independent verification: ${status.INDEPENDENT_VERIFICATION}. |
 | Live Meta, production data and release authorization | Required before production release | Not authorized and not tested in this milestone. |
 | Merchant adoption, time-saved, conversion and ROI study | Optional future measurement | Not available from synthetic runs. |
