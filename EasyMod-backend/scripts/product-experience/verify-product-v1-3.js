@@ -89,6 +89,45 @@ const runStep = async (name, command, args, env, timeoutMs) => {
     return step;
 };
 
+const fileSha256 = filePath => crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+
+const manifestContainsCurrentFileHash = (manifestPath, filePath, repoRoot) => {
+    if (!fs.existsSync(manifestPath) || !fs.existsSync(filePath)) return false;
+    const relativePath = path.relative(repoRoot, filePath).replaceAll(path.sep, '/');
+    const expectedLine = `${fileSha256(filePath)}  ${relativePath}`;
+    return fs.readFileSync(manifestPath, 'utf8').split(/\r?\n/).includes(expectedLine);
+};
+
+const finalizeEvidenceAndRefreshManifest = async ({
+    finalizeReceipt,
+    refreshProof,
+    runPrivacyScan,
+    receiptPath,
+    archivedProofPath,
+    manifestPath,
+    repoRoot,
+}) => {
+    const receipt = finalizeReceipt();
+    const proofRefresh = await refreshProof(receipt);
+    const privacyScanStep = await runPrivacyScan();
+    const manifestCoversReceipt = manifestContainsCurrentFileHash(manifestPath, receiptPath, repoRoot);
+    const manifestCoversArchivedProof = manifestContainsCurrentFileHash(manifestPath, archivedProofPath, repoRoot);
+    return {
+        receiptComplete: receipt?.complete === true,
+        proofRefresh,
+        privacyScanStep,
+        manifestCoversReceipt,
+        manifestCoversArchivedProof,
+        passed: receipt?.complete === true
+            && proofRefresh?.completedReceipt === true
+            && proofRefresh?.archiveCreated === true
+            && privacyScanStep?.status === 'PASS'
+            && privacyScanStep?.exitCode === 0
+            && manifestCoversReceipt
+            && manifestCoversArchivedProof,
+    };
+};
+
 const findCandidateRealGeminiRunId = ({ comparisonRoot, sourceSha256, oracleSha256, backendSourceSha256: candidateSourceSha256, runnerSourceSha256 }) => {
     if (typeof comparisonRoot !== 'string' || !path.isAbsolute(comparisonRoot)
         || typeof sourceSha256 !== 'string' || typeof oracleSha256 !== 'string'
@@ -321,9 +360,41 @@ const main = async () => {
     steps.push(proofStep);
     steps.push(await runStep('final-artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000));
 
-    const receipt = writeReceiptSnapshot(true);
+    const finalization = await finalizeEvidenceAndRefreshManifest({
+        finalizeReceipt: () => writeReceiptSnapshot(true),
+        refreshProof: async receipt => {
+            const refreshedProofStep = await runStep('completed-receipt-proof-refresh', NODE, [generator], offline, 60_000);
+            let completedReceipt = false;
+            let archiveCreated = false;
+            try {
+                if (!fs.existsSync(proofMarkdownPath)) throw new Error('Completed-receipt proof Markdown is missing.');
+                const proofJsonPath = path.join(ARTIFACT_ROOT, 'product-engine-v1.3-proof.json');
+                const proof = JSON.parse(fs.readFileSync(proofJsonPath, 'utf8'));
+                completedReceipt = proof.verificationEntryPoint?.complete === true
+                    && proof.verificationEntryPoint?.runId === receipt.runId
+                    && proof.verificationEntryPoint?.candidateCommit === candidateCommit;
+                if (!completedReceipt) throw new Error('Generated proof does not reference the completed verifier receipt.');
+                fs.mkdirSync(path.dirname(archivedProofMarkdownPath), { recursive: true });
+                fs.copyFileSync(proofMarkdownPath, archivedProofMarkdownPath);
+                archiveCreated = fileSha256(proofMarkdownPath) === fileSha256(archivedProofMarkdownPath);
+                if (!archiveCreated) throw new Error('Archived proof does not match generated proof Markdown.');
+                refreshedProofStep.proofMarkdownArchive = { status: 'PASS', path: archivedProofMarkdownPath };
+            } catch (_) {
+                refreshedProofStep.proofMarkdownArchive = { status: 'FAIL' };
+                refreshedProofStep.failureCode = refreshedProofStep.failureCode || 'COMPLETED_PROOF_MARKDOWN_ARCHIVE_FAILED';
+            }
+            return { runnerStep: refreshedProofStep, completedReceipt, archiveCreated };
+        },
+        runPrivacyScan: () => runStep('post-completion-artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000),
+        receiptPath,
+        archivedProofPath: archivedProofMarkdownPath,
+        manifestPath: privacyManifest,
+        repoRoot: REPO_ROOT,
+    });
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    process.stdout.write(`[verify] ${finalization.passed ? 'PASS' : 'FAIL'} post-completion-evidence-finalization receipt=${finalization.receiptComplete ? 'COMPLETE' : 'INCOMPLETE'} manifestReceipt=${finalization.manifestCoversReceipt ? 'MATCH' : 'MISMATCH'} manifestArchivedProof=${finalization.manifestCoversArchivedProof ? 'MATCH' : 'MISMATCH'}\n`);
     process.stdout.write(`[verify] ${receipt.status} mode=${receipt.mode} receipt=${receiptPath}\n`);
-    if (receipt.status !== 'PASS') process.exitCode = 1;
+    if (receipt.status !== 'PASS' || !finalization.passed) process.exitCode = 1;
 };
 
 if (require.main === module) main().catch(() => {
@@ -331,4 +402,4 @@ if (require.main === module) main().catch(() => {
     process.exitCode = 1;
 });
 
-module.exports = { findCandidateRealGeminiRunId, runCapture };
+module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, runCapture };

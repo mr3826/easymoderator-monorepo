@@ -22,6 +22,8 @@ In paid mode, the verifier links the successful candidate run from the matched G
 
 The browser gate runs the installed engines serially and has a 20-minute verifier timeout. On timeout, the verifier terminates the subprocess tree and records the cleanup result. Any missing report or incomplete ZIP trace remains unmeasured and is not browser or privacy evidence. The overall verifier also applies bounded subprocess-tree cleanup; the integration runner's internal stage budgets fit inside its 50-minute outer deadline, and the backend security suite has a 45-minute deadline.
 
+After the verification receipt is finalized, the verifier regenerates the proof from that completed receipt, refreshes the archived Markdown copy, then runs one final privacy scan and checksum-manifest pass. It checks that the resulting manifest contains the current hashes of both the completed receipt and archived proof. This final pass runs after the receipt is frozen so its hashes are not invalidated by later receipt writes.
+
 The key is passed only to the paid comparison child. Do not save it in this repository, a `.env` file, or a persistent Windows environment variable. The default persistent campaign ledger at `artifacts/campaigns/v13-cf6f18b2-2a9a-4831-ad42-2b8509bfcd35/budget-ledger.json` enforces a cumulative ceiling of $2, at most 256 provider requests, and at most 12 vision requests. Each matched-arm invocation has a local limit of 128 requests and 6 vision requests. These per-invocation limits are not durable per-arm quotas: a repeated invocation under the same campaign can use remaining campaign-wide allowance. The persistent ledger continues to enforce the combined $2 / 256 / 12 caps, and prior usage remains charged. For a separately authorized fresh evaluation, set process-scoped `LAB_CAMPAIGN_ID` to a new unique ID; the new ledger retains the same caps, and existing ledgers must never be reset or overwritten. Provider cost in the report is estimated from reported tokens; an invoice is not available.
 
 ## Local integration boundaries
@@ -66,7 +68,7 @@ Reproducible outputs are grouped under `artifacts/`:
 - `comparisons/` and `runs/` — deterministic and paid baseline/candidate receipts and redacted transcripts.
 - `integration/` — disposable database, Redis, webhook, worker, and full backend receipts.
 - `playwright/` — browser result, screenshots, and sanitized traces.
-- `security/` — trace-sanitization report, privacy scan, egress evidence, and checksum manifest. The verifier redacts simulator text from Playwright archives before scanning and records unpriced provider calls with the estimate.
+- `security/` — trace-sanitization report, privacy scan, egress evidence, and checksum manifest. The verifier redacts simulator text from Playwright archives before scanning, records unpriced provider calls with the estimate, and refreshes the final scan after the completed receipt and archived proof are frozen.
 - `reports/` — a synchronized proof Markdown copy that is included in the privacy scan and checksum manifest.
 - `regression/` — verification entrypoint receipts.
 - `campaigns/` — cumulative provider-call and cost ledger.

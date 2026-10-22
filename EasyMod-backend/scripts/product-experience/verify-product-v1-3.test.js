@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { findCandidateRealGeminiRunId, runCapture } = require('./verify-product-v1-3');
+const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, runCapture } = require('./verify-product-v1-3');
 const { run: runIntegrationCommand } = require('./run-integration');
 
 describe('paid candidate run discovery for browser QA', () => {
@@ -120,6 +120,93 @@ describe('verification subprocess timeouts', () => {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
         expect(isProcessAlive(descendantPid)).toBe(false);
+    });
+});
+
+describe('verification evidence finalization', () => {
+    let root;
+
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'product-v13-finalization-'));
+    });
+
+    afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    test('refreshes proof and checksum manifest only after writing the completed receipt', async () => {
+        const receiptPath = path.join(root, 'artifacts', 'regression', 'verify-test.json');
+        const archivedProofPath = path.join(root, 'artifacts', 'reports', 'proof.md');
+        const manifestPath = path.join(root, 'artifacts', 'security', 'artifact-checksum-manifest.txt');
+        const events = [];
+
+        const result = await finalizeEvidenceAndRefreshManifest({
+            finalizeReceipt: () => {
+                events.push('receipt');
+                fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
+                const receipt = { complete: true, status: 'PASS', finishedAt: 'now' };
+                fs.writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`);
+                return receipt;
+            },
+            refreshProof: receipt => {
+                events.push('proof');
+                expect(receipt.complete).toBe(true);
+                const markdown = `complete=${receipt.complete}`;
+                fs.mkdirSync(path.dirname(archivedProofPath), { recursive: true });
+                fs.writeFileSync(archivedProofPath, markdown);
+                return { runnerStep: { status: 'PASS' }, completedReceipt: true, archiveCreated: true };
+            },
+            runPrivacyScan: () => {
+                events.push('scan');
+                const files = [receiptPath, archivedProofPath];
+                fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+                fs.writeFileSync(manifestPath, files.map(file => {
+                    const digest = require('node:crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+                    const relativePath = path.relative(root, file).replaceAll(path.sep, '/');
+                    return `${digest}  ${relativePath}`;
+                }).join('\n') + '\n');
+                return { status: 'PASS', exitCode: 0 };
+            },
+            receiptPath,
+            archivedProofPath,
+            manifestPath,
+            repoRoot: root,
+        });
+
+        expect(events).toEqual(['receipt', 'proof', 'scan']);
+        expect(result.receiptComplete).toBe(true);
+        expect(result.manifestCoversReceipt).toBe(true);
+        expect(result.manifestCoversArchivedProof).toBe(true);
+        expect(result.passed).toBe(true);
+    });
+
+    test('fails finalization when the post-completion manifest misses the finalized receipt', async () => {
+        const receiptPath = path.join(root, 'artifacts', 'regression', 'verify-test.json');
+        const archivedProofPath = path.join(root, 'artifacts', 'reports', 'proof.md');
+        const manifestPath = path.join(root, 'artifacts', 'security', 'artifact-checksum-manifest.txt');
+
+        const result = await finalizeEvidenceAndRefreshManifest({
+            finalizeReceipt: () => {
+                fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
+                fs.writeFileSync(receiptPath, '{"complete":true}\n');
+                return { complete: true, status: 'PASS' };
+            },
+            refreshProof: () => {
+                fs.mkdirSync(path.dirname(archivedProofPath), { recursive: true });
+                fs.writeFileSync(archivedProofPath, 'final proof');
+                return { runnerStep: { status: 'PASS' }, completedReceipt: true, archiveCreated: true };
+            },
+            runPrivacyScan: () => {
+                fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+                fs.writeFileSync(manifestPath, '0'.repeat(64) + '  artifacts/regression/verify-test.json\n');
+                return { status: 'PASS', exitCode: 0 };
+            },
+            receiptPath,
+            archivedProofPath,
+            manifestPath,
+            repoRoot: root,
+        });
+
+        expect(result.manifestCoversReceipt).toBe(false);
+        expect(result.passed).toBe(false);
     });
 });
 
