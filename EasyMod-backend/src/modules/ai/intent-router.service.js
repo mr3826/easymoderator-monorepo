@@ -1043,15 +1043,28 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             candidates,
             retrievalFailed,
         });
+    const photoHasEnoughVisualIdentity = Boolean(attrs?.category && attrs?.color);
+    const photoHasUniqueVerifiedProduct = photoHasEnoughVisualIdentity
+        && evidence.productStatus === grounding.ProductEvidenceStatus.VERIFIED
+        && evidence.verifiedProducts.length === 1;
     const photoCatalogNoMatch = imageUrls.length > 0
         && Boolean(attrs)
-        && evidence.productStatus === grounding.ProductEvidenceStatus.NOT_FOUND;
+        && evidence.productStatus !== grounding.ProductEvidenceStatus.RETRIEVAL_FAILED
+        && !photoHasUniqueVerifiedProduct;
     if (photoCatalogNoMatch) {
-        // A partial text match (for example, the same garment category in a
-        // different colour) is not evidence that the catalog item is the one
-        // shown in the customer's photo. Keep related rows out of both the
-        // response prompt and the customer-facing recommendation path.
+        // Sparse visual attributes (for example, category only or color only)
+        // can match unrelated SKUs, and multiple matching rows do not identify
+        // which product appears in the photo. Treat both cases as unresolved;
+        // do not let candidate IDs, prices, media URLs, or context pointers bind
+        // to the customer's photo.
+        evidence.productStatus = grounding.ProductEvidenceStatus.NOT_FOUND;
+        evidence.verifiedProducts = [];
         evidence.relatedProducts = [];
+        evidence.unmatchedTerms = [];
+        evidence.mediaStatus = grounding.MediaStatus.NO_PRODUCT;
+        evidence.mediaUrl = null;
+        evidence.mediaProductId = null;
+        evidence.allowedUrls = [];
     }
     const explicitNameCandidate = !imageUrls.length
         && !useContextProducts

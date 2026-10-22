@@ -1031,6 +1031,78 @@ describe('D — customer photo → product matching', () => {
         expect(llm.chat).toHaveBeenCalledTimes(1);
     });
 
+    test.each([
+        ['category only', { category: 'saree', color: null }, 'saree', 'Red Cotton Saree'],
+        ['color only', { category: null, color: 'red' }, 'red', 'Red Cotton Saree'],
+    ])('a photo with %s cannot bind a catalog SKU', async (_label, visual, query, name) => {
+        productSearch.searchByAttributes.mockResolvedValue([{
+            id: 'partial-photo-match', shop_id: SHOP, name, category: 'saree', price: 2500,
+            quantity: 4, track_quantity: true, variants: [], image_url: 'https://cdn.shop.test/red-saree.jpg', images: [],
+        }]);
+        const sparseAttributes = {
+            ...visual, material: null, query, tags: [query], description: 'a red garment',
+        };
+        llm.chat.mockImplementation(async ({ systemPrompt }) => /product image analyzer/i.test(systemPrompt || '')
+            ? { text: JSON.stringify(sparseAttributes), provider: 'gemini' }
+            : { text: 'The Red Cotton Saree costs ৳2500.', provider: 'gemini' });
+
+        const result = await route({
+            shopId: SHOP, message: '[image]', systemPrompt: 'BASE', language: 'en', imageUrls: [PHOTO],
+        });
+
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(result.response).not.toContain('Red Cotton Saree');
+        expect(result.grounding.verifiedProducts).toEqual([]);
+        expect(result.grounding.relatedProducts).toEqual([]);
+        expect(result.grounding.allowedUrls).toEqual([]);
+        expect(result.sourceReferences).toBeNull();
+        expect(llm.chat).toHaveBeenCalledTimes(1);
+    });
+
+    test('a photo matching multiple catalog SKUs asks for clarification instead of choosing one', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([
+            { id: 'red-saree-one', shop_id: SHOP, name: 'Red Cotton Saree', category: 'saree', price: 2500 },
+            { id: 'red-saree-two', shop_id: SHOP, name: 'Red Silk Saree', category: 'saree', price: 4200 },
+        ]);
+        const visualAttributes = {
+            category: 'saree', color: 'red', material: null, query: 'red saree',
+            tags: ['red', 'saree'], description: 'a red saree',
+        };
+        llm.chat.mockImplementation(async ({ systemPrompt }) => /product image analyzer/i.test(systemPrompt || '')
+            ? { text: JSON.stringify(visualAttributes), provider: 'gemini' }
+            : { text: 'The Red Cotton Saree costs ৳2500.', provider: 'gemini' });
+
+        const result = await route({
+            shopId: SHOP, message: '[image]', systemPrompt: 'BASE', language: 'en', imageUrls: [PHOTO],
+        });
+
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(result.grounding.verifiedProducts).toEqual([]);
+        expect(result.sourceReferences).toBeNull();
+        expect(llm.chat).toHaveBeenCalledTimes(1);
+    });
+
+    test('a photo with no identifying visual facets asks for a product name or tag photo', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([]);
+        const unidentifyingAttributes = {
+            category: null, color: null, material: null, query: 'garment', tags: [], description: 'a garment',
+        };
+        llm.chat.mockImplementation(async ({ systemPrompt }) => /product image analyzer/i.test(systemPrompt || '')
+            ? { text: JSON.stringify(unidentifyingAttributes), provider: 'gemini' }
+            : { text: 'This garment is available for ৳2500.', provider: 'gemini' });
+
+        const result = await route({
+            shopId: SHOP, message: '[image]', systemPrompt: 'BASE', language: 'en', imageUrls: [PHOTO],
+        });
+
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(result.response).toMatch(/product name/i);
+        expect(llm.chat).toHaveBeenCalledTimes(1);
+    });
+
     test('a match grounds the reply on live DB facts and records the source', async () => {
         productSearch.searchByAttributes.mockResolvedValue([{ id: 'p9', shop_id: SHOP, name: 'Red Cotton Saree', price: 2500 }]);
 

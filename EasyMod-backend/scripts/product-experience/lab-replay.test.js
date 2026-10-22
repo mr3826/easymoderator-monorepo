@@ -1040,9 +1040,11 @@ describe('Product Engine local Test Lab route replay', () => {
             if (remainingCampaignUsd <= 0) throw new Error('The cumulative V1.3 paid-evaluation budget is exhausted.');
             evaluationBudget = createEvaluationBudget({
                 ceilingUsd: remainingCampaignUsd,
-                // Split the campaign's 256-request / 12-vision ceiling evenly
-                // across the matched V1.2 and V1.3 runs. The earlier 100-call
-                // per-arm cap left 12 candidate turns unexecuted.
+                // Bound each matched-arm invocation to half of the campaign's
+                // 256-request / 12-vision ceiling. The persistent ledger still
+                // enforces combined campaign totals; this local limit is not a
+                // durable per-arm quota across repeated invocations. The earlier
+                // 100-call invocation cap left 12 candidate turns unexecuted.
                 maxRequests: 128,
                 maxVisionRequests: 6,
                 maxConcurrency: 1,
