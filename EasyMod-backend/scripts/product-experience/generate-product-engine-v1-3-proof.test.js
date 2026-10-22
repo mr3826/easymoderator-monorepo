@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
+const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
 
 describe('evidence artifact selection', () => {
     test('uses file modification time for receipts without a recorded timestamp', () => {
@@ -19,6 +19,129 @@ describe('evidence artifact selection', () => {
             expect(path.basename(newestMatching(directory, item => item.kind === 'comparison').filename)).toBe('newer.json');
         } finally {
             fs.rmSync(directory, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('supplementary Gemini Pro evidence and aggregate budget', () => {
+    test('retains only safe diagnostic fields and marks the missing call-time transport hash', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-provenance-'));
+        const repositoryRoot = path.join(workspace, 'repo');
+        const runRoot = path.join(workspace, 'evidence', 'runs');
+        const transportPath = path.join(repositoryRoot, 'EasyMod-backend', 'scripts', 'product-experience', 'gemini-pro-diagnostic-transport.js');
+        fs.mkdirSync(runRoot, { recursive: true });
+        fs.mkdirSync(path.dirname(transportPath), { recursive: true });
+        fs.writeFileSync(transportPath, 'module.exports = {}');
+        const startedAt = '2026-01-02T00:00:00.000Z';
+        fs.utimesSync(transportPath, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
+        fs.writeFileSync(path.join(runRoot, 'run-1.pro-photo.json'), JSON.stringify({
+            experiment: 'bounded-gemini-pro-production-photo-extraction-low-thinking',
+            campaignId: 'v13-pro-test',
+            model: 'gemini-3.1-pro-preview',
+            thinkingLevel: 'low',
+            effectiveMaxOutputTokens: 1024,
+            runnerSourceSha256: 'old-runner-hash',
+            startedAt,
+            completedAt: '2026-01-02T00:00:02.000Z',
+            evaluationBudget: {
+                requestCount: 1,
+                visionRequestCount: 1,
+                estimatedProviderChargeUsd: 0.01,
+                calls: [{ callId: 'call-1', vision: true, outputTokens: 12, thinkingTokens: 2, status: 'provider_reported' }],
+            },
+            campaignBudget: { ceilingUsd: 0.30, reservedWorstCaseUsd: 0.05, providerInvoice: 'NOT_AVAILABLE' },
+            photoEvaluation: {
+                photosTested: 1,
+                categoryMatches: 0,
+                colorMatches: 1,
+                cases: [{
+                    fixtureId: 'photo-1', fixtureSha256: 'a'.repeat(64), status: 'EXECUTED',
+                    schemaValid: true, observedCategory: 'shirt', categoryMatch: false,
+                    observedDominantColor: 'yellow', dominantColorMatch: true,
+                    finishReason: 'STOP', providerText: 'DO_NOT_COPY_RAW_PROVIDER_TEXT',
+                }],
+            },
+        }));
+        try {
+            const [run] = collectGeminiProPhotoDiagnostics(runRoot, repositoryRoot, 'current-runner-hash');
+            expect(run).toMatchObject({
+                runId: 'run-1', thinkingLevel: 'low', categoryMatches: 0, colorMatches: 1,
+                transportProvenance: {
+                    recordedRunnerManifestIncludedTransport: false,
+                    status: 'INCOMPLETE_CALL_TIME_SOURCE_BINDING',
+                },
+                cases: [{ labelPresenceProxy: true, observedCategory: 'shirt', finishReason: 'STOP' }],
+                calls: [{ candidateTokens: 10 }],
+            });
+            expect(JSON.stringify(run)).not.toContain('DO_NOT_COPY_RAW_PROVIDER_TEXT');
+            expect(JSON.stringify(run)).not.toContain('providerText');
+            expect(summarizeGeminiProDiagnostics([run])).toMatchObject({
+                runCount: 1, providerRequests: 1, visionRequests: 1,
+                categoryMatchesAcrossRepeatedObservations: 0, colorMatchesAcrossRepeatedObservations: 1,
+            });
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
+        }
+    });
+
+    test('deduplicates campaign snapshots by campaign id and reconciles conservative V1.2 exposure', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-budget-reconcile-'));
+        const writeLedger = (root, campaignId, updatedAt, cost, reserve, requests, unpriced = 0) => {
+            const filename = path.join(workspace, root, 'campaigns', campaignId, 'budget-ledger.json');
+            fs.mkdirSync(path.dirname(filename), { recursive: true });
+            fs.writeFileSync(filename, JSON.stringify({
+                campaignId, updatedAt, requestCount: requests, visionRequestCount: 1,
+                unpricedRequestCount: unpriced, estimatedProviderChargeUsd: cost,
+                reservedWorstCaseUsd: reserve, ceilingUsd: 2, providerInvoice: 'NOT_AVAILABLE',
+            }));
+        };
+        const v1_2ProofPath = path.join(workspace, '_wt-verified-commerce-v1-2', 'proof.json');
+        fs.mkdirSync(path.dirname(v1_2ProofPath), { recursive: true });
+        fs.writeFileSync(v1_2ProofPath, JSON.stringify({ cumulativeProviderCostAccounting: { conservativeTaskSeriesExposureUsd: 0.25 } }));
+        writeLedger('_product-engine-v1-3-evidence-old', 'v13-shared', '2026-01-01T00:00:00.000Z', 0.10, 0.30, 2);
+        writeLedger('_product-engine-v1-3-evidence-new', 'v13-shared', '2026-01-02T00:00:00.000Z', 0.20, 0.40, 3, 1);
+        writeLedger('_product-engine-v1-3-evidence-new', 'v13-other', '2026-01-02T00:00:00.000Z', 0.05, 0.10, 1);
+        try {
+            const summary = reconcileV13CampaignBudget(workspace, 1, v1_2ProofPath);
+            expect(summary).toMatchObject({
+                distinctCampaignCount: 2,
+                requestCount: 4,
+                visionRequestCount: 2,
+                unknownUsageRequestCount: 1,
+                estimatedProviderChargeUsd: 0.25,
+                reservedWorstCaseUsd: 0.5,
+                v1_2ConservativeTaskSeriesExposureUsd: 0.25,
+                combinedReservedExposureUsd: 0.75,
+                remainingAggregateAuthorizationUsd: 0.25,
+                ledgerSnapshotsComplete: true,
+                malformedLedgerSnapshots: [],
+                status: 'WITHIN_AUTHORIZATION_BY_MANUAL_RECONCILIATION',
+            });
+            expect(summary.campaigns.find(campaign => campaign.campaignId === 'v13-shared').requestCount).toBe(3);
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
+        }
+    });
+
+    test('marks reconciliation incomplete when a campaign ledger snapshot is malformed', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-budget-malformed-'));
+        const root = path.join(workspace, '_product-engine-v1-3-evidence', 'campaigns', 'v13-broken');
+        fs.mkdirSync(root, { recursive: true });
+        fs.writeFileSync(path.join(root, 'budget-ledger.json'), '{"campaignId":');
+        try {
+            const summary = reconcileV13CampaignBudget(workspace, 1);
+            expect(summary).toMatchObject({
+                ledgerSnapshotsComplete: false,
+                distinctCampaignCount: 0,
+                status: 'INCOMPLETE_MALFORMED_LEDGER_SNAPSHOTS',
+                remainingAggregateAuthorizationUsd: null,
+                malformedLedgerSnapshots: [{
+                    sourcePath: '_product-engine-v1-3-evidence/campaigns/v13-broken/budget-ledger.json',
+                    reason: 'INVALID_JSON',
+                }],
+            });
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
         }
     });
 });
@@ -344,6 +467,47 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('Pre-proof artifact privacy scan');
         expect(markdown).toContain('Unsupported price claims with SEND disposition');
         expect(markdown).toContain('This verdict covers the zero-provider-call replay against the source oracle only.');
+    });
+
+    test('renders bounded supplementary Pro outcomes, provenance limits and reconciled aggregate spend', () => {
+        const markdown = renderMarkdown(proof, status, [], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+            supplementaryGeminiProPhotoRuns: [{
+                runId: 'run-low',
+                experiment: 'bounded-gemini-pro-production-photo-extraction-low-thinking',
+                thinkingLevel: 'low', effectiveMaxOutputTokens: 1024,
+                categoryMatches: 0, colorMatches: 3, photosTested: 3,
+                estimatedProviderChargeUsd: 0.012418, reservedWorstCaseUsd: 0.14463, campaignCeilingUsd: 0.30,
+                transportProvenance: { status: 'INCOMPLETE_CALL_TIME_SOURCE_BINDING' },
+                cases: [
+                    { observedCategory: 'shirt', observedDominantColor: 'yellow', finishReason: 'STOP', unverifiedMaterialFieldPopulated: false },
+                    { observedCategory: null, observedDominantColor: 'beige', finishReason: 'STOP', unverifiedMaterialFieldPopulated: false },
+                    { observedCategory: null, observedDominantColor: 'gold', finishReason: 'STOP', unverifiedMaterialFieldPopulated: false },
+                ],
+                calls: [{ candidateTokens: 93 }, { candidateTokens: 115 }, { candidateTokens: 111 }],
+            }],
+            supplementaryGeminiProPhotoSummary: {
+                providerRequests: 3, estimatedProviderChargeUsd: 0.012418,
+                reservedWorstCaseUsd: 0.14463, campaignCeilingsUsd: 0.30,
+            },
+            aggregateBudgetReconciliation: {
+                distinctCampaignCount: 11, requestCount: 1307, visionRequestCount: 67,
+                unknownUsageRequestCount: 5, estimatedProviderChargeUsd: 0.34461376,
+                reservedWorstCaseUsd: 2.738135011, sumOfPerCampaignCeilingsUsd: 16.82,
+                v1_2ConservativeTaskSeriesExposureUsd: 2.33973275,
+                combinedReservedExposureUsd: 5.077867761, remainingAggregateAuthorizationUsd: 4.922132239,
+                authorizedAggregateBudgetUsd: 10, v1_2ProofSourcePath: '_wt-verified-commerce-v1-2/proof.json',
+            },
+        });
+
+        expect(markdown).toContain('It matched category on 0/3 and visible color on 3/3');
+        expect(markdown).toContain('The recorded runner hash omitted the dedicated transport file.');
+        expect(markdown).toContain('1307 requests, 67 vision requests, 5 unknown-usage calls');
+        expect(markdown).toContain('$5.077867761');
+        expect(markdown).toContain('$4.922132239 remaining against the $10.00 authorization');
     });
 
     test('does not print literal source messages or replies in Markdown examples', () => {

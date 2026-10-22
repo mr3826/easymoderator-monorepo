@@ -23,6 +23,14 @@ describe('isolated Gemini evaluation budget', () => {
         expect(Object.isFrozen(GEMINI_PRO_PRICE_SNAPSHOT)).toBe(true);
     });
 
+    test('permits an explicit low thinking level only for Gemini Pro', () => {
+        const model = GEMINI_PRO_PRICE_SNAPSHOT.model;
+        const budget = makeBudget({ model, thinkingLevel: 'low' });
+        expect(budget.snapshot()).toMatchObject({ model, limits: { thinkingLevel: 'low' } });
+        expect(() => makeBudget({ thinkingLevel: 'low' })).toThrow(BudgetError);
+        expect(() => makeBudget({ model, thinkingLevel: 'high' })).toThrow(BudgetError);
+    });
+
     test.each([undefined, 0, -1, NaN, Infinity, 10.01])('rejects an invalid or absent spend ceiling: %s', ceilingUsd => {
         expect(() => createEvaluationBudget({ ceilingUsd })).toThrow(BudgetError);
     });

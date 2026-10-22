@@ -104,13 +104,27 @@ describe('disposable test egress fence', () => {
             process.env.EASYMOD_LIVE_GEMINI_EGRESS = '1';
             process.env['EM-GEMINI-KEY'] = 'test-only-not-a-credential';
             const model = GEMINI_PRO_PRICE_SNAPSHOT.model;
-            const request = geminiRequest(model);
-            const budget = createEvaluationBudget({ ceilingUsd: 0.1, model });
+            const lowThinkingBody = JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+                generationConfig: { maxOutputTokens: 10, temperature: 0.3, thinkingConfig: { thinkingLevel: 'low' } },
+            });
+            const request = geminiRequest(model, lowThinkingBody);
+            const budget = createEvaluationBudget({ ceilingUsd: 0.1, model, thinkingLevel: 'low' });
             await budget.execute({
                 operationId: 'pro-egress-permit', model, inputTokenUpperBound: 5, maxOutputTokens: 10,
             }, async context => {
+                expect(context.thinkingLevel).toBe('low');
                 const wrongModel = { ...request, url: request.url.replace(model, GEMINI_PRICE_SNAPSHOT.model) };
                 expect(context.authorizeGeminiRequest(wrongModel)).toBe(false);
+                expect(context.authorizeGeminiRequest(geminiRequest(model))).toBe(false);
+                const highThinkingRequest = {
+                    ...request,
+                    body: JSON.stringify({
+                        contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+                        generationConfig: { maxOutputTokens: 10, temperature: 0.3, thinkingConfig: { thinkingLevel: 'high' } },
+                    }),
+                };
+                expect(context.authorizeGeminiRequest(highThinkingRequest)).toBe(false);
                 expect(context.authorizeGeminiRequest(request)).toBe(true);
                 expect(isAllowedGeminiEvaluationRequest(request.url, request)).toBe(true);
                 expect(isAllowedGeminiEvaluationRequest(request.url, request)).toBe(false);

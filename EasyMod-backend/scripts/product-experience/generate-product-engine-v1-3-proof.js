@@ -48,6 +48,233 @@ const jsonFiles = directory => fs.existsSync(directory)
     ? fs.readdirSync(directory).filter(name => name.endsWith('.json')).map(name => path.join(directory, name))
     : [];
 
+const collectGeminiProPhotoDiagnostics = (runRoot, repositoryRoot = REPO_ROOT, currentRunnerSourceSha256 = null) => {
+    const transportRelativePath = 'EasyMod-backend/scripts/product-experience/gemini-pro-diagnostic-transport.js';
+    const transportPath = path.join(repositoryRoot, transportRelativePath);
+    const transportExists = fs.existsSync(transportPath);
+    const transportSha256 = transportExists ? sha256(fs.readFileSync(transportPath)) : null;
+    const transportStat = transportExists ? fs.statSync(transportPath) : null;
+    return jsonFiles(runRoot)
+        .filter(filename => filename.endsWith('.pro-photo.json'))
+        .map(filename => {
+            try {
+                const receipt = readJson(filename);
+                if (receipt.model !== 'gemini-3.1-pro-preview' || !String(receipt.experiment || '').startsWith('bounded-gemini-pro-production-photo-extraction')) return null;
+                const runId = path.basename(filename, '.pro-photo.json');
+                const usesDedicatedTransport = receipt.experiment === 'bounded-gemini-pro-production-photo-extraction-low-thinking';
+                const sourceAttestationPath = path.join(runRoot, `${runId}.pro-photo-provenance.json`);
+                const sourceAttestation = fs.existsSync(sourceAttestationPath) ? readJson(sourceAttestationPath) : null;
+                const recordedTransportSourceSha256 = receipt.diagnosticTransportSourceSha256 || null;
+                const manifestBindsTransport = usesDedicatedTransport && recordedTransportSourceSha256 === transportSha256
+                    && receipt.runnerSourceSha256 === currentRunnerSourceSha256;
+                const budget = receipt.evaluationBudget || {};
+                const campaign = receipt.campaignBudget || {};
+                const cases = Array.isArray(receipt.photoEvaluation?.cases) ? receipt.photoEvaluation.cases : [];
+                return {
+                    runId,
+                    campaignId: receipt.campaignId || null,
+                    experiment: receipt.experiment,
+                    model: receipt.model,
+                    thinkingLevel: receipt.thinkingLevel || 'PROVIDER_DEFAULT_NOT_CAPTURED',
+                    configuredRouteMaxOutputTokens: Number.isFinite(receipt.configuredRouteMaxOutputTokens)
+                        ? receipt.configuredRouteMaxOutputTokens : null,
+                    effectiveMaxOutputTokens: Number.isFinite(receipt.effectiveMaxOutputTokens)
+                        ? receipt.effectiveMaxOutputTokens : null,
+                    startedAt: receipt.startedAt || null,
+                    completedAt: receipt.completedAt || null,
+                    engineSourceSha256: receipt.engineSourceSha256 || null,
+                    recordedRunnerSourceSha256: receipt.runnerSourceSha256 || null,
+                    photosTested: Number.isFinite(receipt.photoEvaluation?.photosTested) ? receipt.photoEvaluation.photosTested : null,
+                    categoryMatches: Number.isFinite(receipt.photoEvaluation?.categoryMatches) ? receipt.photoEvaluation.categoryMatches : null,
+                    colorMatches: Number.isFinite(receipt.photoEvaluation?.colorMatches) ? receipt.photoEvaluation.colorMatches : null,
+                    providerRequests: Number.isFinite(budget.requestCount) ? budget.requestCount : null,
+                    visionRequests: Number.isFinite(budget.visionRequestCount) ? budget.visionRequestCount : null,
+                    estimatedProviderChargeUsd: Number.isFinite(budget.estimatedProviderChargeUsd)
+                        ? budget.estimatedProviderChargeUsd : null,
+                    reservedWorstCaseUsd: Number.isFinite(campaign.reservedWorstCaseUsd) ? campaign.reservedWorstCaseUsd : null,
+                    campaignCeilingUsd: Number.isFinite(campaign.ceilingUsd) ? campaign.ceilingUsd : null,
+                    providerInvoice: campaign.providerInvoice || 'NOT_AVAILABLE',
+                    transportProvenance: usesDedicatedTransport ? {
+                        sourcePath: transportRelativePath,
+                        recordedDiagnosticTransportSourceSha256: recordedTransportSourceSha256,
+                        postRunObservedSourceSha256: sourceAttestation?.observedTransportSourceSha256BeforeEdit || null,
+                        currentSourceSha256: transportSha256,
+                        currentSourceLastWriteUtc: transportStat?.mtime?.toISOString() || null,
+                        preEditObservedSourceLastWriteUtc: sourceAttestation?.observedTransportLastWriteUtc || null,
+                        preEditObservedSourceLastWritePrecededRequest: sourceAttestation?.sourceLastWritePrecededRequest === true,
+                        recordedRunnerManifestIncludedTransport: manifestBindsTransport,
+                        currentRunnerSourceSha256,
+                        status: manifestBindsTransport ? 'PASS' : 'INCOMPLETE_CALL_TIME_SOURCE_BINDING',
+                        limitation: 'The run receipt predates this provenance fix and its recorded runner hash omitted this transport. A separate post-run source observation is not an atomic or cryptographic call-time attestation and does not make this receipt fully code-bound.',
+                    } : {
+                        sourcePath: 'EasyMod-backend/scripts/product-experience/gemini-evaluation-client.js',
+                        recordedRunnerSourceSha256: receipt.runnerSourceSha256 || null,
+                        status: 'LEGACY_DIAGNOSTIC_PATH',
+                    },
+                    calls: Array.isArray(budget.calls) ? budget.calls.map(call => ({
+                        callId: typeof call.callId === 'string' ? call.callId : null,
+                        status: call.status || null,
+                        vision: call.vision === true,
+                        thinkingLevel: call.thinkingLevel || receipt.thinkingLevel || 'PROVIDER_DEFAULT_NOT_CAPTURED',
+                        inputTokens: Number.isFinite(call.inputTokens) ? call.inputTokens : null,
+                        outputTokens: Number.isFinite(call.outputTokens) ? call.outputTokens : null,
+                        thinkingTokens: Number.isFinite(call.thinkingTokens) ? call.thinkingTokens : null,
+                        candidateTokens: Number.isFinite(call.candidateTokens) ? call.candidateTokens
+                            : Number.isFinite(call.outputTokens) && Number.isFinite(call.thinkingTokens)
+                                ? Math.max(0, call.outputTokens - call.thinkingTokens) : null,
+                        finishReason: ['STOP', 'MAX_TOKENS', 'SAFETY', 'RECITATION', 'OTHER'].includes(call.finishReason)
+                            ? call.finishReason : null,
+                        maxOutputTokens: Number.isFinite(call.maxOutputTokens) ? call.maxOutputTokens : null,
+                        latencyMs: Number.isFinite(call.latencyMs) ? call.latencyMs : null,
+                        estimatedProviderChargeUsd: Number.isFinite(call.estimatedProviderChargeUsd)
+                            ? call.estimatedProviderChargeUsd : null,
+                    })) : [],
+                    cases: cases.map(item => ({
+                        fixtureId: typeof item.fixtureId === 'string' ? item.fixtureId : null,
+                        fixtureSha256: typeof item.fixtureSha256 === 'string' ? item.fixtureSha256 : null,
+                        status: item.status || null,
+                        labelPresenceProxy: item.schemaValid === true,
+                        observedCategory: typeof item.observedCategory === 'string' ? item.observedCategory : null,
+                        categoryMatch: item.categoryMatch === true,
+                        observedDominantColor: typeof item.observedDominantColor === 'string' ? item.observedDominantColor : null,
+                        dominantColorMatch: item.dominantColorMatch === true,
+                        unverifiedMaterialFieldPopulated: item.unverifiedMaterialFieldPopulated === true,
+                        finishReason: ['STOP', 'MAX_TOKENS', 'SAFETY', 'RECITATION', 'OTHER'].includes(item.finishReason)
+                            ? item.finishReason : null,
+                        maxOutputTokens: Number.isFinite(item.maxOutputTokens) ? item.maxOutputTokens : null,
+                        usage: item.usage && typeof item.usage === 'object' ? {
+                            promptTokenCount: Number.isFinite(item.usage.promptTokenCount) ? item.usage.promptTokenCount : null,
+                            candidatesTokenCount: Number.isFinite(item.usage.candidatesTokenCount) ? item.usage.candidatesTokenCount : null,
+                            totalTokenCount: Number.isFinite(item.usage.totalTokenCount) ? item.usage.totalTokenCount : null,
+                            thoughtsTokenCount: Number.isFinite(item.usage.thoughtsTokenCount) ? item.usage.thoughtsTokenCount : null,
+                        } : null,
+                        providerLatencyMs: Number.isFinite(item.providerLatencyMs) ? item.providerLatencyMs : null,
+                        estimatedProviderChargeUsd: Number.isFinite(item.estimatedProviderChargeUsd)
+                            ? item.estimatedProviderChargeUsd : null,
+                    })),
+                };
+            } catch (_) { return null; }
+        })
+        .filter(Boolean)
+        .sort((left, right) => Date.parse(left.startedAt || '') - Date.parse(right.startedAt || ''));
+};
+
+const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd = 10, v1_2ProofPath = null) => {
+    const candidates = [];
+    const malformedLedgerSnapshots = [];
+    if (fs.existsSync(workspaceRoot)) {
+        for (const directory of fs.readdirSync(workspaceRoot, { withFileTypes: true })) {
+            if (!directory.isDirectory() || !directory.name.startsWith('_product-engine-v1-3-evidence')) continue;
+            const campaignRoot = path.join(workspaceRoot, directory.name, 'campaigns');
+            if (!fs.existsSync(campaignRoot)) continue;
+            for (const campaignDirectory of fs.readdirSync(campaignRoot, { withFileTypes: true })) {
+                if (!campaignDirectory.isDirectory()) continue;
+                const ledgerPath = path.join(campaignRoot, campaignDirectory.name, 'budget-ledger.json');
+                if (!fs.existsSync(ledgerPath)) continue;
+                try {
+                    const ledger = readJson(ledgerPath);
+                    if (typeof ledger.campaignId !== 'string') {
+                        malformedLedgerSnapshots.push({
+                            sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
+                            reason: 'MISSING_OR_INVALID_CAMPAIGN_ID',
+                        });
+                        continue;
+                    }
+                    if (!ledger.campaignId.startsWith('v13-')) continue;
+                    const updatedAt = Date.parse(ledger.updatedAt || '');
+                    candidates.push({ ledger, ledgerPath, sortTime: Number.isFinite(updatedAt) ? updatedAt : fs.statSync(ledgerPath).mtimeMs });
+                } catch (_) {
+                    malformedLedgerSnapshots.push({
+                        sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
+                        reason: 'INVALID_JSON',
+                    });
+                }
+            }
+        }
+    }
+    const latestByCampaign = new Map();
+    for (const candidate of candidates) {
+        const prior = latestByCampaign.get(candidate.ledger.campaignId);
+        if (!prior || candidate.sortTime > prior.sortTime) latestByCampaign.set(candidate.ledger.campaignId, candidate);
+    }
+    const campaigns = [...latestByCampaign.values()].map(({ ledger, ledgerPath }) => ({
+        campaignId: ledger.campaignId,
+        sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
+        sourceLedgerSha256: sha256(fs.readFileSync(ledgerPath)),
+        updatedAt: ledger.updatedAt || null,
+        requestCount: Number.isFinite(ledger.requestCount) ? ledger.requestCount : null,
+        visionRequestCount: Number.isFinite(ledger.visionRequestCount) ? ledger.visionRequestCount : null,
+        unknownUsageRequestCount: Number.isFinite(ledger.unpricedRequestCount) ? ledger.unpricedRequestCount : null,
+        estimatedProviderChargeUsd: Number.isFinite(ledger.estimatedProviderChargeUsd) ? ledger.estimatedProviderChargeUsd : null,
+        reservedWorstCaseUsd: Number.isFinite(ledger.reservedWorstCaseUsd) ? ledger.reservedWorstCaseUsd : null,
+        campaignCeilingUsd: Number.isFinite(ledger.ceilingUsd) ? ledger.ceilingUsd : null,
+        providerInvoice: ledger.providerInvoice || 'NOT_AVAILABLE',
+    })).sort((left, right) => left.campaignId.localeCompare(right.campaignId));
+    const sum = (key) => campaigns.every(item => Number.isFinite(item[key]))
+        ? campaigns.reduce((total, item) => total + item[key], 0) : null;
+    let v1_2ExposureUsd = null;
+    let v1_2ProofSourcePath = null;
+    let v1_2ProofSha256 = null;
+    if (v1_2ProofPath && fs.existsSync(v1_2ProofPath)) {
+        try {
+            const v1_2Proof = readJson(v1_2ProofPath);
+            const value = v1_2Proof.cumulativeProviderCostAccounting?.conservativeTaskSeriesExposureUsd;
+            if (Number.isFinite(value)) {
+                v1_2ExposureUsd = value;
+                v1_2ProofSourcePath = path.relative(workspaceRoot, v1_2ProofPath).replace(/\\/g, '/');
+                v1_2ProofSha256 = sha256(fs.readFileSync(v1_2ProofPath));
+            }
+        } catch (_) { /* missing or malformed historical proof remains unmeasured */ }
+    }
+    const v1_3ReservedUsd = sum('reservedWorstCaseUsd');
+    const combinedReservedUsd = Number.isFinite(v1_3ReservedUsd) && Number.isFinite(v1_2ExposureUsd)
+        ? v1_3ReservedUsd + v1_2ExposureUsd : null;
+    const ledgerSnapshotsComplete = malformedLedgerSnapshots.length === 0;
+    return {
+        reconciliationMethod: 'latest campaign ledger per distinct campaignId across sibling _product-engine-v1-3-evidence* roots',
+        campaigns,
+        ledgerSnapshotsComplete,
+        malformedLedgerSnapshots,
+        distinctCampaignCount: campaigns.length,
+        requestCount: sum('requestCount'),
+        visionRequestCount: sum('visionRequestCount'),
+        unknownUsageRequestCount: sum('unknownUsageRequestCount'),
+        estimatedProviderChargeUsd: sum('estimatedProviderChargeUsd'),
+        reservedWorstCaseUsd: v1_3ReservedUsd,
+        sumOfPerCampaignCeilingsUsd: sum('campaignCeilingUsd'),
+        v1_2ConservativeTaskSeriesExposureUsd: v1_2ExposureUsd,
+        v1_2ProofSourcePath,
+        v1_2ProofSha256,
+        combinedReservedExposureUsd: combinedReservedUsd,
+        authorizedAggregateBudgetUsd,
+        remainingAggregateAuthorizationUsd: ledgerSnapshotsComplete && Number.isFinite(combinedReservedUsd)
+            ? authorizedAggregateBudgetUsd - combinedReservedUsd : null,
+        status: !ledgerSnapshotsComplete ? 'INCOMPLETE_MALFORMED_LEDGER_SNAPSHOTS' : Number.isFinite(combinedReservedUsd)
+            ? (combinedReservedUsd <= authorizedAggregateBudgetUsd ? 'WITHIN_AUTHORIZATION_BY_MANUAL_RECONCILIATION' : 'EXCEEDS_AUTHORIZATION')
+            : 'INCOMPLETE',
+        aggregateCapEnforcement: 'MANUAL_RECONCILIATION_ONLY; INDIVIDUAL_CAMPAIGN_LEDGERS_DO_NOT_ENFORCE_A_SHARED_CAP',
+        providerInvoice: 'NOT_AVAILABLE',
+    };
+};
+
+const summarizeGeminiProDiagnostics = (diagnostics = []) => {
+    const sum = key => diagnostics.every(item => Number.isFinite(item[key]))
+        ? diagnostics.reduce((total, item) => total + item[key], 0) : null;
+    const cases = diagnostics.flatMap(item => item.cases || []);
+    return {
+        runCount: diagnostics.length,
+        providerRequests: sum('providerRequests'),
+        visionRequests: sum('visionRequests'),
+        estimatedProviderChargeUsd: sum('estimatedProviderChargeUsd'),
+        reservedWorstCaseUsd: sum('reservedWorstCaseUsd'),
+        campaignCeilingsUsd: sum('campaignCeilingUsd'),
+        repeatedPhotoObservations: cases.length,
+        categoryMatchesAcrossRepeatedObservations: cases.filter(item => item.categoryMatch === true).length,
+        colorMatchesAcrossRepeatedObservations: cases.filter(item => item.dominantColorMatch === true).length,
+        providerInvoice: diagnostics.length ? 'NOT_AVAILABLE' : 'NOT_RUN',
+    };
+};
+
 const newestMatching = (directory, predicate) => jsonFiles(directory)
     .map(filename => {
         try {
@@ -316,6 +543,11 @@ const main = () => {
     const campaignPath = path.join(ARTIFACT_ROOT, 'campaigns', CAMPAIGN_ID, 'budget-ledger.json');
     const campaign = fs.existsSync(campaignPath) ? readJson(campaignPath) : null;
     const campaignSummary = summarizeCampaignLedger(campaign);
+    const supplementaryGeminiProPhotoRuns = collectGeminiProPhotoDiagnostics(RUN_ROOT, REPO_ROOT, currentRunnerSourceSha256);
+    const supplementaryGeminiProPhotoSummary = summarizeGeminiProDiagnostics(supplementaryGeminiProPhotoRuns);
+    const v1_2ProofPath = process.env.LAB_V1_2_PROOF_PATH
+        || path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2', 'docs', 'ai', 'product-experience-v1-2', 'verified-commerce-proof.json');
+    const aggregateBudgetReconciliation = reconcileV13CampaignBudget(WORKSPACE_ROOT, 10, v1_2ProofPath);
     const verificationReceiptPath = process.env.LAB_VERIFY_RECEIPT_PATH || null;
     const verificationReceipt = verificationReceiptPath && fs.existsSync(verificationReceiptPath)
         ? readJson(verificationReceiptPath) : regression;
@@ -500,6 +732,25 @@ const main = () => {
         REAL_GEMINI_STATUS: realGeminiStatus,
         REAL_GEMINI_QUALITY_VERDICT: realGeminiQuality.status,
         REAL_GEMINI_RUNNER_PROVENANCE: runnerProvenanceStatus,
+        SUPPLEMENTARY_GEMINI_PRO_DIAGNOSTIC_RUNS: supplementaryGeminiProPhotoSummary.runCount || 'NOT_RUN',
+        SUPPLEMENTARY_GEMINI_PRO_REQUESTS: supplementaryGeminiProPhotoSummary.providerRequests ?? 'NOT_MEASURED',
+        SUPPLEMENTARY_GEMINI_PRO_VISION_REQUESTS: supplementaryGeminiProPhotoSummary.visionRequests ?? 'NOT_MEASURED',
+        SUPPLEMENTARY_GEMINI_PRO_ESTIMATED_COST_USD: supplementaryGeminiProPhotoSummary.estimatedProviderChargeUsd ?? 'NOT_MEASURED',
+        SUPPLEMENTARY_GEMINI_PRO_WORST_CASE_RESERVED_USD: supplementaryGeminiProPhotoSummary.reservedWorstCaseUsd ?? 'NOT_MEASURED',
+        SUPPLEMENTARY_GEMINI_PRO_CATEGORY_MATCH_OBSERVATIONS: supplementaryGeminiProPhotoSummary.categoryMatchesAcrossRepeatedObservations ?? 'NOT_MEASURED',
+        SUPPLEMENTARY_GEMINI_PRO_COLOR_MATCH_OBSERVATIONS: supplementaryGeminiProPhotoSummary.colorMatchesAcrossRepeatedObservations ?? 'NOT_MEASURED',
+        V13_DISTINCT_CAMPAIGN_LEDGER_COUNT: aggregateBudgetReconciliation.distinctCampaignCount,
+        V13_AGGREGATE_CAMPAIGN_REQUESTS: aggregateBudgetReconciliation.requestCount ?? 'NOT_MEASURED',
+        V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS: aggregateBudgetReconciliation.visionRequestCount ?? 'NOT_MEASURED',
+        V13_AGGREGATE_UNKNOWN_USAGE_REQUESTS: aggregateBudgetReconciliation.unknownUsageRequestCount ?? 'NOT_MEASURED',
+        V13_AGGREGATE_ESTIMATED_COST_USD: aggregateBudgetReconciliation.estimatedProviderChargeUsd ?? 'NOT_MEASURED',
+        V13_AGGREGATE_WORST_CASE_RESERVED_USD: aggregateBudgetReconciliation.reservedWorstCaseUsd ?? 'NOT_MEASURED',
+        V13_SUM_OF_CAMPAIGN_CEILINGS_USD: aggregateBudgetReconciliation.sumOfPerCampaignCeilingsUsd ?? 'NOT_MEASURED',
+        V12_CONSERVATIVE_TASK_SERIES_EXPOSURE_USD: aggregateBudgetReconciliation.v1_2ConservativeTaskSeriesExposureUsd ?? 'NOT_MEASURED',
+        AUTHORIZED_AGGREGATE_BUDGET_USD: aggregateBudgetReconciliation.authorizedAggregateBudgetUsd,
+        COMBINED_RESERVED_EXPOSURE_USD: aggregateBudgetReconciliation.combinedReservedExposureUsd ?? 'NOT_MEASURED',
+        REMAINING_AGGREGATE_AUTHORIZATION_USD: aggregateBudgetReconciliation.remainingAggregateAuthorizationUsd ?? 'NOT_MEASURED',
+        AGGREGATE_BUDGET_RECONCILIATION: aggregateBudgetReconciliation.status,
         PROVIDER_BUDGET_EXHAUSTED: campaignBudgetExhausted === null ? 'UNKNOWN' : campaignBudgetExhausted ? 'YES' : 'NO',
         POSTGRES_INTEGRATION: integration ? passState(postgresPass) : verificationStepState(integrationVerifierStep),
         REDIS_INTEGRATION: integration ? passState(redisPass) : verificationStepState(integrationVerifierStep),
@@ -626,6 +877,11 @@ const main = () => {
             heldoutTurns: heldoutOracle?.source?.turns ?? null,
         },
         comparisons: comparisonDetails,
+        supplementaryGeminiProPhotoDiagnostics: {
+            summary: supplementaryGeminiProPhotoSummary,
+            runs: supplementaryGeminiProPhotoRuns,
+        },
+        budgetReconciliation: aggregateBudgetReconciliation,
         measured: {
             verifiedCorrectAnswers: sourceCandidate?.verifiedCorrectAnswers ?? null,
             verifiedCorrectTurns: sourceCandidate?.verifiedCorrectTurns ?? null,
@@ -721,6 +977,7 @@ const main = () => {
         photoIdentityScored: photos.some(photo => photo.productCatalogIdentityScored === true),
         integration, integrationVerifierStep, playwright, playwrightAssessment, playwrightVerifierStep, privacy, independent, backendRegressionTests, selectedIntegrationTests, webhookTests,
         totalIncorrectOrUnansweredSlots, campaign, campaignSummary, automatedQaVerdict, integrationReady,
+        supplementaryGeminiProPhotoRuns, supplementaryGeminiProPhotoSummary, aggregateBudgetReconciliation,
     });
     fs.mkdirSync(path.dirname(PROOF_JSON), { recursive: true });
     fs.mkdirSync(path.dirname(PROOF_MARKDOWN), { recursive: true });
@@ -841,6 +1098,37 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         : details.realComparison
             ? `Photo acceptance verdict: **${details.genuinePhotoQuality?.status || 'NOT_MEASURED'}**. No completed true-photo comparison is available. The Gemini comparison was incomplete, so photo accuracy is NOT_MEASURED.`
             : 'Real Gemini vision evaluation: NOT_RUN.';
+    const supplementaryProRuns = details.supplementaryGeminiProPhotoRuns || [];
+    const supplementaryProSummary = details.supplementaryGeminiProPhotoSummary || {};
+    const supplementaryProBlock = supplementaryProRuns.length ? [
+        '### Supplementary Gemini Pro photo diagnostics — evaluation only',
+        '',
+        `Three separate Pro-only campaigns made ${supplementaryProSummary.providerRequests ?? 'NOT_MEASURED'} vision requests. Combined token-priced estimate: $${Number(supplementaryProSummary.estimatedProviderChargeUsd || 0).toFixed(6)}; combined worst-case reservation: $${Number(supplementaryProSummary.reservedWorstCaseUsd || 0).toFixed(6)} under $${Number(supplementaryProSummary.campaignCeilingsUsd || 0).toFixed(2)} in per-campaign ceilings. The runs repeat the same three licensed public photos; the 9 observations are not 9 independent images. Invoice: NOT_AVAILABLE.`,
+        '',
+        '| Run | Thinking | Output cap | Category | Color | Finish reasons | Estimate / reserved (campaign cap) | Provenance |',
+        '|---|---|---:|---:|---:|---|---|---|',
+        ...supplementaryProRuns.map(run => {
+            const cap = run.effectiveMaxOutputTokens ?? run.configuredRouteMaxOutputTokens ?? 'NOT_CAPTURED';
+            const finishReasons = [...new Set((run.cases || []).map(item => item.finishReason).filter(Boolean))];
+            const finish = finishReasons.length ? finishReasons.join(', ') : 'NOT_RECORDED';
+            const estimate = Number.isFinite(run.estimatedProviderChargeUsd) ? `$${run.estimatedProviderChargeUsd.toFixed(6)}` : 'NOT_MEASURED';
+            const reserved = Number.isFinite(run.reservedWorstCaseUsd) ? `$${run.reservedWorstCaseUsd.toFixed(6)}` : 'NOT_MEASURED';
+            const ceiling = Number.isFinite(run.campaignCeilingUsd) ? `$${run.campaignCeilingUsd.toFixed(2)}` : 'NOT_MEASURED';
+            const provenance = run.transportProvenance?.status === 'INCOMPLETE_CALL_TIME_SOURCE_BINDING'
+                ? 'PARTIAL; runner hash omitted diagnostic transport'
+                : 'runner hash recorded';
+            return `| ${run.runId} | ${run.thinkingLevel} | ${cap} | ${run.categoryMatches ?? 'NOT_MEASURED'}/${run.photosTested ?? 'NOT_MEASURED'} | ${run.colorMatches ?? 'NOT_MEASURED'}/${run.photosTested ?? 'NOT_MEASURED'} | ${finish} | ${estimate} / ${reserved} (${ceiling}) | ${provenance} |`;
+        }),
+        '',
+        ...supplementaryProRuns.filter(run => run.experiment === 'bounded-gemini-pro-production-photo-extraction-low-thinking').map(run => {
+            const categoryLabels = (run.cases || []).map(item => item.observedCategory || 'null').join(', ');
+            const colorLabels = (run.cases || []).map(item => item.observedDominantColor || 'null').join(', ');
+            const candidateTokens = (run.calls || []).map(call => call.candidateTokens).filter(Number.isFinite);
+            const tokenText = candidateTokens.length ? `${candidateTokens.join('/')} candidate tokens` : 'candidate token counts NOT_MEASURED';
+            const materialClaims = (run.cases || []).filter(item => item.unverifiedMaterialFieldPopulated === true).length;
+            return `The low-thinking run ${run.runId} returned category labels ${categoryLabels} and colors ${colorLabels} (${tokenText}); every case finished with STOP. It matched category on ${run.categoryMatches}/${run.photosTested} and visible color on ${run.colorMatches}/${run.photosTested}; unverified material fields populated: ${materialClaims}. The receipt's labelPresenceProxy means at least one safe field reached the scorer; it is not full JSON-schema validation. Because raw provider text was not retained, this confirms a repeated category-field failure but cannot distinguish model output from parser or safe-label rejection. The recorded runner hash omitted the dedicated transport file. This receipt is therefore not fully code-attested; the manifest correction applies to future runs and does not retroactively bind this provider request.`;
+        }),
+    ].join('\n') : 'Supplementary Gemini Pro photo diagnostics: NOT_RUN.';
     const integrationBlock = details.integration?.jest?.selectedIntegration || details.integration?.jest?.webhookPipelineE2E || details.integration?.jest?.backendRegression
         ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
         : details.integrationVerifierStep
@@ -879,6 +1167,12 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const campaignBlock = details.campaign
         ? `Observed campaign activity remains in the cumulative ledger: ${details.campaign.requestCount}/${details.campaign.maxRequests} requests, ${details.campaign.visionRequestCount}/${details.campaign.maxVisionRequests} vision requests, ${details.campaignSummary?.providerUsageRecords ?? 'NOT_MEASURED'} provider-reported calls and ${details.campaignSummary?.unpricedOrPendingRequests ?? 'NOT_MEASURED'} unpriced or pending request(s). Estimated priced usage: $${Number(details.campaign.estimatedProviderChargeUsd || 0).toFixed(8)}; worst-case reserved: $${Number(details.campaign.reservedWorstCaseUsd || 0).toFixed(8)} of $${Number(details.campaign.ceilingUsd || 2).toFixed(2)} ceiling. Invoice unavailable.`
         : 'No campaign ledger is available.';
+    const reconciliation = details.aggregateBudgetReconciliation || {};
+    const aggregateBudgetBlock = reconciliation.ledgerSnapshotsComplete === false
+        ? `Partial V1.3 ledger reconciliation: ${reconciliation.distinctCampaignCount ?? 0} parsed campaigns record ${reconciliation.requestCount ?? 'NOT_MEASURED'} requests and $${Number(reconciliation.reservedWorstCaseUsd || 0).toFixed(9)} known worst-case reserve, but ${reconciliation.malformedLedgerSnapshots?.length || 0} malformed ledger snapshot(s) were found. Aggregate exposure and remaining authorization are **INCOMPLETE / NOT_AVAILABLE**. The malformed snapshot paths and reasons are in the machine proof. Provider invoices are unavailable.`
+        : Number.isFinite(reconciliation.reservedWorstCaseUsd)
+            ? `Deduplicated latest ledgers across ${reconciliation.distinctCampaignCount} V1.3 campaigns record ${reconciliation.requestCount} requests, ${reconciliation.visionRequestCount} vision requests, ${reconciliation.unknownUsageRequestCount} unknown-usage calls, $${reconciliation.estimatedProviderChargeUsd.toFixed(8)} priced-token estimate and $${reconciliation.reservedWorstCaseUsd.toFixed(9)} reserved exposure. The sum of their individual ceilings is $${reconciliation.sumOfPerCampaignCeilingsUsd.toFixed(2)}; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $${Number(reconciliation.v1_2ConservativeTaskSeriesExposureUsd || 0).toFixed(8)} conservative task-series exposure, for combined reserve $${Number(reconciliation.combinedReservedExposureUsd || 0).toFixed(9)} and $${Number(reconciliation.remainingAggregateAuthorizationUsd || 0).toFixed(9)} remaining against the $${Number(reconciliation.authorizedAggregateBudgetUsd || 10).toFixed(2)} authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: \`${reconciliation.v1_2ProofSourcePath || 'NOT_RECORDED'}\`; V1.3 ledger file hashes and paths are in the machine proof.`
+        : 'Aggregate V1.3 campaign exposure: NOT_MEASURED.';
     const independentBlock = details.independent
         ? `Verdict: **${status.INDEPENDENT_VERIFICATION}**; reviewer: ${details.independent.reviewer || 'not recorded'}; reviewed code commit: ${details.independent.reviewedCodeCommit || 'not recorded'}; reviewed runner hash: ${details.independent.reviewedRunnerSourceSha256 || 'not recorded'}.`
         : 'Independent review: NOT_RUN. The proof remains blocked until a separate read-only review is recorded.';
@@ -968,11 +1262,15 @@ ${falseRefusalBlock}
 
 ${campaignBlock}
 
+${supplementaryProRuns.length ? `Separate evaluation-only Pro diagnostics: ${supplementaryProSummary.providerRequests ?? 'NOT_MEASURED'} requests; $${Number(supplementaryProSummary.estimatedProviderChargeUsd || 0).toFixed(6)} token-priced estimate; $${Number(supplementaryProSummary.reservedWorstCaseUsd || 0).toFixed(6)} worst-case reservation. They are outside the matched Gemini Lite comparison and do not change the production model.` : 'Supplementary Pro diagnostic: NOT_RUN.'}
+
 Provider estimates use reported token usage and a pinned local rate calculation. They are not billing records. The credential is process-scoped and is not copied into artifacts.
 
 ## F. Images
 
 ${imageBlock}
+
+${supplementaryProBlock}
 
 No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. ${details.realComparison?.comparisonValid === true ? 'The detailed provenance and per-photo observations are in the machine-readable proof.' : 'No completed per-photo comparison is reported.'}
 
@@ -992,12 +1290,14 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 - Security tests: **${status.SECURITY_TESTS}**. Egress guard: ${proof.security.egress?.guard || 'NOT_RUN'}; blocked non-loopback attempts: ${proof.security.egress?.blockedNonLoopbackAttempts ?? 'NOT_MEASURED'}.
 - Tenant violations: ${details.sourceCandidate?.tenantViolations ?? 'NOT_RUN'}; unscoped catalog reads: ${details.sourceCandidate?.unscopedReads ?? 'NOT_RUN'}.
-- Pre-proof artifact privacy scan: **${status.PRIVACY_SCAN}** at ${proof.security.privacyScan?.checkedAt || 'NOT_RECORDED'}. The proof-inclusive post-generation scan and checksum manifest are \`${proof.candidate.evidenceRoot}\\security\\artifact-privacy-scan.json\` and \`${proof.candidate.evidenceRoot}\\security\\artifact-checksum-manifest.txt\`.
+- Pre-proof artifact privacy scan: **${status.PRIVACY_SCAN}** at ${proof.security.privacyScan?.checkedAt || 'NOT_RECORDED'}. The final scan report and checksum manifest are generated after this proof; inspect their timestamps and entries to confirm coverage. The proof Markdown is at \`${proof.candidate.evidenceRoot}\\reports\\product-engine-v1.3-proof.md\`, and the machine proof is at \`${proof.candidate.evidenceRoot}\\product-engine-v1.3-proof.json\`.
 - No credential values are stored in the proof package.
 
 ## J. Cost and merchant economics
 
 Estimated matched-pair provider cost from priced usage: ${matchedPairCost}. ${unpricedCostNote} Candidate cost per verified product-answer turn: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}; per verified fact slot: ${costPerFactSlot == null ? 'NOT_MEASURED' : `$${costPerFactSlot.toFixed(8)}`}. Deterministic source replay router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. ${paidRouteTiming} These route timings exclude webhook, queue, database and customer-facing network latency.
+
+${aggregateBudgetBlock}
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -1052,4 +1352,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeRunLedger };
+module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRunLedger };

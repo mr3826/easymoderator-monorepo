@@ -12,6 +12,12 @@ const MODEL_PROVIDERS = Object.freeze({
 });
 const IMAGE_TOKEN_UPPER_BOUND = 16384;
 const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+const FINISH_REASONS = new Set([
+    'FINISH_REASON_UNSPECIFIED', 'STOP', 'MAX_TOKENS', 'SAFETY', 'RECITATION', 'OTHER',
+    'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'MALFORMED_FUNCTION_CALL', 'IMAGE_SAFETY',
+    'UNEXPECTED_TOOL_CALL', 'NO_IMAGE', 'MODEL_ARMOR', 'IMAGE_PROHIBITED_CONTENT',
+    'IMAGE_RECITATION', 'LANGUAGE', 'PROMPT_TRUNCATED',
+]);
 
 class EvaluationClientError extends Error {
     constructor(code) {
@@ -125,6 +131,7 @@ const createGeminiEvaluationClient = ({ budget, llm, model = MODEL, operationPre
         if (extraFields.length) throw new EvaluationClientError('UNSUPPORTED_REQUEST_FIELDS');
 
         const snapshot = budget.snapshot();
+        const thinkingLevel = snapshot.limits?.thinkingLevel || null;
         const maxOutputTokens = params.maxTokens === undefined ? Math.min(512, snapshot.limits.maxOutputTokens) : params.maxTokens;
         if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > snapshot.limits.maxOutputTokens) {
             throw new EvaluationClientError('OUTPUT_LIMIT');
@@ -147,6 +154,7 @@ const createGeminiEvaluationClient = ({ budget, llm, model = MODEL, operationPre
                 maxTokens: context.maxOutputTokens,
                 timeoutMs: context.timeoutMs,
                 signal: context.signal,
+                thinkingLevel,
                 preferredProvider: provider,
                 skipProviders: skippedProviders,
                 cachedContentName: undefined,
@@ -164,6 +172,7 @@ const createGeminiEvaluationClient = ({ budget, llm, model = MODEL, operationPre
                 model,
                 requestId: result.requestId || null,
                 latencyMs: Number.isSafeInteger(result.latencyMs) ? result.latencyMs : null,
+                finishReason: FINISH_REASONS.has(result.finishReason) ? result.finishReason : null,
                 ...(usageMetadata ? { usageMetadata } : {}),
             };
         });
@@ -174,6 +183,7 @@ const createGeminiEvaluationClient = ({ budget, llm, model = MODEL, operationPre
             model: response.model,
             requestId: receipt.requestId,
             latencyMs: receipt.latencyMs,
+            finishReason: response.finishReason || null,
             usage: response.usageMetadata || null,
             budget: receipt,
         };

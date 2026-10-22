@@ -375,7 +375,10 @@ const parseProductionVisualObservation = text => {
         return null;
     }
 };
-const runGenuinePhotoEvaluation = async evaluationClient => {
+const runGenuinePhotoEvaluation = async (evaluationClient, options = {}) => {
+    const maxOutputTokensOverride = options.maxOutputTokensOverride ?? null;
+    const finishReasonForRequestId = typeof options.finishReasonForRequestId === 'function'
+        ? options.finishReasonForRequestId : () => null;
     const results = [];
     let stoppedReason = null;
     const shopId = 'fixture-shop-a';
@@ -395,13 +398,17 @@ const runGenuinePhotoEvaluation = async evaluationClient => {
             const startedAt = performance.now();
             const capturingClient = Object.freeze({
                 chat: async params => {
-                    const result = await evaluationClient.chat(params);
+                    const evaluationParams = maxOutputTokensOverride === null
+                        ? params : { ...params, maxTokens: maxOutputTokensOverride };
+                    const result = await evaluationClient.chat(evaluationParams);
                     const hasRaster = params.messages.some(message => Array.isArray(message.content)
                         && message.content.some(part => part?.type === 'image_url'));
                     if (hasRaster) providerObservations.push({
                         observation: parseProductionVisualObservation(result.text),
                         callId: result.budget.callId,
                         requestId: result.requestId,
+                        finishReason: result.finishReason || finishReasonForRequestId(result.requestId),
+                        maxOutputTokens: result.budget.maxOutputTokens,
                         usage: result.usage,
                         latencyMs: result.latencyMs,
                         estimatedCostUsd: result.budget.estimatedProviderChargeUsd,
@@ -441,6 +448,8 @@ const runGenuinePhotoEvaluation = async evaluationClient => {
                     unverifiedMaterialFieldPopulated: Boolean(visual?.materialFieldPopulated),
                     providerCallId: providerObservations[0]?.callId || null,
                     requestId: providerObservations[0]?.requestId || null,
+                    finishReason: providerObservations[0]?.finishReason || null,
+                    maxOutputTokens: providerObservations[0]?.maxOutputTokens ?? null,
                     usage: providerObservations[0]?.usage || null,
                     providerLatencyMs: providerObservations[0]?.latencyMs ?? null,
                     estimatedProviderChargeUsd: providerObservations[0]?.estimatedCostUsd ?? null,
@@ -488,7 +497,9 @@ describe('genuine photo replay fixture isolation', () => {
         };
 
         try {
-            await runGenuinePhotoEvaluation(evaluationClient);
+            await runGenuinePhotoEvaluation(evaluationClient, { maxOutputTokensOverride: 1024 });
+            expect(evaluationClient.chat).toHaveBeenCalledTimes(GENUINE_PHOTO_MANIFEST.assets.length);
+            expect(evaluationClient.chat.mock.calls.every(([params]) => params.maxTokens === 1024)).toBe(true);
             expect(mockCatalog.map(product => product.id)).toEqual(configuredCatalog.map(product => product.id));
             expect(mockCatalog.map(product => product.id)).toContain('v12-a-cargo');
         } finally {
@@ -498,13 +509,14 @@ describe('genuine photo replay fixture isolation', () => {
     });
 
     const proPhotoProbeTest = process.env.LAB_GEMINI_PRO_PHOTO_PROBE === '1' ? test : test.skip;
-    proPhotoProbeTest('runs a three-photo Gemini Pro probe through production extraction under a $0.22 campaign cap', async () => {
+    proPhotoProbeTest('runs a three-photo Gemini Pro diagnostic with low thinking and a bounded output window', async () => {
         if (mode !== 'real-gemini' || process.env.EASYMOD_LIVE_GEMINI_EGRESS !== '1'
             || typeof process.env['EM-GEMINI-KEY'] !== 'string' || !process.env['EM-GEMINI-KEY'].trim()) {
             throw new Error('The Gemini Pro photo probe requires the process-scoped key and exact live egress opt-in.');
         }
         const { createEvaluationBudget, GEMINI_PRO_PRICE_SNAPSHOT } = require('./evaluation-budget');
         const { createGeminiEvaluationClient } = require('./gemini-evaluation-client');
+        const { createGeminiProDiagnosticTransport, sourceSha256: diagnosticTransportSourceSha256 } = require('./gemini-pro-diagnostic-transport');
         const { createEvaluationCampaignLedger } = require('./evaluation-campaign-ledger');
         const campaignId = process.env.LAB_PRO_PHOTO_CAMPAIGN_ID;
         if (typeof campaignId !== 'string' || !/^v13-gemini-pro-photo-probe-[a-zA-Z0-9_.:-]{1,48}$/.test(campaignId)) {
@@ -521,7 +533,7 @@ describe('genuine photo replay fixture isolation', () => {
         const ledger = createEvaluationCampaignLedger({
             ledgerPath: campaignPath,
             campaignId,
-            ceilingUsd: 0.22,
+            ceilingUsd: 0.30,
             maxRequests: 3,
             maxVisionRequests: 3,
         });
@@ -535,12 +547,13 @@ describe('genuine photo replay fixture isolation', () => {
         budgetLedgerPath = budgetPath;
         evaluationBudget = createEvaluationBudget({
             model: GEMINI_PRO_PRICE_SNAPSHOT.model,
-            ceilingUsd: 0.22,
+            ceilingUsd: 0.30,
+            thinkingLevel: 'low',
             maxRequests: 3,
             maxVisionRequests: 3,
             maxConcurrency: 1,
             maxInputTokens: 32768,
-            maxOutputTokens: 250,
+            maxOutputTokens: 1024,
             maxRetries: 0,
             maxTimeoutMs: 30000,
         }, {
@@ -549,25 +562,15 @@ describe('genuine photo replay fixture isolation', () => {
                 persistBudgetLedger();
             },
         });
-        jest.doMock('src/config/redis', () => ({
-            cacheRedis: {
-                get: jest.fn(async () => null),
-                del: jest.fn(async () => 1),
-                incr: jest.fn(async () => 1),
-                expire: jest.fn(async () => 1),
-                setex: jest.fn(async () => 'OK'),
-            },
-        }));
-        const actualLlm = jest.requireActual('src/modules/ai/llm.service');
         evaluationClient = createRateLimitedEvaluationClient(createGeminiEvaluationClient({
             budget: evaluationBudget,
-            llm: actualLlm,
+            llm: createGeminiProDiagnosticTransport(),
             model: GEMINI_PRO_PRICE_SNAPSHOT.model,
             operationPrefix: 'v13-pro-photo',
         }));
 
         const startedAt = new Date().toISOString();
-        const evaluation = await runGenuinePhotoEvaluation(evaluationClient);
+        const evaluation = await runGenuinePhotoEvaluation(evaluationClient, { maxOutputTokensOverride: 1024 });
         const safeCases = evaluation.cases.map(item => ({
             fixtureId: item.fixtureId,
             fixtureSha256: item.fixtureSha256,
@@ -580,6 +583,8 @@ describe('genuine photo replay fixture isolation', () => {
             unverifiedMaterialFieldPopulated: item.unverifiedMaterialFieldPopulated,
             providerCallId: item.providerCallId,
             requestId: item.requestId,
+            finishReason: item.finishReason,
+            maxOutputTokens: item.maxOutputTokens,
             usage: item.usage,
             providerLatencyMs: item.providerLatencyMs,
             estimatedProviderChargeUsd: item.estimatedProviderChargeUsd,
@@ -588,12 +593,16 @@ describe('genuine photo replay fixture isolation', () => {
         const campaignSnapshot = campaignLedger.snapshot();
         const artifact = {
             schemaVersion: 1,
-            experiment: 'bounded-gemini-pro-production-photo-extraction',
+            experiment: 'bounded-gemini-pro-production-photo-extraction-low-thinking',
+            configuredRouteMaxOutputTokens: 250,
+            effectiveMaxOutputTokens: 1024,
+            thinkingLevel: 'low',
             sourceRevision: sourceProvenance.sourceRevision,
             engineSourceRevision: sourceProvenance.engineSourceRevision,
             engineSourceSha256: sourceProvenance.engineSourceSha256,
             runnerRevision: sourceProvenance.runnerRevision,
             runnerSourceSha256: sourceProvenance.runnerSourceSha256,
+            diagnosticTransportSourceSha256: diagnosticTransportSourceSha256(),
             model: GEMINI_PRO_PRICE_SNAPSHOT.model,
             pricing: budgetSnapshot.pricing,
             campaignId,
@@ -619,9 +628,14 @@ describe('genuine photo replay fixture isolation', () => {
         expect(safeCases).toHaveLength(3);
         expect(safeCases.every(item => item.status === 'EXECUTED')).toBe(true);
         expect(budgetSnapshot).toMatchObject({ model: GEMINI_PRO_PRICE_SNAPSHOT.model, requestCount: 3, visionRequestCount: 3 });
-        expect(campaignSnapshot).toMatchObject({ ceilingUsd: 0.22, requestCount: 3, visionRequestCount: 3 });
-        expect(campaignSnapshot.reservedWorstCaseUsd).toBeLessThanOrEqual(0.22);
+        expect(budgetSnapshot.limits.maxOutputTokens).toBe(1024);
+        expect(budgetSnapshot.limits.thinkingLevel).toBe('low');
+        expect(safeCases.every(item => item.maxOutputTokens === 1024)).toBe(true);
+        expect(safeCases.every(item => typeof item.finishReason === 'string')).toBe(true);
+        expect(campaignSnapshot).toMatchObject({ ceilingUsd: 0.30, requestCount: 3, visionRequestCount: 3 });
+        expect(campaignSnapshot.reservedWorstCaseUsd).toBeLessThanOrEqual(0.30);
         expect(JSON.stringify(artifact)).not.toMatch(/EM-GEMINI-KEY|customerMessage|customerProfile|expectedTruth|data:image\//i);
+        expect(artifact.diagnosticTransportSourceSha256).toMatch(/^[a-f0-9]{64}$/i);
     }, 180000);
 });
 

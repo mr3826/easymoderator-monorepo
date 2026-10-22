@@ -85,15 +85,16 @@ describe('bounded Gemini evaluation client', () => {
     test('routes an explicitly configured bounded image probe through Gemini Pro only', async () => {
         process.env['EM-GEMINI-KEY'] = 'test-only-secret';
         const model = GEMINI_PRO_PRICE_SNAPSHOT.model;
-        const budget = makeBudget({ model });
+        const budget = makeBudget({ model, thinkingLevel: 'low' });
         const llm = { chat: jest.fn(async params => {
             expect(params).toEqual(expect.objectContaining({
                 preferredProvider: 'gemini-pro',
                 skipProviders: ['gemini-lite', 'openai'],
                 returnMetadata: true,
+                thinkingLevel: 'low',
             }));
             return { text: 'Visible garment observation.', provider: 'gemini-pro', model,
-                usage: { promptTokenCount: 4200, candidatesTokenCount: 10 } };
+                usage: { promptTokenCount: 4200, candidatesTokenCount: 10 }, finishReason: 'STOP' };
         }) };
         const client = createGeminiEvaluationClient({ budget, llm, model });
         const fixture = loadGenuinePhotoFixture('yellow-kurta');
@@ -102,7 +103,7 @@ describe('bounded Gemini evaluation client', () => {
             { type: 'image_url', url: fixture.dataUrl },
         ] }] }));
 
-        expect(result).toMatchObject({ provider: 'gemini-pro', model });
+        expect(result).toMatchObject({ provider: 'gemini-pro', model, finishReason: 'STOP' });
         expect(budget.snapshot()).toMatchObject({ model, visionRequestCount: 1, pricing: { inputUsdPerMillion: 2, outputUsdPerMillion: 12 } });
         expect(JSON.stringify(budget.snapshot())).not.toContain(fixture.dataUrl);
     });

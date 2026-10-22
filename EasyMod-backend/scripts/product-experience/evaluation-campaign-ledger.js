@@ -118,6 +118,7 @@ const createEvaluationCampaignLedger = ({ ledgerPath, campaignId, ceilingUsd, ma
                     stage,
                     callId: call.callId,
                     model: call.model,
+                    thinkingLevel: call.thinkingLevel === 'low' ? 'low' : null,
                     vision: Boolean(call.vision),
                     retrySequence: call.retrySequence,
                     inputTokenUpperBound: call.inputTokenUpperBound,

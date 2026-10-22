@@ -164,6 +164,21 @@ INDEPENDENT_CHALLENGER: Read-only architecture review of the evaluation harness 
 FINAL_VERDICT: Do not configure Pro in production. Preserve AUTOMATED_QA_VERDICT=FAIL and INTEGRATION_READY=NO. Do not treat this run as evidence of model recognition quality; any future diagnostic needs a separately authorized cap, adequate output allowance, and finish-reason metadata.
 ```
 
+## Follow-up decision — low-thinking Pro result and runner provenance repair
+
+```text
+DECISION_ID: V13-PHOTO-PRO-LOW-THINKING-AND-PROVENANCE-03
+OBSERVED_PROBLEM: The first Pro run's 250-token output window and the second run's provider-default high thinking left very little candidate output. A third diagnostic was authorized with low thinking and 1,024 output tokens to reduce that confound.
+MEASURED_RESULT: Receipt 19628fd5-4fc1-41e6-a325-f17e34c7fcd5 records three completed calls with STOP finish reasons and 93/115/111 candidate tokens. On the same three licensed fixtures, category matched 0/3 (shirt, null, null) and visible color matched 3/3 (yellow, beige, gold). No unverified material field was populated. The cases' schemaValid flag only indicates at least one safe category or color field reached the scorer.
+EVIDENCE_LIMITATION: The receipt did not retain provider text. The stored runner SHA-256 was computed from an explicit file list that omitted gemini-pro-diagnostic-transport.js, so it does not fully bind this paid run to its transport implementation. Its result is recorded as a diagnostic observation with incomplete call-time source provenance; the hash omission is not repaired retroactively. The current runner source list now includes the diagnostic transport and its test, and future receipts record the transport SHA-256 directly. No further paid probe was made.
+OPTIONS_CONSIDERED: Treat low thinking and STOP as proof of visual-recognition failure; classify the result as a repeatable category-field failure while leaving recognition-versus-parser attribution unresolved; rerun paid calls to restore code binding.
+RECOMMENDED_CHANGE: Keep the three-photo acceptance gate and production model unchanged. Record the third result and provenance limitation, strengthen future-run source binding, and do not claim customer-upload accuracy or a recognized root cause from raw text that was not retained.
+SECURITY_IMPACT: The exact process-scoped EM-GEMINI-KEY was used only in the bounded local call path. No credential or raw provider text was written to the receipt. The fresh campaign capped at $0.30, three requests and three vision requests; it reserved $0.144630 and recorded $0.012418 estimated provider usage. Invoice unavailable.
+COST_IMPACT: All three Pro photo campaigns used 9 requests and 9 vision calls, with $0.075174 priced-token estimate and $0.406026 worst-case reservation under $0.82 summed per-campaign ceilings. Across 11 deduplicated V1.3 campaign IDs: 1,307 requests, 67 vision calls, five calls with unknown usage, $0.344613760 estimated priced usage, and $2.738135011 reserved. Adding the V1.2 proof's $2.339732750 conservative exposure yields $5.077867761 combined reserve and $4.922132239 remaining against the manually reconciled $10 authorization. Individual campaign ceilings sum to $16.82; they do not enforce a common cap. No provider invoices are available.
+COMPATIBILITY: Evaluation harness and evidence documentation only. Production backend, Lite model selection, extraction prompt, route, catalog, API, and business authority remain unchanged.
+FINAL_VERDICT: Photo acceptance remains FAIL; AUTOMATED_QA_VERDICT remains FAIL and INTEGRATION_READY remains NO. Do not switch Gemini Pro into production. The observed category-field failure does not distinguish vision output from parser or label rejection, and the third receipt is not fully code-attested.
+```
+
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

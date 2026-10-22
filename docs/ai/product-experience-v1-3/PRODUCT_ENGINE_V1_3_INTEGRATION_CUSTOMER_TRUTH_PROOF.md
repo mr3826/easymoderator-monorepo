@@ -1,6 +1,6 @@
 # EasyModerator Product Engine V1.3 — Integration & Customer Truth Proof
 
-Generated: 2026-10-22T15:18:07.003Z
+Generated: 2026-10-22T16:26:23.818Z
 
 ## A. Executive verdict
 
@@ -92,11 +92,13 @@ Disposition: SEND; correct answer slots: 1/1.
 
 ## E. Gemini
 
-Credential status: AUTHENTICATED; the process-scoped value is not recorded. Model: gemini-3.1-flash-lite. Provider-reported traffic across matched arms: 158 text and 6 vision calls. Request attempts across matched arms: 158 text and 6 vision. Candidate run ledger: 109 request attempts, 109 provider usage records, 0 rejected reservations. Estimated matched-pair spend from priced usage: $0.03366275; provider invoice: NOT_AVAILABLE. Candidate route coverage: 200/200 executed, 0 not run. Candidate quality gate: PASS; 18/18 fact slots and 15/15 answerable turns verified; context resolution failures 0 across 13/13 fully executed conversation chains (0 not evaluable); cross-domain safety 4 safe, 0 unsafe across 4/4 executed turns (0 not run). Runner provenance: PASS; paid/current runner hashes 6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d/6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d. Candidate unpriced provider calls: 0; all recorded candidate provider usage was priced.
+Credential status: AUTHENTICATED; the process-scoped value is not recorded. Model: gemini-3.1-flash-lite. Provider-reported traffic across matched arms: 158 text and 6 vision calls. Request attempts across matched arms: 158 text and 6 vision. Candidate run ledger: 109 request attempts, 109 provider usage records, 0 rejected reservations. Estimated matched-pair spend from priced usage: $0.03366275; provider invoice: NOT_AVAILABLE. Candidate route coverage: 200/200 executed, 0 not run. Candidate quality gate: PASS; 18/18 fact slots and 15/15 answerable turns verified; context resolution failures 0 across 13/13 fully executed conversation chains (0 not evaluable); cross-domain safety 4 safe, 0 unsafe across 4/4 executed turns (0 not run). Runner provenance: DIFFERENT; paid/current runner hashes 6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d/3ab4c07496f016c1212b1247df2f6b2879a4a838b2a1f5e543d8226ce0e89873. Candidate unpriced provider calls: 0; all recorded candidate provider usage was priced.
 
 Candidate false refusals: 0 slots across 15/15 evaluated/expected answerable turns (0 not evaluable).
 
 Observed campaign activity remains in the cumulative ledger: 164/256 requests, 6/12 vision requests, 164 provider-reported calls and 0 unpriced or pending request(s). Estimated priced usage: $0.03366275; worst-case reserved: $0.29095925 of $2.00 ceiling. Invoice unavailable.
+
+Separate evaluation-only Pro diagnostics: 9 requests; $0.075174 token-priced estimate; $0.406026 worst-case reservation. They are outside the matched Gemini Lite comparison and do not change the production model.
 
 Provider estimates use reported token usage and a pinned local rate calculation. They are not billing records. The credential is process-scoped and is not copied into artifacts.
 
@@ -104,17 +106,19 @@ Provider estimates use reported token usage and a pinned local rate calculation.
 
 Photo acceptance verdict: **FAIL**. The completed paid matched run evaluated 3 unique licensed public photos. Category matches: 0/3; visible-color matches: 3/3; catalog identity: NOT SCORED. These are a small public-photo probe, not customer-upload accuracy evidence.
 
+### Supplementary Gemini Pro photo diagnostics — evaluation only
+
+Three separate Pro-only campaigns made 9 vision requests. Combined token-priced estimate: $0.075174; combined worst-case reservation: $0.406026 under $0.82 in per-campaign ceilings. The runs repeat the same three licensed public photos; the 9 observations are not 9 independent images. Invoice: NOT_AVAILABLE.
+
+| Run | Thinking | Output cap | Category | Color | Finish reasons | Estimate / reserved (campaign cap) | Provenance |
+|---|---|---:|---:|---:|---|---|---|
+| a91d80e4-4074-4aa9-bf15-df176b3a9015 | PROVIDER_DEFAULT_NOT_CAPTURED | NOT_CAPTURED | 0/3 | 0/3 | NOT_RECORDED | $0.017446 / $0.116766 ($0.22) | runner hash recorded |
+| 74d2f23b-0771-45b6-ac98-19a2cec447f2 | PROVIDER_DEFAULT_NOT_CAPTURED | 1024 | 0/3 | 0/3 | NOT_RECORDED | $0.045310 / $0.144630 ($0.30) | runner hash recorded |
+| 19628fd5-4fc1-41e6-a325-f17e34c7fcd5 | low | 1024 | 0/3 | 3/3 | STOP | $0.012418 / $0.144630 ($0.30) | PARTIAL; runner hash omitted diagnostic transport |
+
+The low-thinking run 19628fd5-4fc1-41e6-a325-f17e34c7fcd5 returned category labels shirt, null, null and colors yellow, beige, gold (93/115/111 candidate tokens); every case finished with STOP. It matched category on 0/3 and visible color on 3/3; unverified material fields populated: 0. The receipt's labelPresenceProxy means at least one safe field reached the scorer; it is not full JSON-schema validation. Because raw provider text was not retained, this confirms a repeated category-field failure but cannot distinguish model output from parser or safe-label rejection. The recorded runner hash omitted the dedicated transport file. This receipt is therefore not fully code-attested; the manifest correction applies to future runs and does not retroactively bind this provider request.
+
 No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. The detailed provenance and per-photo observations are in the machine-readable proof.
-
-### Supplementary Gemini Pro diagnostic — 2026-10-22
-
-I ran a separate photo-only diagnostic with `gemini-3.1-pro-preview` against the same three checksum-verified fixtures, production extraction route, prompt, and scorer. All 3 vision requests executed with reported token usage, but the extraction path produced **0/3 usable categories and 0/3 visible colors**. The receipt's `schemaValid` field is derived from whether either label reached the scorer; `false` means neither label was available, and is not an independent JSON-schema validation result. The route allowed 250 output tokens per request. The usage receipt records 236–240 thinking tokens and only 6–10 candidate tokens per request; Gemini Pro's thinking tokens count toward the output limit. This makes the probe inconclusive about recognition quality because the small candidate-output allowance may have truncated the structured answer. Raw provider text and finish-reason metadata were not retained, so the receipt cannot establish whether each response was truncated, unparsable, or a structured all-null result. The key and raw model response were not written to evidence.
-
-The Pro price snapshot was $2 input and $12 output per million tokens below 200k input tokens, from Google's [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing); the [Gemini 3.1 Pro model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview) lists image input support. Estimated spend was **$0.017446**; the 3-request, 3-vision-request campaign reserved **$0.116766** worst-case under its $0.22 cap. These are token-based estimates, not an invoice. Receipt: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\runs\a91d80e4-4074-4aa9-bf15-df176b3a9015.pro-photo.json`; ledger: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\campaigns\v13-gemini-pro-photo-probe-20261022-01\budget-ledger.json`.
-
-The receipt pins its evaluation runner hash to `9e6a238dce90e1aac4ffeb31c8035cb0b1e9fb0c666455a0840d1b38cfc7d732`. Redis test isolation, prototype-safe model lookup, and unique ledger-stage hardening were added afterward. Those follow-up edits are confined to the evaluation harness; the frozen backend extraction code, route, and prompt used by the paid calls did not change.
-
-Since Pro returned no usable labels under this output limit, no independent holdout call or production model change followed. The photo gate remains **FAIL**, overall automated QA remains **FAIL**, and integration readiness remains **NO**. This diagnostic changed only the isolated evaluation harness. The follow-up harness now assigns each probe invocation a unique campaign-ledger stage so repeated local call IDs reserve separately. Adding this diagnostic to the prior deduplicated campaigns brings estimated priced usage to **$0.28688576** and worst-case V1.3 campaign reservations to **$2.448875011**. Including the separately recorded V1.2 conservative task-series exposure of **$2.33973275**, the combined reserve is **$4.788607761**, leaving **$5.211392239** against the shared $10 authorization if V1.2 activity is included. Any future Pro diagnostic needs a separately authorized cap with enough output allowance and non-content finish-reason capture before it can say more about recognition quality.
 
 ## G. Backend integration
 
@@ -132,12 +136,14 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 - Security tests: **PASS**. Egress guard: PASS; blocked non-loopback attempts: 0.
 - Tenant violations: 0; unscoped catalog reads: 0.
-- Pre-proof artifact privacy scan: **PASS** at 2026-10-22T15:12:11.704378Z. The supplemental Pro receipt, campaign ledger, budget snapshot, and updated proof were included in a final scan after the follow-up review; results and manifest are `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\security\artifact-privacy-scan.json` and `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\security\artifact-checksum-manifest.txt`.
+- Pre-proof artifact privacy scan: **PASS** at 2026-10-22T15:55:52.221306Z. The final scan report and checksum manifest are generated after this proof; inspect their timestamps and entries to confirm coverage. The proof Markdown is at `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\reports\product-engine-v1.3-proof.md`, and the machine proof is at `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\product-engine-v1.3-proof.json`.
 - No credential values are stored in the proof package.
 
 ## J. Cost and merchant economics
 
 Estimated matched-pair provider cost from priced usage: $0.03366275. Candidate unpriced provider calls: 0. Rejected campaign ledger attempts: 0 (blocked before provider usage). All recorded provider usage was priced. Candidate cost per verified product-answer turn: $0.00146383; per verified fact slot: $0.00121986. Deterministic source replay router p50/p95: 1.014 ms / 3.53 ms. Paid candidate route p50/p95: 4292.737 ms / 5388.844 ms; baseline: 1.497 ms / 5111.596 ms. Paid candidate provider p50/p95: 1176 ms / 2192 ms (baseline 1195 ms / 2276 ms). These route timings exclude webhook, queue, database and customer-facing network latency.
+
+Deduplicated latest ledgers across 11 V1.3 campaigns record 1307 requests, 67 vision requests, 5 unknown-usage calls, $0.34461376 priced-token estimate and $2.738135011 reserved exposure. The sum of their individual ceilings is $16.82; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $2.33973275 conservative task-series exposure, for combined reserve $5.077867761 and $4.922132239 remaining against the $10.00 authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: `_wt-verified-commerce-v1-2/docs/ai/product-experience-v1-2/verified-commerce-proof.json`; V1.3 ledger file hashes and paths are in the machine proof.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -150,16 +156,16 @@ No merchant time saved, adoption, order outcomes, conversion or ROI data exists 
 
 ## L. Independent verification
 
-Verdict: **PASS**; reviewer: Independent Verification Agent (read-only); reviewed code commit: 38b4be066b508ee25f7a43a11707139c5fc0f659; reviewed runner hash: 6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d.
+Verdict: **STALE**; reviewer: Independent Verification Agent (read-only); reviewed code commit: 38b4be066b508ee25f7a43a11707139c5fc0f659; reviewed runner hash: 6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d.
 
-The independent reviewer inspected frozen product code SHA `38b4be066b508ee25f7a43a11707139c5fc0f659`, recomputed backend and runner hashes, audited the paid and deterministic comparisons plus integration, security, Playwright and privacy artifacts, and reran five focused non-paid suites (5/5 suites, 175/175 tests on Node v20.20.2). The reviewer did not repeat paid Gemini calls or the full integration and browser suites; those results remain supported by their recorded receipts. The original 147-entry manifest was independently recomputed with no invalid, duplicate, missing, mismatched, out-of-scope or unlisted entries. After that review, only the isolated evaluation harness and its documentation changed for the supplementary Pro diagnostic; no production backend source changed. A follow-up read-only architecture review found and documented the Pro output-token limitation and the ledger-stage collision risk. The harness now uses unique per-invocation stages; a regression test proves repeated local call IDs accrue separately. The reviewer confirmed these fixes and the report wording with no remaining blockers. Post-review local checks passed: four offline harness suites (71/71 tests) and the focused non-paid catalog-restoration replay check. The refreshed final artifact scan and manifest include the supplemental diagnostic evidence.
+The separate read-only reviewer must inspect the final code SHA and reproduce critical comparisons, integration, security, privacy and browser evidence. Any code change after that review invalidates its verdict.
 
 ## M. Remaining decisions
 
 | Task | Classification | Evidence/status |
 |---|---|---|
-| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: PASS; paid Gemini text quality: PASS; photo quality: FAIL and the supplementary Pro probe is inconclusive because its output budget was consumed by thinking tokens. |
-| Repeat final independent review after any correction | Required before integration | Frozen product-code review: PASS; read-only follow-up review of the supplementary harness fixes: PASS, no remaining blockers. |
+| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: PASS; paid Gemini quality: PASS; vision results are listed above. |
+| Repeat final independent review after any correction | Required before integration | Independent verification: STALE. |
 | Live Meta, production data and release authorization | Required before production release | Not authorized and not tested in this milestone. |
 | Merchant adoption, time-saved, conversion and ROI study | Optional future measurement | Not available from synthetic runs. |
 
@@ -240,7 +246,26 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022
 | `REAL_OBSERVED_PRICED_USAGE_ESTIMATE_USD` | NOT_APPLICABLE |
 | `REAL_GEMINI_STATUS` | PASS |
 | `REAL_GEMINI_QUALITY_VERDICT` | PASS |
-| `REAL_GEMINI_RUNNER_PROVENANCE` | PASS |
+| `REAL_GEMINI_RUNNER_PROVENANCE` | DIFFERENT |
+| `SUPPLEMENTARY_GEMINI_PRO_DIAGNOSTIC_RUNS` | 3 |
+| `SUPPLEMENTARY_GEMINI_PRO_REQUESTS` | 9 |
+| `SUPPLEMENTARY_GEMINI_PRO_VISION_REQUESTS` | 9 |
+| `SUPPLEMENTARY_GEMINI_PRO_ESTIMATED_COST_USD` | 0.075174 |
+| `SUPPLEMENTARY_GEMINI_PRO_WORST_CASE_RESERVED_USD` | 0.406026 |
+| `SUPPLEMENTARY_GEMINI_PRO_CATEGORY_MATCH_OBSERVATIONS` | 0 |
+| `SUPPLEMENTARY_GEMINI_PRO_COLOR_MATCH_OBSERVATIONS` | 3 |
+| `V13_DISTINCT_CAMPAIGN_LEDGER_COUNT` | 11 |
+| `V13_AGGREGATE_CAMPAIGN_REQUESTS` | 1307 |
+| `V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS` | 67 |
+| `V13_AGGREGATE_UNKNOWN_USAGE_REQUESTS` | 5 |
+| `V13_AGGREGATE_ESTIMATED_COST_USD` | 0.34461376 |
+| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 2.7381350109999993 |
+| `V13_SUM_OF_CAMPAIGN_CEILINGS_USD` | 16.82 |
+| `V12_CONSERVATIVE_TASK_SERIES_EXPOSURE_USD` | 2.33973275 |
+| `AUTHORIZED_AGGREGATE_BUDGET_USD` | 10 |
+| `COMBINED_RESERVED_EXPOSURE_USD` | 5.077867760999999 |
+| `REMAINING_AGGREGATE_AUTHORIZATION_USD` | 4.922132239000001 |
+| `AGGREGATE_BUDGET_RECONCILIATION` | WITHIN_AUTHORIZATION_BY_MANUAL_RECONCILIATION |
 | `PROVIDER_BUDGET_EXHAUSTED` | NO |
 | `POSTGRES_INTEGRATION` | PASS |
 | `REDIS_INTEGRATION` | PASS |
@@ -252,7 +277,7 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261022
 | `PLAYWRIGHT_E2E` | PASS |
 | `SECURITY_TESTS` | PASS |
 | `PRIVACY_SCAN` | PASS |
-| `INDEPENDENT_VERIFICATION` | PASS |
+| `INDEPENDENT_VERIFICATION` | STALE |
 | `BASELINE_COMPARISON_VALID` | YES |
 | `DETERMINISTIC_SOURCE_TRUTH_VERDICT` | PASS |
 | `CUSTOMER_TRUTH_VERDICT` | PASS |

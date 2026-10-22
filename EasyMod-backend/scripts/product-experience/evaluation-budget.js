@@ -59,9 +59,17 @@ const validateGeminiRequest = (request, reservation) => {
         || Object.prototype.hasOwnProperty.call(body, 'cachedContent')) return null;
     const generation = body.generationConfig;
     if (!generation || typeof generation !== 'object' || Array.isArray(generation)
-        || Object.keys(generation).some(key => !['maxOutputTokens', 'temperature'].includes(key))
+        || Object.keys(generation).some(key => !['maxOutputTokens', 'temperature', 'thinkingConfig'].includes(key))
         || generation.maxOutputTokens !== reservation.maxOutputTokens
         || !Number.isFinite(generation.temperature) || generation.temperature < 0 || generation.temperature > 2) return null;
+    const thinkingConfig = generation.thinkingConfig;
+    if (reservation.thinkingLevel === null) {
+        if (thinkingConfig !== undefined) return null;
+    } else if (reservation.model !== GEMINI_PRO_PRICE_SNAPSHOT.model
+        || reservation.thinkingLevel !== 'low'
+        || !thinkingConfig || typeof thinkingConfig !== 'object' || Array.isArray(thinkingConfig)
+        || Object.keys(thinkingConfig).length !== 1
+        || thinkingConfig.thinkingLevel !== 'low') return null;
 
     let inputBound = 0;
     let imageCount = 0;
@@ -181,13 +189,20 @@ class BudgetError extends Error {
 const normalizeConfig = config => {
     if (!config || typeof config !== 'object' || Array.isArray(config)) throw new BudgetError('INVALID_CONFIG');
     const hasInjectedRates = Object.prototype.hasOwnProperty.call(config, 'rates');
+    const hasThinkingLevel = Object.prototype.hasOwnProperty.call(config, 'thinkingLevel');
     if (!hasInjectedRates && 'rates' in config) throw new BudgetError('INVALID_CONFIG');
-    const allowed = [...Object.keys(DEFAULTS), 'ceilingUsd', 'rates'];
+    if (!hasThinkingLevel && 'thinkingLevel' in config) throw new BudgetError('INVALID_CONFIG');
+    const allowed = [...Object.keys(DEFAULTS), 'ceilingUsd', 'rates', 'thinkingLevel'];
     if (Object.keys(config).some(key => !allowed.includes(key))) throw new BudgetError('INVALID_CONFIG');
     const limits = { ...DEFAULTS, ...config };
     const modelPricing = getGeminiPriceSnapshot(limits.model);
     if (!Number.isFinite(limits.ceilingUsd) || limits.ceilingUsd <= 0 || limits.ceilingUsd > HARD_CAPS.ceilingUsd
         || Math.floor(limits.ceilingUsd * USD_UNITS) < 1 || !modelPricing) {
+        throw new BudgetError('INVALID_CONFIG');
+    }
+    const thinkingLevel = hasThinkingLevel ? config.thinkingLevel : null;
+    if (hasThinkingLevel
+        && (modelPricing.model !== GEMINI_PRO_PRICE_SNAPSHOT.model || thinkingLevel !== 'low')) {
         throw new BudgetError('INVALID_CONFIG');
     }
     for (const key of Object.keys(DEFAULTS).filter(key => key !== 'model')) {
@@ -201,7 +216,7 @@ const normalizeConfig = config => {
     return Object.freeze({ ...limits, modelPricing, rates: Object.freeze({
         inputUsdPerMillion: rates.inputUsdPerMillion,
         outputUsdPerMillion: rates.outputUsdPerMillion,
-    }) });
+    }), thinkingLevel });
 };
 
 // Missing or malformed usage never frees a reservation. Cached prompt tokens are
@@ -291,7 +306,10 @@ const createEvaluationBudget = (config, hooks = {}) => {
         visionRequestCount: visionRequests,
         activeRequests,
         halted,
-        limits: Object.fromEntries(Object.keys(DEFAULTS).filter(key => key !== 'model').map(key => [key, limits[key]])),
+        limits: {
+            ...Object.fromEntries(Object.keys(DEFAULTS).filter(key => key !== 'model').map(key => [key, limits[key]])),
+            thinkingLevel: limits.thinkingLevel,
+        },
         blockedRequests: { ...blockedRequests },
         calls: calls.map(({ reservedUnits, chargedUnits, actualUnits, ...safe }) => ({
             ...safe,
@@ -333,6 +351,7 @@ const createEvaluationBudget = (config, hooks = {}) => {
         const row = {
             callId: `call-${calls.length + 1}`,
             model,
+            thinkingLevel: limits.thinkingLevel,
             vision,
             retrySequence: operation.attempts,
             inputTokenUpperBound,
@@ -357,7 +376,7 @@ const createEvaluationBudget = (config, hooks = {}) => {
         operations.set(operationId, operation);
         const abort = new AbortController();
         const context = Object.freeze({
-            reservationId: row.callId, model, inputTokenUpperBound, maxOutputTokens,
+            reservationId: row.callId, model, thinkingLevel: limits.thinkingLevel, inputTokenUpperBound, maxOutputTokens,
             timeoutMs, retrySequence: row.retrySequence, signal: abort.signal,
             authorizeGeminiRequest: officialPricing ? authorizeGeminiEvaluationRequest : () => false,
         });
@@ -373,7 +392,7 @@ const createEvaluationBudget = (config, hooks = {}) => {
             throw new BudgetError('CAMPAIGN_LEDGER_REJECTED');
         }
         const pending = Promise.resolve().then(() => geminiReservationContext.run({
-            model, inputTokenUpperBound, maxOutputTokens, vision,
+            model, thinkingLevel: limits.thinkingLevel, inputTokenUpperBound, maxOutputTokens, vision,
             permit: null, permitIssued: false, permitConsumed: false,
         }, () => transport(context))).then(
             body => { release(); return body; },
