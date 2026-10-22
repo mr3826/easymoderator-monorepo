@@ -775,7 +775,7 @@ describe('META-E2E-007 — an earlier ungrounded assistant turn', () => {
 
         const result = await harness.deliver({
             text: 'are you sure?',
-            candidate: 'Ji sure, ager bola moto ৳2200 e chiffon saree ta ache.',
+            candidate: 'Ji sure, ager bola moto ৳2200.',
         });
 
         expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
