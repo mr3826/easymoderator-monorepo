@@ -555,6 +555,7 @@ describe('V1.3 proof Markdown rendering', () => {
         const markdown = renderMarkdown(costProof, status, [], {
             realGemini: {
                 model: 'gemini-3.1-flash-lite',
+                credentialStatus: 'AUTHENTICATED',
                 providerTextCallsBothEngines: 7,
                 providerVisionCallsBothEngines: 3,
                 textRequestAttemptsBothEngines: 8,
@@ -581,6 +582,7 @@ describe('V1.3 proof Markdown rendering', () => {
         });
 
         expect(markdown).toContain('Estimated matched-pair provider cost from priced usage: $0.12345678.');
+        expect(markdown).toContain('Credential status: AUTHENTICATED; the process-scoped value is not recorded.');
         expect(markdown).toContain('Provider-reported traffic across matched arms: 7 text and 3 vision calls.');
         expect(markdown).toContain('Request attempts across matched arms: 8 text and 3 vision.');
         expect(markdown).toContain('Candidate unpriced provider calls: 0.');

@@ -58,7 +58,7 @@ The same outbound gate protects turns with `NONE` product evidence: generated su
 
 The safe handoff scorer accepts explicit missing-policy statements such as “I do not have information about the exchange policy,” provided any answerable product facts are correct. Unsupported policy claims still fail the handoff score.
 
-`AUTOMATED_QA_VERDICT=PASS` means the recorded local gates passed. `INTEGRATION_READY=YES` additionally requires matching paid-run runner provenance, all three photo category/color checks, and the independent review. The Markdown proof keeps deterministic in-process timing separate from paid route/provider timing and reports paid baseline outcomes, including cost and latency regressions. It includes only the replay's already-redacted customer examples and re-scrubs email and Bangladesh phone patterns before rendering. Neither status authorizes a production release.
+`AUTOMATED_QA_VERDICT=PASS` means the recorded local gates passed. `INTEGRATION_READY=YES` additionally requires matching paid-run runner provenance, all three photo category/color checks, and the independent review. The Markdown proof keeps deterministic in-process timing separate from paid route/provider timing and reports paid baseline outcomes, including cost and latency regressions. It includes only the replay's already-redacted customer examples and re-scrubs email and Bangladesh phone patterns before rendering. The artifact scanner permits exact source-text overlap only on the consolidated proof's labeled redacted message/reply lines and still rejects any profile name, address, email, phone or contact match there; exact matches elsewhere remain a failure. Neither status authorizes a production release.
 
 ## Artifacts
 

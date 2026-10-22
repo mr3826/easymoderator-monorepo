@@ -67,6 +67,46 @@ class LiteralMatcherTests(unittest.TestCase):
             None,
         ), (1, 0))
 
+    def test_only_safe_labeled_proof_example_lines_may_match_source_text(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            artifact_root = Path(temporary_directory)
+            proof_path = artifact_root / "reports" / "product-engine-v1.3-proof.md"
+            proof_path.parent.mkdir(parents=True)
+            exact_source = "Long source question about a kurta size and current price"
+            matcher = SCANNER.LiteralMatcher({exact_source})
+            contacts = SCANNER.LiteralMatcher({"01712345678"})
+            self.assertTrue(SCANNER.is_safe_redacted_proof_example_line(
+                proof_path, artifact_root, f"Customer message (redacted): {exact_source}", matcher, contacts, None
+            ))
+            self.assertTrue(SCANNER.is_safe_redacted_proof_example_line(
+                proof_path, artifact_root, f"Engine response (redacted): {exact_source}", matcher, contacts, None
+            ))
+            self.assertFalse(SCANNER.is_safe_redacted_proof_example_line(
+                artifact_root / "other.md", artifact_root, f"Customer message (redacted): {exact_source}", matcher, contacts, None
+            ))
+            self.assertFalse(SCANNER.is_safe_redacted_proof_example_line(
+                proof_path, artifact_root, f"Customer message: {exact_source}", matcher, contacts, None
+            ))
+
+    def test_redacted_proof_example_allowlist_rejects_contacts_addresses_and_profile_names(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            artifact_root = Path(temporary_directory)
+            proof_path = artifact_root / "reports" / "product-engine-v1.3-proof.md"
+            matcher = SCANNER.LiteralMatcher({"Long source question about product availability"})
+            contacts = SCANNER.LiteralMatcher({"01712345678"})
+            profile_pattern = SCANNER.re.compile(r"(?<!\w)Ayesha(?!\w)", SCANNER.re.IGNORECASE)
+            unsafe_values = [
+                "Call 01712345678 before visiting",
+                "Email buyer@example.test for stock",
+                "Delivery to Road 12, Dhanmondi",
+                "Ayesha asks about delivery",
+            ]
+            for value in unsafe_values:
+                with self.subTest(value_type=value.split()[0]):
+                    self.assertFalse(SCANNER.is_safe_redacted_proof_example_line(
+                        proof_path, artifact_root, f"Customer message (redacted): {value}", matcher, contacts, profile_pattern
+                    ))
+
     def test_sensitive_text_scan_ignores_static_code_but_keeps_html_text(self):
         self.assertEqual(SCANNER.sensitive_text_for_scan(Path("bundle.js"), "const phone = /01712345678/;"), "")
         self.assertEqual(SCANNER.sensitive_text_for_scan(

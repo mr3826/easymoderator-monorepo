@@ -104,6 +104,26 @@ INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only after final ca
 FINAL_VERDICT: Implement the prompt cue and evidence/report repairs; retain FAIL if the fresh measured public-photo categories remain below 3/3. This result does not establish customer-photo accuracy or merchant ROI.
 ```
 
+## Follow-up decision — second paid photo-classification iteration
+
+```text
+DECISION_ID: V13-PHOTO-TAXONOMY-CUE-02
+OBSERVED_PROBLEM: The fresh matched Gemini run after the first generic length cue still classified 0/3 public kurta/tunic fixtures correctly and matched visible color on 3/3. The paid text evaluation passed at 18/18 fact slots and 15/15 answerable turns, but that does not resolve the photo failure.
+MERCHANT_IMPACT: Mislabeling a long South Asian tunic as a shirt or leaving a clear garment category empty can suppress relevant catalog retrieval and force avoidable clarification.
+CUSTOMER_IMPACT: Customers need an honest category description and safe no-match behavior; an incorrect label must not create a catalog identity.
+CURRENT_IMPLEMENTATION: Extraction mentions Bangladesh garment names and says a tunic below the hips is a kurta/panjabi, but the model returned one generic shirt label and two empty categories on the paid photo probe.
+OPTIONS_CONSIDERED: Accept the text score and close the vision gate; relabel outcomes in the evaluator; add photo-specific output overrides; state a general visible-length taxonomy with a precedence rule for long South Asian tunics and retain null when the hem is cropped.
+RECOMMENDED_CHANGE: Strengthen only the extraction taxonomy: a South Asian tunic visibly extending below the hip toward the upper thigh or knee is `kurta/panjabi` even with shirt-style construction; use `shirt` only for a clearly short silhouette; use null when framing hides the distinguishing length. Preserve the full matched comparison and hard 3/3 photo gate.
+ALTERNATIVES_REJECTED: Do not edit expected labels, infer a category from catalog retrieval, assume a shirt-like collar proves shirt identity, or claim customer-image accuracy from three public photos.
+SECURITY_IMPACT: Prompt-only guidance; no change to catalog authority, tenant boundaries, reply grounding, media authorization, or commerce mutation.
+COST_IMPACT: Local prompt tests are free. The final paid matched pair runs in a fresh $2 campaign; combined campaign reservations remain below the authorized $10 total.
+FUTURE_COMPATIBILITY: No API or DTO changes. `productCatalogIdentityScored` stays false until these fixture photos map to verified catalog identities.
+TESTABLE_ACCEPTANCE_CRITERIA: Prompt regression asserts the visible-length taxonomy, precedence over generic shirt construction, and conservative null rule. A fresh paid matched pair reports all three category and color results; a miss remains `AUTOMATED_QA_VERDICT=FAIL`.
+IMPLEMENTATION_OWNER: Lead orchestrator / AI Product Engineer.
+INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only after candidate freeze.
+FINAL_VERDICT: Test the stronger generic taxonomy cue in a fresh bounded campaign; if categories remain below 3/3, report the unresolved failure without relaxing the gate.
+```
+
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

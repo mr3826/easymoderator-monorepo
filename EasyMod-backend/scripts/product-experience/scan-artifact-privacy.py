@@ -47,6 +47,11 @@ REDACTED_SOURCE_TEXT_KEYS = {"inputredacted", "customermessageredacted"}
 RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 ARCHIVE_TEXT_EXTENSIONS = {".txt", ".json", ".html", ".trace", ".network", ".stacks", ".log", ".md", ".css", ".js"}
 TEXT_EXTENSIONS = ARCHIVE_TEXT_EXTENSIONS - {".json"}
+REDACTED_PROOF_RELATIVE_PATH = Path("reports") / "product-engine-v1.3-proof.md"
+REDACTED_PROOF_LINE_PREFIXES = (
+    "Customer message (redacted): ",
+    "Engine response (redacted): ",
+)
 ARCHIVE_SCAN_CHUNK_BYTES = 1024 * 1024
 ARCHIVE_SENSITIVE_OVERLAP_CHARS = 4096
 ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
@@ -296,6 +301,28 @@ def count_sensitive_pattern_matches(text: str, profile_pattern: re.Pattern[str] 
     return matches
 
 
+def is_safe_redacted_proof_example_line(
+    path: Path,
+    artifacts_root: Path,
+    line: str,
+    exact_matcher: LiteralMatcher,
+    source_contact_matcher: LiteralMatcher,
+    profile_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Allow source-text overlap only in the labeled, privacy-checked proof examples."""
+    try:
+        relative_path = path.resolve().relative_to(artifacts_root.resolve())
+    except (OSError, ValueError):
+        return False
+    if relative_path != REDACTED_PROOF_RELATIVE_PATH:
+        return False
+    if not line.startswith(REDACTED_PROOF_LINE_PREFIXES) or not exact_matcher.contains(line):
+        return False
+    if count_sensitive_pattern_matches(line, profile_pattern) > 0:
+        return False
+    return not contains_source_contact(line, source_contact_matcher)
+
+
 def collect_sensitive_pattern_matches(value: object, profile_pattern: re.Pattern[str] | None) -> int:
     if isinstance(value, dict):
         matches = 0
@@ -445,6 +472,7 @@ def main() -> int:
     text_parse_errors = 0
     text_source_matches = 0
     redacted_transcript_source_matches = 0
+    redacted_proof_example_source_matches = 0
     text_sensitive_pattern_matches = 0
     text_source_contact_matches = 0
     for path in text_files:
@@ -466,6 +494,10 @@ def main() -> int:
             )
             if is_redacted_customer_line and not count_sensitive_pattern_matches(line, profile_pattern):
                 redacted_transcript_source_matches += 1
+            elif is_safe_redacted_proof_example_line(
+                path, artifacts_root, line, exact_matcher, source_contact_matcher, profile_pattern
+            ):
+                redacted_proof_example_source_matches += 1
             else:
                 text_source_matches += 1
 
@@ -526,6 +558,7 @@ def main() -> int:
         "textParseErrors": text_parse_errors,
         "exactSourceTextMatchesInTextArtifacts": text_source_matches,
         "exactSourceTextMatchesInRedactedTranscriptCustomerLines": redacted_transcript_source_matches,
+        "exactSourceTextMatchesInRedactedProofExampleLines": redacted_proof_example_source_matches,
         "textHeuristicSensitivePatternMatches": text_sensitive_pattern_matches,
         "sourceContactMatchesInTextArtifacts": text_source_contact_matches,
         "playwrightZipArchives": len(zip_files),
