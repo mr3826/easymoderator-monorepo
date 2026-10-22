@@ -168,8 +168,12 @@ const requiredEnv = () => {
     for (const key of [
         'EM-GEMINI-KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'OPENAI_API_KEY',
         'ANTHROPIC_API_KEY', 'EASYMOD_LIVE_GEMINI_EGRESS', 'LAB_REAL_GEMINI_RUN_ID',
+        'LAB_GEMINI_PRO_PHOTO_PROBE', 'LAB_PRO_PHOTO_CAMPAIGN_ID', 'LAB_PRO_PHOTO_RESULT_PATH',
+        'LAB_GEMINI_LITE_PHOTO_DIAGNOSTIC', 'LAB_GEMINI_LITE_PHOTO_CAMPAIGN_ID',
+        'LAB_GEMINI_LITE_PHOTO_RESULT_PATH', 'LAB_RUN_GENUINE_PHOTO_EVAL', 'LAB_RUN_SYNTHETIC_VISION',
     ]) delete env[key];
     env.NODE_ENV = 'test';
+    env.LAB_RUN_MODE = 'offline';
     env.EASYMOD_LIVE_GEMINI_EGRESS = '0';
     return env;
 };
@@ -402,4 +406,4 @@ if (require.main === module) main().catch(() => {
     process.exitCode = 1;
 });
 
-module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, runCapture };
+module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, requiredEnv, runCapture };

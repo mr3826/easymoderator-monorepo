@@ -10,7 +10,7 @@ Requirements are Node.js 20, Python 3, installed backend dependencies, and a wor
 npm run verify:product-v1.3
 ```
 
-This is the offline default. It removes provider credentials from child processes and blocks live Gemini egress. It prepares source and held-out oracles, runs the isolated PostgreSQL/Redis/worker/webhook integration, runs the backend security suite, compares the V1.2 baseline and V1.3 candidate on both corpora, executes Test Lab Playwright checks, scans artifacts for privacy issues, and generates the proof package.
+This is the offline default. It removes provider credentials and all paid-photo opt-ins from child processes, forces offline Test Lab mode, and blocks live Gemini egress. It prepares source and held-out oracles, runs the isolated PostgreSQL/Redis/worker/webhook integration, runs the backend security suite, compares the V1.2 baseline and V1.3 candidate on both corpora, executes Test Lab Playwright checks, scans artifacts for privacy issues, and generates the proof package.
 
 Real Gemini evaluation is opt-in. The exact process that launches the command must already contain `EM-GEMINI-KEY`:
 

@@ -3,8 +3,35 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, runCapture } = require('./verify-product-v1-3');
+const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, requiredEnv, runCapture } = require('./verify-product-v1-3');
 const { run: runIntegrationCommand } = require('./run-integration');
+
+describe('offline verifier environment isolation', () => {
+    test('removes credentials and every provider opt-in from default child processes', () => {
+        const optIns = [
+            'EM-GEMINI-KEY', 'LAB_RUN_MODE', 'LAB_GEMINI_PRO_PHOTO_PROBE', 'LAB_PRO_PHOTO_CAMPAIGN_ID',
+            'LAB_PRO_PHOTO_RESULT_PATH', 'LAB_GEMINI_LITE_PHOTO_DIAGNOSTIC',
+            'LAB_GEMINI_LITE_PHOTO_CAMPAIGN_ID', 'LAB_GEMINI_LITE_PHOTO_RESULT_PATH',
+            'LAB_RUN_GENUINE_PHOTO_EVAL', 'LAB_RUN_SYNTHETIC_VISION', 'EASYMOD_LIVE_GEMINI_EGRESS',
+        ];
+        const previous = new Map(optIns.map(key => [key, process.env[key]]));
+        try {
+            for (const key of optIns) process.env[key] = 'test-only-value';
+            const childEnv = requiredEnv();
+
+            expect(childEnv.LAB_RUN_MODE).toBe('offline');
+            expect(childEnv.EASYMOD_LIVE_GEMINI_EGRESS).toBe('0');
+            for (const key of optIns.filter(key => key !== 'LAB_RUN_MODE' && key !== 'EASYMOD_LIVE_GEMINI_EGRESS')) {
+                expect(childEnv[key]).toBeUndefined();
+            }
+        } finally {
+            for (const [key, value] of previous) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+        }
+    });
+});
 
 describe('paid candidate run discovery for browser QA', () => {
     let root;
