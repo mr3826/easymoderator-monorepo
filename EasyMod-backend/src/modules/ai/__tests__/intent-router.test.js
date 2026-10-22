@@ -993,6 +993,8 @@ describe('D — customer photo → product matching', () => {
         await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
 
         expect(imagePromptAndReply[0]).toMatch(/never infer fabric composition/i);
+        expect(imagePromptAndReply[0]).toMatch(/tunic-length.*shirt-length/i);
+        expect(imagePromptAndReply[0]).toMatch(/do not label a tunic-length kurta as a shirt only because it has a collar or placket/i);
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(expect.objectContaining({
             category: 'saree', color: 'red', material: null, query: 'saree red', tags: ['saree', 'red'],
         }));

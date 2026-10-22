@@ -142,7 +142,10 @@ const runArtifactFor = (entry, engineName) => {
 const metric = value => Number.isFinite(value) ? value : 'NOT_MEASURED';
 const percent = (numerator, denominator) => denominator > 0 ? `${(100 * numerator / denominator).toFixed(1)}%` : 'NOT_MEASURED';
 const privacyScanPassed = report => report?.privacyGateStatus === 'PASS';
-const safeText = (value, maxLength = 220) => String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+const safeText = (value, maxLength = 220) => String(value || '')
+    .replace(/[\w.+-]+@[\w.-]+\.[A-Z]{2,}/gi, '[EMAIL]')
+    .replace(/(?<!\d)(?:\+?880[\s().-]*)?0?1[3-9](?:[\s().-]*\d){8}(?!\d)/gu, '[PHONE]')
+    .replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 const passState = value => value === true ? 'PASS' : value === false ? 'FAIL' : 'NOT_RUN';
 const verificationStepState = step => !step ? 'NOT_RUN'
     : step.timedOut ? 'TIMED_OUT'
@@ -157,6 +160,52 @@ const assessPlaywrightExecution = report => {
         && Array.isArray(results) && results.length > 0
         && results.every(result => result.duration === '0ms' || result.duration == null);
     return noJourneyStarted ? 'INCOMPLETE' : 'FAIL';
+};
+
+const assessGenuinePhotoQuality = (comparison, photos, photosTested) => {
+    if (!comparison) return {
+        status: 'NOT_RUN', photosTested: null, categoryMatches: null, colorMatches: null,
+        failedMetrics: [], missingMetrics: [],
+    };
+    if (comparison.comparisonValid !== true) return {
+        status: 'NOT_MEASURED', photosTested: Number.isFinite(photosTested) ? photosTested : null,
+        categoryMatches: null, colorMatches: null, failedMetrics: [], missingMetrics: ['validMatchedComparison'],
+    };
+
+    const completeSample = photosTested === 3 && Array.isArray(photos) && photos.length === 3
+        && photos.every(photo => photo?.status === 'EXECUTED'
+            && typeof photo.fixtureId === 'string' && photo.fixtureId.length > 0
+            && /^[a-f0-9]{64}$/i.test(photo.fixtureSha256 || '')
+            && typeof photo.categoryMatch === 'boolean'
+            && typeof photo.dominantColorMatch === 'boolean')
+        && new Set(photos.map(photo => photo.fixtureId)).size === 3
+        && new Set(photos.map(photo => photo.fixtureSha256)).size === 3;
+    if (!completeSample) return {
+        status: 'NOT_MEASURED', photosTested: Number.isFinite(photosTested) ? photosTested : null,
+        categoryMatches: null, colorMatches: null, failedMetrics: [], missingMetrics: ['threePhotoSample'],
+    };
+
+    const categoryMatches = photos.filter(photo => photo.categoryMatch === true).length;
+    const colorMatches = photos.filter(photo => photo.dominantColorMatch === true).length;
+    const failedMetrics = [];
+    if (categoryMatches !== 3) failedMetrics.push('categoryAccuracy');
+    if (colorMatches !== 3) failedMetrics.push('colorAccuracy');
+    return {
+        status: failedMetrics.length ? 'FAIL' : 'PASS', photosTested: 3,
+        categoryMatches, colorMatches, failedMetrics, missingMetrics: [],
+    };
+};
+
+const assessAutomatedQaVerdict = ({
+    hasAutomatedFailure,
+    sourceTruthMetricsAvailable,
+    qualityPass,
+    requiredEvidencePresent,
+    automatedStepsPass,
+    photoStatus,
+}) => {
+    if (hasAutomatedFailure || (sourceTruthMetricsAvailable && !qualityPass) || photoStatus === 'FAIL') return 'FAIL';
+    return requiredEvidencePresent && automatedStepsPass && photoStatus === 'PASS' ? 'PASS' : 'BLOCKED';
 };
 
 const safeExamples = run => {
@@ -219,6 +268,7 @@ const main = () => {
     const sourceBaseline = comparisonSummary(sourceComparisonEntry, 'baseline-v1-2');
     const heldoutCandidate = comparisonSummary(heldoutComparisonEntry, 'candidate-v1-3');
     const heldoutBaseline = comparisonSummary(heldoutComparisonEntry, 'baseline-v1-2');
+    const realBaseline = comparisonSummary(realComparisonEntry, 'baseline-v1-2');
     const realCandidateRaw = comparisonSummary(realComparisonEntry, 'candidate-v1-3');
     const sourceRun = runArtifactFor(sourceComparisonEntry, 'candidate-v1-3');
     const realBaselineRun = runArtifactFor(realComparisonEntry, 'baseline-v1-2');
@@ -272,6 +322,7 @@ const main = () => {
     const photosTested = realComparisonValid ? (realRun?.genuinePhotoEvaluation?.photosTested ?? null) : null;
     const photoCategoryMatches = photos.filter(photo => photo.categoryMatch === true).length;
     const photoColorMatches = photos.filter(photo => photo.dominantColorMatch === true).length;
+    const genuinePhotoQuality = assessGenuinePhotoQuality(realComparison, photos, photosTested);
     const realTextRequestAttempts = realComparison
         ? (realComparisonValid ? realComparison.results.reduce((sum, result) => sum + (result.summary?.textRequests || 0), 0) : campaignSummary.textRequestAttempts)
         : null;
@@ -351,17 +402,24 @@ const main = () => {
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
     const requiredEvidencePresent = sourceComparisonValid && heldoutComparisonValid && integrationPass && playwrightPass
         && securityPass && privacyPass && realGeminiStatus === 'PASS' && realGeminiQuality.status === 'PASS'
-        && runnerProvenanceStatus === 'PASS' && independentPass;
+        && genuinePhotoQuality.status === 'PASS' && runnerProvenanceStatus === 'PASS' && independentPass;
     const hasNonTimeoutVerificationFailure = verificationReceipt?.steps?.some(step => step.status === 'FAIL' && !step.timedOut
         && !(step.name === 'local-test-lab-playwright' && playwrightAssessment === 'INCOMPLETE')) === true;
     const hasAutomatedFailure = hasNonTimeoutVerificationFailure || regression?.status === 'FAIL'
         || [sourceComparison, heldoutComparison, realComparison, integration, privacy]
             .some(item => (item && item.status === 'FAIL') || (item && item.comparisonValid === false))
         || playwrightAssessment === 'FAIL'
-        || realGeminiQuality.status === 'FAIL';
-    const automatedQaVerdict = hasAutomatedFailure || (sourceTruthMetricsAvailable && !qualityPass) ? 'FAIL'
-        : requiredEvidencePresent && automatedStepsPass ? 'PASS' : 'BLOCKED';
-    const integrationReady = automatedQaVerdict === 'PASS' && qualityPass && photosTested === 3
+        || realGeminiQuality.status === 'FAIL'
+        || genuinePhotoQuality.status === 'FAIL';
+    const automatedQaVerdict = assessAutomatedQaVerdict({
+        hasAutomatedFailure,
+        sourceTruthMetricsAvailable,
+        qualityPass,
+        requiredEvidencePresent,
+        automatedStepsPass,
+        photoStatus: genuinePhotoQuality.status,
+    });
+    const integrationReady = automatedQaVerdict === 'PASS' && qualityPass && genuinePhotoQuality.status === 'PASS' && photosTested === 3
         && photoCategoryMatches === photosTested && photoColorMatches === photosTested;
     const sourceRunResults = safeExamples(sourceRun);
     const backendRegressionTests = integration?.jest?.backendRegression?.tests || 'NOT_RUN';
@@ -404,6 +462,7 @@ const main = () => {
         REAL_GEMINI_SAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
         REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_RUN',
         GENUINE_PHOTOS_TESTED: realComparison ? (realComparisonValid ? (photosTested ?? 'NOT_MEASURED') : 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_VISION_VERDICT: genuinePhotoQuality.status,
         REAL_GEMINI_COMPARISON_VALID: realComparison ? (realComparisonValid ? 'YES' : 'NO') : 'NOT_RUN',
         REAL_GEMINI_TEXT_REQUESTS: realComparisonValid ? (realTextProviderCalls ?? 'NOT_MEASURED') : realComparison ? 'NOT_MEASURED' : 'NOT_RUN',
         REAL_GEMINI_VISION_REQUESTS: realComparisonValid ? (realVisionProviderCalls ?? 'NOT_MEASURED') : realComparison ? 'NOT_MEASURED' : 'NOT_RUN',
@@ -489,6 +548,9 @@ const main = () => {
                 matchesCurrent: runnerProvenanceStatus === 'PASS',
             },
             model: realComparison.model,
+            baseline: realBaseline,
+            candidate: realCandidate,
+            metricOutcomes: realComparison.metricOutcomes || {},
             textRequestAttemptsBothEngines: realTextRequestAttempts,
             visionRequestAttemptsBothEngines: realVisionRequestAttempts,
             providerTextCallsBothEngines: realTextProviderCalls,
@@ -515,6 +577,7 @@ const main = () => {
                 observedDominantColor: photo.observedDominantColor,
                 dominantColorMatch: photo.dominantColorMatch,
                 unverifiedMaterialFieldPopulated: photo.unverifiedMaterialFieldPopulated,
+                productCatalogIdentityScored: photo.productCatalogIdentityScored === true,
                 routeLatencyMs: photo.routeLatencyMs,
                 estimatedProviderChargeUsd: photo.estimatedProviderChargeUsd,
             })),
@@ -641,7 +704,9 @@ const main = () => {
 
     const markdown = renderMarkdown(proof, machineStatus, sourceRunResults, comparisonDetails, {
         sourceOracle, sourceComparison, sourceCandidate, sourceBaseline, heldoutComparison, heldoutBaseline, heldoutCandidate,
-        realComparison, realCandidate, photosTested, photoCategoryMatches, photoColorMatches,
+        realComparison, realBaseline, realCandidate, realGeminiQuality, genuinePhotoQuality,
+        photosTested, photoCategoryMatches, photoColorMatches,
+        photoIdentityScored: photos.some(photo => photo.productCatalogIdentityScored === true),
         integration, integrationVerifierStep, playwright, playwrightAssessment, playwrightVerifierStep, privacy, independent, backendRegressionTests, selectedIntegrationTests, webhookTests,
         totalIncorrectOrUnansweredSlots, campaign, campaignSummary, automatedQaVerdict, integrationReady,
     });
@@ -746,8 +811,8 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const metricTable = Object.entries(status).map(([key, value]) => `| \`${key}\` | ${String(value)} |`).join('\n');
     const exampleText = examples.length ? examples.map(example => [
         `### ${example.label} — ${example.scenarioId}`,
-        'Customer message: [source text withheld]',
-        'Engine response: [reply text withheld]',
+        `Customer message (redacted): ${example.customerMessageRedacted || '[empty]'}`,
+        `Engine response (redacted): ${example.engineResponseRedacted || '[empty]'}`,
         `Disposition: ${example.disposition}; correct answer slots: ${example.correctAnsweredSlots ?? 'NOT_MEASURED'}/${example.eligibleSlots ?? 'NOT_MEASURED'}.`,
     ].join('\n\n')).join('\n\n') : 'No current, provenance-matched source comparison is available.';
     const sourceLine = details.sourceOracle
@@ -760,11 +825,11 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         ? `Valid: **${details.heldoutComparison.comparisonValid ? 'YES' : 'NO'}**. V1.2 verified answers: ${details.heldoutBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'}; V1.3 verified answers: ${details.heldoutCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'}.`
         : 'No held-out comparison is available.';
     const imageBlock = details.realComparison?.comparisonValid === true
-        ? `The completed paid matched run evaluated ${details.photosTested ?? 'NOT_MEASURED'} unique licensed public photos. Category matches: ${details.photoCategoryMatches}/${details.photosTested ?? 'NOT_MEASURED'}; visible-color matches: ${details.photoColorMatches}/${details.photosTested ?? 'NOT_MEASURED'}. These are a small public-photo probe, not customer-upload accuracy evidence.`
+        ? `Photo acceptance verdict: **${details.genuinePhotoQuality?.status || status.REAL_GEMINI_VISION_VERDICT || 'NOT_MEASURED'}**. The completed paid matched run evaluated ${details.photosTested ?? 'NOT_MEASURED'} unique licensed public photos. Category matches: ${details.photoCategoryMatches}/${details.photosTested ?? 'NOT_MEASURED'}; visible-color matches: ${details.photoColorMatches}/${details.photosTested ?? 'NOT_MEASURED'}; catalog identity: ${details.photoIdentityScored ? 'SCORED' : 'NOT SCORED'}. These are a small public-photo probe, not customer-upload accuracy evidence.`
         : details.realComparison
-            ? 'No completed true-photo comparison is available. The Gemini comparison was incomplete, so photo accuracy is NOT_MEASURED.'
+            ? `Photo acceptance verdict: **${details.genuinePhotoQuality?.status || 'NOT_MEASURED'}**. No completed true-photo comparison is available. The Gemini comparison was incomplete, so photo accuracy is NOT_MEASURED.`
             : 'Real Gemini vision evaluation: NOT_RUN.';
-    const integrationBlock = details.integration?.selectedIntegration || details.integration?.webhookPipelineE2E || details.integration?.backendRegression
+    const integrationBlock = details.integration?.jest?.selectedIntegration || details.integration?.jest?.webhookPipelineE2E || details.integration?.jest?.backendRegression
         ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
         : details.integrationVerifierStep
             ? `Outer integration verification ${details.integrationVerifierStep.timedOut ? 'timed out' : 'did not produce an inner receipt'}; no inner integration receipt was written, so individual integration assertions are NOT_MEASURED. Runner status: ${verificationStepState(details.integrationVerifierStep)}; subprocess cleanup: ${details.integrationVerifierStep.timeoutCleanup || 'NOT_RECORDED'}.`
@@ -807,6 +872,12 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         : 'Independent review: NOT_RUN. The proof remains blocked until a separate read-only review is recorded.';
     const costPerAnswer = proof.measured.estimatedCostPerCandidateVerifiedAnswerUsd;
     const costPerFactSlot = proof.measured.estimatedCostPerCandidateVerifiedFactSlotUsd;
+    const paidRouteTiming = details.realComparison?.comparisonValid === true
+        ? `Paid candidate route p50/p95: ${details.realCandidate?.p50RouteMs ?? 'NOT_MEASURED'} ms / ${details.realCandidate?.p95RouteMs ?? 'NOT_MEASURED'} ms; baseline: ${details.realBaseline?.p50RouteMs ?? 'NOT_MEASURED'} ms / ${details.realBaseline?.p95RouteMs ?? 'NOT_MEASURED'} ms. Paid candidate provider p50/p95: ${details.realCandidate?.p50ProviderMs ?? 'NOT_MEASURED'} ms / ${details.realCandidate?.p95ProviderMs ?? 'NOT_MEASURED'} ms (baseline ${details.realBaseline?.p50ProviderMs ?? 'NOT_MEASURED'} ms / ${details.realBaseline?.p95ProviderMs ?? 'NOT_MEASURED'} ms).`
+        : 'Paid candidate and provider route timings: NOT_MEASURED.';
+    const paidComparisonBlock = details.realComparison?.comparisonValid === true
+        ? `Paid Gemini source comparison: verified fact answers ${details.realBaseline?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realBaseline?.eligibleFactSlots ?? 'NOT_MEASURED'} baseline to ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} candidate; fully answered turns ${details.realBaseline?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realBaseline?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} baseline to ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} candidate. Quality verdict: ${comparisons.realGemini?.quality?.status || status.REAL_GEMINI_QUALITY_VERDICT || 'NOT_MEASURED'}. Paid matched-pair estimated cost: $${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; candidate $${Number(details.realCandidate?.estimatedProviderChargeUsd || 0).toFixed(8)} vs baseline $${Number(details.realBaseline?.estimatedProviderChargeUsd || 0).toFixed(8)} (${comparisons.realGemini?.metricOutcomes?.estimatedProviderChargeUsd || 'NOT_MEASURED'}). Paid route p95 outcome: ${comparisons.realGemini?.metricOutcomes?.p95RouteMs || 'NOT_MEASURED'}; provider p95 outcome: ${details.realCandidate?.p95ProviderMs < details.realBaseline?.p95ProviderMs ? 'IMPROVED' : details.realCandidate?.p95ProviderMs > details.realBaseline?.p95ProviderMs ? 'REGRESSED' : 'EQUIVALENT'}. Paid public-photo probe: category ${details.photoCategoryMatches ?? 'NOT_MEASURED'}/${details.photosTested ?? 'NOT_MEASURED'}, visible color ${details.photoColorMatches ?? 'NOT_MEASURED'}/${details.photosTested ?? 'NOT_MEASURED'}; catalog identity ${details.photoIdentityScored ? 'SCORED' : 'NOT SCORED'}.`
+        : 'Paid Gemini baseline comparison: NOT_MEASURED.';
     return `# EasyModerator Product Engine V1.3 — Integration & Customer Truth Proof
 
 Generated: ${proof.generatedAt}
@@ -820,6 +891,7 @@ Generated: ${proof.generatedAt}
 | Deterministic source truth (zero provider calls) | ${status.DETERMINISTIC_SOURCE_TRUTH_VERDICT} |
 | Gemini comparison | ${status.REAL_GEMINI_STATUS || 'NOT_CAPTURED'} |
 | Real Gemini candidate quality | ${status.REAL_GEMINI_QUALITY_VERDICT} |
+| Real Gemini photo acceptance | ${status.REAL_GEMINI_VISION_VERDICT || 'NOT_CAPTURED'} |
 | Browser QA | ${status.PLAYWRIGHT_E2E || 'NOT_CAPTURED'} |
 | Backend security tests | ${status.SECURITY_TESTS || 'NOT_CAPTURED'} |
 | Verification receipt | ${status.VERIFICATION_ENTRYPOINT_STATUS || 'NOT_CAPTURED'} (${status.VERIFICATION_ENTRYPOINT_COMPLETE || 'NO'} complete) |
@@ -849,7 +921,7 @@ Order creation, payment confirmation, stock reservation, courier booking, live M
 
 ## D. Deterministic source truth
 
-This verdict covers the zero-provider-call replay against the source oracle only. The paid Gemini candidate has a separate quality verdict in Section E and does not pass.
+This verdict covers the zero-provider-call replay against the source oracle only. The paid Gemini candidate quality gate is ${details.realGeminiQuality?.status || status.REAL_GEMINI_QUALITY_VERDICT || 'NOT_MEASURED'}.
 
 ${sourceLine}
 
@@ -912,7 +984,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost from priced usage: ${matchedPairCost}. ${unpricedCostNote} Candidate cost per verified product-answer turn: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}; per verified fact slot: ${costPerFactSlot == null ? 'NOT_MEASURED' : `$${costPerFactSlot.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost from priced usage: ${matchedPairCost}. ${unpricedCostNote} Candidate cost per verified product-answer turn: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}; per verified fact slot: ${costPerFactSlot == null ? 'NOT_MEASURED' : `$${costPerFactSlot.toFixed(8)}`}. Deterministic source replay router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. ${paidRouteTiming} These route timings exclude webhook, queue, database and customer-facing network latency.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -920,6 +992,7 @@ No merchant time saved, adoption, order outcomes, conversion or ROI data exists 
 
 - Source comparison: ${sourceComparisonBlock}
 - Held-out comparison: ${heldoutBlock}
+- ${paidComparisonBlock}
 - Deterministic and paid model results are kept separate. Comparison outputs include dataset, oracle, catalog, engine-source and runner hashes.
 
 ## L. Independent verification
@@ -952,6 +1025,10 @@ The opt-in run uses a persistent campaign ledger capped at $2, 256 requests and 
 ## Machine-readable status
 
 Machine-readable proof: \`${proof.candidate.evidenceRoot}\\product-engine-v1.3-proof.json\`.
+
+| Status key | Value |
+|---|---|
+${metricTable}
 `;
 }
 
@@ -962,4 +1039,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeRunLedger };
+module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeRunLedger };

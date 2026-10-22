@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, renderMarkdown, summarizeCampaignLedger, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
+const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
 
 describe('evidence artifact selection', () => {
     test('uses file modification time for receipts without a recorded timestamp', () => {
@@ -20,6 +20,24 @@ describe('evidence artifact selection', () => {
         } finally {
             fs.rmSync(directory, { recursive: true, force: true });
         }
+    });
+});
+
+describe('redacted customer examples', () => {
+    test('re-scrubs contact data before returning source examples', () => {
+        const [example] = safeExamples({ turns: [{
+            scenarioId: 'scenario-safe-example',
+            inputRedacted: 'What sizes are available? Call 01712345678 or email buyer@example.test.',
+            finalReplyRedacted: 'I can check that. buyer@example.test',
+            oracle: { textOnlyMetricEligible: true },
+            factScores: { correctAnsweredSlots: 1 },
+            evaluationStatus: 'EVALUATED',
+            disposition: 'SEND',
+        }] });
+
+        expect(example.customerMessageRedacted).toBe('What sizes are available? Call [PHONE] or email [EMAIL].');
+        expect(example.engineResponseRedacted).toBe('I can check that. [EMAIL]');
+        expect(JSON.stringify(example)).not.toMatch(/01712345678|buyer@example\.test/);
     });
 });
 
@@ -179,6 +197,63 @@ describe('paid Gemini quality readiness gate', () => {
     });
 });
 
+describe('genuine photo acceptance gate', () => {
+    const completeComparison = { comparisonValid: true };
+    const photos = [
+        { fixtureId: 'photo-a', fixtureSha256: 'a'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true },
+        { fixtureId: 'photo-b', fixtureSha256: 'b'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true },
+        { fixtureId: 'photo-c', fixtureSha256: 'c'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true },
+    ];
+
+    test('passes only with three executed, distinct, checksum-backed photos and all category and color matches', () => {
+        expect(assessGenuinePhotoQuality(completeComparison, photos, 3)).toEqual({
+            status: 'PASS', photosTested: 3, categoryMatches: 3, colorMatches: 3,
+            failedMetrics: [], missingMetrics: [],
+        });
+    });
+
+    test('fails the measured photo gate when any category or color is wrong', () => {
+        const result = assessGenuinePhotoQuality(completeComparison, [
+            { ...photos[0], categoryMatch: false }, photos[1], photos[2],
+        ], 3);
+        expect(result).toEqual({
+            status: 'FAIL', photosTested: 3, categoryMatches: 2, colorMatches: 3,
+            failedMetrics: ['categoryAccuracy'], missingMetrics: [],
+        });
+    });
+
+    test('leaves missing or incomplete photo evidence unmeasured', () => {
+        expect(assessGenuinePhotoQuality(completeComparison, photos.slice(0, 2), 2)).toMatchObject({
+            status: 'NOT_MEASURED', missingMetrics: expect.arrayContaining(['threePhotoSample']),
+        });
+        expect(assessGenuinePhotoQuality({ comparisonValid: false }, photos, 3).status).toBe('NOT_MEASURED');
+        expect(assessGenuinePhotoQuality(null, [], null).status).toBe('NOT_RUN');
+    });
+});
+
+describe('aggregate automated QA verdict', () => {
+    test('fails measured photo acceptance errors even when other evidence passed', () => {
+        expect(assessAutomatedQaVerdict({
+            hasAutomatedFailure: false, sourceTruthMetricsAvailable: true, qualityPass: true,
+            requiredEvidencePresent: true, automatedStepsPass: true, photoStatus: 'FAIL',
+        })).toBe('FAIL');
+    });
+
+    test('blocks missing photo evidence instead of passing readiness', () => {
+        expect(assessAutomatedQaVerdict({
+            hasAutomatedFailure: false, sourceTruthMetricsAvailable: true, qualityPass: true,
+            requiredEvidencePresent: true, automatedStepsPass: true, photoStatus: 'NOT_MEASURED',
+        })).toBe('BLOCKED');
+    });
+
+    test('passes only when all ordinary and photo gates pass', () => {
+        expect(assessAutomatedQaVerdict({
+            hasAutomatedFailure: false, sourceTruthMetricsAvailable: true, qualityPass: true,
+            requiredEvidencePresent: true, automatedStepsPass: true, photoStatus: 'PASS',
+        })).toBe('PASS');
+    });
+});
+
 describe('artifact privacy status mapping', () => {
     test('uses the scanner report privacyGateStatus field', () => {
         expect(privacyScanPassed({ privacyGateStatus: 'PASS' })).toBe(true);
@@ -237,8 +312,8 @@ describe('V1.3 proof Markdown rendering', () => {
     });
 
     test('does not print literal source messages or replies in Markdown examples', () => {
-        const sourceMessage = 'Private simulator question asks for exact stock of a named product.';
-        const sourceReply = 'Private simulator reply repeats the unverified product availability.';
+        const sourceMessage = 'What is the size and price? Contact [PHONE].';
+        const sourceReply = 'I can check the verified size and price for you.';
         const markdown = renderMarkdown(proof, status, [{
             scenarioId: 'scenario-privacy-check',
             label: 'Verified product answer',
@@ -254,10 +329,9 @@ describe('V1.3 proof Markdown rendering', () => {
             realComparison: null,
         });
 
-        expect(markdown).not.toContain(sourceMessage);
-        expect(markdown).not.toContain(sourceReply);
-        expect(markdown).toContain('Customer message: [source text withheld]');
-        expect(markdown).toContain('Engine response: [reply text withheld]');
+        expect(markdown).toContain(`Customer message (redacted): ${sourceMessage}`);
+        expect(markdown).toContain(`Engine response (redacted): ${sourceReply}`);
+        expect(markdown).not.toContain('01712345678');
     });
 
     test('labels an invalid Gemini comparison as incomplete without claiming a matched photo result', () => {
@@ -513,6 +587,81 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('Rejected campaign ledger attempts: 1 (blocked before provider usage).');
         expect(markdown).toContain('Candidate run ledger: 74 request attempts, 73 provider usage records, 1 rejected reservation.');
         expect(markdown).toContain('Candidate cost per verified product-answer turn: $0.00114608; per verified fact slot: $0.00093119.');
+    });
+
+    test('labels deterministic and paid latency separately and reports paid outcomes and regressions', () => {
+        const markdown = renderMarkdown({
+            ...proof,
+            measured: { estimatedCostPerCandidateVerifiedAnswerUsd: 0.01, estimatedCostPerCandidateVerifiedFactSlotUsd: 0.005 },
+        }, { ...status, REAL_GEMINI_QUALITY_VERDICT: 'PASS' }, [], {
+            realGemini: {
+                model: 'gemini-3.1-flash-lite', estimatedProviderChargeUsdBothEngines: 0.032989,
+                metricOutcomes: { verifiedCorrectAnswers: 'IMPROVED', estimatedProviderChargeUsd: 'REGRESSED', p95RouteMs: 'REGRESSED' },
+                baseline: { verifiedCorrectAnswers: 7, eligibleFactSlots: 18, verifiedCorrectTurns: 5, evaluatedAnswerableProductTurns: 15, estimatedProviderChargeUsd: 0.0112425, p50ProviderMs: 1194, p95RouteMs: 5305.31, p95ProviderMs: 2786 },
+                candidate: { verifiedCorrectAnswers: 18, eligibleFactSlots: 18, verifiedCorrectTurns: 15, evaluatedAnswerableProductTurns: 15, estimatedProviderChargeUsd: 0.0217465, p50RouteMs: 4349.419, p95RouteMs: 5399.128, p50ProviderMs: 1138, p95ProviderMs: 1809 },
+            },
+        }, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: { comparisonValid: true, model: 'gemini-3.1-flash-lite', metricOutcomes: { verifiedCorrectAnswers: 'IMPROVED', estimatedProviderChargeUsd: 'REGRESSED', p95RouteMs: 'REGRESSED' } },
+            sourceCandidate: { p50RouteMs: 1.091, p95RouteMs: 2.923 },
+            realBaseline: { verifiedCorrectAnswers: 7, eligibleFactSlots: 18, verifiedCorrectTurns: 5, evaluatedAnswerableProductTurns: 15, estimatedProviderChargeUsd: 0.0112425, p50ProviderMs: 1194, p95RouteMs: 5305.31, p95ProviderMs: 2786 },
+            realCandidate: { verifiedCorrectAnswers: 18, eligibleFactSlots: 18, verifiedCorrectTurns: 15, evaluatedAnswerableProductTurns: 15, estimatedProviderChargeUsd: 0.0217465, p50RouteMs: 4349.419, p95RouteMs: 5399.128, p50ProviderMs: 1138, p95ProviderMs: 1809 },
+            photosTested: 3, photoCategoryMatches: 0, photoColorMatches: 3, photoIdentityScored: false,
+        });
+
+        expect(markdown).toContain('Deterministic source replay router p50/p95: 1.091 ms / 2.923 ms');
+        expect(markdown).toContain('Paid candidate route p50/p95: 4349.419 ms / 5399.128 ms');
+        expect(markdown).toContain('Paid candidate provider p50/p95: 1138 ms / 1809 ms (baseline 1194 ms / 2786 ms).');
+        expect(markdown).toContain('Paid Gemini source comparison: verified fact answers 7/18 baseline to 18/18 candidate');
+        expect(markdown).toContain('Paid matched-pair estimated cost: $0.03298900; candidate $0.02174650 vs baseline $0.01124250 (REGRESSED)');
+        expect(markdown).toContain('Paid route p95 outcome: REGRESSED');
+        expect(markdown).toContain('Paid public-photo probe: category 0/3, visible color 3/3; catalog identity NOT SCORED');
+    });
+
+    test('uses the actual nested integration receipt for the backend integration section', () => {
+        const markdown = renderMarkdown(proof, status, [], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+            integration: {
+                status: 'PASS',
+                jest: {
+                    selectedIntegration: { exitCode: 0, structured: { passedTests: 12 } },
+                    webhookPipelineE2E: { exitCode: 0, structured: { passedTests: 46 } },
+                    backendRegression: { exitCode: 0, structured: { passedTests: 3959 } },
+                },
+            },
+            selectedIntegrationTests: '12 passed',
+            webhookTests: '46 passed',
+            backendRegressionTests: '3,959 passed',
+        });
+
+        expect(markdown).toContain('Receipt status: **PASS**');
+        expect(markdown).toContain('Selected integration: 12 passed');
+        expect(markdown).toContain('webhook pipeline: 46 passed');
+        expect(markdown).toContain('full backend regression: 3,959 passed');
+    });
+
+    test('uses dynamic paid quality and explicit photo verdict in Section D and the machine table', () => {
+        const markdown = renderMarkdown(proof, {
+            ...status,
+            REAL_GEMINI_QUALITY_VERDICT: 'PASS',
+            REAL_GEMINI_VISION_VERDICT: 'FAIL',
+        }, [], { realGemini: { model: 'gemini-3.1-flash-lite', quality: { status: 'PASS' } } }, {
+            sourceOracle: null, sourceComparison: null, heldoutComparison: null,
+            realComparison: { comparisonValid: true },
+            realGeminiQuality: { status: 'PASS' },
+            genuinePhotoQuality: { status: 'FAIL' },
+            photosTested: 3, photoCategoryMatches: 0, photoColorMatches: 3,
+        });
+
+        expect(markdown).toContain('The paid Gemini candidate quality gate is PASS.');
+        expect(markdown).not.toContain('the paid Gemini candidate has a separate quality verdict in Section E and does not pass.');
+        expect(markdown).toContain('| `REAL_GEMINI_VISION_VERDICT` | FAIL |');
+        expect(markdown).toContain('Photo acceptance verdict: **FAIL**');
     });
 });
 
