@@ -32,6 +32,8 @@ The three Pro photo campaigns report 9 requests, $0.075174 estimated usage, and 
 
 A separate corrected-scorer Gemini Lite photo diagnostic is opt-in and is not part of ordinary offline verification. It requires the process-scoped `EM-GEMINI-KEY`, `LAB_RUN_MODE=real-gemini`, `EASYMOD_LIVE_GEMINI_EGRESS=1`, `LAB_GEMINI_LITE_PHOTO_DIAGNOSTIC=1`, a fresh `LAB_GEMINI_LITE_PHOTO_CAMPAIGN_ID`, a UUID `LAB_RUN_ID`, and a result path beneath the selected evidence root's `runs/` directory. It calls the existing Gemini Lite production route for only the three checksum-verified licensed public photos, permits three requests and three vision requests, sets concurrency to one and retries to zero, and enforces a $0.30 campaign ceiling. It stores only redacted provider/customer output and the token-priced estimate; provider invoices are unavailable. This diagnostic measures visible category/color only: it does not score catalog SKU identity or cover the other 14 required visual case types. It corrects a scorer allowlist that previously rejected slash-separated categories such as `kurta/panjabi`.
 
+The clean bounded run on commit `ed7b4e05` executed all three licensed photos through Gemini Lite and passed the diagnostic harness. It matched visible color on 3/3 photos and garment category on 2/3; the yellow kurta was still labeled `shirt`. Catalog identity was not scored. The token-priced estimate was $0.00150575 with $0.014586 worst-case reserved in its $0.30 campaign; an invoice is unavailable. This result does not satisfy the 3/3 visible-category gate.
+
 Example from `EasyMod-backend` (the key must already exist in the current PowerShell process; the boolean check does not reveal it):
 
 ```powershell
