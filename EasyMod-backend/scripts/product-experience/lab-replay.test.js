@@ -787,7 +787,7 @@ describe('genuine photo replay fixture isolation', () => {
         expect(budgetSnapshot.limits.maxConcurrency).toBe(1);
         expect(campaignSnapshot).toMatchObject({ ceilingUsd: 0.30, maxRequests: 3, maxVisionRequests: 3, requestCount: 3, visionRequestCount: 3 });
         expect(campaignSnapshot.reservedWorstCaseUsd).toBeLessThanOrEqual(0.30);
-        expect(JSON.stringify(artifact)).not.toMatch(/EM-GEMINI-KEY|customerMessage|customerProfile|expectedTruth|data:image\\//i);
+        expect(JSON.stringify(artifact)).not.toMatch(/EM-GEMINI-KEY|customerMessage|customerProfile|expectedTruth|data:image\//i);
     }, 180000);
 });
 
