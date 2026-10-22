@@ -9,14 +9,13 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { isLocalHost, isLoopbackAddress, isAllowedGeminiEvaluationRequest } = require('./no-egress');
-const { createEvaluationBudget, GEMINI_PRICE_SNAPSHOT } = require('./evaluation-budget');
+const { createEvaluationBudget, GEMINI_PRICE_SNAPSHOT, GEMINI_PRO_PRICE_SNAPSHOT } = require('./evaluation-budget');
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent';
-const geminiRequest = (body = JSON.stringify({
+const geminiRequest = (model = GEMINI_PRICE_SNAPSHOT.model, body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
     generationConfig: { maxOutputTokens: 10, temperature: 0.3 },
 })) => ({
-    url: GEMINI_URL,
+    url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     method: 'POST',
     redirect: 'error',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': 'test-only-not-a-credential' },
@@ -90,6 +89,35 @@ describe('disposable test egress fence', () => {
 
             const wrongEndpoint = { ...request, url: request.url.replace('flash-lite', 'pro-preview') };
             expect(isAllowedGeminiEvaluationRequest(wrongEndpoint.url, wrongEndpoint)).toBe(false);
+        } finally {
+            if (prior === undefined) delete process.env.EASYMOD_LIVE_GEMINI_EGRESS;
+            else process.env.EASYMOD_LIVE_GEMINI_EGRESS = prior;
+            if (priorKey === undefined) delete process.env['EM-GEMINI-KEY'];
+            else process.env['EM-GEMINI-KEY'] = priorKey;
+        }
+    });
+
+    test('permits a one-use Gemini Pro request only under the Pro-priced reservation', async () => {
+        const prior = process.env.EASYMOD_LIVE_GEMINI_EGRESS;
+        const priorKey = process.env['EM-GEMINI-KEY'];
+        try {
+            process.env.EASYMOD_LIVE_GEMINI_EGRESS = '1';
+            process.env['EM-GEMINI-KEY'] = 'test-only-not-a-credential';
+            const model = GEMINI_PRO_PRICE_SNAPSHOT.model;
+            const request = geminiRequest(model);
+            const budget = createEvaluationBudget({ ceilingUsd: 0.1, model });
+            await budget.execute({
+                operationId: 'pro-egress-permit', model, inputTokenUpperBound: 5, maxOutputTokens: 10,
+            }, async context => {
+                const wrongModel = { ...request, url: request.url.replace(model, GEMINI_PRICE_SNAPSHOT.model) };
+                expect(context.authorizeGeminiRequest(wrongModel)).toBe(false);
+                expect(context.authorizeGeminiRequest(request)).toBe(true);
+                expect(isAllowedGeminiEvaluationRequest(request.url, request)).toBe(true);
+                expect(isAllowedGeminiEvaluationRequest(request.url, request)).toBe(false);
+                return { usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 1 } };
+            });
+            const unbudgetedPro = geminiRequest(model);
+            expect(isAllowedGeminiEvaluationRequest(unbudgetedPro.url, unbudgetedPro)).toBe(false);
         } finally {
             if (prior === undefined) delete process.env.EASYMOD_LIVE_GEMINI_EGRESS;
             else process.env.EASYMOD_LIVE_GEMINI_EGRESS = prior;

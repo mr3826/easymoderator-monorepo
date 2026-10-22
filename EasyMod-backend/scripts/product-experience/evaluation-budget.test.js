@@ -1,6 +1,6 @@
 'use strict';
 
-const { createEvaluationBudget, GEMINI_PRICE_SNAPSHOT, BudgetError } = require('./evaluation-budget');
+const { createEvaluationBudget, GEMINI_PRICE_SNAPSHOT, GEMINI_PRO_PRICE_SNAPSHOT, BudgetError } = require('./evaluation-budget');
 
 const MODEL = 'gemini-3.1-flash-lite';
 const makeBudget = (overrides = {}) => createEvaluationBudget({ ceilingUsd: 1, ...overrides });
@@ -15,6 +15,14 @@ describe('isolated Gemini evaluation budget', () => {
         expect(Object.isFrozen(GEMINI_PRICE_SNAPSHOT)).toBe(true);
     });
 
+    test('pins Gemini Pro at its official under-200k standard rates', () => {
+        expect(GEMINI_PRO_PRICE_SNAPSHOT).toMatchObject({
+            model: 'gemini-3.1-pro-preview', inputUsdPerMillion: 2, outputUsdPerMillion: 12,
+            source: 'https://ai.google.dev/gemini-api/docs/pricing', pinnedAt: '2026-10-22',
+        });
+        expect(Object.isFrozen(GEMINI_PRO_PRICE_SNAPSHOT)).toBe(true);
+    });
+
     test.each([undefined, 0, -1, NaN, Infinity, 10.01])('rejects an invalid or absent spend ceiling: %s', ceilingUsd => {
         expect(() => createEvaluationBudget({ ceilingUsd })).toThrow(BudgetError);
     });
@@ -22,7 +30,7 @@ describe('isolated Gemini evaluation budget', () => {
     test.each([
         { maxRequests: 0 }, { maxVisionRequests: -1 }, { maxConcurrency: 0 },
         { maxInputTokens: Infinity }, { maxOutputTokens: 0 }, { maxRetries: 3 },
-        { maxTimeoutMs: 0 }, { model: 'unsupported-model' },
+        { maxTimeoutMs: 0 }, { model: 'unsupported-model' }, { model: 'toString' }, { model: 'constructor' },
         { rates: { inputUsdPerMillion: 0, outputUsdPerMillion: 1 } },
     ])('rejects unbounded configuration %j', config => {
         expect(() => makeBudget(config)).toThrow(BudgetError);
@@ -45,6 +53,18 @@ describe('isolated Gemini evaluation budget', () => {
         expect(result.response).toEqual(response());
         expect(result.receipt).toMatchObject({ status: 'provider_reported', inputTokens: 80, outputTokens: 4, thinkingTokens: 2, chargedUsd: 0.000029 });
         expect(budget.snapshot()).toMatchObject({ requestCount: 1, activeRequests: 0, committedUsd: 0.000029, estimatedProviderChargeUsd: 0.000029, providerReportedUsd: 0.000029 });
+    });
+
+    test('reserves Gemini Pro usage at its distinct official rate card', async () => {
+        const model = GEMINI_PRO_PRICE_SNAPSHOT.model;
+        const budget = makeBudget({ model });
+        const result = await budget.execute(request({ model }), async context => {
+            expect(context.model).toBe(model);
+            expect(budget.snapshot().committedUsd).toBeCloseTo(0.00032, 9);
+            return response();
+        });
+        expect(result.receipt).toMatchObject({ model, reservedUsd: 0.00032, estimatedProviderChargeUsd: 0.000232 });
+        expect(budget.snapshot()).toMatchObject({ model, pricing: { model, inputUsdPerMillion: 2, outputUsdPerMillion: 12 } });
     });
 
     test('persists a campaign reservation before transport and reconciles the estimate afterward', async () => {

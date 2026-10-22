@@ -1,12 +1,15 @@
 'use strict';
 
 const { decodeDataImage } = require('../../src/utils/safe-media-fetch');
-const { GEMINI_PRICE_SNAPSHOT } = require('./evaluation-budget');
+const { GEMINI_PRICE_SNAPSHOT, GEMINI_PRO_PRICE_SNAPSHOT } = require('./evaluation-budget');
 const { isRegisteredGenuineRaster } = require('./genuine-photo-fixtures');
 const { isRegisteredSyntheticRaster } = require('./synthetic-media-fixtures');
 
 const MODEL = GEMINI_PRICE_SNAPSHOT.model;
-const GEMINI_ONLY_SKIP = Object.freeze(['gemini-pro', 'openai']);
+const MODEL_PROVIDERS = Object.freeze({
+    [GEMINI_PRICE_SNAPSHOT.model]: 'gemini-lite',
+    [GEMINI_PRO_PRICE_SNAPSHOT.model]: 'gemini-pro',
+});
 const IMAGE_TOKEN_UPPER_BOUND = 16384;
 const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -95,12 +98,16 @@ const normalizedUsage = usage => {
 /**
  * Wraps the existing llm.service chat method for one paid Gemini evaluation.
  * It requires the exact EM-GEMINI-KEY source, reserves spend before calling the
- * provider, uses only the pinned Gemini Lite model, and accepts local raster data
- * URLs so customer/provider egress cannot fetch arbitrary media URLs.
+ * provider, uses one explicitly pinned Gemini model, and accepts only local
+ * raster data URLs so the provider cannot fetch arbitrary media URLs.
  */
-const createGeminiEvaluationClient = ({ budget, llm, operationPrefix = 'eval' }) => {
+const createGeminiEvaluationClient = ({ budget, llm, model = MODEL, operationPrefix = 'eval' }) => {
+    const provider = Object.prototype.hasOwnProperty.call(MODEL_PROVIDERS, model) ? MODEL_PROVIDERS[model] : null;
+    const skippedProviders = Object.freeze([...new Set(Object.values(MODEL_PROVIDERS))]
+        .filter(candidate => candidate !== provider).concat('openai'));
     if (!budget || typeof budget.execute !== 'function' || typeof budget.snapshot !== 'function'
-        || typeof llm?.chat !== 'function' || !/^[a-zA-Z0-9_.:-]{1,64}$/.test(operationPrefix)) {
+        || typeof llm?.chat !== 'function' || !provider || budget.snapshot().model !== model
+        || !/^[a-zA-Z0-9_.:-]{1,64}$/.test(operationPrefix)) {
         throw new EvaluationClientError('INVALID_CLIENT_CONFIG');
     }
     let callSequence = 0;
@@ -128,7 +135,7 @@ const createGeminiEvaluationClient = ({ budget, llm, operationPrefix = 'eval' })
 
         const { response, receipt } = await budget.execute({
             operationId,
-            model: MODEL,
+            model,
             inputTokenUpperBound,
             maxOutputTokens,
             vision,
@@ -140,21 +147,21 @@ const createGeminiEvaluationClient = ({ budget, llm, operationPrefix = 'eval' })
                 maxTokens: context.maxOutputTokens,
                 timeoutMs: context.timeoutMs,
                 signal: context.signal,
-                preferredProvider: 'gemini-lite',
-                skipProviders: GEMINI_ONLY_SKIP,
+                preferredProvider: provider,
+                skipProviders: skippedProviders,
                 cachedContentName: undefined,
                 returnMetadata: true,
                 evaluationEgressAuthorization: context.authorizeGeminiRequest,
             });
             if (!result || typeof result.text !== 'string' || !result.text.trim()
-                || result.provider !== 'gemini-lite' || (result.model && result.model !== MODEL)) {
+                || result.provider !== provider || (result.model && result.model !== model)) {
                 throw new EvaluationClientError('UNEXPECTED_PROVIDER_RESULT');
             }
             const usageMetadata = normalizedUsage(result.usage);
             return {
                 text: result.text,
                 provider: result.provider,
-                model: MODEL,
+                model,
                 requestId: result.requestId || null,
                 latencyMs: Number.isSafeInteger(result.latencyMs) ? result.latencyMs : null,
                 ...(usageMetadata ? { usageMetadata } : {}),
@@ -180,4 +187,5 @@ module.exports = {
     estimateInputUpperBound,
     EvaluationClientError,
     MODEL,
+    MODEL_PROVIDERS,
 };

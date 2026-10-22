@@ -496,6 +496,133 @@ describe('genuine photo replay fixture isolation', () => {
             mockPhotoMatch.mockReturnValue(false);
         }
     });
+
+    const proPhotoProbeTest = process.env.LAB_GEMINI_PRO_PHOTO_PROBE === '1' ? test : test.skip;
+    proPhotoProbeTest('runs a three-photo Gemini Pro probe through production extraction under a $0.22 campaign cap', async () => {
+        if (mode !== 'real-gemini' || process.env.EASYMOD_LIVE_GEMINI_EGRESS !== '1'
+            || typeof process.env['EM-GEMINI-KEY'] !== 'string' || !process.env['EM-GEMINI-KEY'].trim()) {
+            throw new Error('The Gemini Pro photo probe requires the process-scoped key and exact live egress opt-in.');
+        }
+        const { createEvaluationBudget, GEMINI_PRO_PRICE_SNAPSHOT } = require('./evaluation-budget');
+        const { createGeminiEvaluationClient } = require('./gemini-evaluation-client');
+        const { createEvaluationCampaignLedger } = require('./evaluation-campaign-ledger');
+        const campaignId = process.env.LAB_PRO_PHOTO_CAMPAIGN_ID;
+        if (typeof campaignId !== 'string' || !/^v13-gemini-pro-photo-probe-[a-zA-Z0-9_.:-]{1,48}$/.test(campaignId)) {
+            throw new Error('The Gemini Pro probe requires a dedicated fresh campaign id.');
+        }
+        const campaignPath = path.join(LAB_ARTIFACT_ROOT, 'campaigns', campaignId, 'budget-ledger.json');
+        const resultPath = path.resolve(process.env.LAB_PRO_PHOTO_RESULT_PATH || '');
+        const budgetPath = path.join(OUTPUT_ROOT, `${runId}.pro-photo-budget-ledger.json`);
+        if (!resultPath.startsWith(`${OUTPUT_ROOT}${path.sep}`)
+            || path.basename(resultPath) !== `${runId}.pro-photo.json`
+            || !ID_PATTERN.test(runId)) {
+            throw new Error('Gemini Pro photo probe output must stay under the evidence runs directory.');
+        }
+        const ledger = createEvaluationCampaignLedger({
+            ledgerPath: campaignPath,
+            campaignId,
+            ceilingUsd: 0.22,
+            maxRequests: 3,
+            maxVisionRequests: 3,
+        });
+        if (ledger.snapshot().requestCount !== 0) throw new Error('The Pro probe campaign must be fresh before provider calls.');
+        process.env.REDIS_URL = '';
+        process.env.REDIS_HOST = 'localhost';
+        process.env.AI_USAGE_ACCOUNTING = 'false';
+        campaignLedger = ledger;
+        campaignLedgerPath = campaignPath;
+        campaignStage = `gemini-pro-photo-only-${runId}-${crypto.randomUUID()}`;
+        budgetLedgerPath = budgetPath;
+        evaluationBudget = createEvaluationBudget({
+            model: GEMINI_PRO_PRICE_SNAPSHOT.model,
+            ceilingUsd: 0.22,
+            maxRequests: 3,
+            maxVisionRequests: 3,
+            maxConcurrency: 1,
+            maxInputTokens: 32768,
+            maxOutputTokens: 250,
+            maxRetries: 0,
+            maxTimeoutMs: 30000,
+        }, {
+            onSnapshot: snapshot => {
+                campaignLedger.record(campaignStage, snapshot);
+                persistBudgetLedger();
+            },
+        });
+        jest.doMock('src/config/redis', () => ({
+            cacheRedis: {
+                get: jest.fn(async () => null),
+                del: jest.fn(async () => 1),
+                incr: jest.fn(async () => 1),
+                expire: jest.fn(async () => 1),
+                setex: jest.fn(async () => 'OK'),
+            },
+        }));
+        const actualLlm = jest.requireActual('src/modules/ai/llm.service');
+        evaluationClient = createRateLimitedEvaluationClient(createGeminiEvaluationClient({
+            budget: evaluationBudget,
+            llm: actualLlm,
+            model: GEMINI_PRO_PRICE_SNAPSHOT.model,
+            operationPrefix: 'v13-pro-photo',
+        }));
+
+        const startedAt = new Date().toISOString();
+        const evaluation = await runGenuinePhotoEvaluation(evaluationClient);
+        const safeCases = evaluation.cases.map(item => ({
+            fixtureId: item.fixtureId,
+            fixtureSha256: item.fixtureSha256,
+            status: item.status,
+            schemaValid: item.schemaValid,
+            observedCategory: item.observedCategory,
+            observedDominantColor: item.observedDominantColor,
+            categoryMatch: item.categoryMatch,
+            dominantColorMatch: item.dominantColorMatch,
+            unverifiedMaterialFieldPopulated: item.unverifiedMaterialFieldPopulated,
+            providerCallId: item.providerCallId,
+            requestId: item.requestId,
+            usage: item.usage,
+            providerLatencyMs: item.providerLatencyMs,
+            estimatedProviderChargeUsd: item.estimatedProviderChargeUsd,
+        }));
+        const budgetSnapshot = evaluationBudget.snapshot();
+        const campaignSnapshot = campaignLedger.snapshot();
+        const artifact = {
+            schemaVersion: 1,
+            experiment: 'bounded-gemini-pro-production-photo-extraction',
+            sourceRevision: sourceProvenance.sourceRevision,
+            engineSourceRevision: sourceProvenance.engineSourceRevision,
+            engineSourceSha256: sourceProvenance.engineSourceSha256,
+            runnerRevision: sourceProvenance.runnerRevision,
+            runnerSourceSha256: sourceProvenance.runnerSourceSha256,
+            model: GEMINI_PRO_PRICE_SNAPSHOT.model,
+            pricing: budgetSnapshot.pricing,
+            campaignId,
+            campaignStage,
+            campaignLedgerPath: path.relative(LAB_ARTIFACT_ROOT, campaignPath).replace(/\\/g, '/'),
+            photoEvaluation: {
+                evaluationSource: evaluation.evaluationSource,
+                photosTested: evaluation.photosTested,
+                categoryMatches: safeCases.filter(item => item.categoryMatch).length,
+                colorMatches: safeCases.filter(item => item.dominantColorMatch).length,
+                identityScored: false,
+                cases: safeCases,
+            },
+            evaluationBudget: budgetSnapshot,
+            campaignBudget: campaignSnapshot,
+            providerInvoice: 'NOT_AVAILABLE',
+            startedAt,
+            completedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(resultPath, `${JSON.stringify(artifact, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+
+        expect(evaluation.photosTested).toBe(3);
+        expect(safeCases).toHaveLength(3);
+        expect(safeCases.every(item => item.status === 'EXECUTED')).toBe(true);
+        expect(budgetSnapshot).toMatchObject({ model: GEMINI_PRO_PRICE_SNAPSHOT.model, requestCount: 3, visionRequestCount: 3 });
+        expect(campaignSnapshot).toMatchObject({ ceilingUsd: 0.22, requestCount: 3, visionRequestCount: 3 });
+        expect(campaignSnapshot.reservedWorstCaseUsd).toBeLessThanOrEqual(0.22);
+        expect(JSON.stringify(artifact)).not.toMatch(/EM-GEMINI-KEY|customerMessage|customerProfile|expectedTruth|data:image\//i);
+    }, 180000);
 });
 
 describe('source replay attachment and catalog integrity', () => {

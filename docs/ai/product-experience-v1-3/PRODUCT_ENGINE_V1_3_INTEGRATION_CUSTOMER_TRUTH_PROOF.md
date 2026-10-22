@@ -106,6 +106,16 @@ Photo acceptance verdict: **FAIL**. The completed paid matched run evaluated 3 u
 
 No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. The detailed provenance and per-photo observations are in the machine-readable proof.
 
+### Supplementary Gemini Pro diagnostic — 2026-10-22
+
+I ran a separate photo-only diagnostic with `gemini-3.1-pro-preview` against the same three checksum-verified fixtures, production extraction route, prompt, and scorer. All 3 vision requests executed with reported token usage, but the extraction path produced **0/3 usable categories and 0/3 visible colors**. The receipt's `schemaValid` field is derived from whether either label reached the scorer; `false` means neither label was available, and is not an independent JSON-schema validation result. The route allowed 250 output tokens per request. The usage receipt records 236–240 thinking tokens and only 6–10 candidate tokens per request; Gemini Pro's thinking tokens count toward the output limit. This makes the probe inconclusive about recognition quality because the small candidate-output allowance may have truncated the structured answer. Raw provider text and finish-reason metadata were not retained, so the receipt cannot establish whether each response was truncated, unparsable, or a structured all-null result. The key and raw model response were not written to evidence.
+
+The Pro price snapshot was $2 input and $12 output per million tokens below 200k input tokens, from Google's [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing); the [Gemini 3.1 Pro model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview) lists image input support. Estimated spend was **$0.017446**; the 3-request, 3-vision-request campaign reserved **$0.116766** worst-case under its $0.22 cap. These are token-based estimates, not an invoice. Receipt: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\runs\a91d80e4-4074-4aa9-bf15-df176b3a9015.pro-photo.json`; ledger: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\campaigns\v13-gemini-pro-photo-probe-20261022-01\budget-ledger.json`.
+
+The receipt pins its evaluation runner hash to `9e6a238dce90e1aac4ffeb31c8035cb0b1e9fb0c666455a0840d1b38cfc7d732`. Redis test isolation, prototype-safe model lookup, and unique ledger-stage hardening were added afterward. Those follow-up edits are confined to the evaluation harness; the frozen backend extraction code, route, and prompt used by the paid calls did not change.
+
+Since Pro returned no usable labels under this output limit, no independent holdout call or production model change followed. The photo gate remains **FAIL**, overall automated QA remains **FAIL**, and integration readiness remains **NO**. This diagnostic changed only the isolated evaluation harness. The follow-up harness now assigns each probe invocation a unique campaign-ledger stage so repeated local call IDs reserve separately. Adding this diagnostic to the prior deduplicated campaigns brings estimated priced usage to **$0.28688576** and worst-case V1.3 campaign reservations to **$2.448875011**. Including the separately recorded V1.2 conservative task-series exposure of **$2.33973275**, the combined reserve is **$4.788607761**, leaving **$5.211392239** against the shared $10 authorization if V1.2 activity is included. Any future Pro diagnostic needs a separately authorized cap with enough output allowance and non-content finish-reason capture before it can say more about recognition quality.
+
 ## G. Backend integration
 
 Receipt status: **PASS**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: 12 passed, 12 total; webhook pipeline: 46 passed, 46 total; full backend regression: 3971 passed, 3971 total. Receipts: `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\integration`.
@@ -122,7 +132,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 - Security tests: **PASS**. Egress guard: PASS; blocked non-loopback attempts: 0.
 - Tenant violations: 0; unscoped catalog reads: 0.
-- Pre-proof artifact privacy scan: **PASS** at 2026-10-22T15:12:11.704378Z. The proof-inclusive post-generation scan and checksum manifest are `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\security\artifact-privacy-scan.json` and `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\security\artifact-checksum-manifest.txt`.
+- Pre-proof artifact privacy scan: **PASS** at 2026-10-22T15:12:11.704378Z. The supplemental Pro receipt, campaign ledger, budget snapshot, and updated proof were included in a final scan after the follow-up review; results and manifest are `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\security\artifact-privacy-scan.json` and `D:\easymod\_product-engine-v1-3-evidence-final-20261022-09\security\artifact-checksum-manifest.txt`.
 - No credential values are stored in the proof package.
 
 ## J. Cost and merchant economics
@@ -142,14 +152,14 @@ No merchant time saved, adoption, order outcomes, conversion or ROI data exists 
 
 Verdict: **PASS**; reviewer: Independent Verification Agent (read-only); reviewed code commit: 38b4be066b508ee25f7a43a11707139c5fc0f659; reviewed runner hash: 6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d.
 
-The independent reviewer inspected frozen code SHA `38b4be066b508ee25f7a43a11707139c5fc0f659`, recomputed backend and runner hashes, audited the paid and deterministic comparisons plus integration, security, Playwright and privacy artifacts, and reran five focused non-paid suites (5/5 suites, 175/175 tests on Node v20.20.2). The reviewer did not repeat paid Gemini calls or the full integration and browser suites; those results remain supported by their recorded receipts. The final 147-entry manifest was independently recomputed with no invalid, duplicate, missing, mismatched, out-of-scope or unlisted entries. No source code changed after review.
+The independent reviewer inspected frozen product code SHA `38b4be066b508ee25f7a43a11707139c5fc0f659`, recomputed backend and runner hashes, audited the paid and deterministic comparisons plus integration, security, Playwright and privacy artifacts, and reran five focused non-paid suites (5/5 suites, 175/175 tests on Node v20.20.2). The reviewer did not repeat paid Gemini calls or the full integration and browser suites; those results remain supported by their recorded receipts. The original 147-entry manifest was independently recomputed with no invalid, duplicate, missing, mismatched, out-of-scope or unlisted entries. After that review, only the isolated evaluation harness and its documentation changed for the supplementary Pro diagnostic; no production backend source changed. A follow-up read-only architecture review found and documented the Pro output-token limitation and the ledger-stage collision risk. The harness now uses unique per-invocation stages; a regression test proves repeated local call IDs accrue separately. The reviewer confirmed these fixes and the report wording with no remaining blockers. Post-review local checks passed: four offline harness suites (71/71 tests) and the focused non-paid catalog-restoration replay check. The refreshed final artifact scan and manifest include the supplemental diagnostic evidence.
 
 ## M. Remaining decisions
 
 | Task | Classification | Evidence/status |
 |---|---|---|
-| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: PASS; paid Gemini quality: PASS; vision results are listed above. |
-| Repeat final independent review after any correction | Required before integration | Independent verification: PASS. |
+| Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: PASS; paid Gemini text quality: PASS; photo quality: FAIL and the supplementary Pro probe is inconclusive because its output budget was consumed by thinking tokens. |
+| Repeat final independent review after any correction | Required before integration | Frozen product-code review: PASS; read-only follow-up review of the supplementary harness fixes: PASS, no remaining blockers. |
 | Live Meta, production data and release authorization | Required before production release | Not authorized and not tested in this milestone. |
 | Merchant adoption, time-saved, conversion and ROI study | Optional future measurement | Not available from synthetic runs. |
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const { createEvaluationBudget } = require('./evaluation-budget');
+const { createEvaluationBudget, GEMINI_PRO_PRICE_SNAPSHOT } = require('./evaluation-budget');
 const { createGeminiEvaluationClient, EvaluationClientError, MODEL } = require('./gemini-evaluation-client');
 const { loadGenuinePhotoFixture, GENUINE_PHOTO_MANIFEST } = require('./genuine-photo-fixtures');
 const { loadSyntheticMediaFixture, SYNTHETIC_MEDIA_MANIFEST } = require('./synthetic-media-fixtures');
@@ -80,6 +80,37 @@ describe('bounded Gemini evaluation client', () => {
         expect(receiptText).not.toContain('Synthetic image description.');
         expect(receiptText).not.toContain('Use only provided evidence.');
         expect(receiptText).not.toContain('fixture-01');
+    });
+
+    test('routes an explicitly configured bounded image probe through Gemini Pro only', async () => {
+        process.env['EM-GEMINI-KEY'] = 'test-only-secret';
+        const model = GEMINI_PRO_PRICE_SNAPSHOT.model;
+        const budget = makeBudget({ model });
+        const llm = { chat: jest.fn(async params => {
+            expect(params).toEqual(expect.objectContaining({
+                preferredProvider: 'gemini-pro',
+                skipProviders: ['gemini-lite', 'openai'],
+                returnMetadata: true,
+            }));
+            return { text: 'Visible garment observation.', provider: 'gemini-pro', model,
+                usage: { promptTokenCount: 4200, candidatesTokenCount: 10 } };
+        }) };
+        const client = createGeminiEvaluationClient({ budget, llm, model });
+        const fixture = loadGenuinePhotoFixture('yellow-kurta');
+        const result = await client.chat(validParams({ messages: [{ role: 'user', content: [
+            { type: 'text', text: 'Identify visible garment and color.' },
+            { type: 'image_url', url: fixture.dataUrl },
+        ] }] }));
+
+        expect(result).toMatchObject({ provider: 'gemini-pro', model });
+        expect(budget.snapshot()).toMatchObject({ model, visionRequestCount: 1, pricing: { inputUsdPerMillion: 2, outputUsdPerMillion: 12 } });
+        expect(JSON.stringify(budget.snapshot())).not.toContain(fixture.dataUrl);
+    });
+
+    test('rejects model names inherited from JavaScript object prototypes', () => {
+        const budget = { execute: jest.fn(), snapshot: () => ({ model: 'toString' }) };
+        expect(() => createGeminiEvaluationClient({ budget, llm: { chat: jest.fn() }, model: 'toString' }))
+            .toThrow(EvaluationClientError);
     });
 
     test('accepts one bounded local raster image and counts the request as vision', async () => {

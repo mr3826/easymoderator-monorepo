@@ -66,6 +66,26 @@ describe('persistent cumulative evaluation campaign ledger', () => {
         });
     });
 
+    test('counts the same local call id from distinct probe attempts separately', () => {
+        const ledger = makeLedger(createPath(), { maxRequests: 2, maxVisionRequests: 2 });
+        ledger.record('gemini-pro-photo-only-run-a-attempt-a', {
+            calls: [call('call-1', 0.25, { vision: true })],
+        });
+        ledger.record('gemini-pro-photo-only-run-a-attempt-b', {
+            calls: [call('call-1', 0.25, { vision: true })],
+        });
+
+        expect(ledger.snapshot()).toMatchObject({
+            requestCount: 2,
+            visionRequestCount: 2,
+            reservedWorstCaseUsd: 0.5,
+            calls: expect.arrayContaining([
+                expect.objectContaining({ stage: 'gemini-pro-photo-only-run-a-attempt-a', callId: 'call-1' }),
+                expect.objectContaining({ stage: 'gemini-pro-photo-only-run-a-attempt-b', callId: 'call-1' }),
+            ]),
+        });
+    });
+
     test('enforces total campaign request and genuine-vision caps', () => {
         const ledgerPath = createPath();
         const ledger = makeLedger(ledgerPath, { maxRequests: 1, maxVisionRequests: 0 });

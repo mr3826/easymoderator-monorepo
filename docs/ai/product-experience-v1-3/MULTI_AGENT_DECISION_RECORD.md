@@ -143,6 +143,27 @@ IMPLEMENTATION_OWNER: Lead orchestrator / AI Product Engineer.
 INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only after the final candidate freeze.
 FINAL_VERDICT: Revert the measured regression and report the unresolved 0/3 category result honestly; do not claim integration readiness.
 ```
+## Follow-up decision — bounded Gemini Pro vision diagnostic
+
+```text
+DECISION_ID: V13-PHOTO-PRO-MODEL-DIAGNOSTIC-01
+OBSERVED_PROBLEM: The frozen Gemini Lite run had 0/3 category matches and 3/3 color matches on the licensed public-photo probe. Multiple prompt-only iterations did not improve categories, so a model-tier hypothesis remained untested.
+MERCHANT_IMPACT: A stronger vision model could improve category extraction, but changing the production tier without matched evidence would add cost without proving merchant value.
+CUSTOMER_IMPACT: Photo labels must remain untrusted retrieval evidence; no model output may establish catalog identity or merchant-confirmed material.
+CURRENT_IMPLEMENTATION: Production continues to use the pinned Gemini Lite route for extraction. The diagnostic path adds an explicit, evaluation-only Gemini Pro selection with a model-specific rate card and an exact endpoint permit.
+OPTIONS_CONSIDERED: Configure Pro in production based on general capability claims; repeat prompt wording changes; run the same three fixtures under a tightly capped Pro-only diagnostic while preserving prompt, route, schema, image bytes, and scorer.
+RECOMMENDED_CHANGE: Run only the bounded Pro photo diagnostic. Use a fresh campaign capped at USD 0.22, three total requests, and three vision requests; require the exact EM-GEMINI-KEY and an exact Gemini Pro URL permit. Exclude Gemini Lite and OpenAI fallbacks. Keep the production model and acceptance gate unchanged.
+ALTERNATIVES_REJECTED: Do not infer success from the model's documented multimodal support. Do not change the production model, accept partial results, relabel fixtures, or call an independent holdout after a diagnostic that produces no usable labels.
+SECURITY_IMPACT: Only the evaluation harness changed. The request validator pins the model path to the matching model-priced budget; fixture bytes must remain registered, checksummed, local raster data URLs. No key, raw provider text, dataset photo, production record, or customer message is written to the receipt.
+COST_IMPACT: Three Pro calls returned reported token usage. Estimated provider charge USD 0.017446; worst-case reserved USD 0.116766 under the USD 0.22 campaign ceiling. The invoice is unavailable. Reconciled V1.3 reservations plus the separately recorded V1.2 conservative exposure total USD 4.788607761 against the shared USD 10 authorization, if V1.2 activity is included.
+FUTURE_COMPATIBILITY: Model selection is explicit and confined to the evaluation client; default evaluation remains Gemini Lite. The Pro price snapshot is USD 2 input / USD 12 output per million tokens for the standard tier below 200k input tokens, pinned from Google pricing on 2026-10-22.
+TESTABLE_ACCEPTANCE_CRITERIA: Unit tests verify Pro-specific rates, provider pinning, wrong-model rejection, one-use request permits, and rejection of prototype-inherited model names. The paid probe uses the existing production image extraction route and the exact three checksum-verified fixture images; it records only parsed category/color fields, usage and cost metadata.
+MEASURED_RESULT: Three Pro calls executed; usable category 0/3 and usable color 0/3. The production route limited output to 250 tokens; the receipt shows 236–240 thinking tokens and only 6–10 candidate tokens per call. Because thinking counts toward the output limit and the receipt omits raw text and finish reason, this result is inconclusive about recognition quality; it is still a failed gate and does not pass photo acceptance.
+IMPLEMENTATION_OWNER: Lead orchestrator / AI Product Engineer.
+INDEPENDENT_CHALLENGER: Read-only architecture review of the evaluation harness and receipt; flagged the output-token confound and fixed-stage ledger collision. The harness now creates a unique ledger stage for each invocation and has a regression test for repeated local call IDs across stages.
+FINAL_VERDICT: Do not configure Pro in production. Preserve AUTOMATED_QA_VERDICT=FAIL and INTEGRATION_READY=NO. Do not treat this run as evidence of model recognition quality; any future diagnostic needs a separately authorized cap, adequate output allowance, and finish-reason metadata.
+```
+
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

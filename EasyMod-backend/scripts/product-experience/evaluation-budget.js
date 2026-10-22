@@ -6,9 +6,25 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { createHash } = require('node:crypto');
 const geminiReservationContext = new AsyncLocalStorage();
 const GEMINI_HOST = 'generativelanguage.googleapis.com';
-const GEMINI_PATH = '/v1beta/models/gemini-3.1-flash-lite:generateContent';
 const MAX_GEMINI_REQUEST_BODY_BYTES = 12 * 1024 * 1024;
 const IMAGE_TOKEN_UPPER_BOUND = 16384;
+
+const GEMINI_MODEL_PRICE_SNAPSHOTS = Object.freeze({
+    'gemini-3.1-flash-lite': Object.freeze({
+        model: 'gemini-3.1-flash-lite', inputUsdPerMillion: 0.25, outputUsdPerMillion: 1.5,
+        source: 'https://ai.google.dev/gemini-api/docs/pricing', pinnedAt: '2026-10-22',
+    }),
+    'gemini-3.1-pro-preview': Object.freeze({
+        model: 'gemini-3.1-pro-preview', inputUsdPerMillion: 2, outputUsdPerMillion: 12,
+        source: 'https://ai.google.dev/gemini-api/docs/pricing', pinnedAt: '2026-10-22',
+        pricingTier: 'standard-under-200k-input-tokens',
+    }),
+});
+const GEMINI_PRICE_SNAPSHOT = GEMINI_MODEL_PRICE_SNAPSHOTS['gemini-3.1-flash-lite'];
+const GEMINI_PRO_PRICE_SNAPSHOT = GEMINI_MODEL_PRICE_SNAPSHOTS['gemini-3.1-pro-preview'];
+const getGeminiPriceSnapshot = model => Object.prototype.hasOwnProperty.call(GEMINI_MODEL_PRICE_SNAPSHOTS, model)
+    ? GEMINI_MODEL_PRICE_SNAPSHOTS[model]
+    : null;
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const headerValue = (headers, name) => {
@@ -25,8 +41,9 @@ const validateGeminiRequest = (request, reservation) => {
         || Buffer.byteLength(request.body, 'utf8') > MAX_GEMINI_REQUEST_BODY_BYTES) return null;
     let url;
     try { url = new URL(request.url); } catch (_) { return null; }
-    if (url.protocol !== 'https:' || url.hostname !== GEMINI_HOST || (url.port && url.port !== '443')
-        || url.username || url.password || url.pathname !== GEMINI_PATH || url.search || url.hash
+    const modelPricing = getGeminiPriceSnapshot(reservation?.model);
+    if (!modelPricing || url.protocol !== 'https:' || url.hostname !== GEMINI_HOST || (url.port && url.port !== '443')
+        || url.username || url.password || url.pathname !== `/v1beta/models/${modelPricing.model}:generateContent` || url.search || url.hash
         || String(request.method || '').toUpperCase() !== 'POST' || request.redirect !== 'error') return null;
     const apiKey = headerValue(request.headers, 'x-goog-api-key');
     if (typeof process.env['EM-GEMINI-KEY'] !== 'string' || !process.env['EM-GEMINI-KEY'].trim()
@@ -128,14 +145,6 @@ const consumeGeminiEvaluationPermit = (url, init = {}) => {
     return true;
 };
 
-const GEMINI_PRICE_SNAPSHOT = Object.freeze({
-    model: 'gemini-3.1-flash-lite',
-    inputUsdPerMillion: 0.25,
-    outputUsdPerMillion: 1.5,
-    source: 'https://ai.google.dev/gemini-api/docs/pricing',
-    pinnedAt: '2026-10-22',
-});
-
 const HARD_CAPS = Object.freeze({
     ceilingUsd: 10,
     maxRequests: 1000,
@@ -176,19 +185,20 @@ const normalizeConfig = config => {
     const allowed = [...Object.keys(DEFAULTS), 'ceilingUsd', 'rates'];
     if (Object.keys(config).some(key => !allowed.includes(key))) throw new BudgetError('INVALID_CONFIG');
     const limits = { ...DEFAULTS, ...config };
+    const modelPricing = getGeminiPriceSnapshot(limits.model);
     if (!Number.isFinite(limits.ceilingUsd) || limits.ceilingUsd <= 0 || limits.ceilingUsd > HARD_CAPS.ceilingUsd
-        || Math.floor(limits.ceilingUsd * USD_UNITS) < 1 || limits.model !== GEMINI_PRICE_SNAPSHOT.model) {
+        || Math.floor(limits.ceilingUsd * USD_UNITS) < 1 || !modelPricing) {
         throw new BudgetError('INVALID_CONFIG');
     }
     for (const key of Object.keys(DEFAULTS).filter(key => key !== 'model')) {
         const minimum = ['maxRetries', 'maxVisionRequests'].includes(key) ? 0 : 1;
         if (!integer(limits[key], minimum, HARD_CAPS[key])) throw new BudgetError('INVALID_CONFIG');
     }
-    const rates = hasInjectedRates ? config.rates : GEMINI_PRICE_SNAPSHOT;
+    const rates = hasInjectedRates ? config.rates : modelPricing;
     for (const key of ['inputUsdPerMillion', 'outputUsdPerMillion']) {
         if (!Number.isFinite(rates[key]) || rates[key] <= 0 || rates[key] > 1000000) throw new BudgetError('INVALID_CONFIG');
     }
-    return Object.freeze({ ...limits, rates: Object.freeze({
+    return Object.freeze({ ...limits, modelPricing, rates: Object.freeze({
         inputUsdPerMillion: rates.inputUsdPerMillion,
         outputUsdPerMillion: rates.outputUsdPerMillion,
     }) });
@@ -263,7 +273,12 @@ const createEvaluationBudget = (config, hooks = {}) => {
     const snapshot = () => ({
         schemaVersion: 1,
         model: limits.model,
-        pricing: { ...limits.rates, source: officialPricing ? GEMINI_PRICE_SNAPSHOT.source : 'injected-rates', pinnedAt: GEMINI_PRICE_SNAPSHOT.pinnedAt },
+        pricing: {
+            ...limits.modelPricing,
+            inputUsdPerMillion: limits.rates.inputUsdPerMillion,
+            outputUsdPerMillion: limits.rates.outputUsdPerMillion,
+            source: officialPricing ? limits.modelPricing.source : 'injected-rates',
+        },
         ceilingUsd: usd(ceilingUnits),
         committedUsd: usd(committedUnits),
         remainingUsd: usd(Math.max(0, ceilingUnits - committedUnits)),
@@ -417,6 +432,9 @@ const createEvaluationBudget = (config, hooks = {}) => {
 module.exports = {
     createEvaluationBudget,
     GEMINI_PRICE_SNAPSHOT,
+    GEMINI_PRO_PRICE_SNAPSHOT,
+    GEMINI_MODEL_PRICE_SNAPSHOTS,
+    getGeminiPriceSnapshot,
     BudgetError,
     consumeGeminiEvaluationPermit,
 };
