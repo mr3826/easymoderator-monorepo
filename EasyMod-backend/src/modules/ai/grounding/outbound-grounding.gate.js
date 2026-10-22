@@ -171,17 +171,6 @@ const splitClaimClauses = (text, includeConjunctions = true) => {
     return String(text || '').split(separators).map(value => value.trim()).filter(Boolean);
 };
 
-const isDeliveryPolicyAssertion = (text) => DELIVERY_ASSERTION.test(text)
-    || DELIVERY_NEGATIVE_ASSERTION.test(text);
-
-/** Keep a separate delivery-policy aside from suppressing a product claim. */
-const splitAvailabilityClauses = (text) => {
-    let value = String(text || '').replace(/\(([^()]*)\)/g, (parenthetical, inner) =>
-        isDeliveryPolicyAssertion(inner) ? `; ${inner}; ` : parenthetical);
-    value = value.replace(/\s+[—–]\s+/g, '; ');
-    return splitClaimClauses(value);
-};
-
 const claimClauseAt = (text, index) => {
     const prefix = String(text || '').slice(0, index);
     const suffix = String(text || '').slice(index);
@@ -719,6 +708,38 @@ const productNameMatches = (clause, products) => {
     return selected;
 };
 
+/** Remove explicit delivery-policy assertions before checking product availability. */
+const stripDeliveryPolicyAssertions = (text, products = []) => {
+    const source = String(text || '');
+    const productSpans = productNameMatches(source, products);
+    const patterns = [DELIVERY_ASSERTION, DELIVERY_NEGATIVE_ASSERTION]
+        .map(pattern => new RegExp(pattern.source, 'giu'));
+    const policySpans = patterns.flatMap(pattern => [...source.matchAll(pattern)]
+        .map(match => ({ start: match.index, end: match.index + match[0].length })))
+        .sort((left, right) => left.start - right.start || right.end - left.end);
+    const removableSpans = [];
+
+    for (const span of policySpans) {
+        const overlapsProductName = productSpans.some(product =>
+            span.start < product.end && product.start < span.end);
+        const overlapsPolicy = removableSpans.some(existing =>
+            span.start < existing.end && existing.start < span.end);
+        if (!overlapsProductName && !overlapsPolicy) removableSpans.push(span);
+    }
+
+    let cursor = 0;
+    let sanitized = '';
+    for (const span of removableSpans) {
+        sanitized += `${source.slice(cursor, span.start)} `;
+        cursor = span.end;
+    }
+    return sanitized + source.slice(cursor);
+};
+
+/** Keep delivery-policy assertions from suppressing an adjacent product claim. */
+const splitAvailabilityClauses = (text, products = []) =>
+    splitClaimClauses(stripDeliveryPolicyAssertions(text, products));
+
 /**
  * Product names can contain a material word without making that word a
  * merchant-recorded material fact. Inspect each named product's adjacent claim
@@ -863,9 +884,9 @@ const isMaterialUncertaintyClause = (clause, evidence) => {
 const unsupportedVariantClaims = (candidate, evidence) => {
     if (!evidence.verifiedProducts?.length) return [];
     const violations = [];
-    for (const clause of splitAvailabilityClauses(candidate)) {
+    for (const clause of splitAvailabilityClauses(candidate, evidence.verifiedProducts)) {
         const expected = availabilityAssertion(clause);
-        if (!expected || isDeliveryPolicyAssertion(clause)) continue;
+        if (!expected) continue;
         if (isMaterialUncertaintyClause(clause, evidence)) continue;
         if (/\b(?:material|fabric|photo|picture|image)\b/i.test(clause) && !OPTION_LABEL.test(clause)) continue;
         const claimProducts = productsForProductClaim(clause, evidence);
@@ -1037,20 +1058,14 @@ const unsupportedStockClaim = (candidate, evidence) => {
         if (evidence.productStatus !== ProductEvidenceStatus.NONE) return false;
         return splitAvailabilityClauses(candidate).some(clause => {
             if (!availabilityAssertion(clause)) return false;
-            const subjectTerms = availabilitySubjectTerms(clause);
-            const pureDeliveryPolicy = (DELIVERY_ASSERTION.test(clause)
-                || DELIVERY_NEGATIVE_ASSERTION.test(clause))
-                && DELIVERY_TERMS.test(clause)
-                && !subjectTerms.length;
             const purePaymentPolicy = isPurePaymentPolicyAvailability(clause);
-            if (pureDeliveryPolicy || purePaymentPolicy) return false;
+            if (purePaymentPolicy) return false;
             return true;
         });
     }
-    for (const clause of splitAvailabilityClauses(candidate)) {
+    for (const clause of splitAvailabilityClauses(candidate, evidence.verifiedProducts)) {
         const expected = availabilityAssertion(clause);
-        const deliveryOnlyAvailability = isDeliveryPolicyAssertion(clause);
-        if (!expected || deliveryOnlyAvailability) continue;
+        if (!expected) continue;
         if (isMaterialUncertaintyClause(clause, evidence)) continue;
         if (/\b(?:material|fabric|photo|picture|image)\b|ছবি/i.test(clause) && !OPTION_LABEL.test(clause)) continue;
         const claimProducts = productsForProductClaim(clause, evidence);

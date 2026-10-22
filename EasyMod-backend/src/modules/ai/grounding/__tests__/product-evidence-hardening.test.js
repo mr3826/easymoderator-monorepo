@@ -1662,6 +1662,7 @@ describe('product evidence trust boundaries', () => {
         ['Delivery Jacket', 'Delivery Jacket is available.'],
         ['Shipping Jacket', 'Shipping Jacket is available.'],
         ['Courier Jacket', 'Courier Jacket is available.'],
+        ['Delivery Options', 'Delivery Options is available.'],
         ['Classic Blue Denim Jacket', 'Classic Blue Denim Jacket is available for delivery.'],
     ])('delivery wording does not bypass verified out-of-stock evidence for %s', (name, candidate) => {
         const evidence = evidenceForProducts([{ product: catalogProduct({
@@ -1686,6 +1687,11 @@ describe('product evidence trust boundaries', () => {
         'Classic Blue Denim Jacket is available (delivery options are available).',
         'Classic Blue Denim Jacket is available — delivery options are available.',
         'Delivery options are available — Classic Blue Denim Jacket is available.',
+        'Classic Blue Denim Jacket is available: delivery options are available.',
+        'Classic Blue Denim Jacket is available - delivery options are available.',
+        'Classic Blue Denim Jacket is available—delivery options are available.',
+        'Classic Blue Denim Jacket is available (delivery options are available (nationwide)).',
+        'Classic Blue Denim Jacket is available [delivery options are available].',
     ])('a separate supported delivery assertion does not hide an out-of-stock product claim: %s', (candidate) => {
         const evidence = evidenceForProducts([{ product: catalogProduct({
             in_stock: false,
