@@ -881,16 +881,17 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     const notes = [];
 
     // -----------------------------------------------------------------------
-    // Photo flow: the photo reaches a model exactly once.
+    // Photo flow: when enabled, image extraction is attempted at most once.
     //   Phase 1 — extract product attributes from the image (one call, JSON)
     //   Phase 2 — fetch live product data from the DB on those attributes
-    //   Phase 3 — reply from the extracted description + DB rows, text-only
+    //   Phase 3 — when identity is unique, reply from observations + DB rows, text-only
     //
     // Phase 3 carries no image bytes. The description and the matched rows
-    // already say everything the reply needs, so re-attaching the photo would
-    // double the per-photo image cost — and double the number of rate-limited
-    // calls carrying an image — to buy very little. AI_VISION_ENABLED=true
-    // re-attaches it (see vision-policy.service.js).
+    // already say everything a matched reply needs, so re-attaching the photo
+    // would double the per-photo image cost — and double the number of rate-
+    // limited calls carrying an image — to buy very little. Unresolved identity
+    // returns a deterministic clarification without a reply-model call.
+    // AI_VISION_ENABLED=true re-attaches it (see vision-policy.service.js).
     // -----------------------------------------------------------------------
     let attrs = null;
     let searchOutcome = { products: [], failed: false };
@@ -1048,15 +1049,13 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         && evidence.productStatus === grounding.ProductEvidenceStatus.VERIFIED
         && evidence.verifiedProducts.length === 1;
     const photoCatalogNoMatch = imageUrls.length > 0
-        && Boolean(attrs)
         && evidence.productStatus !== grounding.ProductEvidenceStatus.RETRIEVAL_FAILED
         && !photoHasUniqueVerifiedProduct;
     if (photoCatalogNoMatch) {
-        // Sparse visual attributes (for example, category only or color only)
-        // can match unrelated SKUs, and multiple matching rows do not identify
-        // which product appears in the photo. Treat both cases as unresolved;
+        // Missing, sparse, or ambiguous visual identity cannot bind a catalog
+        // candidate to the customer's photo. Treat these cases as unresolved;
         // do not let candidate IDs, prices, media URLs, or context pointers bind
-        // to the customer's photo.
+        // to the photo, and do not let an ungrounded reply model invent a match.
         evidence.productStatus = grounding.ProductEvidenceStatus.NOT_FOUND;
         evidence.verifiedProducts = [];
         evidence.relatedProducts = [];
@@ -1143,9 +1142,9 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // Answering it with "we don't sell that" would be a different — and wrong —
     // claim, so the written not-found reply is reserved for turns that really are
     // asking whether a product exists.
-    // Photo turns do not use the ordinary text-only product shortcut. A valid
-    // visual extraction with no full catalog match is handled by the deterministic
-    // photo no-match reply below; a matched photo can continue to the text reply.
+    // Photo turns do not use the ordinary text-only product shortcut. Any photo
+    // without a unique verified identity is handled by the deterministic
+    // clarification below; a uniquely matched photo can continue to a text reply.
     const productQuestion = !policyOnlyWithoutProduct && !imageUrls.length && !knowledge.snippets && (
         evidence.relatedProducts.length > 0
         || explicitCatalogIdentity
@@ -1171,7 +1170,9 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     });
     if (photoCatalogNoMatch) {
         return {
-            response: grounding.productPhotoCatalogNoMatchReply(language, { onlyFirstPhoto: imageUrls.length > 1 }),
+            response: grounding.productPhotoCatalogNoMatchReply(language, {
+                onlyFirstPhoto: photoMatchEnabled() && imageUrls.length > 1,
+            }),
             confidence: 1.0,
             source: 'grounding_image_no_match',
             grounding: evidence,

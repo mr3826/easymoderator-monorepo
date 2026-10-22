@@ -1176,13 +1176,13 @@ describe('D — customer photo → product matching', () => {
             ? { text: JSON.stringify(extracted), provider: 'gemini' }
             : { text: 'reply', provider: 'gemini' });
 
-        await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+        const result = await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', language: 'en', imageUrls: [PHOTO] });
 
         expect(imageCalls()).toHaveLength(1);
         expect(productSearch.searchByAttributes).not.toHaveBeenCalled();
-        expect(lastSystemPrompt()).toContain("The customer's photo could not be verified");
-        expect(JSON.stringify(llm.chat.mock.calls.at(-1)[0])).not.toContain('printed floral border');
-        expect(JSON.stringify(llm.chat.mock.calls.at(-1)[0])).not.toContain('Untrusted visual observations');
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(llm.chat).toHaveBeenCalledTimes(1);
     });
 
     test.each([
@@ -1193,9 +1193,11 @@ describe('D — customer photo → product matching', () => {
             ? { text, provider: 'gemini' }
             : { text: 'reply', provider: 'gemini' });
 
-        await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+        const result = await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', language: 'en', imageUrls: [PHOTO] });
 
         expect(productSearch.searchByAttributes).not.toHaveBeenCalled();
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(llm.chat).toHaveBeenCalledTimes(1);
         expect(JSON.stringify(llm.chat.mock.calls.at(-1)[0])).not.toContain('Untrusted visual observations');
     });
 
@@ -1233,17 +1235,23 @@ describe('D — customer photo → product matching', () => {
         expect(llm.chat).toHaveBeenCalledTimes(1);
     });
 
-    test('a failed extraction still reaches the model grounded, never on the bare prompt', async () => {
+    test('a failed extraction cannot generate an availability claim without catalog identity', async () => {
         llm.chat.mockImplementation(async ({ systemPrompt }) =>
             /product image analyzer/i.test(systemPrompt || '')
                 ? { text: 'sorry, I cannot do that', provider: 'gemini' }   // unparseable → attrs null
-                : { text: 'reply', provider: 'gemini' });
+                : { text: 'Red Cotton Saree is available in our shop.', provider: 'gemini' });
 
-        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+        const result = await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', language: 'en', imageUrls: [PHOTO] });
 
-        const sys = lastSystemPrompt();
-        expect(sys).not.toBe('BASE');
-        expect(sys).toContain('NO product in this shop');
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(result.response).not.toMatch(/available/i);
+        expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+        expect(result.grounding.verifiedProducts).toEqual([]);
+        expect(result.grounding.mediaUrl).toBeNull();
+        expect(result.sourceReferences).toBeNull();
+        expect(productSearch.searchByAttributes).not.toHaveBeenCalled();
+        expect(llm.chat).toHaveBeenCalledTimes(1);
     });
 
     test('a caption-less photo still gets a grounding note', async () => {
@@ -1256,15 +1264,21 @@ describe('D — customer photo → product matching', () => {
         expect(llm.chat).toHaveBeenCalledTimes(1);
     });
 
-    test('AI_PHOTO_MATCH_ENABLED=false skips the image call and admits it cannot see', async () => {
+    test('AI_PHOTO_MATCH_ENABLED=false skips image analysis and does not infer a match', async () => {
         process.env.AI_PHOTO_MATCH_ENABLED = 'false';
 
-        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+        const result = await route({
+            shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', language: 'en',
+            imageUrls: [PHOTO, 'https://scontent.xx.fbcdn.net/second.jpg'],
+        });
 
         expect(imageCalls()).toHaveLength(0);
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(
             expect.objectContaining({ query: 'eita ache?' }));
-        expect(lastSystemPrompt()).toContain('CANNOT see images');
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(result.response).not.toMatch(/only checked the first photo/i);
+        expect(llm.chat).not.toHaveBeenCalled();
     });
 });
 
