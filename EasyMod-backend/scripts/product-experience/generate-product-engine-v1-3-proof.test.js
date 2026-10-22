@@ -3,9 +3,68 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
+const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields } = require('./generate-product-engine-v1-3-proof');
+
+describe('required visual case coverage audit', () => {
+    test('counts one clean single-product case and does not treat the three-photo probe as 3 of 15 cases', () => {
+        const coverage = summarizeRequiredVisualCaseCoverage([
+            { fixtureId: 'yellow-kurta' },
+            { fixtureId: 'handloom-kurta' },
+            { fixtureId: 'museum-kurta' },
+        ]);
+        expect(coverage).toMatchObject({ requiredCaseTypes: 15, representedCaseTypes: 1 });
+        expect(coverage.cases).toHaveLength(15);
+        expect(coverage.cases[0]).toMatchObject({ status: 'REPRESENTED', fixtureIds: ['handloom-kurta'] });
+        expect(coverage.cases.slice(1).every(item => item.status === 'NOT_COVERED')).toBe(true);
+    });
+});
+
+describe('worktree status semantics', () => {
+    test('reports the current clean state and keeps verification-start state separate', () => {
+        expect(worktreeStatusFields({ worktreeCleanAtStart: true }, false)).toEqual({
+            WORKTREE_CLEAN: false,
+            WORKTREE_CLEAN_AT_VERIFICATION_START: true,
+            WORKTREE_CLEAN_AT_PROOF_GENERATION: false,
+        });
+    });
+
+    test('does not infer verification-start cleanliness when no receipt exists', () => {
+        expect(worktreeStatusFields(null, true)).toEqual({
+            WORKTREE_CLEAN: true,
+            WORKTREE_CLEAN_AT_VERIFICATION_START: 'UNKNOWN',
+            WORKTREE_CLEAN_AT_PROOF_GENERATION: true,
+        });
+    });
+});
 
 describe('evidence artifact selection', () => {
+    test('collects only current-code-bound Lite photo receipts and preserves redacted output', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-lite-photo-'));
+        try {
+            const runId = 'run-lite-photo';
+            fs.writeFileSync(path.join(workspace, runId + '.lite-photo.json'), JSON.stringify({
+                experiment: 'bounded-gemini-lite-production-photo-extraction-follow-up',
+                model: 'gemini-3.1-flash-lite',
+                sourceRevision: 'head',
+                engineSourceSha256: 'a'.repeat(64),
+                runnerSourceSha256: 'b'.repeat(64),
+                photoEvaluation: { photosTested: 1, categoryMatches: 1, colorMatches: 1, cases: [{
+                    fixtureId: 'yellow-kurta', fixtureSha256: 'c'.repeat(64), status: 'EXECUTED',
+                    providerResponseRedacted: '{"category":"kurta/panjabi","color":"yellow"}',
+                    categoryMatch: true, dominantColorMatch: true, productCatalogIdentityScored: false,
+                }] },
+                evaluationBudget: { requestCount: 1, visionRequestCount: 1, estimatedProviderChargeUsd: 0.001 },
+                campaignBudget: { reservedWorstCaseUsd: 0.02, ceilingUsd: 0.30 },
+            }));
+            const [run] = collectGeminiLitePhotoDiagnostics(workspace, 'head', 'a'.repeat(64), 'b'.repeat(64));
+            expect(run).toMatchObject({
+                runId, currentCodeBinding: 'PASS', photosTested: 1, categoryMatches: 1,
+                cases: [{ providerResponseRedacted: '{"category":"kurta/panjabi","color":"yellow"}', categoryMatch: true }],
+            });
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
+        }
+    });
     test('uses file modification time for receipts without a recorded timestamp', () => {
         const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-evidence-order-'));
         try {
@@ -358,14 +417,15 @@ describe('paid Gemini quality readiness gate', () => {
 describe('genuine photo acceptance gate', () => {
     const completeComparison = { comparisonValid: true };
     const photos = [
-        { fixtureId: 'photo-a', fixtureSha256: 'a'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true },
-        { fixtureId: 'photo-b', fixtureSha256: 'b'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true },
-        { fixtureId: 'photo-c', fixtureSha256: 'c'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true },
+        { fixtureId: 'photo-a', fixtureSha256: 'a'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true, productCatalogIdentityScored: true, catalogIdentityMatch: true },
+        { fixtureId: 'photo-b', fixtureSha256: 'b'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true, productCatalogIdentityScored: true, catalogIdentityMatch: true },
+        { fixtureId: 'photo-c', fixtureSha256: 'c'.repeat(64), status: 'EXECUTED', categoryMatch: true, dominantColorMatch: true, productCatalogIdentityScored: true, catalogIdentityMatch: true },
     ];
 
-    test('passes only with three executed, distinct, checksum-backed photos and all category and color matches', () => {
+    test('passes only with three distinct photos and correct visible attributes and catalog identity', () => {
         expect(assessGenuinePhotoQuality(completeComparison, photos, 3)).toEqual({
             status: 'PASS', photosTested: 3, categoryMatches: 3, colorMatches: 3,
+            identityMatches: 3,
             failedMetrics: [], missingMetrics: [],
         });
     });
@@ -376,7 +436,21 @@ describe('genuine photo acceptance gate', () => {
         ], 3);
         expect(result).toEqual({
             status: 'FAIL', photosTested: 3, categoryMatches: 2, colorMatches: 3,
+            identityMatches: 3,
             failedMetrics: ['categoryAccuracy'], missingMetrics: [],
+        });
+    });
+
+    test('does not call visible-label accuracy a product-recognition pass when catalog identity is unscored', () => {
+        const result = assessGenuinePhotoQuality(completeComparison, photos.map(photo => ({
+            ...photo,
+            productCatalogIdentityScored: false,
+            catalogIdentityMatch: undefined,
+        })), 3);
+        expect(result).toEqual({
+            status: 'NOT_MEASURED', photosTested: 3, categoryMatches: 3, colorMatches: 3,
+            identityMatches: null,
+            failedMetrics: [], missingMetrics: ['catalogIdentityAccuracy'],
         });
     });
 
@@ -401,6 +475,13 @@ describe('aggregate automated QA verdict', () => {
         expect(assessAutomatedQaVerdict({
             hasAutomatedFailure: false, sourceTruthMetricsAvailable: true, qualityPass: true,
             requiredEvidencePresent: true, automatedStepsPass: true, photoStatus: 'NOT_MEASURED',
+        })).toBe('BLOCKED');
+    });
+
+    test('blocks integration readiness when visible labels pass but required identity and scenario evidence is incomplete', () => {
+        expect(assessAutomatedQaVerdict({
+            hasAutomatedFailure: false, sourceTruthMetricsAvailable: true, qualityPass: true,
+            requiredEvidencePresent: false, automatedStepsPass: true, photoStatus: 'PASS',
         })).toBe('BLOCKED');
     });
 
@@ -508,6 +589,47 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('1307 requests, 67 vision requests, 5 unknown-usage calls');
         expect(markdown).toContain('$5.077867761');
         expect(markdown).toContain('$4.922132239 remaining against the $10.00 authorization');
+    });
+
+    test('reports the exact 15-case visual coverage instead of counting photos as distinct cases', () => {
+        const visualCaseCoverage = summarizeRequiredVisualCaseCoverage([
+            { fixtureId: 'yellow-kurta' },
+            { fixtureId: 'handloom-kurta' },
+            { fixtureId: 'museum-kurta' },
+        ]);
+        const markdown = renderMarkdown(proof, status, [], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+            visualCaseCoverage,
+        });
+
+        expect(markdown).toContain('Represented case types: 1/15');
+        expect(markdown).toContain('| Single product, clean photograph | REPRESENTED | handloom-kurta |');
+        expect(markdown).toContain('| Multiple photographed angles | NOT_COVERED | — |');
+        expect(markdown).toContain('Catalog product identity accuracy is therefore NOT_MEASURED.');
+    });
+
+    test('escapes untrusted provider and customer text before embedding it in Markdown', () => {
+        const markdown = renderMarkdown(proof, status, [], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+            currentBoundGeminiLitePhotoRun: {
+                runId: 'lite-run', model: 'gemini-3.1-flash-lite', providerRequests: 1, visionRequests: 1,
+                estimatedProviderChargeUsd: 0.001, reservedWorstCaseUsd: 0.01, campaignCeilingUsd: 0.30,
+                cases: [{
+                    fixtureId: 'fixture-public', providerResponseRedacted: '<script>alert(1)</script>|safe',
+                    customerFacingReplyRedacted: '`reply`',
+                }],
+            },
+        });
+
+        expect(markdown).toContain('&lt;script&gt;alert(1)&lt;/script&gt;&#124;safe');
+        expect(markdown).toContain('&#96;reply&#96;');
+        expect(markdown).not.toContain('<script>');
     });
 
     test('does not print literal source messages or replies in Markdown examples', () => {

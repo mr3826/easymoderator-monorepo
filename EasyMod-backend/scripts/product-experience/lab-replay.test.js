@@ -364,7 +364,7 @@ const parseProductionVisualObservation = text => {
         const source = fenced?.[1] || String(text || '').match(/\{[\s\S]*\}/)?.[0] || String(text || '');
         const parsed = JSON.parse(source);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-        const safeLabel = value => typeof value === 'string' && /^[\p{L}\p{M} -]{1,64}$/u.test(value.trim())
+        const safeLabel = value => typeof value === 'string' && /^[\p{L}\p{M} \/-]{1,64}$/u.test(value.trim())
             ? value.trim() : null;
         return {
             category: safeLabel(parsed.category),
@@ -375,6 +375,17 @@ const parseProductionVisualObservation = text => {
         return null;
     }
 };
+describe('production visual observation parser', () => {
+    test('accepts slash-separated categories permitted by the production extraction prompt', () => {
+        expect(parseProductionVisualObservation(
+            '{"category":"kurta/panjabi","color":"yellow-green","material":null}'
+        )).toEqual({
+            category: 'kurta/panjabi',
+            color: 'yellow-green',
+            materialFieldPopulated: false,
+        });
+    });
+});
 const runGenuinePhotoEvaluation = async (evaluationClient, options = {}) => {
     const maxOutputTokensOverride = options.maxOutputTokensOverride ?? null;
     const finishReasonForRequestId = typeof options.finishReasonForRequestId === 'function'
@@ -405,6 +416,7 @@ const runGenuinePhotoEvaluation = async (evaluationClient, options = {}) => {
                         && message.content.some(part => part?.type === 'image_url'));
                     if (hasRaster) providerObservations.push({
                         observation: parseProductionVisualObservation(result.text),
+                        providerResponseRedacted: redactTranscriptText(String(result.text || '').slice(0, 4096), null),
                         callId: result.budget.callId,
                         requestId: result.requestId,
                         finishReason: result.finishReason || finishReasonForRequestId(result.requestId),
@@ -440,9 +452,11 @@ const runGenuinePhotoEvaluation = async (evaluationClient, options = {}) => {
                     licenseUrl: fixture.licenseUrl,
                     classification: 'GENUINE_PUBLIC_PHOTO_NO_SOURCE_DATASET_PHOTO',
                     status: providerObservations.length ? 'EXECUTED' : 'NOT_RUN',
-                    schemaValid: Boolean(visual?.category || visual?.color),
+                    productionObservationParsed: Boolean(visual),
+                    labelPresenceProxy: Boolean(visual?.category || visual?.color),
                     observedCategory: visual?.category || null,
                     observedDominantColor: visual?.color || null,
+                    providerResponseRedacted: providerObservations[0]?.providerResponseRedacted || null,
                     categoryMatch: matches(visual?.category, fixture.expectedVisible.category),
                     dominantColorMatch: matches(visual?.color, fixture.expectedVisible.dominantColor),
                     unverifiedMaterialFieldPopulated: Boolean(visual?.materialFieldPopulated),
@@ -575,9 +589,11 @@ describe('genuine photo replay fixture isolation', () => {
             fixtureId: item.fixtureId,
             fixtureSha256: item.fixtureSha256,
             status: item.status,
-            schemaValid: item.schemaValid,
+            productionObservationParsed: item.productionObservationParsed,
+            labelPresenceProxy: item.labelPresenceProxy,
             observedCategory: item.observedCategory,
             observedDominantColor: item.observedDominantColor,
+            providerResponseRedacted: item.providerResponseRedacted,
             categoryMatch: item.categoryMatch,
             dominantColorMatch: item.dominantColorMatch,
             unverifiedMaterialFieldPopulated: item.unverifiedMaterialFieldPopulated,
@@ -636,6 +652,138 @@ describe('genuine photo replay fixture isolation', () => {
         expect(campaignSnapshot.reservedWorstCaseUsd).toBeLessThanOrEqual(0.30);
         expect(JSON.stringify(artifact)).not.toMatch(/EM-GEMINI-KEY|customerMessage|customerProfile|expectedTruth|data:image\//i);
         expect(artifact.diagnosticTransportSourceSha256).toMatch(/^[a-f0-9]{64}$/i);
+    }, 180000);
+
+    const geminiLitePhotoDiagnosticTest = process.env.LAB_GEMINI_LITE_PHOTO_DIAGNOSTIC === '1' ? test : test.skip;
+    geminiLitePhotoDiagnosticTest('runs a bounded three-photo Gemini Lite diagnostic and preserves redacted provider output', async () => {
+        if (mode !== 'real-gemini' || process.env.EASYMOD_LIVE_GEMINI_EGRESS !== '1'
+            || typeof process.env['EM-GEMINI-KEY'] !== 'string' || !process.env['EM-GEMINI-KEY'].trim()) {
+            throw new Error('The Gemini Lite photo diagnostic requires the process-scoped key and exact live egress opt-in.');
+        }
+        const { createEvaluationBudget, GEMINI_PRICE_SNAPSHOT } = require('./evaluation-budget');
+        const { createGeminiEvaluationClient } = require('./gemini-evaluation-client');
+        const { createEvaluationCampaignLedger } = require('./evaluation-campaign-ledger');
+        const campaignId = process.env.LAB_GEMINI_LITE_PHOTO_CAMPAIGN_ID;
+        if (typeof campaignId !== 'string' || !/^v13-gemini-lite-photo-diagnostic-[a-zA-Z0-9_.-]{1,48}$/.test(campaignId)) {
+            throw new Error('The Gemini Lite diagnostic requires a fresh dedicated campaign id.');
+        }
+        const campaignPath = path.join(LAB_ARTIFACT_ROOT, 'campaigns', campaignId, 'budget-ledger.json');
+        const resultPath = path.resolve(process.env.LAB_GEMINI_LITE_PHOTO_RESULT_PATH || '');
+        if (!resultPath.startsWith(OUTPUT_ROOT + path.sep) || path.basename(resultPath) !== runId + '.lite-photo.json') {
+            throw new Error('Gemini Lite diagnostic output must stay under the evidence runs directory.');
+        }
+        const ledger = createEvaluationCampaignLedger({
+            ledgerPath: campaignPath,
+            campaignId,
+            ceilingUsd: 0.30,
+            maxRequests: 3,
+            maxVisionRequests: 3,
+        });
+        if (ledger.snapshot().requestCount !== 0) throw new Error('The Gemini Lite diagnostic campaign must be fresh.');
+        process.env.REDIS_URL = '';
+        process.env.REDIS_HOST = 'localhost';
+        process.env.AI_USAGE_ACCOUNTING = 'false';
+        campaignLedger = ledger;
+        campaignLedgerPath = campaignPath;
+        campaignStage = 'gemini-lite-photo-only-' + runId;
+        budgetLedgerPath = path.join(OUTPUT_ROOT, runId + '.lite-photo-budget-ledger.json');
+        evaluationBudget = createEvaluationBudget({
+            model: GEMINI_PRICE_SNAPSHOT.model,
+            ceilingUsd: 0.30,
+            maxRequests: 3,
+            maxVisionRequests: 3,
+            maxConcurrency: 1,
+            maxInputTokens: 32768,
+            maxOutputTokens: 768,
+            maxRetries: 0,
+            maxTimeoutMs: 30000,
+        }, {
+            onSnapshot: snapshot => {
+                campaignLedger.record(campaignStage, snapshot);
+                persistBudgetLedger();
+            },
+        });
+        const actualLlm = jest.requireActual('src/modules/ai/llm.service');
+        evaluationClient = createRateLimitedEvaluationClient(createGeminiEvaluationClient({
+            budget: evaluationBudget,
+            llm: actualLlm,
+            model: GEMINI_PRICE_SNAPSHOT.model,
+            operationPrefix: 'v13-lite-photo',
+        }));
+
+        const startedAt = new Date().toISOString();
+        const evaluation = await runGenuinePhotoEvaluation(evaluationClient);
+        const safeCases = evaluation.cases.map(item => ({
+            fixtureId: item.fixtureId,
+            fixtureSha256: item.fixtureSha256,
+            sourcePageUrl: item.sourcePageUrl,
+            author: item.author,
+            license: item.license,
+            licenseUrl: item.licenseUrl,
+            classification: item.classification,
+            status: item.status,
+            productionObservationParsed: item.productionObservationParsed,
+            labelPresenceProxy: item.labelPresenceProxy,
+            observedCategory: item.observedCategory,
+            observedDominantColor: item.observedDominantColor,
+            providerResponseRedacted: item.providerResponseRedacted,
+            categoryMatch: item.categoryMatch,
+            dominantColorMatch: item.dominantColorMatch,
+            unverifiedMaterialFieldPopulated: item.unverifiedMaterialFieldPopulated,
+            providerCallId: item.providerCallId,
+            requestId: item.requestId,
+            finishReason: item.finishReason,
+            maxOutputTokens: item.maxOutputTokens,
+            usage: item.usage,
+            providerLatencyMs: item.providerLatencyMs,
+            estimatedProviderChargeUsd: item.estimatedProviderChargeUsd,
+            routeLatencyMs: item.routeLatencyMs,
+            customerFacingReplyRedacted: item.customerFacingReplyRedacted,
+            productCatalogIdentityScored: item.productCatalogIdentityScored,
+            catalogIdentityMatch: typeof item.catalogIdentityMatch === 'boolean' ? item.catalogIdentityMatch : null,
+        }));
+        const budgetSnapshot = evaluationBudget.snapshot();
+        const campaignSnapshot = campaignLedger.snapshot();
+        const artifact = {
+            schemaVersion: 1,
+            experiment: 'bounded-gemini-lite-production-photo-extraction-follow-up',
+            parserCorrection: 'slash-separated production category labels are retained by the evaluation scorer',
+            sourceRevision: sourceProvenance.sourceRevision,
+            engineSourceRevision: sourceProvenance.engineSourceRevision,
+            engineSourceSha256: sourceProvenance.engineSourceSha256,
+            runnerRevision: sourceProvenance.runnerRevision,
+            runnerSourceSha256: sourceProvenance.runnerSourceSha256,
+            model: GEMINI_PRICE_SNAPSHOT.model,
+            pricing: budgetSnapshot.pricing,
+            campaignId,
+            campaignStage,
+            campaignLedgerPath: path.relative(LAB_ARTIFACT_ROOT, campaignPath).replace(/\\/g, '/'),
+            photoEvaluation: {
+                evaluationSource: evaluation.evaluationSource,
+                photosTested: evaluation.photosTested,
+                categoryMatches: safeCases.filter(item => item.categoryMatch).length,
+                colorMatches: safeCases.filter(item => item.dominantColorMatch).length,
+                identityScored: false,
+                cases: safeCases,
+            },
+            evaluationBudget: budgetSnapshot,
+            campaignBudget: campaignSnapshot,
+            providerInvoice: 'NOT_AVAILABLE',
+            startedAt,
+            completedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(resultPath, JSON.stringify(artifact, null, 2) + '\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+
+        expect(evaluation.photosTested).toBe(3);
+        expect(safeCases).toHaveLength(3);
+        expect(safeCases.every(item => item.status === 'EXECUTED')).toBe(true);
+        expect(safeCases.every(item => typeof item.providerResponseRedacted === 'string')).toBe(true);
+        expect(budgetSnapshot).toMatchObject({ model: GEMINI_PRICE_SNAPSHOT.model, requestCount: 3, visionRequestCount: 3 });
+        expect(budgetSnapshot.limits.maxRetries).toBe(0);
+        expect(budgetSnapshot.limits.maxConcurrency).toBe(1);
+        expect(campaignSnapshot).toMatchObject({ ceilingUsd: 0.30, maxRequests: 3, maxVisionRequests: 3, requestCount: 3, visionRequestCount: 3 });
+        expect(campaignSnapshot.reservedWorstCaseUsd).toBeLessThanOrEqual(0.30);
+        expect(JSON.stringify(artifact)).not.toMatch(/EM-GEMINI-KEY|customerMessage|customerProfile|expectedTruth|data:image\\//i);
     }, 180000);
 });
 

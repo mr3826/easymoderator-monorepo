@@ -21,6 +21,43 @@ const PROOF_MARKDOWN = path.join(DOC_ROOT, 'PRODUCT_ENGINE_V1_3_INTEGRATION_CUST
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const readJson = filename => JSON.parse(fs.readFileSync(filename, 'utf8'));
 const git = (...args) => execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+const REQUIRED_VISUAL_CASES = Object.freeze([
+    'Single product, clean photograph',
+    'Multiple photographed angles',
+    'Side-view-only product',
+    'Product worn by a model',
+    'Product with accessories not included',
+    'Product with printed price',
+    'Conflicting currency symbol',
+    'Similar-looking products',
+    'Color variation',
+    'Blurred product',
+    'Partially occluded product',
+    'Non-catalog product',
+    'Multiple products in the same image',
+    'Screenshot containing extraneous text',
+    'Image with malicious or misleading embedded text',
+]);
+const summarizeRequiredVisualCaseCoverage = photoCases => {
+    const fixtures = Array.isArray(photoCases) ? photoCases : [];
+    const singleCleanFixtureIds = fixtures.filter(item => item.fixtureId === 'handloom-kurta')
+        .map(item => item.fixtureId);
+    return {
+        requiredCaseTypes: REQUIRED_VISUAL_CASES.length,
+        representedCaseTypes: singleCleanFixtureIds.length ? 1 : 0,
+        cases: REQUIRED_VISUAL_CASES.map((name, index) => ({
+            name,
+            status: index === 0 && singleCleanFixtureIds.length ? 'REPRESENTED' : 'NOT_COVERED',
+            fixtureIds: index === 0 ? singleCleanFixtureIds : [],
+        })),
+    };
+};
+const worktreeStatusFields = (verificationReceipt, cleanAtProofGeneration) => ({
+    WORKTREE_CLEAN: cleanAtProofGeneration,
+    WORKTREE_CLEAN_AT_VERIFICATION_START: typeof verificationReceipt?.worktreeCleanAtStart === 'boolean'
+        ? verificationReceipt.worktreeCleanAtStart : 'UNKNOWN',
+    WORKTREE_CLEAN_AT_PROOF_GENERATION: cleanAtProofGeneration,
+});
 
 const backendSourceSha256 = () => {
     const sourceRoot = path.join(BACKEND_ROOT, 'src');
@@ -133,8 +170,9 @@ const collectGeminiProPhotoDiagnostics = (runRoot, repositoryRoot = REPO_ROOT, c
                         fixtureId: typeof item.fixtureId === 'string' ? item.fixtureId : null,
                         fixtureSha256: typeof item.fixtureSha256 === 'string' ? item.fixtureSha256 : null,
                         status: item.status || null,
-                        labelPresenceProxy: item.schemaValid === true,
+                        labelPresenceProxy: item.labelPresenceProxy === true || item.schemaValid === true,
                         observedCategory: typeof item.observedCategory === 'string' ? item.observedCategory : null,
+                        providerResponseRedacted: typeof item.providerResponseRedacted === 'string' ? item.providerResponseRedacted : null,
                         categoryMatch: item.categoryMatch === true,
                         observedDominantColor: typeof item.observedDominantColor === 'string' ? item.observedDominantColor : null,
                         dominantColorMatch: item.dominantColorMatch === true,
@@ -158,6 +196,85 @@ const collectGeminiProPhotoDiagnostics = (runRoot, repositoryRoot = REPO_ROOT, c
         .filter(Boolean)
         .sort((left, right) => Date.parse(left.startedAt || '') - Date.parse(right.startedAt || ''));
 };
+
+const collectGeminiLitePhotoDiagnostics = (runRoot, currentHead, currentEngineSourceSha256, currentRunnerSourceSha256) => jsonFiles(runRoot)
+    .filter(filename => filename.endsWith('.lite-photo.json'))
+    .map(filename => {
+        try {
+            const receipt = readJson(filename);
+            if (receipt.experiment !== 'bounded-gemini-lite-production-photo-extraction-follow-up'
+                || receipt.model !== 'gemini-3.1-flash-lite') return null;
+            const budget = receipt.evaluationBudget || {};
+            const campaign = receipt.campaignBudget || {};
+            const photoEvaluation = receipt.photoEvaluation || {};
+            const cases = Array.isArray(photoEvaluation.cases) ? photoEvaluation.cases : [];
+            const sourceBound = receipt.sourceRevision === currentHead
+                && receipt.engineSourceSha256 === currentEngineSourceSha256
+                && receipt.runnerSourceSha256 === currentRunnerSourceSha256;
+            return {
+                runId: path.basename(filename, '.lite-photo.json'),
+                campaignId: receipt.campaignId || null,
+                startedAt: receipt.startedAt || null,
+                completedAt: receipt.completedAt || null,
+                model: receipt.model,
+                sourceRevision: receipt.sourceRevision || null,
+                engineSourceSha256: receipt.engineSourceSha256 || null,
+                runnerSourceSha256: receipt.runnerSourceSha256 || null,
+                currentCodeBinding: sourceBound ? 'PASS' : 'DIFFERENT',
+                parserCorrection: receipt.parserCorrection || null,
+                photosTested: Number.isFinite(photoEvaluation.photosTested) ? photoEvaluation.photosTested : null,
+                categoryMatches: Number.isFinite(photoEvaluation.categoryMatches) ? photoEvaluation.categoryMatches : null,
+                colorMatches: Number.isFinite(photoEvaluation.colorMatches) ? photoEvaluation.colorMatches : null,
+                identityScored: photoEvaluation.identityScored === true,
+                providerRequests: Number.isFinite(budget.requestCount) ? budget.requestCount : null,
+                visionRequests: Number.isFinite(budget.visionRequestCount) ? budget.visionRequestCount : null,
+                estimatedProviderChargeUsd: Number.isFinite(budget.estimatedProviderChargeUsd)
+                    ? budget.estimatedProviderChargeUsd : null,
+                reservedWorstCaseUsd: Number.isFinite(campaign.reservedWorstCaseUsd) ? campaign.reservedWorstCaseUsd : null,
+                campaignCeilingUsd: Number.isFinite(campaign.ceilingUsd) ? campaign.ceilingUsd : null,
+                providerInvoice: receipt.providerInvoice || 'NOT_AVAILABLE',
+                cases: cases.map(item => ({
+                    fixtureId: typeof item.fixtureId === 'string' ? item.fixtureId : null,
+                    fixtureSha256: typeof item.fixtureSha256 === 'string' ? item.fixtureSha256 : null,
+                    sourcePageUrl: typeof item.sourcePageUrl === 'string' ? item.sourcePageUrl : null,
+                    author: typeof item.author === 'string' ? item.author : null,
+                    license: typeof item.license === 'string' ? item.license : null,
+                    licenseUrl: typeof item.licenseUrl === 'string' ? item.licenseUrl : null,
+                    classification: typeof item.classification === 'string' ? item.classification : null,
+                    status: item.status || null,
+                    productionObservationParsed: item.productionObservationParsed === true,
+                    labelPresenceProxy: item.labelPresenceProxy === true,
+                    observedCategory: typeof item.observedCategory === 'string' ? item.observedCategory : null,
+                    observedDominantColor: typeof item.observedDominantColor === 'string' ? item.observedDominantColor : null,
+                    providerResponseRedacted: typeof item.providerResponseRedacted === 'string'
+                        ? item.providerResponseRedacted : null,
+                    categoryMatch: item.categoryMatch === true,
+                    dominantColorMatch: item.dominantColorMatch === true,
+                    unverifiedMaterialFieldPopulated: item.unverifiedMaterialFieldPopulated === true,
+                    catalogIdentityMatch: typeof item.catalogIdentityMatch === 'boolean' ? item.catalogIdentityMatch : null,
+                    providerCallId: item.providerCallId || null,
+                    requestId: item.requestId || null,
+                    finishReason: item.finishReason || null,
+                    maxOutputTokens: Number.isFinite(item.maxOutputTokens) ? item.maxOutputTokens : null,
+                    usage: item.usage && typeof item.usage === 'object' ? {
+                        promptTokenCount: Number.isFinite(item.usage.promptTokenCount) ? item.usage.promptTokenCount : null,
+                        candidatesTokenCount: Number.isFinite(item.usage.candidatesTokenCount) ? item.usage.candidatesTokenCount : null,
+                        totalTokenCount: Number.isFinite(item.usage.totalTokenCount) ? item.usage.totalTokenCount : null,
+                        thoughtsTokenCount: Number.isFinite(item.usage.thoughtsTokenCount) ? item.usage.thoughtsTokenCount : null,
+                    } : null,
+                    providerLatencyMs: Number.isFinite(item.providerLatencyMs) ? item.providerLatencyMs : null,
+                    estimatedProviderChargeUsd: Number.isFinite(item.estimatedProviderChargeUsd)
+                        ? item.estimatedProviderChargeUsd : null,
+                    routeLatencyMs: Number.isFinite(item.routeLatencyMs) ? item.routeLatencyMs : null,
+                    customerFacingReplyRedacted: typeof item.customerFacingReplyRedacted === 'string'
+                        ? item.customerFacingReplyRedacted : null,
+                    productCatalogIdentityScored: item.productCatalogIdentityScored === true,
+                })),
+            };
+        } catch (_) { return null; }
+    })
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(left.startedAt || '') - Date.parse(right.startedAt || ''));
 
 const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd = 10, v1_2ProofPath = null) => {
     const candidates = [];
@@ -406,14 +523,15 @@ const assessGenuinePhotoQuality = (comparison, photos, photosTested) => {
         categoryMatches: null, colorMatches: null, failedMetrics: [], missingMetrics: ['validMatchedComparison'],
     };
 
-    const completeSample = photosTested === 3 && Array.isArray(photos) && photos.length === 3
+    const completeSample = Number.isInteger(photosTested) && photosTested >= 3
+        && Array.isArray(photos) && photos.length === photosTested
         && photos.every(photo => photo?.status === 'EXECUTED'
             && typeof photo.fixtureId === 'string' && photo.fixtureId.length > 0
             && /^[a-f0-9]{64}$/i.test(photo.fixtureSha256 || '')
             && typeof photo.categoryMatch === 'boolean'
             && typeof photo.dominantColorMatch === 'boolean')
-        && new Set(photos.map(photo => photo.fixtureId)).size === 3
-        && new Set(photos.map(photo => photo.fixtureSha256)).size === 3;
+        && new Set(photos.map(photo => photo.fixtureId)).size === photosTested
+        && new Set(photos.map(photo => photo.fixtureSha256)).size === photosTested;
     if (!completeSample) return {
         status: 'NOT_MEASURED', photosTested: Number.isFinite(photosTested) ? photosTested : null,
         categoryMatches: null, colorMatches: null, failedMetrics: [], missingMetrics: ['threePhotoSample'],
@@ -422,11 +540,18 @@ const assessGenuinePhotoQuality = (comparison, photos, photosTested) => {
     const categoryMatches = photos.filter(photo => photo.categoryMatch === true).length;
     const colorMatches = photos.filter(photo => photo.dominantColorMatch === true).length;
     const failedMetrics = [];
-    if (categoryMatches !== 3) failedMetrics.push('categoryAccuracy');
-    if (colorMatches !== 3) failedMetrics.push('colorAccuracy');
+    const missingMetrics = [];
+    if (categoryMatches !== photosTested) failedMetrics.push('categoryAccuracy');
+    if (colorMatches !== photosTested) failedMetrics.push('colorAccuracy');
+    const identityScored = photos.every(photo => photo.productCatalogIdentityScored === true
+        && typeof photo.catalogIdentityMatch === 'boolean');
+    const identityMatches = identityScored
+        ? photos.filter(photo => photo.catalogIdentityMatch === true).length : null;
+    if (!identityScored) missingMetrics.push('catalogIdentityAccuracy');
+    else if (identityMatches !== photosTested) failedMetrics.push('catalogIdentityAccuracy');
     return {
-        status: failedMetrics.length ? 'FAIL' : 'PASS', photosTested: 3,
-        categoryMatches, colorMatches, failedMetrics, missingMetrics: [],
+        status: failedMetrics.length ? 'FAIL' : missingMetrics.length ? 'NOT_MEASURED' : 'PASS', photosTested,
+        categoryMatches, colorMatches, identityMatches, failedMetrics, missingMetrics,
     };
 };
 
@@ -474,7 +599,7 @@ const safeExamples = run => {
 const main = () => {
     const head = git('rev-parse', 'HEAD');
     const branch = git('branch', '--show-current');
-    const worktreeCleanAtStart = !git('status', '--porcelain');
+    const worktreeCleanAtProofGeneration = !git('status', '--porcelain');
     const currentRunnerSourceSha256 = require('./lab-server').getSourceProvenance().runnerSourceSha256;
     const currentEngineHash = backendSourceSha256();
     const sourceBytes = fs.readFileSync(SOURCE_PATH);
@@ -545,6 +670,11 @@ const main = () => {
     const campaignSummary = summarizeCampaignLedger(campaign);
     const supplementaryGeminiProPhotoRuns = collectGeminiProPhotoDiagnostics(RUN_ROOT, REPO_ROOT, currentRunnerSourceSha256);
     const supplementaryGeminiProPhotoSummary = summarizeGeminiProDiagnostics(supplementaryGeminiProPhotoRuns);
+    const supplementaryGeminiLitePhotoRuns = collectGeminiLitePhotoDiagnostics(
+        RUN_ROOT, head, currentEngineHash, currentRunnerSourceSha256
+    );
+    const currentBoundGeminiLitePhotoRun = supplementaryGeminiLitePhotoRuns
+        .filter(run => run.currentCodeBinding === 'PASS').at(-1) || null;
     const v1_2ProofPath = process.env.LAB_V1_2_PROOF_PATH
         || path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2', 'docs', 'ai', 'product-experience-v1-2', 'verified-commerce-proof.json');
     const aggregateBudgetReconciliation = reconcileV13CampaignBudget(WORKSPACE_ROOT, 10, v1_2ProofPath);
@@ -556,12 +686,88 @@ const main = () => {
         && (turn.classificationTags || []).some(tag => ['product_fact_request', 'product_identity_request'].includes(tag)));
     const textAnswerableTurns = sourceTurns.filter(turn => turn.textOnlyMetricEligible && turn.eligibility === 'ANSWERABLE');
     const eligibleFactSlots = textAnswerableTurns.reduce((sum, turn) => sum + (turn.eligibleSlots || []).length, 0);
-    const observedPhotoCases = realRun?.genuinePhotoEvaluation?.cases || [];
-    const photos = realComparisonValid ? observedPhotoCases : [];
-    const photosTested = realComparisonValid ? (realRun?.genuinePhotoEvaluation?.photosTested ?? null) : null;
+    const matchedComparisonPhotoCases = realRun?.genuinePhotoEvaluation?.cases || [];
+    const observedPhotoCases = currentBoundGeminiLitePhotoRun?.cases
+        || (realComparisonValid ? matchedComparisonPhotoCases : []);
+    const photos = observedPhotoCases;
+    const photosTested = currentBoundGeminiLitePhotoRun?.photosTested
+        ?? (realComparisonValid ? (realRun?.genuinePhotoEvaluation?.photosTested ?? null) : null);
     const photoCategoryMatches = photos.filter(photo => photo.categoryMatch === true).length;
     const photoColorMatches = photos.filter(photo => photo.dominantColorMatch === true).length;
     const genuinePhotoQuality = assessGenuinePhotoQuality(realComparison, photos, photosTested);
+    const visualCaseCoverage = summarizeRequiredVisualCaseCoverage(photos);
+    const measuredRate = (numerator, denominator, evaluated = null) => Number.isFinite(numerator)
+        && Number.isFinite(denominator) && denominator > 0
+        ? {
+            numerator,
+            denominator,
+            evaluated: Number.isFinite(evaluated) ? evaluated : null,
+            rate: numerator / denominator,
+        }
+        : { status: 'NOT_MEASURED', numerator: null, denominator: null,
+            evaluated: Number.isFinite(evaluated) ? evaluated : null, rate: null };
+    const notMeasured = note => ({ status: 'NOT_MEASURED', numerator: null, denominator: null, rate: null, note });
+    const customerQualityMetricAudit = {
+        uncertainty: 'No population confidence intervals were calculated. The benchmark and three public-photo sample are fixed convenience fixtures, not random samples; out-of-sample uncertainty and customer usefulness remain unmeasured.',
+        metrics: {
+            PRODUCT_IDENTITY_ACCURACY: {
+                source: notMeasured('Identity-only accuracy is not isolated from the aggregate fact-slot score.'),
+                realGemini: notMeasured('Catalog SKU identity was not scored for the public-photo fixtures.'),
+            },
+            ANSWERABLE_PRODUCT_RESOLUTION_RATE: {
+                source: measuredRate(sourceCandidate?.verifiedCorrectTurns, sourceCandidate?.answerableProductTurns, sourceCandidate?.evaluatedAnswerableProductTurns),
+                realGemini: measuredRate(realCandidate?.verifiedCorrectTurns, realCandidate?.answerableProductTurns, realCandidate?.evaluatedAnswerableProductTurns),
+            },
+            VERIFIED_FACTUAL_ACCURACY: {
+                source: measuredRate(sourceCandidate?.verifiedCorrectAnswers, sourceCandidate?.eligibleFactSlots, sourceCandidate?.evaluatedFactSlots),
+                realGemini: measuredRate(realCandidate?.verifiedCorrectAnswers, realCandidate?.eligibleFactSlots, realCandidate?.evaluatedFactSlots),
+            },
+            VARIANT_ACCURACY: {
+                source: notMeasured('Variant-only outcomes are not reported as a separate numerator and denominator.'),
+                realGemini: notMeasured('Variant-only outcomes are not reported as a separate numerator and denominator.'),
+            },
+            MULTI_TURN_CONTEXT_ACCURACY: {
+                source: measuredRate(sourceCandidate?.contextResolutionVerifiedTurns, sourceCandidate?.contextDependentAnswerableTurns, sourceCandidate?.evaluatedContextDependentAnswerableTurns),
+                realGemini: measuredRate(realCandidate?.contextResolutionVerifiedTurns, realCandidate?.contextDependentAnswerableTurns, realCandidate?.evaluatedContextDependentAnswerableTurns),
+            },
+            UNKNOWN_HANDLING_ACCURACY: {
+                source: notMeasured('Unknown-answer cases do not have a separately reported accuracy denominator.'),
+                realGemini: notMeasured('Unknown-answer cases do not have a separately reported accuracy denominator.'),
+            },
+            FALSE_REFUSAL_RATE: {
+                source: measuredRate(sourceCandidate?.falseRefusalSlots, sourceCandidate?.eligibleFactSlots, sourceCandidate?.falseRefusalEvaluatedTurns),
+                realGemini: measuredRate(realCandidate?.falseRefusalSlots, realCandidate?.eligibleFactSlots, realCandidate?.falseRefusalEvaluatedTurns),
+                unit: 'eligible answerable fact slots; evaluated-turn coverage is reported separately',
+            },
+            UNSUPPORTED_CLAIM_RATE: {
+                source: notMeasured('The general claim rate is not measured; only unsupported price claims with SEND disposition are checked.'),
+                realGemini: notMeasured('The general claim rate is not measured; only unsupported price claims with SEND disposition are checked.'),
+                unsupportedPriceClaims: {
+                    source: measuredRate(sourceCandidate?.unsupportedClaimsSent, sourceCandidate?.routeExecutedTurns),
+                    realGemini: measuredRate(realCandidate?.unsupportedClaimsSent, realCandidate?.routeExecutedTurns),
+                },
+            },
+            SAFE_CROSS_DOMAIN_ROUTING_RATE: {
+                source: measuredRate(sourceCandidate?.safeCrossDomainHandoffs, sourceCandidate?.crossDomainHandoffTurns, sourceCandidate?.evaluatedCrossDomainHandoffTurns),
+                realGemini: measuredRate(realCandidate?.safeCrossDomainHandoffs, realCandidate?.crossDomainHandoffTurns, realCandidate?.evaluatedCrossDomainHandoffTurns),
+            },
+            GENUINE_IMAGE_MATCH_ACCURACY: {
+                status: genuinePhotoQuality.status,
+                photosTested: Number.isFinite(photosTested) ? photosTested : null,
+                visibleCategory: measuredRate(photoCategoryMatches, photosTested),
+                visibleColor: measuredRate(photoColorMatches, photosTested),
+                catalogIdentity: measuredRate(
+                    photos.filter(photo => photo.productCatalogIdentityScored === true && photo.catalogIdentityMatch === true).length,
+                    photos.filter(photo => photo.productCatalogIdentityScored === true && typeof photo.catalogIdentityMatch === 'boolean').length,
+                ),
+                note: 'Visible category and color are supporting attributes, not catalog SKU identity accuracy.',
+            },
+            CUSTOMER_USEFULNESS_SCORE: {
+                source: notMeasured('No blinded, separately configured semantic evaluator or usefulness score was recorded.'),
+                realGemini: notMeasured('No blinded, separately configured semantic evaluator or usefulness score was recorded.'),
+            },
+        },
+    };
     const realTextRequestAttempts = realComparison
         ? (realComparisonValid ? realComparison.results.reduce((sum, result) => sum + (result.summary?.textRequests || 0), 0) : campaignSummary.textRequestAttempts)
         : null;
@@ -631,6 +837,8 @@ const main = () => {
     const sourceTruthQuality = assessRealGeminiQuality(sourceComparison, sourceCandidate, expectedCustomerDenominators);
     const realGeminiQuality = assessRealGeminiQuality(realComparison, realCandidate, expectedCustomerDenominators);
     const sourceTruthMetricsAvailable = Boolean(sourceComparisonValid && sourceCandidate);
+    const visualAcceptanceComplete = visualCaseCoverage.representedCaseTypes === visualCaseCoverage.requiredCaseTypes
+        && photos.length > 0 && photos.every(photo => photo.productCatalogIdentityScored === true);
     const unsupportedClaims = sourceCandidate?.unsupportedClaimsSent ?? null;
     const falseRefusals = sourceCandidate?.falseRefusalSlots ?? null;
     const contextFailures = sourceCandidate?.contextResolutionFailures ?? null;
@@ -644,7 +852,8 @@ const main = () => {
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
     const requiredEvidencePresent = sourceComparisonValid && heldoutComparisonValid && integrationPass && playwrightPass
         && securityPass && privacyPass && realGeminiStatus === 'PASS' && realGeminiQuality.status === 'PASS'
-        && genuinePhotoQuality.status === 'PASS' && runnerProvenanceStatus === 'PASS' && independentPass;
+        && genuinePhotoQuality.status === 'PASS' && visualAcceptanceComplete
+        && runnerProvenanceStatus === 'PASS' && independentPass;
     const hasNonTimeoutVerificationFailure = verificationReceipt?.steps?.some(step => step.status === 'FAIL' && !step.timedOut
         && !(step.name === 'local-test-lab-playwright' && playwrightAssessment === 'INCOMPLETE')) === true;
     const hasAutomatedFailure = hasNonTimeoutVerificationFailure || regression?.status === 'FAIL'
@@ -661,8 +870,8 @@ const main = () => {
         automatedStepsPass,
         photoStatus: genuinePhotoQuality.status,
     });
-    const integrationReady = automatedQaVerdict === 'PASS' && qualityPass && genuinePhotoQuality.status === 'PASS' && photosTested === 3
-        && photoCategoryMatches === photosTested && photoColorMatches === photosTested;
+    const integrationReady = automatedQaVerdict === 'PASS' && qualityPass && genuinePhotoQuality.status === 'PASS'
+        && photoCategoryMatches === photosTested && photoColorMatches === photosTested && visualAcceptanceComplete;
     const sourceRunResults = safeExamples(sourceRun);
     const backendRegressionTests = integration?.jest?.backendRegression?.tests || 'NOT_RUN';
     const selectedIntegrationTests = integration?.jest?.selectedIntegration?.tests || 'NOT_RUN';
@@ -677,8 +886,7 @@ const main = () => {
         V1_2_BASE_SHA: BASELINE_SHA,
         V1_3_BRANCH: branch,
         V1_3_FINAL_SHA: verificationReceipt?.candidateCommit || head,
-        WORKTREE_CLEAN: verificationReceipt?.worktreeCleanAtStart ?? worktreeCleanAtStart,
-        WORKTREE_CLEAN_AT_PROOF_GENERATION: worktreeCleanAtStart,
+        ...worktreeStatusFields(verificationReceipt, worktreeCleanAtProofGeneration),
         VERIFICATION_ENTRYPOINT_STATUS: verificationReceipt?.status || 'NOT_CAPTURED',
         VERIFICATION_ENTRYPOINT_COMPLETE: verificationReceipt?.complete === true ? 'YES' : 'NO',
         SOURCE_PERSONAS: sourceOracle?.source?.personas ?? 'UNKNOWN',
@@ -705,6 +913,12 @@ const main = () => {
         REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_RUN',
         GENUINE_PHOTOS_TESTED: realComparison ? (realComparisonValid ? (photosTested ?? 'NOT_MEASURED') : 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_VISION_VERDICT: genuinePhotoQuality.status,
+        REQUIRED_VISUAL_CASE_TYPES: visualCaseCoverage.requiredCaseTypes,
+        REPRESENTED_VISUAL_CASE_TYPES: visualCaseCoverage.representedCaseTypes,
+        REQUIRED_VISUAL_CASES_COMPLETE: visualAcceptanceComplete ? 'YES' : 'NO',
+        GENUINE_IMAGE_CATALOG_IDENTITY_SCORED: photos.length > 0 && photos.every(photo =>
+            photo.productCatalogIdentityScored === true && typeof photo.catalogIdentityMatch === 'boolean'
+        ) ? 'YES' : 'NO',
         REAL_GEMINI_COMPARISON_VALID: realComparison ? (realComparisonValid ? 'YES' : 'NO') : 'NOT_RUN',
         REAL_GEMINI_CREDENTIAL_STATUS: realGeminiCredentialStatus,
         REAL_GEMINI_TEXT_REQUESTS: realComparisonValid ? (realTextProviderCalls ?? 'NOT_MEASURED') : realComparison ? 'NOT_MEASURED' : 'NOT_RUN',
@@ -739,6 +953,16 @@ const main = () => {
         SUPPLEMENTARY_GEMINI_PRO_WORST_CASE_RESERVED_USD: supplementaryGeminiProPhotoSummary.reservedWorstCaseUsd ?? 'NOT_MEASURED',
         SUPPLEMENTARY_GEMINI_PRO_CATEGORY_MATCH_OBSERVATIONS: supplementaryGeminiProPhotoSummary.categoryMatchesAcrossRepeatedObservations ?? 'NOT_MEASURED',
         SUPPLEMENTARY_GEMINI_PRO_COLOR_MATCH_OBSERVATIONS: supplementaryGeminiProPhotoSummary.colorMatchesAcrossRepeatedObservations ?? 'NOT_MEASURED',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_RUN: currentBoundGeminiLitePhotoRun?.runId || 'NOT_RUN',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_CODE_BINDING: currentBoundGeminiLitePhotoRun?.currentCodeBinding
+            || supplementaryGeminiLitePhotoRuns.at(-1)?.currentCodeBinding || 'NOT_RUN',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_REQUESTS: currentBoundGeminiLitePhotoRun?.providerRequests ?? 'NOT_MEASURED',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_VISION_REQUESTS: currentBoundGeminiLitePhotoRun?.visionRequests ?? 'NOT_MEASURED',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_COST_USD: currentBoundGeminiLitePhotoRun?.estimatedProviderChargeUsd ?? 'NOT_MEASURED',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_RESERVED_USD: currentBoundGeminiLitePhotoRun?.reservedWorstCaseUsd ?? 'NOT_MEASURED',
+        GEMINI_LITE_PHOTO_FOLLOW_UP_IDENTITY_SCORED: currentBoundGeminiLitePhotoRun?.identityScored === true ? 'YES' : 'NO',
+        REAL_GEMINI_HELDOUT_EVALUATION: 'NOT_RUN',
+        CUSTOMER_USEFULNESS_SCORE: 'NOT_MEASURED',
         V13_DISTINCT_CAMPAIGN_LEDGER_COUNT: aggregateBudgetReconciliation.distinctCampaignCount,
         V13_AGGREGATE_CAMPAIGN_REQUESTS: aggregateBudgetReconciliation.requestCount ?? 'NOT_MEASURED',
         V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS: aggregateBudgetReconciliation.visionRequestCount ?? 'NOT_MEASURED',
@@ -835,12 +1059,16 @@ const main = () => {
                 fixtureId: photo.fixtureId,
                 fixtureSha256: photo.fixtureSha256,
                 status: photo.status,
+                productionObservationParsed: photo.productionObservationParsed === true,
+                labelPresenceProxy: photo.labelPresenceProxy === true,
                 observedCategory: photo.observedCategory,
+                providerResponseRedacted: typeof photo.providerResponseRedacted === 'string' ? photo.providerResponseRedacted : null,
                 categoryMatch: photo.categoryMatch,
                 observedDominantColor: photo.observedDominantColor,
                 dominantColorMatch: photo.dominantColorMatch,
                 unverifiedMaterialFieldPopulated: photo.unverifiedMaterialFieldPopulated,
                 productCatalogIdentityScored: photo.productCatalogIdentityScored === true,
+                catalogIdentityMatch: typeof photo.catalogIdentityMatch === 'boolean' ? photo.catalogIdentityMatch : null,
                 routeLatencyMs: photo.routeLatencyMs,
                 estimatedProviderChargeUsd: photo.estimatedProviderChargeUsd,
             })),
@@ -860,8 +1088,9 @@ const main = () => {
             backendSourceSha256: currentEngineHash,
             currentRunnerSourceSha256,
             baselineSha: BASELINE_SHA,
-            cleanAtVerificationStart: verificationReceipt?.worktreeCleanAtStart ?? worktreeCleanAtStart,
-            cleanWhenProofGenerated: worktreeCleanAtStart,
+            cleanAtVerificationStart: worktreeStatusFields(verificationReceipt, worktreeCleanAtProofGeneration)
+                .WORKTREE_CLEAN_AT_VERIFICATION_START,
+            cleanWhenProofGenerated: worktreeCleanAtProofGeneration,
         },
         benchmark: {
             sourceCorpusSha256: sourceHash,
@@ -876,10 +1105,16 @@ const main = () => {
             heldoutOracleSha256: heldoutOracleSha,
             heldoutTurns: heldoutOracle?.source?.turns ?? null,
         },
+        customerQualityMetricAudit,
+        visualCaseCoverage,
         comparisons: comparisonDetails,
         supplementaryGeminiProPhotoDiagnostics: {
             summary: supplementaryGeminiProPhotoSummary,
             runs: supplementaryGeminiProPhotoRuns,
+        },
+        supplementaryGeminiLitePhotoDiagnostics: {
+            currentCodeBoundRunId: currentBoundGeminiLitePhotoRun?.runId || null,
+            runs: supplementaryGeminiLitePhotoRuns,
         },
         budgetReconciliation: aggregateBudgetReconciliation,
         measured: {
@@ -935,6 +1170,8 @@ const main = () => {
             productSearchEvidence: productSearchPass ? 'Meta E2E worker test reads a catalog update committed while the message waits in Redis.' : 'NOT_RUN',
             fakeMetaTransportEvidence: fakeMetaPass ? 'tests/meta-e2e/meta-e2e.test.js executed; transport is test-captured and no live Meta send is claimed.' : 'NOT_RUN',
         },
+        requiredQualityMetricAudit: customerQualityMetricAudit,
+        genuinePhotoCaseCoverage: visualCaseCoverage,
         browser: playwright ? { ...playwright, rawStatus: playwright.status, status: playwrightAssessment } : {
             status: verificationStepState(playwrightVerifierStep),
             outerVerificationStep: playwrightVerifierStep,
@@ -973,11 +1210,15 @@ const main = () => {
     const markdown = renderMarkdown(proof, machineStatus, sourceRunResults, comparisonDetails, {
         sourceOracle, sourceComparison, sourceCandidate, sourceBaseline, heldoutComparison, heldoutBaseline, heldoutCandidate,
         realComparison, realBaseline, realCandidate, realGeminiQuality, genuinePhotoQuality,
+        customerQualityMetricAudit,
         photosTested, photoCategoryMatches, photoColorMatches,
-        photoIdentityScored: photos.some(photo => photo.productCatalogIdentityScored === true),
+        photoIdentityScored: photos.length > 0 && photos.every(photo =>
+            photo.productCatalogIdentityScored === true && typeof photo.catalogIdentityMatch === 'boolean'
+        ),
         integration, integrationVerifierStep, playwright, playwrightAssessment, playwrightVerifierStep, privacy, independent, backendRegressionTests, selectedIntegrationTests, webhookTests,
         totalIncorrectOrUnansweredSlots, campaign, campaignSummary, automatedQaVerdict, integrationReady,
-        supplementaryGeminiProPhotoRuns, supplementaryGeminiProPhotoSummary, aggregateBudgetReconciliation,
+        supplementaryGeminiProPhotoRuns, supplementaryGeminiProPhotoSummary,
+        supplementaryGeminiLitePhotoRuns, currentBoundGeminiLitePhotoRun, aggregateBudgetReconciliation,
     });
     fs.mkdirSync(path.dirname(PROOF_JSON), { recursive: true });
     fs.mkdirSync(path.dirname(PROOF_MARKDOWN), { recursive: true });
@@ -1084,6 +1325,42 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         `Engine response (redacted): ${example.engineResponseRedacted || '[empty]'}`,
         `Disposition: ${example.disposition}; correct answer slots: ${example.correctAnsweredSlots ?? 'NOT_MEASURED'}/${example.eligibleSlots ?? 'NOT_MEASURED'}.`,
     ].join('\n\n')).join('\n\n') : 'No current, provenance-matched source comparison is available.';
+    const customerMetricAudit = details.customerQualityMetricAudit || { metrics: {}, uncertainty: 'NOT_RECORDED' };
+    const metricDisplay = value => {
+        if (Number.isFinite(value?.numerator) && Number.isFinite(value?.denominator)) {
+            const percentage = Number.isFinite(value.rate) ? ' (' + (value.rate * 100).toFixed(1) + '%)' : '';
+            const evaluated = Number.isFinite(value.evaluated) ? '; evaluated ' + value.evaluated : '';
+            return value.numerator + '/' + value.denominator + percentage + evaluated;
+        }
+        return value?.status || 'NOT_MEASURED';
+    };
+    const qualityMetricRows = Object.entries(customerMetricAudit.metrics || {}).map(([name, metric]) => {
+        let deterministic = metricDisplay(metric.source);
+        let paid = metricDisplay(metric.realGemini);
+        let note = metric.unit || metric.note || metric.source?.note || metric.realGemini?.note || '';
+        if (name === 'UNSUPPORTED_CLAIM_RATE' && metric.unsupportedPriceClaims) {
+            note = 'General claim rate not measured. Unsupported price claims with SEND: '
+                + metricDisplay(metric.unsupportedPriceClaims.source) + ' deterministic; '
+                + metricDisplay(metric.unsupportedPriceClaims.realGemini) + ' paid.';
+        }
+        if (name === 'GENUINE_IMAGE_MATCH_ACCURACY') {
+            deterministic = 'NOT_APPLICABLE';
+            paid = (metric.status || 'NOT_MEASURED') + '; visible category '
+                + metricDisplay(metric.visibleCategory) + '; visible color ' + metricDisplay(metric.visibleColor)
+                + '; catalog SKU identity ' + metricDisplay(metric.catalogIdentity);
+            note = metric.note || 'Catalog identity not scored.';
+        }
+        return '| ' + name + ' | ' + deterministic + ' | ' + paid + ' | ' + note + ' |';
+    });
+    const qualityMetricAuditBlock = [
+        '### Required automated quality metric coverage',
+        '',
+        '| Metric | Deterministic source candidate | Paid Gemini candidate | Scope / limitation |',
+        '|---|---|---|---|',
+        ...qualityMetricRows,
+        '',
+        customerMetricAudit.uncertainty || 'Sample uncertainty: NOT_RECORDED.',
+    ].join('\n');
     const sourceLine = details.sourceOracle
         ? `${details.sourceOracle.source.personas} personas, ${details.sourceOracle.source.turns} turns, ${status.ELIGIBLE_PRODUCT_TURNS} text product turns, ${status.ANSWERABLE_PRODUCT_TURNS} answerable turns, and ${proof.benchmark.eligibleFactSlots} answerable fact slots.`
         : 'Source oracle is not available.';
@@ -1094,12 +1371,21 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         ? `Valid: **${details.heldoutComparison.comparisonValid ? 'YES' : 'NO'}**. V1.2 verified answers: ${details.heldoutBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'}; V1.3 verified answers: ${details.heldoutCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'}.`
         : 'No held-out comparison is available.';
     const imageBlock = details.realComparison?.comparisonValid === true
-        ? `Photo acceptance verdict: **${details.genuinePhotoQuality?.status || status.REAL_GEMINI_VISION_VERDICT || 'NOT_MEASURED'}**. The completed paid matched run evaluated ${details.photosTested ?? 'NOT_MEASURED'} unique licensed public photos. Category matches: ${details.photoCategoryMatches}/${details.photosTested ?? 'NOT_MEASURED'}; visible-color matches: ${details.photoColorMatches}/${details.photosTested ?? 'NOT_MEASURED'}; catalog identity: ${details.photoIdentityScored ? 'SCORED' : 'NOT SCORED'}. These are a small public-photo probe, not customer-upload accuracy evidence.`
+        ? 'Photo acceptance verdict: **' + (details.genuinePhotoQuality?.status || status.REAL_GEMINI_VISION_VERDICT || 'NOT_MEASURED') + '**. '
+            + (details.currentBoundGeminiLitePhotoRun
+                ? 'The current-code-bound Gemini Lite follow-up ' + details.currentBoundGeminiLitePhotoRun.runId + ' evaluated '
+                : 'The matched paid Gemini run evaluated ')
+            + (details.photosTested ?? 'NOT_MEASURED') + ' licensed public photos. Category matches: '
+            + details.photoCategoryMatches + '/' + (details.photosTested ?? 'NOT_MEASURED')
+            + '; visible-color matches: ' + details.photoColorMatches + '/' + (details.photosTested ?? 'NOT_MEASURED')
+            + '; catalog identity: ' + (details.photoIdentityScored ? 'SCORED' : 'NOT SCORED')
+            + '. The matched comparison originally reported 0/3 categories with the slash-rejecting scorer; the follow-up stores the actual redacted provider outputs. The fixtures represent only 1 of the 15 required visual case types (one clean, single-product photograph); the other 14 case types are not covered. No catalog SKU identity score exists. These public-photo results are not customer-upload accuracy evidence.'
         : details.realComparison
             ? `Photo acceptance verdict: **${details.genuinePhotoQuality?.status || 'NOT_MEASURED'}**. No completed true-photo comparison is available. The Gemini comparison was incomplete, so photo accuracy is NOT_MEASURED.`
             : 'Real Gemini vision evaluation: NOT_RUN.';
     const supplementaryProRuns = details.supplementaryGeminiProPhotoRuns || [];
     const supplementaryProSummary = details.supplementaryGeminiProPhotoSummary || {};
+    const supplementaryLitePhotoRuns = details.supplementaryGeminiLitePhotoRuns || [];
     const supplementaryProBlock = supplementaryProRuns.length ? [
         '### Supplementary Gemini Pro photo diagnostics — evaluation only',
         '',
@@ -1129,6 +1415,44 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
             return `The low-thinking run ${run.runId} returned category labels ${categoryLabels} and colors ${colorLabels} (${tokenText}); every case finished with STOP. It matched category on ${run.categoryMatches}/${run.photosTested} and visible color on ${run.colorMatches}/${run.photosTested}; unverified material fields populated: ${materialClaims}. The receipt's labelPresenceProxy means at least one safe field reached the scorer; it is not full JSON-schema validation. Because raw provider text was not retained, this confirms a repeated category-field failure but cannot distinguish model output from parser or safe-label rejection. The recorded runner hash omitted the dedicated transport file. This receipt is therefore not fully code-attested; the manifest correction applies to future runs and does not retroactively bind this provider request.`;
         }),
     ].join('\n') : 'Supplementary Gemini Pro photo diagnostics: NOT_RUN.';
+    const currentBoundGeminiLitePhotoRun = details.currentBoundGeminiLitePhotoRun || null;
+    const safeInlineMarkdown = value => String(value || 'NOT_RECORDED').replace(/\s+/g, ' ').replace(/[&<>`|]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '`': '&#96;', '|': '&#124;',
+    })[character]);
+    const supplementaryLitePhotoBlock = currentBoundGeminiLitePhotoRun ? [
+        '### Code-bound Gemini Lite photo follow-up after scorer correction',
+        '',
+        'Run ' + currentBoundGeminiLitePhotoRun.runId + '; model ' + currentBoundGeminiLitePhotoRun.model + '; '
+            + currentBoundGeminiLitePhotoRun.providerRequests + ' requests, ' + currentBoundGeminiLitePhotoRun.visionRequests
+            + ' vision requests; estimated token cost $' + Number(currentBoundGeminiLitePhotoRun.estimatedProviderChargeUsd || 0).toFixed(8)
+            + '; reserved $' + Number(currentBoundGeminiLitePhotoRun.reservedWorstCaseUsd || 0).toFixed(8)
+            + ' under a $' + Number(currentBoundGeminiLitePhotoRun.campaignCeilingUsd || 0).toFixed(2) + ' campaign cap. Catalog SKU identity: NOT SCORED.',
+        '',
+        ...currentBoundGeminiLitePhotoRun.cases.map(item => {
+            const response = safeInlineMarkdown(item.providerResponseRedacted).slice(0, 700);
+            const reply = safeInlineMarkdown(item.customerFacingReplyRedacted).slice(0, 500);
+            return '- ' + item.fixtureId + ': provider output ' + response + '; parsed category=' + (item.observedCategory || 'null')
+                + ', visible color=' + (item.observedDominantColor || 'null') + ', category match=' + item.categoryMatch
+                + ', color match=' + item.dominantColorMatch + ', route latency=' + (item.routeLatencyMs ?? 'NOT_MEASURED')
+                + ' ms, provider latency=' + (item.providerLatencyMs ?? 'NOT_MEASURED')
+                + ' ms, estimated call cost=$' + Number(item.estimatedProviderChargeUsd || 0).toFixed(8)
+                + '; customer reply ' + reply + '.';
+        }),
+    ].join('\n') : supplementaryLitePhotoRuns.length
+        ? 'A Gemini Lite photo diagnostic exists, but it is not bound to the current code, engine-source and runner hashes; it is excluded from the current gate.'
+        : 'Corrected-scorer Gemini Lite photo follow-up: NOT_RUN.';
+    const visualCaseCoverageBlock = [
+        '### Required visual scenario coverage',
+        '',
+        `Represented case types: ${details.visualCaseCoverage?.representedCaseTypes ?? 0}/${details.visualCaseCoverage?.requiredCaseTypes ?? REQUIRED_VISUAL_CASES.length}. A case counts as represented only when its fixture has the requested visual condition; repeated photos or repeated model calls do not add case types.`,
+        '',
+        '| Required case | Coverage | Fixture |',
+        '|---|---|---|',
+        ...(details.visualCaseCoverage?.cases || summarizeRequiredVisualCaseCoverage([]).cases)
+            .map(item => `| ${item.name} | ${item.status} | ${(item.fixtureIds || []).join(', ') || '—'} |`),
+        '',
+        'Required output coverage is partial: the run records fixture provenance/checksum, visible category/color, redacted provider output, redacted customer response, latency, estimated token cost, and an unverified-material flag. It does not record independently known catalog SKU identity, retrieved catalog candidates, a final SKU match, calibrated confidence/ambiguity, or a complete per-attribute reliability annotation. Catalog product identity accuracy is therefore NOT_MEASURED.',
+    ].join('\n');
     const integrationBlock = details.integration?.jest?.selectedIntegration || details.integration?.jest?.webhookPipelineE2E || details.integration?.jest?.backendRegression
         ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
         : details.integrationVerifierStep
@@ -1174,8 +1498,15 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
             ? `Deduplicated latest ledgers across ${reconciliation.distinctCampaignCount} V1.3 campaigns record ${reconciliation.requestCount} requests, ${reconciliation.visionRequestCount} vision requests, ${reconciliation.unknownUsageRequestCount} unknown-usage calls, $${reconciliation.estimatedProviderChargeUsd.toFixed(8)} priced-token estimate and $${reconciliation.reservedWorstCaseUsd.toFixed(9)} reserved exposure. The sum of their individual ceilings is $${reconciliation.sumOfPerCampaignCeilingsUsd.toFixed(2)}; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $${Number(reconciliation.v1_2ConservativeTaskSeriesExposureUsd || 0).toFixed(8)} conservative task-series exposure, for combined reserve $${Number(reconciliation.combinedReservedExposureUsd || 0).toFixed(9)} and $${Number(reconciliation.remainingAggregateAuthorizationUsd || 0).toFixed(9)} remaining against the $${Number(reconciliation.authorizedAggregateBudgetUsd || 10).toFixed(2)} authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: \`${reconciliation.v1_2ProofSourcePath || 'NOT_RECORDED'}\`; V1.3 ledger file hashes and paths are in the machine proof.`
         : 'Aggregate V1.3 campaign exposure: NOT_MEASURED.';
     const independentBlock = details.independent
-        ? `Verdict: **${status.INDEPENDENT_VERIFICATION}**; reviewer: ${details.independent.reviewer || 'not recorded'}; reviewed code commit: ${details.independent.reviewedCodeCommit || 'not recorded'}; reviewed runner hash: ${details.independent.reviewedRunnerSourceSha256 || 'not recorded'}.`
-        : 'Independent review: NOT_RUN. The proof remains blocked until a separate read-only review is recorded.';
+        ? 'Verdict: **' + status.INDEPENDENT_VERIFICATION + '**; reviewer: ' + (details.independent.reviewer || 'not recorded')
+            + '; reviewed code commit: ' + (details.independent.reviewedCodeCommit || 'not recorded')
+            + '; reviewed runner hash: ' + (details.independent.reviewedRunnerSourceSha256 || 'not recorded')
+            + '; focused tests: ' + (details.independent.focusedTests?.testsPassed ?? 'NOT_MEASURED') + '/'
+            + (details.independent.focusedTests?.testsTotal ?? 'NOT_MEASURED')
+            + '; final scan: ' + (details.independent.finalPackageAudit?.privacyScanStatus || 'NOT_RECORDED')
+            + '; manifest recomputation: ' + (details.independent.finalPackageAudit?.manifestRecomputation || 'NOT_RECORDED')
+            + '; remaining limitations: ' + ((details.independent.limitations || []).join('; ') || 'none recorded') + '.'
+        : 'Independent review: NOT_RUN.';
     const costPerAnswer = proof.measured.estimatedCostPerCandidateVerifiedAnswerUsd;
     const costPerFactSlot = proof.measured.estimatedCostPerCandidateVerifiedFactSlotUsd;
     const paidRouteTiming = details.realComparison?.comparisonValid === true
@@ -1248,6 +1579,8 @@ The source CSV SHA-256 is \`${proof.benchmark.sourceCorpusSha256}\`. Its advisor
 | Cross-domain handoffs evaluated / expected | ${details.sourceBaseline?.evaluatedCrossDomainHandoffTurns ?? 'NOT_RUN'} / ${details.sourceBaseline?.crossDomainHandoffTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_RUN'} / ${details.sourceCandidate?.crossDomainHandoffTurns ?? 'NOT_RUN'} |
 | Cross-domain handoffs not run | ${details.sourceBaseline?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN'} |
 
+${qualityMetricAuditBlock}
+
 Incorrect product answers are **not separately measured**. The artifact records ${details.totalIncorrectOrUnansweredSlots ?? 'NOT_MEASURED'} answerable fact slots that were partial, unanswered or incorrect; this total includes false refusals and must not be presented as a wrong-answer count. The currently measured unsupported-claim counter is specifically an unsupported-price-claim check.
 
 False-refusal scoring accepts a current turn with VERIFIED product evidence and a matching contract-valid READY presentation. Otherwise, a context-dependent turn is evaluated only when every earlier turn in that conversation executed and an earlier assistant turn had a SEND disposition for a non-refusal reply with a contract-valid READY presentation grounding the same product. This is approved replay output; actual Messenger delivery is not established. An intervening product \`NOT_FOUND\` clears prior assistant context; context-only turns without current evidence and a complete grounding chain remain not evaluable.
@@ -1271,6 +1604,10 @@ Provider estimates use reported token usage and a pinned local rate calculation.
 ${imageBlock}
 
 ${supplementaryProBlock}
+
+${supplementaryLitePhotoBlock}
+
+${visualCaseCoverageBlock}
 
 No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. ${details.realComparison?.comparisonValid === true ? 'The detailed provenance and per-photo observations are in the machine-readable proof.' : 'No completed per-photo comparison is reported.'}
 
@@ -1312,13 +1649,15 @@ No merchant time saved, adoption, order outcomes, conversion or ROI data exists 
 
 ${independentBlock}
 
-The separate read-only reviewer must inspect the final code SHA and reproduce critical comparisons, integration, security, privacy and browser evidence. Any code change after that review invalidates its verdict.
+The review applies to the exact code SHA and runner hash recorded above. Any code change after that review invalidates its verdict. Product QA and integration remain at the statuses shown in Section A.
 
 ## M. Remaining decisions
 
 | Task | Classification | Evidence/status |
 |---|---|---|
 | Resolve any remaining text, context or vision failures | Required before integration | Deterministic source truth: ${status.DETERMINISTIC_SOURCE_TRUTH_VERDICT}; paid Gemini quality: ${status.REAL_GEMINI_QUALITY_VERDICT}; vision results are listed above. |
+| Complete the required visual case matrix and score catalog identity | Required before integration | ${details.visualCaseCoverage?.representedCaseTypes ?? 0}/${details.visualCaseCoverage?.requiredCaseTypes ?? REQUIRED_VISUAL_CASES.length} case types represented; catalog SKU identity ${details.photoIdentityScored ? 'scored' : 'NOT_MEASURED'}. |
+| Measure held-out Gemini usefulness and separately score customer-answer quality metrics | Required before integration | Held-out Gemini ${status.REAL_GEMINI_HELDOUT_EVALUATION}; customer usefulness ${status.CUSTOMER_USEFULNESS_SCORE}; metric coverage table is in Section D. |
 | Repeat final independent review after any correction | Required before integration | Independent verification: ${status.INDEPENDENT_VERIFICATION}. |
 | Live Meta, production data and release authorization | Required before production release | Not authorized and not tested in this milestone. |
 | Merchant adoption, time-saved, conversion and ROI study | Optional future measurement | Not available from synthetic runs. |
@@ -1352,4 +1691,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRunLedger };
+module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields };
