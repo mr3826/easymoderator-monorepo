@@ -193,6 +193,21 @@ const claimIdentityTerms = (text) => identifyingTerms(String(text || '')
     .replace(/[0-9০-৯৳$€£₹,]+/g, ' '))
     .filter(term => !CLAIM_IDENTITY_FILLERS.has(term));
 
+const AVAILABILITY_CONTEXT_FILLERS = new Set([
+    ...CLAIM_IDENTITY_FILLERS,
+    'we', 'our', 'have', 'has', 'do', 'does', 'shop', 'store',
+    'nationwide', 'throughout', 'across', 'anywhere', 'everywhere', 'all', 'area', 'areas',
+    'country', 'bangladesh', 'deliver', 'delivers', 'delivered', 'shipping', 'ship', 'ships',
+    'courier', 'dispatch', 'rider', 'payment', 'payments', 'pay', 'paid', 'cash', 'cod',
+    'advance', 'mfs', 'transaction', 'transactions', 'method', 'methods', 'online',
+    'accept', 'accepted', 'support', 'supports', 'via', 'using', 'through',
+    'on',
+]);
+
+const availabilitySubjectTerms = (clause) => claimIdentityTerms(String(clause || '')
+    .replace(new RegExp(LOCATION_SCOPE_PATTERN.source, 'gi'), ' '))
+    .filter(term => !AVAILABILITY_CONTEXT_FILLERS.has(term));
+
 const productIdentityTerms = (product) => identifyingTerms([
     product?.name,
     product?.nameBn,
@@ -983,7 +998,22 @@ const deliveryTimelineScopeMatches = (candidateClause, policySentence, allPolicy
 };
 
 const unsupportedStockClaim = (candidate, evidence) => {
-    if (!evidence.verifiedProducts.length) return false;
+    if (!evidence.verifiedProducts.length) {
+        if (evidence.productStatus !== ProductEvidenceStatus.NONE) return false;
+        return splitClaimClauses(candidate).some(clause => {
+            if (!availabilityAssertion(clause)) return false;
+            const subjectTerms = availabilitySubjectTerms(clause);
+            const pureDeliveryPolicy = DELIVERY_ASSERTION.test(clause)
+                && DELIVERY_TERMS.test(clause)
+                && !subjectTerms.length;
+            const purePaymentPolicy = PAYMENT_SEMANTIC_CONTEXT.test(clause)
+                && !subjectTerms.length;
+            if (pureDeliveryPolicy || purePaymentPolicy) return false;
+            if (subjectTerms.length) return true;
+            if (PRODUCT_TERMS.test(clause) && !DELIVERY_TERMS.test(clause)) return true;
+            return /\b(?:it|this|that|these|those|one|ones|them)\b/i.test(clause);
+        });
+    }
     for (const clause of splitClaimClauses(candidate)) {
         const expected = availabilityAssertion(clause);
         if (!expected || DELIVERY_TERMS.test(clause)) continue;

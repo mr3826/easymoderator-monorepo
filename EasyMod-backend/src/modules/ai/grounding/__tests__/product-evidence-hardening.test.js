@@ -1548,4 +1548,60 @@ describe('product evidence trust boundaries', () => {
             candidate: 'The Rocket Jacket is available.', evidence, language: 'en',
         }).decision).toBe(grounding.GroundingDecision.SEND);
     });
+
+    test('a model cannot introduce a product availability claim when evidence is NONE', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+
+        const result = evaluateCandidate({
+            candidate: 'Red Cotton Saree is available in our shop.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.reasonCode).toBe(grounding.ReasonCode.UNSUPPORTED_DOMAIN_CLAIM);
+        expect(result.violations).toContain('unsupported_stock_claim');
+    });
+
+    test('product availability guard does not replace a supported delivery-policy reply', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence, 'Delivery: available nationwide across Bangladesh.');
+
+        const result = evaluateCandidate({
+            candidate: 'Delivery is available nationwide across Bangladesh.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a deictic stock claim still requires product evidence when status is NONE', () => {
+        const result = evaluateCandidate({
+            candidate: 'We have it in stock.',
+            evidence: grounding.emptyEvidence(SHOP),
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_stock_claim');
+    });
+
+    test('a supported COD availability statement is decided by payment policy, not product stock', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence,
+            '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: Cash on Delivery (COD) ONLY.');
+
+        const result = evaluateCandidate({
+            candidate: 'Cash on Delivery is available.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
 });
