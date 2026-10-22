@@ -14,7 +14,7 @@ const COMPARISON_ROOT = path.join(ARTIFACT_ROOT, 'comparisons');
 const RUN_ROOT = path.join(ARTIFACT_ROOT, 'runs');
 const SOURCE_PATH = path.join(WORKSPACE_ROOT, 'customer-simulator.csv');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
-const CAMPAIGN_ID = 'v13-cf6f18b2-2a9a-4831-ad42-2b8509bfcd35';
+const CAMPAIGN_ID = process.env.LAB_CAMPAIGN_ID || 'v13-cf6f18b2-2a9a-4831-ad42-2b8509bfcd35';
 const { summarizeTurnEvidence } = require('./turn-evidence-metrics');
 const PROOF_JSON = path.join(ARTIFACT_ROOT, 'product-engine-v1.3-proof.json');
 const PROOF_MARKDOWN = path.join(DOC_ROOT, 'PRODUCT_ENGINE_V1_3_INTEGRATION_CUSTOMER_TRUTH_PROOF.md');
@@ -64,10 +64,17 @@ const newestMatching = (directory, predicate) => jsonFiles(directory)
     .sort((left, right) => right.sortTime - left.sortTime)[0] || null;
 
 const matchesCurrentVerificationCommit = (receipt, head) => receipt?.candidateCommit === head;
-const independentVerificationMatches = (review, head, backendSourceSha, runnerSourceSha) => review?.verdict === 'PASS'
-    && review?.reviewedCodeCommit === head
-    && review?.reviewedBackendSourceSha256 === backendSourceSha
-    && review?.reviewedRunnerSourceSha256 === runnerSourceSha;
+const independentVerificationStatus = (review, head, backendSourceSha, runnerSourceSha) => {
+    if (!review) return 'NOT_RUN';
+    const currentCandidate = review.reviewedCodeCommit === head
+        && review.reviewedBackendSourceSha256 === backendSourceSha
+        && review.reviewedRunnerSourceSha256 === runnerSourceSha;
+    if (!currentCandidate) return 'STALE';
+    return ['PASS', 'FAIL', 'BLOCKED'].includes(review.verdict) ? review.verdict : 'NOT_MEASURED';
+};
+const independentVerificationMatches = (review, head, backendSourceSha, runnerSourceSha) => independentVerificationStatus(
+    review, head, backendSourceSha, runnerSourceSha,
+) === 'PASS';
 
 const pathInside = (root, relativePath) => {
     const target = path.resolve(root, relativePath);
@@ -199,15 +206,27 @@ const main = () => {
     const heldoutBaseline = comparisonSummary(heldoutComparisonEntry, 'baseline-v1-2');
     const realCandidateRaw = comparisonSummary(realComparisonEntry, 'candidate-v1-3');
     const sourceRun = runArtifactFor(sourceComparisonEntry, 'candidate-v1-3');
+    const realBaselineRun = runArtifactFor(realComparisonEntry, 'baseline-v1-2');
     const realRun = runArtifactFor(realComparisonEntry, 'candidate-v1-3');
+    const realBaselineRunLedgerPath = realBaselineRun?.runId ? path.join(ARTIFACT_ROOT, 'runs', `${realBaselineRun.runId}.budget-ledger.json`) : null;
+    const realBaselineRunLedger = realBaselineRunLedgerPath && fs.existsSync(realBaselineRunLedgerPath)
+        ? readJson(realBaselineRunLedgerPath) : null;
+    const realBaselineRunLedgerSummary = summarizeRunLedger(realBaselineRunLedger);
+    const realRunLedgerPath = realRun?.runId ? path.join(ARTIFACT_ROOT, 'runs', `${realRun.runId}.budget-ledger.json`) : null;
+    const realRunLedger = realRunLedgerPath && fs.existsSync(realRunLedgerPath) ? readJson(realRunLedgerPath) : null;
+    const realRunLedgerSummary = summarizeRunLedger(realRunLedger);
     const realCandidate = realCandidateRaw && Array.isArray(realRun?.turns)
         ? {
             ...realCandidateRaw,
             ...summarizeTurnEvidence(realRun.turns),
             routeExecutedTurns: realRun.summary?.routeExecutedTurns ?? null,
             routeNotRunTurns: realRun.summary?.routeNotRunTurns ?? null,
+            ...realRunLedgerSummary,
         }
-        : realCandidateRaw;
+        : realCandidateRaw ? {
+            ...realCandidateRaw,
+            ...realRunLedgerSummary,
+        } : null;
     const paidRunnerSourceSha256 = realRun?.runnerSourceSha256 || null;
     const runnerProvenanceStatus = !realComparison ? 'NOT_RUN'
         : !paidRunnerSourceSha256 ? 'NOT_MEASURED'
@@ -236,10 +255,16 @@ const main = () => {
     const photosTested = realRun?.genuinePhotoEvaluation?.photosTested ?? null;
     const photoCategoryMatches = photos.filter(photo => photo.categoryMatch === true).length;
     const photoColorMatches = photos.filter(photo => photo.dominantColorMatch === true).length;
-    const realRequests = realComparison ? realComparison.results.reduce((sum, result) => sum
-        + (result.summary?.textRequests || 0) + (result.summary?.visionRequests || 0), 0) : null;
-    const realTextRequests = realComparison ? realComparison.results.reduce((sum, result) => sum + (result.summary?.textRequests || 0), 0) : null;
-    const realVisionRequests = realComparison ? realComparison.results.reduce((sum, result) => sum + (result.summary?.visionRequests || 0), 0) : null;
+    const realTextRequestAttempts = realComparison ? realComparison.results.reduce((sum, result) => sum + (result.summary?.textRequests || 0), 0) : null;
+    const realVisionRequestAttempts = realComparison ? realComparison.results.reduce((sum, result) => sum + (result.summary?.visionRequests || 0), 0) : null;
+    const realTextProviderCalls = realComparison
+        && Number.isFinite(realBaselineRunLedgerSummary.providerTextCalls)
+        && Number.isFinite(realRunLedgerSummary.providerTextCalls)
+        ? realBaselineRunLedgerSummary.providerTextCalls + realRunLedgerSummary.providerTextCalls : null;
+    const realVisionProviderCalls = realComparison
+        && Number.isFinite(realBaselineRunLedgerSummary.providerVisionCalls)
+        && Number.isFinite(realRunLedgerSummary.providerVisionCalls)
+        ? realBaselineRunLedgerSummary.providerVisionCalls + realRunLedgerSummary.providerVisionCalls : null;
     const realEstimatedSpend = realComparison ? realComparison.results.reduce((sum, result) => sum
         + (Number.isFinite(result.summary?.estimatedProviderChargeUsd) ? result.summary.estimatedProviderChargeUsd : 0), 0) : null;
     const campaignBudgetExhausted = campaign ? campaign.requestCount >= campaign.maxRequests
@@ -285,7 +310,8 @@ const main = () => {
     const contextFailures = sourceCandidate?.contextResolutionFailures ?? null;
     const unsafeCrossDomain = sourceCandidate?.unsafeCrossDomainHandoffs ?? null;
     const qualityPass = sourceTruthMetricsAvailable && sourceTruthQuality.status === 'PASS';
-    const independentPass = independentVerificationMatches(independent, head, currentEngineHash, currentRunnerSourceSha256);
+    const independentStatus = independentVerificationStatus(independent, head, currentEngineHash, currentRunnerSourceSha256);
+    const independentPass = independentStatus === 'PASS';
     const automatedStepsPass = verificationReceipt?.status === 'PASS'
         && Array.isArray(verificationReceipt.steps)
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
@@ -338,11 +364,17 @@ const main = () => {
         REAL_GEMINI_SAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
         REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_RUN',
         GENUINE_PHOTOS_TESTED: realComparison ? (photosTested ?? 'NOT_RUN') : 'NOT_RUN',
-        REAL_GEMINI_TEXT_REQUESTS: realComparison ? (realTextRequests ?? 0) : 'NOT_RUN',
-        REAL_GEMINI_VISION_REQUESTS: realComparison ? (realVisionRequests ?? 0) : 'NOT_RUN',
+        REAL_GEMINI_TEXT_REQUESTS: realComparison ? (realTextProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_VISION_REQUESTS: realComparison ? (realVisionProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_TEXT_REQUEST_ATTEMPTS: realComparison ? (realTextRequestAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_VISION_REQUEST_ATTEMPTS: realComparison ? (realVisionRequestAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_ROUTE_EXECUTED_TURNS: realCandidate?.routeExecutedTurns ?? 'NOT_RUN',
         REAL_GEMINI_ROUTE_NOT_RUN_TURNS: realCandidate?.routeNotRunTurns ?? 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_SLOTS: realCandidate?.falseRefusalSlots ?? 'NOT_RUN',
+        REAL_GEMINI_PROVIDER_USAGE_RECORDS: realComparison ? (realCandidate?.providerUsageRecords ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_REQUEST_ATTEMPTS: realComparison ? (realCandidate?.requestAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_UNPRICED_PROVIDER_CALLS: realComparison ? (realCandidate?.unpricedProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_REJECTED_CAMPAIGN_ATTEMPTS: realComparison ? (realCandidate?.campaignRejectedAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_TURNS_EXPECTED: realCandidate?.falseRefusalExpectedTurns ?? 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_TURNS_EVALUATED: realCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_TURNS_NOT_EVALUABLE: realCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN',
@@ -360,7 +392,7 @@ const main = () => {
         PLAYWRIGHT_E2E: playwrightPass ? 'PASS' : playwright ? 'FAIL' : 'NOT_RUN',
         SECURITY_TESTS: securityPass === null ? 'NOT_RUN' : securityPass ? 'PASS' : 'FAIL',
         PRIVACY_SCAN: privacyPass ? 'PASS' : privacy ? 'FAIL' : 'NOT_RUN',
-        INDEPENDENT_VERIFICATION: independentPass ? 'PASS' : independent ? 'STALE' : 'NOT_RUN',
+        INDEPENDENT_VERIFICATION: independentStatus,
         BASELINE_COMPARISON_VALID: sourceComparisonValid ? 'YES' : sourceComparison ? 'NO' : 'NOT_RUN',
         DETERMINISTIC_SOURCE_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
         CUSTOMER_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
@@ -405,10 +437,15 @@ const main = () => {
                 matchesCurrent: runnerProvenanceStatus === 'PASS',
             },
             model: realComparison.model,
-            textRequestsBothEngines: realTextRequests,
-            visionRequestsBothEngines: realVisionRequests,
+            textRequestAttemptsBothEngines: realTextRequestAttempts,
+            visionRequestAttemptsBothEngines: realVisionRequestAttempts,
+            providerTextCallsBothEngines: realTextProviderCalls,
+            providerVisionCallsBothEngines: realVisionProviderCalls,
             estimatedProviderChargeUsdBothEngines: realEstimatedSpend,
+            candidateProviderUsageRecords: realCandidate?.providerUsageRecords ?? null,
+            candidateRequestAttempts: realCandidate?.requestAttempts ?? null,
             candidateUnpricedProviderCalls: realCandidate?.unpricedProviderCalls ?? null,
+            candidateRejectedAttempts: realCandidate?.campaignRejectedAttempts ?? null,
             candidate: realCandidate,
             photosTested: photosTested,
             photoCategoryMatches,
@@ -491,9 +528,7 @@ const main = () => {
                 maxRequests: campaign.maxRequests,
                 maxVisionRequests: campaign.maxVisionRequests,
             } : null,
-            estimatedCostPerCandidateVerifiedAnswerUsd: realComparison && realCandidate?.verifiedCorrectAnswers > 0
-                && Number.isFinite(realCandidate?.estimatedProviderChargeUsd)
-                ? realCandidate.estimatedProviderChargeUsd / realCandidate.verifiedCorrectAnswers : null,
+            ...calculateCandidateCostMetrics(realComparison, realCandidate),
             incorrectOrUnansweredSlotDefinition: 'Answerable fact slots not answered with the expected value; includes partial answers and false refusals.',
         },
         integration: {
@@ -563,6 +598,49 @@ const main = () => {
     if (automatedQaVerdict === 'FAIL') process.exitCode = 1;
 };
 
+function summarizeRunLedger(ledger) {
+    const calls = ledger?.snapshot?.calls;
+    if (!Array.isArray(calls)) return {
+        providerUsageRecords: null,
+        requestAttempts: null,
+        providerTextCalls: null,
+        providerVisionCalls: null,
+        textRequestAttempts: null,
+        visionRequestAttempts: null,
+        unpricedProviderCalls: null,
+        campaignRejectedAttempts: null,
+    };
+    const providerReported = calls.filter(call => call?.status === 'provider_reported');
+    const campaignRejected = calls.filter(call => call?.status === 'campaign_ledger_rejected');
+    const providerTextCalls = providerReported.filter(call => call.vision !== true).length;
+    const providerVisionCalls = providerReported.filter(call => call.vision === true).length;
+    const rejectedTextAttempts = campaignRejected.filter(call => call.vision !== true).length;
+    const rejectedVisionAttempts = campaignRejected.filter(call => call.vision === true).length;
+    return {
+        providerUsageRecords: providerReported.length,
+        requestAttempts: providerReported.length + campaignRejected.length,
+        providerTextCalls,
+        providerVisionCalls,
+        textRequestAttempts: providerTextCalls + rejectedTextAttempts,
+        visionRequestAttempts: providerVisionCalls + rejectedVisionAttempts,
+        unpricedProviderCalls: providerReported.filter(call => !Number.isFinite(call.estimatedProviderChargeUsd)).length,
+        campaignRejectedAttempts: campaignRejected.length,
+    };
+}
+
+function calculateCandidateCostMetrics(realComparison, realCandidate) {
+    const estimatedProviderChargeUsd = realComparison && Number.isFinite(realCandidate?.estimatedProviderChargeUsd)
+        ? realCandidate.estimatedProviderChargeUsd : null;
+    return {
+        estimatedCostPerCandidateVerifiedAnswerUsd: estimatedProviderChargeUsd !== null
+            && Number.isFinite(realCandidate?.verifiedCorrectTurns) && realCandidate.verifiedCorrectTurns > 0
+            ? estimatedProviderChargeUsd / realCandidate.verifiedCorrectTurns : null,
+        estimatedCostPerCandidateVerifiedFactSlotUsd: estimatedProviderChargeUsd !== null
+            && Number.isFinite(realCandidate?.verifiedCorrectAnswers) && realCandidate.verifiedCorrectAnswers > 0
+            ? estimatedProviderChargeUsd / realCandidate.verifiedCorrectAnswers : null,
+    };
+}
+
 function renderMarkdown(proof, status, examples, comparisons, details) {
     const metricTable = Object.entries(status).map(([key, value]) => `| \`${key}\` | ${String(value)} |`).join('\n');
     const exampleText = examples.length ? examples.map(example => [
@@ -589,12 +667,16 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const browserBlock = details.playwright
         ? `Playwright exit code: ${details.playwright.playwrightExitCode}; result: ${JSON.stringify(details.playwright.tests || {})}. Evidence: \`${proof.candidate.evidenceRoot}\\playwright\\execution.json\`.`
         : 'Playwright: NOT_RUN.';
-    const unpricedCandidateCalls = Number(details.realCandidate?.unpricedProviderCalls) || 0;
+    const unpricedCandidateCalls = Number.isFinite(details.realCandidate?.unpricedProviderCalls)
+        ? details.realCandidate.unpricedProviderCalls : 'NOT_MEASURED';
+    const rejectedCampaignAttempts = Number.isFinite(details.realCandidate?.campaignRejectedAttempts)
+        ? details.realCandidate.campaignRejectedAttempts : 'NOT_MEASURED';
+    const rejectedReservationLabel = rejectedCampaignAttempts === 1 ? 'rejected reservation' : 'rejected reservations';
     const geminiBlock = details.realComparison
-        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Requests in matched baseline and candidate arms: ${comparisons.realGemini.textRequestsBothEngines} text and ${comparisons.realGemini.visionRequestsBothEngines} vision. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate route coverage: ${details.realCandidate?.routeExecutedTurns ?? 'NOT_MEASURED'}/200 executed, ${details.realCandidate?.routeNotRunTurns ?? 'NOT_MEASURED'} not run. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context resolution failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'} across ${details.realCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.contextDependentAnswerableTurns ?? 'NOT_MEASURED'} fully executed conversation chains (${details.realCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable); cross-domain safety ${details.realCandidate?.safeCrossDomainHandoffs ?? 'NOT_MEASURED'} safe, ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'} unsafe across ${details.realCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.crossDomainHandoffTurns ?? 'NOT_MEASURED'} executed turns (${details.realCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_MEASURED'} not run). Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls ? 'candidate estimate may be incomplete.' : 'all candidate provider calls were priced.'}`
+        ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Provider-reported traffic across matched arms: ${comparisons.realGemini.providerTextCallsBothEngines ?? 'NOT_MEASURED'} text and ${comparisons.realGemini.providerVisionCallsBothEngines ?? 'NOT_MEASURED'} vision calls. Request attempts across matched arms: ${comparisons.realGemini.textRequestAttemptsBothEngines ?? 'NOT_MEASURED'} text and ${comparisons.realGemini.visionRequestAttemptsBothEngines ?? 'NOT_MEASURED'} vision. Candidate run ledger: ${details.realCandidate?.requestAttempts ?? 'NOT_MEASURED'} request attempts, ${details.realCandidate?.providerUsageRecords ?? 'NOT_MEASURED'} provider usage records, ${rejectedCampaignAttempts} ${rejectedReservationLabel}. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate route coverage: ${details.realCandidate?.routeExecutedTurns ?? 'NOT_MEASURED'}/200 executed, ${details.realCandidate?.routeNotRunTurns ?? 'NOT_MEASURED'} not run. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context resolution failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'} across ${details.realCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.contextDependentAnswerableTurns ?? 'NOT_MEASURED'} fully executed conversation chains (${details.realCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable); cross-domain safety ${details.realCandidate?.safeCrossDomainHandoffs ?? 'NOT_MEASURED'} safe, ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'} unsafe across ${details.realCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.crossDomainHandoffTurns ?? 'NOT_MEASURED'} executed turns (${details.realCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_MEASURED'} not run). Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls === 0 ? 'all recorded candidate provider usage was priced.' : unpricedCandidateCalls === 'NOT_MEASURED' ? 'provider pricing coverage was not measured from the run ledger.' : 'candidate provider cost estimate may be incomplete.'}`
         : 'Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.';
     const unpricedCostNote = details.realComparison
-        ? `Candidate unpriced provider calls: ${unpricedCandidateCalls}. ${unpricedCandidateCalls ? 'The candidate estimate may be incomplete.' : 'All candidate calls were priced.'}`
+        ? `Candidate unpriced provider calls: ${unpricedCandidateCalls}. Rejected campaign ledger attempts: ${rejectedCampaignAttempts} (blocked before provider usage). ${unpricedCandidateCalls === 0 ? 'All recorded provider usage was priced.' : unpricedCandidateCalls === 'NOT_MEASURED' ? 'Provider pricing coverage was not measured from the run ledger.' : 'The candidate estimate may be incomplete.'}`
         : 'Candidate unpriced provider calls: NOT_RUN.';
     const falseRefusalBlock = details.realComparison
         ? `Candidate false refusals: ${details.realCandidate?.falseRefusalSlots ?? 'NOT_MEASURED'} slots across ${details.realCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.falseRefusalExpectedTurns ?? 'NOT_MEASURED'} evaluated/expected answerable turns (${details.realCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable).`
@@ -606,6 +688,7 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         ? `Verdict: **${status.INDEPENDENT_VERIFICATION}**; reviewer: ${details.independent.reviewer || 'not recorded'}; reviewed code commit: ${details.independent.reviewedCodeCommit || 'not recorded'}; reviewed runner hash: ${details.independent.reviewedRunnerSourceSha256 || 'not recorded'}.`
         : 'Independent review: NOT_RUN. The proof remains blocked until a separate read-only review is recorded.';
     const costPerAnswer = proof.measured.estimatedCostPerCandidateVerifiedAnswerUsd;
+    const costPerFactSlot = proof.measured.estimatedCostPerCandidateVerifiedFactSlotUsd;
     return `# EasyModerator Product Engine V1.3 — Integration & Customer Truth Proof
 
 Generated: ${proof.generatedAt}
@@ -655,7 +738,7 @@ The source CSV SHA-256 is \`${proof.benchmark.sourceCorpusSha256}\`. Its advisor
 | Fully answered product turns | ${details.sourceBaseline?.verifiedCorrectTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.verifiedCorrectTurns ?? 'NOT_RUN'} |
 | False refusal slots | ${details.sourceBaseline?.falseRefusalSlots ?? 'NOT_RUN'} | ${details.sourceCandidate?.falseRefusalSlots ?? 'NOT_RUN'} |
 | False-refusal turns evaluated / expected (not evaluable) | ${details.sourceBaseline?.falseRefusalEvaluatedTurns ?? 'NOT_RUN'} / ${details.sourceBaseline?.falseRefusalExpectedTurns ?? 'NOT_RUN'} (${details.sourceBaseline?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN'}) | ${details.sourceCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_RUN'} / ${details.sourceCandidate?.falseRefusalExpectedTurns ?? 'NOT_RUN'} (${details.sourceCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN'}) |
-| Unsupported price claims sent | ${details.sourceBaseline?.unsupportedClaimsSent ?? 'NOT_RUN'} | ${details.sourceCandidate?.unsupportedClaimsSent ?? 'NOT_RUN'} |
+| Unsupported price claims with SEND disposition | ${details.sourceBaseline?.unsupportedClaimsSent ?? 'NOT_RUN'} | ${details.sourceCandidate?.unsupportedClaimsSent ?? 'NOT_RUN'} |
 | Context-resolution failures | ${details.sourceBaseline?.contextResolutionFailures ?? 'NOT_RUN'} | ${details.sourceCandidate?.contextResolutionFailures ?? 'NOT_RUN'} |
 | Context turns evaluated / expected | ${details.sourceBaseline?.evaluatedContextDependentAnswerableTurns ?? 'NOT_RUN'} / ${details.sourceBaseline?.contextDependentAnswerableTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_RUN'} / ${details.sourceCandidate?.contextDependentAnswerableTurns ?? 'NOT_RUN'} |
 | Context turns not evaluable | ${details.sourceBaseline?.contextResolutionNotEvaluableTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_RUN'} |
@@ -664,6 +747,8 @@ The source CSV SHA-256 is \`${proof.benchmark.sourceCorpusSha256}\`. Its advisor
 | Cross-domain handoffs not run | ${details.sourceBaseline?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN'} | ${details.sourceCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_RUN'} |
 
 Incorrect product answers are **not separately measured**. The artifact records ${details.totalIncorrectOrUnansweredSlots ?? 'NOT_MEASURED'} answerable fact slots that were partial, unanswered or incorrect; this total includes false refusals and must not be presented as a wrong-answer count. The currently measured unsupported-claim counter is specifically an unsupported-price-claim check.
+
+Context-dependent false refusals are evaluated only when every earlier turn in that conversation executed and an earlier assistant turn had a SEND disposition for a non-refusal reply with a contract-valid READY presentation grounding the same product. This is approved replay output; actual Messenger delivery is not established. An intervening product \`NOT_FOUND\` clears that active context; expected turns without a complete grounding chain remain not evaluable.
 
 ${exampleText}
 
@@ -704,7 +789,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost from priced usage: ${details.realComparison ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. ${unpricedCostNote} Candidate cost per verified answer: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost from priced usage: ${details.realComparison ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. ${unpricedCostNote} Candidate cost per verified product-answer turn: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}; per verified fact slot: ${costPerFactSlot == null ? 'NOT_MEASURED' : `$${costPerFactSlot.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -754,4 +839,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessRealGeminiQuality, backendSourceSha256, independentVerificationMatches, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples };
+module.exports = { assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeRunLedger };
