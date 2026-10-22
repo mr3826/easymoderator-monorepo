@@ -844,7 +844,11 @@ const main = () => {
     const contextFailures = sourceCandidate?.contextResolutionFailures ?? null;
     const unsafeCrossDomain = sourceCandidate?.unsafeCrossDomainHandoffs ?? null;
     const qualityPass = sourceTruthMetricsAvailable && sourceTruthQuality.status === 'PASS';
-    const independentStatus = independentVerificationStatus(independent, head, currentEngineHash, currentRunnerSourceSha256);
+    // Bind an independent review to the code commit the verifier actually exercised.
+    // Later evidence-only commits must not make that frozen code review appear stale.
+    const independentStatus = independentVerificationStatus(
+        independent, verificationReceipt?.candidateCommit || head, currentEngineHash, currentRunnerSourceSha256,
+    );
     const independentPass = independentStatus === 'PASS';
     const automatedStepsPass = verificationReceipt?.status === 'PASS'
         && verificationReceipt?.complete === true
@@ -1210,7 +1214,7 @@ const main = () => {
     const markdown = renderMarkdown(proof, machineStatus, sourceRunResults, comparisonDetails, {
         sourceOracle, sourceComparison, sourceCandidate, sourceBaseline, heldoutComparison, heldoutBaseline, heldoutCandidate,
         realComparison, realBaseline, realCandidate, realGeminiQuality, genuinePhotoQuality,
-        customerQualityMetricAudit,
+        customerQualityMetricAudit, visualCaseCoverage,
         photosTested, photoCategoryMatches, photoColorMatches,
         photoIdentityScored: photos.length > 0 && photos.every(photo =>
             photo.productCatalogIdentityScored === true && typeof photo.catalogIdentityMatch === 'boolean'
