@@ -204,9 +204,16 @@ const AVAILABILITY_CONTEXT_FILLERS = new Set([
     'on',
 ]);
 
-const availabilitySubjectTerms = (clause) => claimIdentityTerms(String(clause || '')
-    .replace(new RegExp(LOCATION_SCOPE_PATTERN.source, 'gi'), ' '))
-    .filter(term => !AVAILABILITY_CONTEXT_FILLERS.has(term));
+const availabilitySubjectTerms = (clause) => {
+    let value = String(clause || '')
+        .replace(new RegExp(LOCATION_SCOPE_PATTERN.source, 'gi'), ' ');
+    if (PAYMENT_SEMANTIC_CONTEXT.test(value)) {
+        value = Object.values(PAYMENT_METHOD_PATTERNS)
+            .reduce((text, pattern) => text.replace(pattern, ' '), value);
+    }
+    return claimIdentityTerms(value)
+        .filter(term => !AVAILABILITY_CONTEXT_FILLERS.has(term));
+};
 
 const productIdentityTerms = (product) => identifyingTerms([
     product?.name,
@@ -1003,15 +1010,14 @@ const unsupportedStockClaim = (candidate, evidence) => {
         return splitClaimClauses(candidate).some(clause => {
             if (!availabilityAssertion(clause)) return false;
             const subjectTerms = availabilitySubjectTerms(clause);
-            const pureDeliveryPolicy = DELIVERY_ASSERTION.test(clause)
+            const pureDeliveryPolicy = (DELIVERY_ASSERTION.test(clause)
+                || DELIVERY_NEGATIVE_ASSERTION.test(clause))
                 && DELIVERY_TERMS.test(clause)
                 && !subjectTerms.length;
             const purePaymentPolicy = PAYMENT_SEMANTIC_CONTEXT.test(clause)
                 && !subjectTerms.length;
             if (pureDeliveryPolicy || purePaymentPolicy) return false;
-            if (subjectTerms.length) return true;
-            if (PRODUCT_TERMS.test(clause) && !DELIVERY_TERMS.test(clause)) return true;
-            return /\b(?:it|this|that|these|those|one|ones|them)\b/i.test(clause);
+            return true;
         });
     }
     for (const clause of splitClaimClauses(candidate)) {

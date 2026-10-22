@@ -1578,6 +1578,19 @@ describe('product evidence trust boundaries', () => {
         expect(result.decision).toBe(grounding.GroundingDecision.SEND);
     });
 
+    test('an unsupported delivery-only availability claim reaches the delivery policy check', () => {
+        const result = evaluateCandidate({
+            candidate: 'Delivery is available nationwide across Bangladesh.',
+            evidence: grounding.emptyEvidence(SHOP),
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_delivery_commitment');
+        expect(result.violations).not.toContain('unsupported_stock_claim');
+    });
+
     test('a deictic stock claim still requires product evidence when status is NONE', () => {
         const result = evaluateCandidate({
             candidate: 'We have it in stock.',
@@ -1590,18 +1603,67 @@ describe('product evidence trust boundaries', () => {
         expect(result.violations).toContain('unsupported_stock_claim');
     });
 
-    test('a supported COD availability statement is decided by payment policy, not product stock', () => {
+    test.each(['Available.', 'In stock.', 'All sizes are available.', 'Available in all sizes.'])(
+        'subjectless product availability still requires evidence: %s',
+        (candidate) => {
+            const result = evaluateCandidate({
+                candidate,
+                evidence: grounding.emptyEvidence(SHOP),
+                language: 'en',
+                modelGenerated: true,
+            });
+
+            expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+            expect(result.violations).toContain('unsupported_stock_claim');
+        },
+    );
+
+    test.each(['Cash on Delivery is available.', 'Payment is available via COD.'])(
+        'a supported COD availability statement is decided by payment policy, not product stock: %s',
+        (candidate) => {
+            const evidence = grounding.emptyEvidence(SHOP);
+            grounding.withPolicyText(evidence,
+                '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: Cash on Delivery (COD) ONLY.');
+
+            const result = evaluateCandidate({
+                candidate,
+                evidence,
+                language: 'en',
+                modelGenerated: true,
+            });
+
+            expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+        },
+    );
+
+    test.each([
+        'bKash payment is available.',
+        'Payment via bKash is available.',
+    ])('a supported MFS availability statement is decided by payment policy: %s', (candidate) => {
         const evidence = grounding.emptyEvidence(SHOP);
         grounding.withPolicyText(evidence,
-            '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: Cash on Delivery (COD) ONLY.');
+            '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: Cash on Delivery (COD), and advance payment via bKash to the personal number 01711111111.');
 
         const result = evaluateCandidate({
-            candidate: 'Cash on Delivery is available.',
+            candidate,
             evidence,
             language: 'en',
             modelGenerated: true,
         });
 
         expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('an unsupported payment availability claim reaches the payment policy check', () => {
+        const result = evaluateCandidate({
+            candidate: 'bKash payment is available.',
+            evidence: grounding.emptyEvidence(SHOP),
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_payment_method:bkash');
+        expect(result.violations).not.toContain('unsupported_stock_claim');
     });
 });
