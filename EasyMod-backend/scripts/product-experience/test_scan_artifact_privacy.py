@@ -82,6 +82,16 @@ class LiteralMatcherTests(unittest.TestCase):
         self.assertEqual(SCANNER.count_sensitive_pattern_matches(digest, None), 0)
         self.assertFalse(SCANNER.contains_source_contact(digest, SCANNER.LiteralMatcher({"01312345678"})))
 
+    def test_sensitive_pattern_scan_does_not_treat_uuid_as_contact(self):
+        comparison_id = "14016518-7966-4d6a-baf6-4bdd3cf1c6bb"
+        contact_matcher = SCANNER.LiteralMatcher({"0165187966"})
+
+        self.assertIsNotNone(SCANNER.BANGLADESH_CONTACT_PATTERN.search(comparison_id))
+        self.assertEqual(SCANNER.count_sensitive_pattern_matches(comparison_id, None), 0)
+        self.assertFalse(SCANNER.contains_source_contact(comparison_id, contact_matcher))
+        self.assertGreater(SCANNER.count_sensitive_pattern_matches("Customer phone 0165187966", None), 0)
+        self.assertTrue(SCANNER.contains_source_contact("Customer phone 0165187966", contact_matcher))
+
     def test_playwright_archive_discovery_uses_the_artifact_root(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             artifact_root = Path(temporary_directory)

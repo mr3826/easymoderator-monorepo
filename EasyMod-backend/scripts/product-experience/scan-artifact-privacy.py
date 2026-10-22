@@ -39,6 +39,10 @@ ADDRESS_PATTERN = re.compile(
 )
 EMAIL_PATTERN = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])")
 SHA256_TOKEN_PATTERN = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", re.IGNORECASE)
+UUID_TOKEN_PATTERN = re.compile(
+    r"(?<![0-9a-f])[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?![0-9a-f])",
+    re.IGNORECASE,
+)
 REDACTED_SOURCE_TEXT_KEYS = {"inputredacted", "customermessageredacted"}
 RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 ARCHIVE_TEXT_EXTENSIONS = {".txt", ".json", ".html", ".trace", ".network", ".stacks", ".log", ".md", ".css", ".js"}
@@ -116,6 +120,7 @@ def normalize_contact_sequence(text: str) -> str:
 
 def contains_source_contact(text: str, source_contact_matcher: LiteralMatcher) -> bool:
     text = SHA256_TOKEN_PATTERN.sub("[sha256]", text)
+    text = UUID_TOKEN_PATTERN.sub("[uuid]", text)
     return any(
         source_contact_matcher.contains(normalize_contact_sequence(match.group()))
         for match in BANGLADESH_CONTACT_PATTERN.finditer(text)
@@ -282,6 +287,7 @@ def collect_source_text_matches(
 
 def count_sensitive_pattern_matches(text: str, profile_pattern: re.Pattern[str] | None) -> int:
     text = SHA256_TOKEN_PATTERN.sub("[sha256]", text)
+    text = UUID_TOKEN_PATTERN.sub("[uuid]", text)
     matches = len(BANGLADESH_CONTACT_PATTERN.findall(text))
     matches += len(ADDRESS_PATTERN.findall(text))
     matches += len(EMAIL_PATTERN.findall(text))
