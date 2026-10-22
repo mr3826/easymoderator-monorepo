@@ -512,7 +512,11 @@ describe('genuine photo replay fixture isolation', () => {
 
         try {
             await runGenuinePhotoEvaluation(evaluationClient, { maxOutputTokensOverride: 1024 });
-            expect(evaluationClient.chat).toHaveBeenCalledTimes(GENUINE_PHOTO_MANIFEST.assets.length);
+            const baselineRouterOnly = process.env.LAB_BASELINE_ROUTER_ONLY === '1'
+                || process.env.LAB_ENGINE_LABEL === 'baseline-v1-2';
+            expect(evaluationClient.chat).toHaveBeenCalledTimes(
+                GENUINE_PHOTO_MANIFEST.assets.length * (baselineRouterOnly ? 2 : 1),
+            );
             expect(evaluationClient.chat.mock.calls.every(([params]) => params.maxTokens === 1024)).toBe(true);
             expect(mockCatalog.map(product => product.id)).toEqual(configuredCatalog.map(product => product.id));
             expect(mockCatalog.map(product => product.id)).toContain('v12-a-cargo');
