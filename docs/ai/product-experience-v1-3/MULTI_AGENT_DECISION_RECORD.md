@@ -124,6 +124,25 @@ INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only after candidat
 FINAL_VERDICT: Test the stronger generic taxonomy cue in a fresh bounded campaign; if categories remain below 3/3, report the unresolved failure without relaxing the gate.
 ```
 
+## Follow-up decision — revert the measured photo-prompt regression
+
+```text
+DECISION_ID: V13-PHOTO-TAXONOMY-CUE-03
+OBSERVED_PROBLEM: The stronger forced taxonomy wording was worse on the fresh paid photo probe: category remained 0/3 and visible-color matching fell to 2/3, compared with 0/3 categories and 3/3 colors under the prior conservative cue. Neither prompt passed the category gate.
+MERCHANT_IMPACT: The forced cue did not improve garment retrieval and reduced color reliability, so it is not a safe candidate improvement.
+CUSTOMER_IMPACT: Keep uncertain image categories unclassified instead of forcing a label from incomplete framing.
+CURRENT_IMPLEMENTATION: The extraction prompt said to always choose kurta/panjabi for a visible long-tunic silhouette and treated an off-frame hem as insufficient reason for null.
+OPTIONS_CONSIDERED: Keep the stronger cue despite its measured regression; accept the prior prompt as passing; revert to the prior conservative cue and retain the measured photo failure.
+RECOMMENDED_CHANGE: Revert the stronger prompt to the previously measured conservative wording, keep the three-photo 3/3 category and color acceptance gate, and record the image probe as failed until a future independently justified iteration passes it.
+ALTERNATIVES_REJECTED: Do not relabel expected outcomes, force categories, weaken the gate, or report the photo feature as ready.
+SECURITY_IMPACT: Prompt-only rollback; catalog authority, tenant boundaries, reply grounding, media authorization, and commerce mutation boundaries remain unchanged.
+COST_IMPACT: The prompt comparison already consumed a fresh bounded campaign; this rollback does not authorize another paid run by itself.
+FUTURE_COMPATIBILITY: No API, DTO, catalog, or fixture schema changes. A later prompt iteration requires its own bounded evidence and review.
+TESTABLE_ACCEPTANCE_CRITERIA: Prompt tests require the conservative length and null rule. The proof remains FAIL when any licensed probe category or visible color is incorrect.
+IMPLEMENTATION_OWNER: Lead orchestrator / AI Product Engineer.
+INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only after the final candidate freeze.
+FINAL_VERDICT: Revert the measured regression and report the unresolved 0/3 category result honestly; do not claim integration readiness.
+```
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

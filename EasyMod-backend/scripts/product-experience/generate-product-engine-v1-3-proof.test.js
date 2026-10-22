@@ -43,7 +43,9 @@ describe('redacted customer examples', () => {
 
 describe('paid Gemini quality readiness gate', () => {
     const validComparison = { comparisonValid: true };
+    const completeRouteCoverage = { sourceTurns: 200, routeExecutedTurns: 200, routeNotRunTurns: 0 };
     const expectedDenominators = {
+        sourceTurns: 200,
         eligibleFactSlots: 18, answerableProductTurns: 15,
         falseRefusalExpectedTurns: 15,
         contextDependentAnswerableTurns: 2, crossDomainHandoffTurns: 2,
@@ -51,6 +53,7 @@ describe('paid Gemini quality readiness gate', () => {
 
     test('passes only when every candidate quality metric is measured and zero', () => {
         expect(assessRealGeminiQuality(validComparison, {
+            ...completeRouteCoverage,
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
             falseRefusalExpectedTurns: 15,
@@ -71,6 +74,7 @@ describe('paid Gemini quality readiness gate', () => {
 
     test('fails on measured paid-run context or handoff failures', () => {
         expect(assessRealGeminiQuality(validComparison, {
+            ...completeRouteCoverage,
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
             falseRefusalExpectedTurns: 15,
@@ -100,6 +104,7 @@ describe('paid Gemini quality readiness gate', () => {
             'evaluatedFactSlots', 'verifiedCorrectTurns', 'evaluatedAnswerableProductTurns',
             'contextDependentAnswerableTurns', 'evaluatedContextDependentAnswerableTurns',
             'crossDomainHandoffTurns', 'evaluatedCrossDomainHandoffTurns',
+            'sourceTurns', 'routeExecutedTurns', 'routeNotRunTurns',
         ], failedMetrics: [] });
     });
 
@@ -112,6 +117,7 @@ describe('paid Gemini quality readiness gate', () => {
 
     test('fails on paid-run incomplete fact or answerable-turn coverage', () => {
         expect(assessRealGeminiQuality(validComparison, {
+            ...completeRouteCoverage,
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
             falseRefusalExpectedTurns: 15,
@@ -132,6 +138,7 @@ describe('paid Gemini quality readiness gate', () => {
 
     test('fails a structurally valid but empty benchmark denominator', () => {
         expect(assessRealGeminiQuality(validComparison, {
+            ...completeRouteCoverage,
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
             falseRefusalExpectedTurns: 0,
@@ -152,6 +159,7 @@ describe('paid Gemini quality readiness gate', () => {
 
     test('fails when the paid route leaves context or handoff turns unexecuted', () => {
         const result = assessRealGeminiQuality(validComparison, {
+            ...completeRouteCoverage,
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
             falseRefusalExpectedTurns: 15,
@@ -175,6 +183,7 @@ describe('paid Gemini quality readiness gate', () => {
 
     test('fails when expected false-refusal turns were not evaluable', () => {
         const result = assessRealGeminiQuality(validComparison, {
+            ...completeRouteCoverage,
             unsupportedClaimsSent: 0,
             falseRefusalSlots: 0,
             falseRefusalExpectedTurns: 15,
@@ -194,6 +203,32 @@ describe('paid Gemini quality readiness gate', () => {
 
         expect(result.status).toBe('FAIL');
         expect(result.failedMetrics).toEqual(['falseRefusalCoverage']);
+    });
+
+    test('fails paid quality when any source turn did not execute on the route', () => {
+        const result = assessRealGeminiQuality(validComparison, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+            falseRefusalExpectedTurns: 15,
+            falseRefusalEvaluatedTurns: 15,
+            contextResolutionFailures: 0,
+            unsafeCrossDomainHandoffs: 0,
+            verifiedCorrectAnswers: 18,
+            eligibleFactSlots: 18,
+            evaluatedFactSlots: 18,
+            verifiedCorrectTurns: 15,
+            evaluatedAnswerableProductTurns: 15,
+            contextDependentAnswerableTurns: 2,
+            evaluatedContextDependentAnswerableTurns: 2,
+            crossDomainHandoffTurns: 2,
+            evaluatedCrossDomainHandoffTurns: 2,
+            sourceTurns: 200,
+            routeExecutedTurns: 199,
+            routeNotRunTurns: 1,
+        }, { ...expectedDenominators, sourceTurns: 200 });
+
+        expect(result.status).toBe('FAIL');
+        expect(result.failedMetrics).toContain('routeCoverage');
     });
 });
 

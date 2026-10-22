@@ -99,6 +99,7 @@ const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
         'verifiedCorrectTurns', 'evaluatedAnswerableProductTurns',
         'contextDependentAnswerableTurns', 'evaluatedContextDependentAnswerableTurns',
         'crossDomainHandoffTurns', 'evaluatedCrossDomainHandoffTurns',
+        'sourceTurns', 'routeExecutedTurns', 'routeNotRunTurns',
     ];
     const missingMetrics = requiredMetrics.filter(name => !Number.isFinite(candidate?.[name]));
     if (missingMetrics.length) return { status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics, failedMetrics: [] };
@@ -118,6 +119,12 @@ const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
     }
     if (candidate.evaluatedCrossDomainHandoffTurns !== candidate.crossDomainHandoffTurns) {
         failedMetrics.push('crossDomainHandoffCoverage');
+    }
+    if (candidate.routeNotRunTurns !== 0 || candidate.routeExecutedTurns !== candidate.sourceTurns) {
+        failedMetrics.push('routeCoverage');
+    }
+    if (expected?.sourceTurns !== undefined && candidate.sourceTurns !== expected.sourceTurns) {
+        failedMetrics.push('oracleSourceTurnDenominator');
     }
     if (expected?.eligibleFactSlots !== undefined && candidate.eligibleFactSlots !== expected.eligibleFactSlots) {
         failedMetrics.push('oracleFactSlotDenominator');
@@ -382,6 +389,7 @@ const main = () => {
     const realGeminiCredentialStatus = !realComparison ? 'NOT_RUN'
         : campaignSummary.providerUsageRecords > 0 ? 'AUTHENTICATED' : 'NOT_MEASURED';
     const expectedCustomerDenominators = {
+        sourceTurns: sourceOracle?.source?.turns,
         eligibleFactSlots,
         answerableProductTurns: textAnswerableTurns.length,
         falseRefusalExpectedTurns: textAnswerableTurns.length,

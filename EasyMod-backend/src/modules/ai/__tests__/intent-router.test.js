@@ -993,10 +993,10 @@ describe('D — customer photo → product matching', () => {
         await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
 
         expect(imagePromptAndReply[0]).toMatch(/never infer fabric composition/i);
-        expect(imagePromptAndReply[0]).toMatch(/For this taxonomy, kurta\/panjabi means a South Asian long tunic.*extends below the hip.*upper thigh or knee/i);
-        expect(imagePromptAndReply[0]).toMatch(/Always choose "kurta\/panjabi".*shirt-style collar, buttons or front placket/i);
-        expect(imagePromptAndReply[0]).toMatch(/shirt means a clearly hip-length or shorter garment/i);
-        expect(imagePromptAndReply[0]).toMatch(/An off-frame lower hem alone is not a reason to return null/i);
+        expect(imagePromptAndReply[0]).toMatch(/For a South Asian tunic.*extends below the hip toward the upper thigh or knee.*set category to "kurta\/panjabi"/i);
+        expect(imagePromptAndReply[0]).toMatch(/label takes precedence over the generic English "shirt".*shirt-style collar, buttons or front placket/i);
+        expect(imagePromptAndReply[0]).toMatch(/Use "shirt" only for a clearly hip-length or shorter shirt silhouette/i);
+        expect(imagePromptAndReply[0]).toMatch(/If cropping hides the lower hem and the silhouette is ambiguous, use null rather than guessing/i);
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(expect.objectContaining({
             category: 'saree', color: 'red', material: null, query: 'saree red', tags: ['saree', 'red'],
         }));
