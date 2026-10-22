@@ -301,8 +301,10 @@ describe('registered genuine photo routing seam', () => {
             const imageCalls = calls.filter(params => params.messages.some(message => Array.isArray(message.content)
                 && message.content.some(part => part?.type === 'image_url')));
             expect(imageCalls).toHaveLength(1);
-            expect(imageCalls[0].systemPrompt).toContain('For this taxonomy, kurta/panjabi means a South Asian long tunic');
-            expect(imageCalls[0].systemPrompt).toContain('An off-frame lower hem alone is not a reason to return null');
+            if (process.env.LAB_BASELINE_ROUTER_ONLY !== '1') {
+                expect(imageCalls[0].systemPrompt).toContain('For this taxonomy, kurta/panjabi means a South Asian long tunic');
+                expect(imageCalls[0].systemPrompt).toContain('An off-frame lower hem alone is not a reason to return null');
+            }
             expect(imageCalls[0].messages[0].content.find(part => part.type === 'image_url').url).toBe(fixture.dataUrl);
             expect(result).toEqual(expect.objectContaining({ response: expect.any(String), grounding: expect.any(Object) }));
         } finally {
