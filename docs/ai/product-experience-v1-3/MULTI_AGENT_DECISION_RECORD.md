@@ -63,6 +63,26 @@ INDEPENDENT_CHALLENGER: Independent verification agent to review the change read
 FINAL_VERDICT: Implement the scorer correction; do not modify product runtime behavior based on these two artifacts.
 ```
 
+## Follow-up clarification — current-turn grounded evidence
+
+```text
+DECISION_ID: V13-FALSE-REFUSAL-CURRENT-EVIDENCE-01
+OBSERVED_PROBLEM: The deterministic source replay had one answerable turn marked not evaluable (scenario-09-07). The current turn independently resolved the exact oracle product and produced a contract-valid READY presentation with both variant facts correct, but the scorer still required an earlier assistant-grounded pointer because the oracle also carried a source-context product ID.
+MERCHANT_IMPACT: Avoids understating useful answers or falsely failing full source-turn coverage when the current message itself provides enough product evidence.
+CUSTOMER_IMPACT: Keeps a genuine current-turn lookup measurable while preserving the rule that stale or lost context cannot authorize an answer.
+CURRENT_IMPLEMENTATION: hasActiveAssistantGroundedContext required prior assistant output whenever sourceContextProductId matched productId, even when the current turn contained VERIFIED product evidence and a matching READY presentation.
+OPTIONS_CONSIDERED: Change runtime routing; ignore all prior-context requirements; accept a matching current VERIFIED product and contract-valid READY presentation; count any current product evidence without validating the presentation contract.
+RECOMMENDED_CHANGE: For scorer eligibility, count the current turn as grounded when its product evidence is VERIFIED for the requested product and its presentation is READY, contract-valid, and contains that same product. Keep prior assistant SEND/non-refusal/READY grounding mandatory for context-only turns that lack this current-turn evidence.
+ALTERNATIVES_REJECTED: Do not change router behavior because scenario-09-07 already produced the correct grounded answer. Do not weaken the prior-context rule for context-only lookups.
+SECURITY_IMPACT: Scoring only; product tenant isolation, outbound authorization, and order/payment/courier boundaries remain unchanged.
+COST_IMPACT: None; this is a deterministic offline metric correction.
+FUTURE_COMPATIBILITY: Uses existing per-turn evidence and presentation fields; no runtime API or fixture schema changes.
+TESTABLE_ACCEPTANCE_CRITERIA: A fresh VERIFIED current-turn product with matching READY/contract-valid presentation is evaluable even if prior assistant context was cleared; a current refusal in that state counts as a false refusal; a context-only turn without that evidence remains not evaluable unless the earlier assistant-grounded context is still active.
+IMPLEMENTATION_OWNER: Lead orchestrator / ResponseTrace scoring.
+INDEPENDENT_CHALLENGER: Dataset review agent, with follow-up read-only independent review.
+FINAL_VERDICT: Apply the scorer-only correction and regenerate deterministic metrics; do not change customer-facing runtime behavior.
+```
+
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

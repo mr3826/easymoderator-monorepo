@@ -110,6 +110,36 @@ describe('turn evidence metrics', () => {
         });
     });
 
+    test('scores a current-turn grounded presentation even when earlier customer context is no longer active', () => {
+        const summary = summarizeTurnEvidence([
+            {
+                personaId: 'P01', turn: 1, evaluationStatus: 'EXECUTED', disposition: 'SAFE_FALLBACK',
+                finalReplyRedacted: 'I could not verify that product right now.',
+                oracle: { eligibility: 'NOT_ANSWERABLE', productId: 'product-1', sourceContextProductId: 'product-1', crossDomainHandoffs: [] },
+                productEvidence: { status: 'NOT_FOUND', productIds: [] },
+                presentation: { status: 'BLOCKED', contractValid: true, products: [] },
+            },
+            {
+                personaId: 'P01', turn: 2, evaluationStatus: 'EXECUTED', disposition: 'SAFE_FALLBACK',
+                finalReplyRedacted: 'I could not verify that right now.',
+                oracle: {
+                    textOnlyMetricEligible: true, eligibility: 'ANSWERABLE', productId: 'product-1',
+                    sourceContextProductId: 'product-1', eligibleSlots: [{}], crossDomainHandoffs: [],
+                },
+                productEvidence: { status: 'VERIFIED', productIds: ['product-1'] },
+                presentation: { status: 'READY', contractValid: true, products: [{ id: 'product-1' }] },
+                factScores: { eligibleSlots: 1, correctAnsweredSlots: 0 },
+            },
+        ]);
+
+        expect(summary).toMatchObject({
+            falseRefusalSlots: 1,
+            falseRefusalExpectedTurns: 1,
+            falseRefusalEvaluatedTurns: 1,
+            falseRefusalNotEvaluableTurns: 0,
+        });
+    });
+
     test('scores context-only refusals only while earlier assistant-grounded product context remains active', () => {
         const summary = summarizeTurnEvidence([
             {

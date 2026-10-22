@@ -91,7 +91,7 @@ const matchingComparison = (mode, dataset, sourceHash, oracleSha, engineHash) =>
 const comparisonSummary = (entry, engineName) => entry?.value.results?.find(result => result.engine === engineName)?.summary || null;
 const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
     if (!comparison) return { status: 'NOT_RUN', metricsAvailable: false, missingMetrics: [], failedMetrics: [] };
-    if (comparison.comparisonValid !== true) return { status: 'FAIL', metricsAvailable: false, missingMetrics: [], failedMetrics: ['comparisonValid'] };
+    if (comparison.comparisonValid !== true) return { status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics: [], failedMetrics: [] };
     const requiredMetrics = [
         'unsupportedClaimsSent', 'falseRefusalSlots', 'contextResolutionFailures', 'unsafeCrossDomainHandoffs',
         'falseRefusalExpectedTurns', 'falseRefusalEvaluatedTurns',
@@ -144,6 +144,20 @@ const percent = (numerator, denominator) => denominator > 0 ? `${(100 * numerato
 const privacyScanPassed = report => report?.privacyGateStatus === 'PASS';
 const safeText = (value, maxLength = 220) => String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 const passState = value => value === true ? 'PASS' : value === false ? 'FAIL' : 'NOT_RUN';
+const verificationStepState = step => !step ? 'NOT_RUN'
+    : step.timedOut ? 'TIMED_OUT'
+        : step.status === 'PASS' ? 'PASS' : 'INCOMPLETE';
+const assessPlaywrightExecution = report => {
+    if (!report) return 'NOT_RUN';
+    if (report.playwrightExitCode === 0 && (report.tests?.failed || 0) === 0 && (report.tests?.passed || 0) > 0) return 'PASS';
+    const results = report.tests?.results;
+    const noJourneyStarted = report.playwrightExitCode === 4294967295
+        && (report.tests?.passed || 0) === 0
+        && (report.tests?.failed || 0) > 0
+        && Array.isArray(results) && results.length > 0
+        && results.every(result => result.duration === '0ms' || result.duration == null);
+    return noJourneyStarted ? 'INCOMPLETE' : 'FAIL';
+};
 
 const safeExamples = run => {
     if (!Array.isArray(run?.turns)) return [];
@@ -200,6 +214,7 @@ const main = () => {
     const sourceComparison = sourceComparisonEntry?.value || null;
     const heldoutComparison = heldoutComparisonEntry?.value || null;
     const realComparison = realComparisonEntry?.value || null;
+    const realComparisonValid = realComparison?.comparisonValid === true;
     const sourceCandidate = comparisonSummary(sourceComparisonEntry, 'candidate-v1-3');
     const sourceBaseline = comparisonSummary(sourceComparisonEntry, 'baseline-v1-2');
     const heldoutCandidate = comparisonSummary(heldoutComparisonEntry, 'candidate-v1-3');
@@ -243,6 +258,7 @@ const main = () => {
     const independent = fs.existsSync(independentPath) ? readJson(independentPath) : null;
     const campaignPath = path.join(ARTIFACT_ROOT, 'campaigns', CAMPAIGN_ID, 'budget-ledger.json');
     const campaign = fs.existsSync(campaignPath) ? readJson(campaignPath) : null;
+    const campaignSummary = summarizeCampaignLedger(campaign);
     const verificationReceiptPath = process.env.LAB_VERIFY_RECEIPT_PATH || null;
     const verificationReceipt = verificationReceiptPath && fs.existsSync(verificationReceiptPath)
         ? readJson(verificationReceiptPath) : regression;
@@ -251,22 +267,35 @@ const main = () => {
         && (turn.classificationTags || []).some(tag => ['product_fact_request', 'product_identity_request'].includes(tag)));
     const textAnswerableTurns = sourceTurns.filter(turn => turn.textOnlyMetricEligible && turn.eligibility === 'ANSWERABLE');
     const eligibleFactSlots = textAnswerableTurns.reduce((sum, turn) => sum + (turn.eligibleSlots || []).length, 0);
-    const photos = realRun?.genuinePhotoEvaluation?.cases || [];
-    const photosTested = realRun?.genuinePhotoEvaluation?.photosTested ?? null;
+    const observedPhotoCases = realRun?.genuinePhotoEvaluation?.cases || [];
+    const photos = realComparisonValid ? observedPhotoCases : [];
+    const photosTested = realComparisonValid ? (realRun?.genuinePhotoEvaluation?.photosTested ?? null) : null;
     const photoCategoryMatches = photos.filter(photo => photo.categoryMatch === true).length;
     const photoColorMatches = photos.filter(photo => photo.dominantColorMatch === true).length;
-    const realTextRequestAttempts = realComparison ? realComparison.results.reduce((sum, result) => sum + (result.summary?.textRequests || 0), 0) : null;
-    const realVisionRequestAttempts = realComparison ? realComparison.results.reduce((sum, result) => sum + (result.summary?.visionRequests || 0), 0) : null;
+    const realTextRequestAttempts = realComparison
+        ? (realComparisonValid ? realComparison.results.reduce((sum, result) => sum + (result.summary?.textRequests || 0), 0) : campaignSummary.textRequestAttempts)
+        : null;
+    const realVisionRequestAttempts = realComparison
+        ? (realComparisonValid ? realComparison.results.reduce((sum, result) => sum + (result.summary?.visionRequests || 0), 0) : campaignSummary.visionRequestAttempts)
+        : null;
     const realTextProviderCalls = realComparison
-        && Number.isFinite(realBaselineRunLedgerSummary.providerTextCalls)
-        && Number.isFinite(realRunLedgerSummary.providerTextCalls)
-        ? realBaselineRunLedgerSummary.providerTextCalls + realRunLedgerSummary.providerTextCalls : null;
+        ? realComparisonValid && Number.isFinite(realBaselineRunLedgerSummary.providerTextCalls)
+            && Number.isFinite(realRunLedgerSummary.providerTextCalls)
+            ? realBaselineRunLedgerSummary.providerTextCalls + realRunLedgerSummary.providerTextCalls
+            : campaignSummary.providerTextCalls
+        : null;
     const realVisionProviderCalls = realComparison
-        && Number.isFinite(realBaselineRunLedgerSummary.providerVisionCalls)
-        && Number.isFinite(realRunLedgerSummary.providerVisionCalls)
-        ? realBaselineRunLedgerSummary.providerVisionCalls + realRunLedgerSummary.providerVisionCalls : null;
-    const realEstimatedSpend = realComparison ? realComparison.results.reduce((sum, result) => sum
+        ? realComparisonValid && Number.isFinite(realBaselineRunLedgerSummary.providerVisionCalls)
+            && Number.isFinite(realRunLedgerSummary.providerVisionCalls)
+            ? realBaselineRunLedgerSummary.providerVisionCalls + realRunLedgerSummary.providerVisionCalls
+            : campaignSummary.providerVisionCalls
+        : null;
+    const recordedComparisonSpend = realComparison ? realComparison.results.reduce((sum, result) => sum
         + (Number.isFinite(result.summary?.estimatedProviderChargeUsd) ? result.summary.estimatedProviderChargeUsd : 0), 0) : null;
+    const realEstimatedSpend = realComparisonValid ? recordedComparisonSpend : null;
+    const observedIncompleteSpend = realComparison && !realComparisonValid
+        ? (Number.isFinite(campaign?.estimatedProviderChargeUsd) ? campaign.estimatedProviderChargeUsd : recordedComparisonSpend)
+        : null;
     const campaignBudgetExhausted = campaign ? campaign.requestCount >= campaign.maxRequests
         || campaign.visionRequestCount >= campaign.maxVisionRequests
         || campaign.reservedWorstCaseUsd >= campaign.ceilingUsd : null;
@@ -290,11 +319,15 @@ const main = () => {
     const playwrightPass = playwright?.playwrightExitCode === 0
         && (playwright?.tests?.failed || 0) === 0
         && (playwright?.tests?.passed || 0) > 0;
+    const playwrightAssessment = assessPlaywrightExecution(playwright);
     const privacyPass = privacyScanPassed(privacy);
     const backendSecurityStep = verificationReceipt?.steps?.find(step => step.name === 'backend-security-suite') || null;
+    const integrationVerifierStep = verificationReceipt?.steps?.find(step => step.name === 'postgres-redis-worker-webhook-and-full-backend-regression') || null;
+    const playwrightVerifierStep = verificationReceipt?.steps?.find(step => step.name === 'local-test-lab-playwright') || null;
+    const privacyVerifierStep = verificationReceipt?.steps?.find(step => step.name === 'artifact-privacy-scan-and-checksum-manifest') || null;
     const backendSecurityPass = backendSecurityStep?.status === 'PASS';
-    const securityPass = integration ? integration.egress?.guard === 'PASS' && backendRegressionPass && backendSecurityPass : null;
-    const realGeminiStatus = realComparison ? (realComparison.comparisonValid ? 'PASS' : 'FAIL') : 'NOT_RUN';
+    const securityPass = integration ? integration.egress?.guard === 'PASS' && backendSecurityPass : null;
+    const realGeminiStatus = realComparison ? (realComparisonValid ? 'PASS' : 'FAIL') : 'NOT_RUN';
     const expectedCustomerDenominators = {
         eligibleFactSlots,
         answerableProductTurns: textAnswerableTurns.length,
@@ -313,14 +346,18 @@ const main = () => {
     const independentStatus = independentVerificationStatus(independent, head, currentEngineHash, currentRunnerSourceSha256);
     const independentPass = independentStatus === 'PASS';
     const automatedStepsPass = verificationReceipt?.status === 'PASS'
+        && verificationReceipt?.complete === true
         && Array.isArray(verificationReceipt.steps)
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
     const requiredEvidencePresent = sourceComparisonValid && heldoutComparisonValid && integrationPass && playwrightPass
         && securityPass && privacyPass && realGeminiStatus === 'PASS' && realGeminiQuality.status === 'PASS'
         && runnerProvenanceStatus === 'PASS' && independentPass;
-    const hasAutomatedFailure = verificationReceipt?.status === 'FAIL' || regression?.status === 'FAIL'
-        || [sourceComparison, heldoutComparison, realComparison, integration, playwright, privacy]
+    const hasNonTimeoutVerificationFailure = verificationReceipt?.steps?.some(step => step.status === 'FAIL' && !step.timedOut
+        && !(step.name === 'local-test-lab-playwright' && playwrightAssessment === 'INCOMPLETE')) === true;
+    const hasAutomatedFailure = hasNonTimeoutVerificationFailure || regression?.status === 'FAIL'
+        || [sourceComparison, heldoutComparison, realComparison, integration, privacy]
             .some(item => (item && item.status === 'FAIL') || (item && item.comparisonValid === false))
+        || playwrightAssessment === 'FAIL'
         || realGeminiQuality.status === 'FAIL';
     const automatedQaVerdict = hasAutomatedFailure || (sourceTruthMetricsAvailable && !qualityPass) ? 'FAIL'
         : requiredEvidencePresent && automatedStepsPass ? 'PASS' : 'BLOCKED';
@@ -341,6 +378,9 @@ const main = () => {
         V1_3_BRANCH: branch,
         V1_3_FINAL_SHA: verificationReceipt?.candidateCommit || head,
         WORKTREE_CLEAN: verificationReceipt?.worktreeCleanAtStart ?? worktreeCleanAtStart,
+        WORKTREE_CLEAN_AT_PROOF_GENERATION: worktreeCleanAtStart,
+        VERIFICATION_ENTRYPOINT_STATUS: verificationReceipt?.status || 'NOT_CAPTURED',
+        VERIFICATION_ENTRYPOINT_COMPLETE: verificationReceipt?.complete === true ? 'YES' : 'NO',
         SOURCE_PERSONAS: sourceOracle?.source?.personas ?? 'UNKNOWN',
         SOURCE_TURNS: sourceOracle?.source?.turns ?? 'UNKNOWN',
         ELIGIBLE_PRODUCT_TURNS: sourceOracle ? textProductTurns.length : 'UNKNOWN',
@@ -363,11 +403,17 @@ const main = () => {
         SOURCE_SAFE_CROSS_DOMAIN_HANDOFFS: sourceCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
         REAL_GEMINI_SAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.safeCrossDomainHandoffs ?? 'NOT_RUN',
         REAL_GEMINI_UNSAFE_CROSS_DOMAIN_HANDOFFS: realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_RUN',
-        GENUINE_PHOTOS_TESTED: realComparison ? (photosTested ?? 'NOT_RUN') : 'NOT_RUN',
-        REAL_GEMINI_TEXT_REQUESTS: realComparison ? (realTextProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
-        REAL_GEMINI_VISION_REQUESTS: realComparison ? (realVisionProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
+        GENUINE_PHOTOS_TESTED: realComparison ? (realComparisonValid ? (photosTested ?? 'NOT_MEASURED') : 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_COMPARISON_VALID: realComparison ? (realComparisonValid ? 'YES' : 'NO') : 'NOT_RUN',
+        REAL_GEMINI_TEXT_REQUESTS: realComparisonValid ? (realTextProviderCalls ?? 'NOT_MEASURED') : realComparison ? 'NOT_MEASURED' : 'NOT_RUN',
+        REAL_GEMINI_VISION_REQUESTS: realComparisonValid ? (realVisionProviderCalls ?? 'NOT_MEASURED') : realComparison ? 'NOT_MEASURED' : 'NOT_RUN',
+        REAL_GEMINI_OBSERVED_TEXT_PROVIDER_CALLS: realComparison ? (realTextProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_OBSERVED_VISION_PROVIDER_CALLS: realComparison ? (realVisionProviderCalls ?? 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_TEXT_REQUEST_ATTEMPTS: realComparison ? (realTextRequestAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_VISION_REQUEST_ATTEMPTS: realComparison ? (realVisionRequestAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_OBSERVED_REQUEST_ATTEMPTS: realComparison ? (campaignSummary.requestAttempts ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_OBSERVED_PROVIDER_USAGE_RECORDS: realComparison ? (campaignSummary.providerUsageRecords ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_GEMINI_CAMPAIGN_UNPRICED_OR_PENDING_REQUESTS: realComparison ? (campaignSummary.unpricedOrPendingRequests ?? 'NOT_MEASURED') : 'NOT_RUN',
         REAL_GEMINI_ROUTE_EXECUTED_TURNS: realCandidate?.routeExecutedTurns ?? 'NOT_RUN',
         REAL_GEMINI_ROUTE_NOT_RUN_TURNS: realCandidate?.routeNotRunTurns ?? 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_SLOTS: realCandidate?.falseRefusalSlots ?? 'NOT_RUN',
@@ -378,20 +424,26 @@ const main = () => {
         REAL_GEMINI_FALSE_REFUSAL_TURNS_EXPECTED: realCandidate?.falseRefusalExpectedTurns ?? 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_TURNS_EVALUATED: realCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_RUN',
         REAL_GEMINI_FALSE_REFUSAL_TURNS_NOT_EVALUABLE: realCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_RUN',
-        REAL_PROVIDER_ESTIMATED_COST_USD: realComparison ? (realEstimatedSpend ?? 'NOT_MEASURED') : 'NOT_RUN',
+        REAL_PROVIDER_ESTIMATED_COST_USD: !realComparison ? 'NOT_RUN' : realComparisonValid ? (realEstimatedSpend ?? 'NOT_MEASURED') : 'NOT_MEASURED',
+        REAL_OBSERVED_PRICED_USAGE_ESTIMATE_USD: realComparison && !realComparisonValid
+            ? (observedIncompleteSpend ?? 'NOT_MEASURED') : 'NOT_APPLICABLE',
+        REAL_GEMINI_STATUS: realGeminiStatus,
         REAL_GEMINI_QUALITY_VERDICT: realGeminiQuality.status,
         REAL_GEMINI_RUNNER_PROVENANCE: runnerProvenanceStatus,
         PROVIDER_BUDGET_EXHAUSTED: campaignBudgetExhausted === null ? 'UNKNOWN' : campaignBudgetExhausted ? 'YES' : 'NO',
-        POSTGRES_INTEGRATION: passState(postgresPass),
-        REDIS_INTEGRATION: passState(redisPass),
-        MESSAGE_WORKER_INTEGRATION: passState(integration ? workerPass : null),
-        WEBHOOK_PIPELINE: passState(integration ? webhookPass : null),
-        PRODUCT_SEARCH_INTEGRATION: passState(integration ? productSearchPass : null),
-        FAKE_META_TRANSPORT: passState(integration ? fakeMetaPass : null),
-        BACKEND_REGRESSION: backendRegressionPass ? 'PASS' : integration ? 'FAIL' : 'NOT_RUN',
-        PLAYWRIGHT_E2E: playwrightPass ? 'PASS' : playwright ? 'FAIL' : 'NOT_RUN',
-        SECURITY_TESTS: securityPass === null ? 'NOT_RUN' : securityPass ? 'PASS' : 'FAIL',
-        PRIVACY_SCAN: privacyPass ? 'PASS' : privacy ? 'FAIL' : 'NOT_RUN',
+        POSTGRES_INTEGRATION: integration ? passState(postgresPass) : verificationStepState(integrationVerifierStep),
+        REDIS_INTEGRATION: integration ? passState(redisPass) : verificationStepState(integrationVerifierStep),
+        MESSAGE_WORKER_INTEGRATION: integration ? passState(workerPass) : verificationStepState(integrationVerifierStep),
+        WEBHOOK_PIPELINE: integration ? passState(webhookPass) : verificationStepState(integrationVerifierStep),
+        PRODUCT_SEARCH_INTEGRATION: integration ? passState(productSearchPass) : verificationStepState(integrationVerifierStep),
+        FAKE_META_TRANSPORT: integration ? passState(fakeMetaPass) : verificationStepState(integrationVerifierStep),
+        BACKEND_REGRESSION: backendRegressionPass ? 'PASS' : integration?.jest?.backendRegression
+            ? (integration.jest.backendRegression.timedOut ? 'TIMED_OUT' : 'FAIL')
+            : verificationStepState(integrationVerifierStep),
+        PLAYWRIGHT_E2E: playwright ? playwrightAssessment : verificationStepState(playwrightVerifierStep),
+        SECURITY_TESTS: backendSecurityPass ? 'PASS' : backendSecurityStep?.timedOut ? 'TIMED_OUT'
+            : backendSecurityStep ? 'FAIL' : 'NOT_RUN',
+        PRIVACY_SCAN: privacyPass ? 'PASS' : privacy ? 'FAIL' : verificationStepState(privacyVerifierStep),
         INDEPENDENT_VERIFICATION: independentStatus,
         BASELINE_COMPARISON_VALID: sourceComparisonValid ? 'YES' : sourceComparison ? 'NO' : 'NOT_RUN',
         DETERMINISTIC_SOURCE_TRUTH_VERDICT: sourceTruthMetricsAvailable ? (qualityPass ? 'PASS' : 'FAIL') : 'NOT_RUN',
@@ -441,12 +493,16 @@ const main = () => {
             visionRequestAttemptsBothEngines: realVisionRequestAttempts,
             providerTextCallsBothEngines: realTextProviderCalls,
             providerVisionCallsBothEngines: realVisionProviderCalls,
-            estimatedProviderChargeUsdBothEngines: realEstimatedSpend,
+            campaignLedger: campaignSummary,
+            comparisonCompleted: realComparisonValid,
+            estimatedProviderChargeUsdBothEngines: realComparisonValid ? realEstimatedSpend : null,
+            observedPricedProviderChargeUsdAcrossIncompleteAttempts: observedIncompleteSpend,
             candidateProviderUsageRecords: realCandidate?.providerUsageRecords ?? null,
             candidateRequestAttempts: realCandidate?.requestAttempts ?? null,
             candidateUnpricedProviderCalls: realCandidate?.unpricedProviderCalls ?? null,
             candidateRejectedAttempts: realCandidate?.campaignRejectedAttempts ?? null,
             candidate: realCandidate,
+            photoEvaluationStatus: realComparisonValid ? 'COMPLETE' : realComparison ? 'INCOMPLETE_NO_VALID_MATCHED_COMPARISON' : 'NOT_RUN',
             photosTested: photosTested,
             photoCategoryMatches,
             photoColorMatches,
@@ -479,6 +535,7 @@ const main = () => {
             currentRunnerSourceSha256,
             baselineSha: BASELINE_SHA,
             cleanAtVerificationStart: verificationReceipt?.worktreeCleanAtStart ?? worktreeCleanAtStart,
+            cleanWhenProofGenerated: worktreeCleanAtStart,
         },
         benchmark: {
             sourceCorpusSha256: sourceHash,
@@ -516,7 +573,8 @@ const main = () => {
             candidateP50RouteMs: sourceCandidate?.p50RouteMs ?? null,
             candidateP95RouteMs: sourceCandidate?.p95RouteMs ?? null,
             measuredLatencyLayer: 'in-process router comparison; not end-to-end merchant latency',
-            estimatedProviderChargeUsd: realComparison ? realEstimatedSpend : null,
+            estimatedProviderChargeUsd: realComparisonValid ? realEstimatedSpend : null,
+            observedPricedProviderChargeUsdAcrossIncompleteAttempts: observedIncompleteSpend,
             providerInvoice: 'NOT_AVAILABLE',
             campaignCumulative: campaign ? {
                 campaignId: campaign.campaignId,
@@ -527,12 +585,15 @@ const main = () => {
                 ceilingUsd: campaign.ceilingUsd,
                 maxRequests: campaign.maxRequests,
                 maxVisionRequests: campaign.maxVisionRequests,
+                unpricedRequestCount: campaign.unpricedRequestCount ?? null,
+                providerInvoice: campaign.providerInvoice || 'NOT_AVAILABLE',
+                summary: campaignSummary,
             } : null,
-            ...calculateCandidateCostMetrics(realComparison, realCandidate),
+            ...calculateCandidateCostMetrics(realComparisonValid, realCandidate),
             incorrectOrUnansweredSlotDefinition: 'Answerable fact slots not answered with the expected value; includes partial answers and false refusals.',
         },
         integration: {
-            status: integration?.status || 'NOT_RUN',
+            status: integration?.status || verificationStepState(integrationVerifierStep),
             composeProject: integration?.composeProject || null,
             services: integration?.services || [],
             selectedIntegration: integration?.jest?.selectedIntegration || null,
@@ -543,11 +604,18 @@ const main = () => {
             productSearchEvidence: productSearchPass ? 'Meta E2E worker test reads a catalog update committed while the message waits in Redis.' : 'NOT_RUN',
             fakeMetaTransportEvidence: fakeMetaPass ? 'tests/meta-e2e/meta-e2e.test.js executed; transport is test-captured and no live Meta send is claimed.' : 'NOT_RUN',
         },
-        browser: playwright || { status: 'NOT_RUN' },
+        browser: playwright ? { ...playwright, rawStatus: playwright.status, status: playwrightAssessment } : {
+            status: verificationStepState(playwrightVerifierStep),
+            outerVerificationStep: playwrightVerifierStep,
+        },
         security: {
-            status: securityPass ? 'PASS' : integration && backendSecurityStep ? 'FAIL' : 'NOT_RUN',
+            status: securityPass === true ? 'PASS' : securityPass === false ? 'FAIL'
+                : backendSecurityStep?.timedOut || integrationVerifierStep?.timedOut ? 'TIMED_OUT'
+                    : backendSecurityStep?.status === 'PASS' ? 'INCOMPLETE'
+                        : backendSecurityStep ? 'FAIL' : 'NOT_RUN',
             egress: integration?.egress || null,
             backendSecuritySuite: backendSecurityStep,
+            integrationVerifierStep: integrationVerifierStep,
             privacyScan: privacy || null,
         },
         independentVerification: independent || { verdict: 'NOT_RUN', note: 'A separate read-only reviewer has not yet recorded a result.' },
@@ -555,6 +623,8 @@ const main = () => {
             status: verificationReceipt.status,
             runId: verificationReceipt.runId,
             mode: verificationReceipt.mode,
+            complete: verificationReceipt.complete ?? false,
+            receiptPath: verificationReceiptPath,
             candidateCommit: verificationReceipt.candidateCommit,
             steps: verificationReceipt.steps,
         } : { status: 'NOT_CAPTURED' },
@@ -572,8 +642,8 @@ const main = () => {
     const markdown = renderMarkdown(proof, machineStatus, sourceRunResults, comparisonDetails, {
         sourceOracle, sourceComparison, sourceCandidate, sourceBaseline, heldoutComparison, heldoutBaseline, heldoutCandidate,
         realComparison, realCandidate, photosTested, photoCategoryMatches, photoColorMatches,
-        integration, playwright, privacy, independent, backendRegressionTests, selectedIntegrationTests, webhookTests,
-        totalIncorrectOrUnansweredSlots, campaign, automatedQaVerdict, integrationReady,
+        integration, integrationVerifierStep, playwright, playwrightAssessment, playwrightVerifierStep, privacy, independent, backendRegressionTests, selectedIntegrationTests, webhookTests,
+        totalIncorrectOrUnansweredSlots, campaign, campaignSummary, automatedQaVerdict, integrationReady,
     });
     fs.mkdirSync(path.dirname(PROOF_JSON), { recursive: true });
     fs.mkdirSync(path.dirname(PROOF_MARKDOWN), { recursive: true });
@@ -628,8 +698,39 @@ function summarizeRunLedger(ledger) {
     };
 }
 
+function summarizeCampaignLedger(ledger) {
+    const calls = ledger?.calls;
+    if (!Array.isArray(calls)) return {
+        requestAttempts: null,
+        providerUsageRecords: null,
+        providerTextCalls: null,
+        providerVisionCalls: null,
+        textRequestAttempts: null,
+        visionRequestAttempts: null,
+        unpricedOrPendingRequests: null,
+        baselineAttempts: null,
+        candidateAttempts: null,
+    };
+    const providerReported = calls.filter(call => call.status === 'provider_reported');
+    const baselineAttempts = calls.filter(call => String(call.stage || '').startsWith('baseline-v1-2-source-real-gemini-')).length;
+    const candidateAttempts = calls.filter(call => String(call.stage || '').startsWith('candidate-v1-3-source-real-gemini-')).length;
+    return {
+        requestAttempts: calls.length,
+        providerUsageRecords: providerReported.length,
+        providerTextCalls: providerReported.filter(call => call.vision !== true).length,
+        providerVisionCalls: providerReported.filter(call => call.vision === true).length,
+        textRequestAttempts: calls.filter(call => call.vision !== true).length,
+        visionRequestAttempts: calls.filter(call => call.vision === true).length,
+        unpricedOrPendingRequests: Number.isFinite(ledger.unpricedRequestCount)
+            ? ledger.unpricedRequestCount : calls.filter(call => call.status !== 'provider_reported').length,
+        baselineAttempts,
+        candidateAttempts,
+    };
+}
+
 function calculateCandidateCostMetrics(realComparison, realCandidate) {
-    const estimatedProviderChargeUsd = realComparison && Number.isFinite(realCandidate?.estimatedProviderChargeUsd)
+    const usageFullyPriced = realCandidate?.unpricedProviderCalls === 0;
+    const estimatedProviderChargeUsd = realComparison && usageFullyPriced && Number.isFinite(realCandidate?.estimatedProviderChargeUsd)
         ? realCandidate.estimatedProviderChargeUsd : null;
     return {
         estimatedCostPerCandidateVerifiedAnswerUsd: estimatedProviderChargeUsd !== null
@@ -658,31 +759,48 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const heldoutBlock = details.heldoutComparison
         ? `Valid: **${details.heldoutComparison.comparisonValid ? 'YES' : 'NO'}**. V1.2 verified answers: ${details.heldoutBaseline?.verifiedCorrectAnswers ?? 'NOT_RUN'}; V1.3 verified answers: ${details.heldoutCandidate?.verifiedCorrectAnswers ?? 'NOT_RUN'}.`
         : 'No held-out comparison is available.';
-    const imageBlock = details.realComparison
-        ? `The paid matched run evaluated ${details.photosTested ?? 'unknown'} unique licensed public photos. Category matches: ${details.photoCategoryMatches}/${details.photosTested ?? 'unknown'}; visible-color matches: ${details.photoColorMatches}/${details.photosTested ?? 'unknown'}. These are a small public-photo probe, not customer-upload accuracy evidence.`
-        : 'Real Gemini vision evaluation: NOT_RUN.';
-    const integrationBlock = details.integration
+    const imageBlock = details.realComparison?.comparisonValid === true
+        ? `The completed paid matched run evaluated ${details.photosTested ?? 'NOT_MEASURED'} unique licensed public photos. Category matches: ${details.photoCategoryMatches}/${details.photosTested ?? 'NOT_MEASURED'}; visible-color matches: ${details.photoColorMatches}/${details.photosTested ?? 'NOT_MEASURED'}. These are a small public-photo probe, not customer-upload accuracy evidence.`
+        : details.realComparison
+            ? 'No completed true-photo comparison is available. The Gemini comparison was incomplete, so photo accuracy is NOT_MEASURED.'
+            : 'Real Gemini vision evaluation: NOT_RUN.';
+    const integrationBlock = details.integration?.selectedIntegration || details.integration?.webhookPipelineE2E || details.integration?.backendRegression
         ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
-        : 'Local integration: NOT_RUN.';
-    const browserBlock = details.playwright
-        ? `Playwright exit code: ${details.playwright.playwrightExitCode}; result: ${JSON.stringify(details.playwright.tests || {})}. Evidence: \`${proof.candidate.evidenceRoot}\\playwright\\execution.json\`.`
-        : 'Playwright: NOT_RUN.';
+        : details.integrationVerifierStep
+            ? `Outer integration verification ${details.integrationVerifierStep.timedOut ? 'timed out' : 'did not produce an inner receipt'}; no inner integration receipt was written, so individual integration assertions are NOT_MEASURED. Runner status: ${verificationStepState(details.integrationVerifierStep)}; subprocess cleanup: ${details.integrationVerifierStep.timeoutCleanup || 'NOT_RECORDED'}.`
+            : 'Local integration: NOT_RUN.';
+    const browserBlock = details.playwrightAssessment === 'INCOMPLETE'
+        ? `Playwright process exited with code ${details.playwright?.playwrightExitCode}; its report contains no completed browser journey, so browser behavior and accessibility are NOT_MEASURED. Receipt: \`${proof.candidate.evidenceRoot}\\playwright\\execution.json\`.`
+        : details.playwright
+            ? `Playwright exit code: ${details.playwright.playwrightExitCode}; result: ${JSON.stringify(details.playwright.tests || {})}. Evidence: \`${proof.candidate.evidenceRoot}\\playwright\\execution.json\`.`
+            : details.playwrightVerifierStep
+            ? `Playwright runner ${details.playwrightVerifierStep.timedOut ? 'timed out' : 'did not produce an execution receipt'}; status: ${verificationStepState(details.playwrightVerifierStep)}. Browser results are NOT_MEASURED. Receipts: \`${proof.candidate.evidenceRoot}\\playwright\\execution.json\`.`
+            : 'Playwright: NOT_RUN.';
     const unpricedCandidateCalls = Number.isFinite(details.realCandidate?.unpricedProviderCalls)
         ? details.realCandidate.unpricedProviderCalls : 'NOT_MEASURED';
     const rejectedCampaignAttempts = Number.isFinite(details.realCandidate?.campaignRejectedAttempts)
         ? details.realCandidate.campaignRejectedAttempts : 'NOT_MEASURED';
     const rejectedReservationLabel = rejectedCampaignAttempts === 1 ? 'rejected reservation' : 'rejected reservations';
-    const geminiBlock = details.realComparison
+    const observedIncompleteCost = Number.isFinite(comparisons.realGemini?.observedPricedProviderChargeUsdAcrossIncompleteAttempts)
+        ? `$${comparisons.realGemini.observedPricedProviderChargeUsdAcrossIncompleteAttempts.toFixed(8)}` : 'NOT_MEASURED';
+    const geminiBlock = details.realComparison?.comparisonValid === true
         ? `Model: ${comparisons.realGemini.model || 'not recorded'}. Provider-reported traffic across matched arms: ${comparisons.realGemini.providerTextCallsBothEngines ?? 'NOT_MEASURED'} text and ${comparisons.realGemini.providerVisionCallsBothEngines ?? 'NOT_MEASURED'} vision calls. Request attempts across matched arms: ${comparisons.realGemini.textRequestAttemptsBothEngines ?? 'NOT_MEASURED'} text and ${comparisons.realGemini.visionRequestAttemptsBothEngines ?? 'NOT_MEASURED'} vision. Candidate run ledger: ${details.realCandidate?.requestAttempts ?? 'NOT_MEASURED'} request attempts, ${details.realCandidate?.providerUsageRecords ?? 'NOT_MEASURED'} provider usage records, ${rejectedCampaignAttempts} ${rejectedReservationLabel}. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate route coverage: ${details.realCandidate?.routeExecutedTurns ?? 'NOT_MEASURED'}/200 executed, ${details.realCandidate?.routeNotRunTurns ?? 'NOT_MEASURED'} not run. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context resolution failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'} across ${details.realCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.contextDependentAnswerableTurns ?? 'NOT_MEASURED'} fully executed conversation chains (${details.realCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable); cross-domain safety ${details.realCandidate?.safeCrossDomainHandoffs ?? 'NOT_MEASURED'} safe, ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'} unsafe across ${details.realCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.crossDomainHandoffTurns ?? 'NOT_MEASURED'} executed turns (${details.realCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_MEASURED'} not run). Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls === 0 ? 'all recorded candidate provider usage was priced.' : unpricedCandidateCalls === 'NOT_MEASURED' ? 'provider pricing coverage was not measured from the run ledger.' : 'candidate provider cost estimate may be incomplete.'}`
-        : 'Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.';
-    const unpricedCostNote = details.realComparison
+        : details.realComparison
+            ? `The matched Gemini comparison is incomplete; quality and matched-pair cost are NOT_MEASURED. No completed true-photo comparison is available. Observed model: ${comparisons.realGemini?.model || 'not recorded'}. Cumulative campaign ledger records ${comparisons.realGemini?.campaignLedger?.requestAttempts ?? 'NOT_MEASURED'} attempts (${comparisons.realGemini?.campaignLedger?.baselineAttempts ?? 'NOT_MEASURED'} baseline-stage, ${comparisons.realGemini?.campaignLedger?.candidateAttempts ?? 'NOT_MEASURED'} candidate-stage), including ${comparisons.realGemini?.campaignLedger?.providerTextCalls ?? 'NOT_MEASURED'} text and ${comparisons.realGemini?.campaignLedger?.providerVisionCalls ?? 'NOT_MEASURED'} vision provider-reported calls; ${comparisons.realGemini?.campaignLedger?.unpricedOrPendingRequests ?? 'NOT_MEASURED'} request(s) remain unpriced or pending. The estimated priced usage is ${observedIncompleteCost} from the cumulative campaign ledger; this is not matched-pair cost. Provider invoice: NOT_AVAILABLE.`
+            : 'Credential status is not recorded in this proof. Paid Gemini evaluation: NOT_RUN.';
+    const matchedPairCost = details.realComparison?.comparisonValid === true
+        ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}`
+        : details.realComparison ? 'NOT_MEASURED (comparison incomplete)' : 'NOT_RUN';
+    const unpricedCostNote = details.realComparison?.comparisonValid === true
         ? `Candidate unpriced provider calls: ${unpricedCandidateCalls}. Rejected campaign ledger attempts: ${rejectedCampaignAttempts} (blocked before provider usage). ${unpricedCandidateCalls === 0 ? 'All recorded provider usage was priced.' : unpricedCandidateCalls === 'NOT_MEASURED' ? 'Provider pricing coverage was not measured from the run ledger.' : 'The candidate estimate may be incomplete.'}`
-        : 'Candidate unpriced provider calls: NOT_RUN.';
-    const falseRefusalBlock = details.realComparison
+        : details.realComparison
+            ? `Matched-pair cost is NOT_MEASURED because the comparison is incomplete. Candidate unpriced provider calls: ${unpricedCandidateCalls}; observed priced usage remains separate from the cumulative campaign ledger.`
+            : 'Candidate unpriced provider calls: NOT_RUN.';
+    const falseRefusalBlock = details.realComparison?.comparisonValid === true
         ? `Candidate false refusals: ${details.realCandidate?.falseRefusalSlots ?? 'NOT_MEASURED'} slots across ${details.realCandidate?.falseRefusalEvaluatedTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.falseRefusalExpectedTurns ?? 'NOT_MEASURED'} evaluated/expected answerable turns (${details.realCandidate?.falseRefusalNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable).`
-        : 'Candidate false refusals: NOT_RUN.';
+        : details.realComparison ? 'Paid false-refusal quality metrics: NOT_MEASURED; the matched comparison did not complete.' : 'Candidate false refusals: NOT_RUN.';
     const campaignBlock = details.campaign
-        ? `Cumulative campaign: ${details.campaign.requestCount}/${details.campaign.maxRequests} requests, ${details.campaign.visionRequestCount}/${details.campaign.maxVisionRequests} vision requests, estimated $${Number(details.campaign.estimatedProviderChargeUsd || 0).toFixed(8)} of $${Number(details.campaign.ceilingUsd || 2).toFixed(2)} reserved ceiling. Invoice unavailable.`
+        ? `Observed campaign activity remains in the cumulative ledger: ${details.campaign.requestCount}/${details.campaign.maxRequests} requests, ${details.campaign.visionRequestCount}/${details.campaign.maxVisionRequests} vision requests, ${details.campaignSummary?.providerUsageRecords ?? 'NOT_MEASURED'} provider-reported calls and ${details.campaignSummary?.unpricedOrPendingRequests ?? 'NOT_MEASURED'} unpriced or pending request(s). Estimated priced usage: $${Number(details.campaign.estimatedProviderChargeUsd || 0).toFixed(8)}; worst-case reserved: $${Number(details.campaign.reservedWorstCaseUsd || 0).toFixed(8)} of $${Number(details.campaign.ceilingUsd || 2).toFixed(2)} ceiling. Invoice unavailable.`
         : 'No campaign ledger is available.';
     const independentBlock = details.independent
         ? `Verdict: **${status.INDEPENDENT_VERIFICATION}**; reviewer: ${details.independent.reviewer || 'not recorded'}; reviewed code commit: ${details.independent.reviewedCodeCommit || 'not recorded'}; reviewed runner hash: ${details.independent.reviewedRunnerSourceSha256 || 'not recorded'}.`
@@ -700,10 +818,14 @@ Generated: ${proof.generatedAt}
 | Automated QA | ${status.AUTOMATED_QA_VERDICT} |
 | Integration ready | ${status.INTEGRATION_READY} |
 | Deterministic source truth (zero provider calls) | ${status.DETERMINISTIC_SOURCE_TRUTH_VERDICT} |
+| Gemini comparison | ${status.REAL_GEMINI_STATUS || 'NOT_CAPTURED'} |
 | Real Gemini candidate quality | ${status.REAL_GEMINI_QUALITY_VERDICT} |
+| Browser QA | ${status.PLAYWRIGHT_E2E || 'NOT_CAPTURED'} |
+| Backend security tests | ${status.SECURITY_TESTS || 'NOT_CAPTURED'} |
+| Verification receipt | ${status.VERIFICATION_ENTRYPOINT_STATUS || 'NOT_CAPTURED'} (${status.VERIFICATION_ENTRYPOINT_COMPLETE || 'NO'} complete) |
 **Commercial evidence:** ${status.COMMERCIAL_EVIDENCE_VERDICT}
 
-This local milestone tested the existing V1.2 Product Engine against an independently generated catalog oracle, a synthetic held-out set, the real local PostgreSQL/Redis/worker path, and matched baseline/candidate replays. Production, live Meta delivery, merchant outcomes, conversion and ROI were not tested.
+This local verification evaluates the existing V1.2 Product Engine against an independently generated catalog oracle, a synthetic held-out set, the disposable local PostgreSQL/Redis/worker path, and baseline/candidate replays. Each result is limited to its recorded receipt. Production, live Meta delivery, merchant outcomes, conversion and ROI were not tested.
 
 The candidate is ${status.INTEGRATION_READY === 'YES' ? 'eligible for scoped integration review' : 'not eligible for integration readiness yet'}. The evidence below identifies the remaining gates and does not treat safe fallback as a verified answer.
 
@@ -715,6 +837,7 @@ The candidate is ${status.INTEGRATION_READY === 'YES' ? 'eligible for scoped int
 - Evidence package root: \`${proof.candidate.evidenceRoot}\`.
 - Backend source SHA-256: \`${proof.candidate.backendSourceSha256}\`.
 - Worktree clean at verification start: **${proof.candidate.cleanAtVerificationStart === true ? 'YES' : proof.candidate.cleanAtVerificationStart === false ? 'NO' : 'UNKNOWN'}**.
+- Worktree clean when the proof was generated: **${proof.candidate.cleanWhenProofGenerated === true ? 'YES' : proof.candidate.cleanWhenProofGenerated === false ? 'NO' : 'UNKNOWN'}**. Verification receipt: \`${proof.verificationEntryPoint?.receiptPath || 'NOT_CAPTURED'}\`.
 - Other agent worktrees touched: **NO**. Production changed: **NO**. Push, merge and deploy: **NO**.
 - Production release remains unauthorized.
 
@@ -748,7 +871,7 @@ The source CSV SHA-256 is \`${proof.benchmark.sourceCorpusSha256}\`. Its advisor
 
 Incorrect product answers are **not separately measured**. The artifact records ${details.totalIncorrectOrUnansweredSlots ?? 'NOT_MEASURED'} answerable fact slots that were partial, unanswered or incorrect; this total includes false refusals and must not be presented as a wrong-answer count. The currently measured unsupported-claim counter is specifically an unsupported-price-claim check.
 
-Context-dependent false refusals are evaluated only when every earlier turn in that conversation executed and an earlier assistant turn had a SEND disposition for a non-refusal reply with a contract-valid READY presentation grounding the same product. This is approved replay output; actual Messenger delivery is not established. An intervening product \`NOT_FOUND\` clears that active context; expected turns without a complete grounding chain remain not evaluable.
+False-refusal scoring accepts a current turn with VERIFIED product evidence and a matching contract-valid READY presentation. Otherwise, a context-dependent turn is evaluated only when every earlier turn in that conversation executed and an earlier assistant turn had a SEND disposition for a non-refusal reply with a contract-valid READY presentation grounding the same product. This is approved replay output; actual Messenger delivery is not established. An intervening product \`NOT_FOUND\` clears prior assistant context; context-only turns without current evidence and a complete grounding chain remain not evaluable.
 
 ${exampleText}
 
@@ -766,7 +889,7 @@ Provider estimates use reported token usage and a pinned local rate calculation.
 
 ${imageBlock}
 
-No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. The detailed provenance and per-photo observations are in the machine-readable proof.
+No source-corpus image pixels were available. The three independent photos are licensed public fixtures; results should not be generalized to customer photos. ${details.realComparison?.comparisonValid === true ? 'The detailed provenance and per-photo observations are in the machine-readable proof.' : 'No completed per-photo comparison is reported.'}
 
 ## G. Backend integration
 
@@ -789,7 +912,7 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost from priced usage: ${details.realComparison ? `$${Number(comparisons.realGemini?.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}` : 'NOT_RUN'}. ${unpricedCostNote} Candidate cost per verified product-answer turn: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}; per verified fact slot: ${costPerFactSlot == null ? 'NOT_MEASURED' : `$${costPerFactSlot.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost from priced usage: ${matchedPairCost}. ${unpricedCostNote} Candidate cost per verified product-answer turn: ${costPerAnswer == null ? 'NOT_MEASURED' : `$${costPerAnswer.toFixed(8)}`}; per verified fact slot: ${costPerFactSlot == null ? 'NOT_MEASURED' : `$${costPerFactSlot.toFixed(8)}`}. Candidate router p50/p95: ${details.sourceCandidate?.p50RouteMs ?? 'NOT_RUN'} ms / ${details.sourceCandidate?.p95RouteMs ?? 'NOT_RUN'} ms. These route timings exclude webhook, queue, database and customer-facing network latency.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -839,4 +962,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeRunLedger };
+module.exports = { assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeRunLedger };

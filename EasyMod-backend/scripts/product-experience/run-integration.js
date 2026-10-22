@@ -6,6 +6,7 @@ const net = require('node:net');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
+const { terminateProcessTree } = require('./terminate-process-tree');
 
 const SCRIPT_ROOT = __dirname;
 const BACKEND_ROOT = path.resolve(SCRIPT_ROOT, '../..');
@@ -115,18 +116,45 @@ const selectInternalSubnet = async (dockerEnv) => {
 };
 
 const run = (command, args, { cwd, env, timeoutMs = 240000 } = {}) => new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, {
+        cwd,
+        env,
+        windowsHide: true,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    let timeoutCleanup = null;
+    let settled = false;
+    let killWatchdog = null;
+    const finish = (code, signal = null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(killWatchdog);
+        resolve({ code: code ?? 1, signal, timedOut, timeoutCleanup, stdout, stderr });
+    };
+    const timer = setTimeout(() => {
+        timedOut = true;
+        timeoutCleanup = terminateProcessTree(child);
+        killWatchdog = setTimeout(() => {
+            child.stdout.destroy();
+            child.stderr.destroy();
+            finish(child.exitCode ?? 1, child.signalCode || null);
+        }, 5000);
+    }, timeoutMs);
     child.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); });
     child.stderr.on('data', chunk => { stderr += chunk.toString('utf8'); });
-    child.once('error', error => { clearTimeout(timer); reject(error); });
-    child.once('close', (code, signal) => {
+    child.once('error', error => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        resolve({ code: code ?? 1, signal: signal || null, timedOut, stdout, stderr });
+        clearTimeout(killWatchdog);
+        reject(error);
     });
+    child.once('close', (code, signal) => finish(code, signal || null));
 });
 
 const redact = (value) => String(value || '')
@@ -336,7 +364,7 @@ const main = async () => {
             env: { ...dockerEnv, LAB_POSTGRES_PORT: String(postgresPort), LAB_REDIS_PORT: String(redisPort), LAB_NETWORK_SUBNET: networkSubnet },
             timeoutMs: 180000,
         });
-        timeline.push({ stage: 'compose_up', exitCode: up.code, timedOut: up.timedOut });
+        timeline.push({ stage: 'compose_up', exitCode: up.code, timedOut: up.timedOut, timeoutCleanup: up.timeoutCleanup });
         if (up.code !== 0) throw new Error(`Disposable PostgreSQL and Redis services did not become healthy (${up.code}). ${redact(up.stderr).slice(0, 300)}`);
 
         const postgresLoopbackReady = await waitForLoopbackPort(postgresPort);
@@ -346,7 +374,7 @@ const main = async () => {
         const nodeExe = process.execPath;
         const migrationStart = Date.now();
         migration = await run(nodeExe, ['src/database/migrate.js', 'up'], { cwd: BACKEND_ROOT, env, timeoutMs: 240000 });
-        timeline.push({ stage: 'migrations', exitCode: migration.code, durationMs: Date.now() - migrationStart, timedOut: migration.timedOut });
+        timeline.push({ stage: 'migrations', exitCode: migration.code, durationMs: Date.now() - migrationStart, timedOut: migration.timedOut, timeoutCleanup: migration.timeoutCleanup });
         if (migration.code !== 0) throw new Error('Disposable database migrations failed.');
 
         const jestStart = Date.now();
@@ -359,7 +387,7 @@ const main = async () => {
             timeoutMs: 480000,
         });
         jestStructured = summarizeJestReport(integrationReportPath);
-        timeline.push({ stage: 'integration_jest', exitCode: jest.code, durationMs: Date.now() - jestStart, timedOut: jest.timedOut });
+        timeline.push({ stage: 'integration_jest', exitCode: jest.code, durationMs: Date.now() - jestStart, timedOut: jest.timedOut, timeoutCleanup: jest.timeoutCleanup });
         if (jest.code !== 0) throw new Error('Selected real PostgreSQL/Redis integration suites failed.');
 
         const metaE2eStart = Date.now();
@@ -375,7 +403,7 @@ const main = async () => {
             const diagnostics = JSON.parse(fs.readFileSync(metaE2eDiagnosticsPath, 'utf8'));
             if (Array.isArray(diagnostics)) metaE2eDeliveryDiagnostics = diagnostics;
         } catch (_) { }
-        timeline.push({ stage: 'webhook_pipeline_e2e_jest', exitCode: metaE2eJest.code, durationMs: Date.now() - metaE2eStart, timedOut: metaE2eJest.timedOut });
+        timeline.push({ stage: 'webhook_pipeline_e2e_jest', exitCode: metaE2eJest.code, durationMs: Date.now() - metaE2eStart, timedOut: metaE2eJest.timedOut, timeoutCleanup: metaE2eJest.timeoutCleanup });
         if (metaE2eJest.code !== 0) throw new Error('The real webhook-to-worker-to-outbound Meta-shaped suite failed.');
 
         // Run every normal backend Jest suite while these disposable services
@@ -415,7 +443,7 @@ const main = async () => {
             failedTests: backendReport.failedTests,
             failedSuiteDiagnostics: backendReport.failedSuiteDiagnostics,
         } : null;
-        timeline.push({ stage: 'full_backend_regression_jest', exitCode: backendRegression.code, durationMs: Date.now() - backendRegressionStart, timedOut: backendRegression.timedOut });
+        timeline.push({ stage: 'full_backend_regression_jest', exitCode: backendRegression.code, durationMs: Date.now() - backendRegressionStart, timedOut: backendRegression.timedOut, timeoutCleanup: backendRegression.timeoutCleanup });
         if (backendRegression.code !== 0) throw new Error('The full backend Jest regression suite failed.');
     } catch (error) {
         failure = error.message;
@@ -426,7 +454,7 @@ const main = async () => {
                 env: { ...dockerEnv, LAB_POSTGRES_PORT: String(postgresPort), LAB_REDIS_PORT: String(redisPort), LAB_NETWORK_SUBNET: networkSubnet },
                 timeoutMs: 90000,
             });
-            timeline.push({ stage: 'compose_down', exitCode: cleanup.code, timedOut: cleanup.timedOut, scope: project });
+            timeline.push({ stage: 'compose_down', exitCode: cleanup.code, timedOut: cleanup.timedOut, timeoutCleanup: cleanup.timeoutCleanup, scope: project });
             if (cleanup.code !== 0 && !failure) failure = 'Disposable Compose cleanup failed for the isolated project.';
         }
         for (const reportPath of temporaryJestReports) {
@@ -513,7 +541,9 @@ const main = async () => {
     if (failure) process.exitCode = 1;
 };
 
-main().catch(error => {
+if (require.main === module) main().catch(error => {
     process.stderr.write(`${redact(error.message)}\n`);
     process.exitCode = 1;
 });
+
+module.exports = { run, main };

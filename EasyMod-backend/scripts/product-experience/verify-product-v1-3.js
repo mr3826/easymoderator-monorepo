@@ -2,9 +2,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
 const { backendSourceSha256 } = require('./generate-product-engine-v1-3-proof');
+const { terminateProcessTree } = require('./terminate-process-tree');
 
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
@@ -24,11 +26,23 @@ const runCapture = (command, args, env, timeoutMs = 20 * 60 * 1000) => new Promi
         cwd: BACKEND_ROOT,
         env,
         windowsHide: true,
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
     });
     const hash = crypto.createHash('sha256');
     let output = '';
     let timedOut = false;
+    let timeoutCleanup = null;
+    let settled = false;
+    let killWatchdog = null;
+    let timer;
+    const finish = (exitCode, error = null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(killWatchdog);
+        resolve({ exitCode: exitCode ?? 1, timedOut, output, outputSha256: hash.digest('hex'), error, timeoutCleanup });
+    };
     const keep = chunk => {
         const text = chunk.toString('utf8');
         hash.update(text);
@@ -36,15 +50,17 @@ const runCapture = (command, args, env, timeoutMs = 20 * 60 * 1000) => new Promi
     };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
-    child.once('error', error => {
-        clearTimeout(timer);
-        resolve({ exitCode: 1, timedOut: false, output, outputSha256: hash.digest('hex'), error: error.code || 'PROCESS_START_FAILED' });
-    });
-    child.once('close', code => {
-        clearTimeout(timer);
-        resolve({ exitCode: code ?? 1, timedOut, output, outputSha256: hash.digest('hex'), error: null });
-    });
+    timer = setTimeout(() => {
+        timedOut = true;
+        timeoutCleanup = terminateProcessTree(child);
+        killWatchdog = setTimeout(() => {
+            child.stdout.destroy();
+            child.stderr.destroy();
+            finish(child.exitCode ?? 1);
+        }, 5000);
+    }, timeoutMs);
+    child.once('error', error => finish(1, error.code || 'PROCESS_START_FAILED'));
+    child.once('close', code => finish(code));
 });
 
 const runStep = async (name, command, args, env, timeoutMs) => {
@@ -62,19 +78,30 @@ const runStep = async (name, command, args, env, timeoutMs) => {
         completedAt: new Date().toISOString(),
         outputSha256: execution.outputSha256,
         failureCode: execution.error,
+        timeoutCleanup: execution.timeoutCleanup,
         summary: execution.output.split(/\r?\n/).filter(line => line.startsWith('Test Suites:')
             || line.startsWith('Tests:') || line.startsWith('Snapshots:')
             || line.startsWith('Time:') || line.includes('Playwright PASS')
+            || line.includes('Playwright FAIL')
             || line.startsWith('{"status":')).slice(-8),
     };
     process.stdout.write(`[verify] ${step.status} ${name}\n`);
     return step;
 };
 
-const findCandidateRealGeminiRunId = ({ comparisonRoot, sourceSha256, oracleSha256, backendSourceSha256: candidateSourceSha256 }) => {
+const findCandidateRealGeminiRunId = ({ comparisonRoot, sourceSha256, oracleSha256, backendSourceSha256: candidateSourceSha256, runnerSourceSha256 }) => {
     if (typeof comparisonRoot !== 'string' || !path.isAbsolute(comparisonRoot)
         || typeof sourceSha256 !== 'string' || typeof oracleSha256 !== 'string'
-        || typeof candidateSourceSha256 !== 'string' || !fs.existsSync(comparisonRoot)) return null;
+        || typeof candidateSourceSha256 !== 'string' || typeof runnerSourceSha256 !== 'string'
+        || !fs.existsSync(comparisonRoot)) return null;
+    const artifactRoot = path.resolve(path.dirname(comparisonRoot));
+    const currentRunnerArtifact = entry => {
+        const relativePath = entry?.artifactPath;
+        if (typeof relativePath !== 'string') return false;
+        const target = path.resolve(artifactRoot, relativePath);
+        if (!target.startsWith(`${artifactRoot}${path.sep}`) || !fs.existsSync(target)) return false;
+        try { return JSON.parse(fs.readFileSync(target, 'utf8')).runnerSourceSha256 === runnerSourceSha256; } catch (_) { return false; }
+    };
     return fs.readdirSync(comparisonRoot)
         .filter(filename => filename.endsWith('.json'))
         .map(filename => {
@@ -91,7 +118,8 @@ const findCandidateRealGeminiRunId = ({ comparisonRoot, sourceSha256, oracleSha2
         }))
         .filter(entry => entry.candidate?.status === 'PASS'
             && entry.candidate.engineSourceSha256 === candidateSourceSha256
-            && typeof entry.candidate.summary?.runId === 'string')
+            && typeof entry.candidate.summary?.runId === 'string'
+            && currentRunnerArtifact(entry.candidate))
         .sort((left, right) => String(right.candidate.completedAt || '').localeCompare(String(left.candidate.completedAt || '')))
         .map(entry => entry.candidate.summary.runId)[0] || null;
 };
@@ -143,8 +171,39 @@ const main = async () => {
     }
 
     fs.mkdirSync(path.join(ARTIFACT_ROOT, 'security'), { recursive: true });
+    fs.mkdirSync(path.join(ARTIFACT_ROOT, 'regression'), { recursive: true });
+    const runId = crypto.randomUUID();
+    const receiptPath = path.join(ARTIFACT_ROOT, 'regression', `verify-${runId}.json`);
     const steps = [];
+    let realGeminiCandidateRunId = null;
     const offline = requiredEnv();
+    const writeReceiptSnapshot = complete => {
+        const failed = steps.some(step => step.status === 'FAIL');
+        const receipt = {
+            schemaVersion: 1,
+            runId,
+            status: complete ? (failed ? 'FAIL' : 'PASS') : failed ? 'FAIL' : 'IN_PROGRESS',
+            complete,
+            mode: paidOptIn ? 'PAID_OPT_IN' : 'OFFLINE_DEFAULT',
+            startedAt,
+            completedAt: complete ? new Date().toISOString() : null,
+            nodeVersion: process.versions.node,
+            candidateCommit,
+            candidateBranch,
+            candidateBackendSourceSha256,
+            realGeminiCandidateRunId,
+            worktreeCleanAtStart,
+            baselineSha: BASELINE_SHA,
+            sourceCorpusSha256: EXPECTED_SOURCE_SHA256,
+            providerCallsAllowedByEntrypoint: paidOptIn,
+            providerBudgetCapUsd: paidOptIn ? 2 : 0,
+            steps: [...steps],
+        };
+        fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+        return receipt;
+    };
+    writeReceiptSnapshot(false);
+    offline.LAB_VERIFY_RECEIPT_PATH = receiptPath;
 
     steps.push(await runStep('source-oracle-preparation', NODE, [path.join(__dirname, 'benchmark-oracle.js')], offline));
     steps.push(await runStep('held-out-fixture-preparation', NODE, [path.join(__dirname, 'generate-heldout-benchmark.js')], offline));
@@ -154,18 +213,36 @@ const main = async () => {
         LAB_ORACLE_PATH: path.join(ARTIFACT_ROOT, 'benchmarks', 'heldout-customer-truth-oracle.json'),
     };
     steps.push(await runStep('held-out-oracle-preparation', NODE, [path.join(__dirname, 'benchmark-oracle.js')], heldoutOracleEnv));
-    steps.push(await runStep('postgres-redis-worker-webhook-and-full-backend-regression', NODE, [path.join(__dirname, 'run-integration.js')], offline, 20 * 60 * 1000));
+    steps.push(await runStep('postgres-redis-worker-webhook-and-full-backend-regression', NODE, [path.join(__dirname, 'run-integration.js')], offline, 50 * 60 * 1000));
     const securityEnv = { ...offline, GROWTH_OS_ENABLED: 'false' };
     const securityScript = JSON.parse(fs.readFileSync(path.join(BACKEND_ROOT, 'package.json'), 'utf8')).scripts['test:security'];
-    const securityArgs = securityScript.split(/\s+/).slice(1);
-    steps.push(await runStep('backend-security-suite', NODE, [path.join(BACKEND_ROOT, 'node_modules', 'jest', 'bin', 'jest.js'), ...securityArgs], securityEnv, 15 * 60 * 1000));
+    const securityReportPath = path.join(os.tmpdir(), `product-v13-security-${crypto.randomUUID()}.json`);
+    const securityArgs = [
+        ...securityScript.split(/\s+/).slice(1),
+        '--forceExit', '--detectOpenHandles', '--json', `--outputFile=${securityReportPath}`,
+    ];
+    const securityStep = await runStep('backend-security-suite', NODE, [path.join(BACKEND_ROOT, 'node_modules', 'jest', 'bin', 'jest.js'), ...securityArgs], securityEnv, 45 * 60 * 1000);
+    try {
+        const report = JSON.parse(fs.readFileSync(securityReportPath, 'utf8'));
+        securityStep.summary = [...securityStep.summary, JSON.stringify({
+            status: report.numFailedTests === 0 && report.numFailedTestSuites === 0 ? 'PASS' : 'FAIL',
+            passedSuites: report.numPassedTestSuites ?? null,
+            failedSuites: report.numFailedTestSuites ?? null,
+            passedTests: report.numPassedTests ?? null,
+            failedTests: report.numFailedTests ?? null,
+        })].slice(-8);
+    } catch (_) {
+        // A timeout or an early Jest failure may not produce a structured report.
+    } finally {
+        try { fs.unlinkSync(securityReportPath); } catch (_) { }
+    }
+    steps.push(securityStep);
 
     for (const dataset of ['source', 'heldout']) {
         const env = { ...offline, LAB_COMPARISON_MODE: 'deterministic', LAB_COMPARISON_DATASET: dataset, LAB_RUN_SCOPE: 'full' };
         steps.push(await runStep(`deterministic-${dataset}-comparison`, NODE, [path.join(__dirname, 'run-engine-comparison.js')], env, 15 * 60 * 1000));
     }
 
-    let realGeminiCandidateRunId = null;
     if (paidOptIn) {
         const paidEnv = { ...offline, 'EM-GEMINI-KEY': process.env['EM-GEMINI-KEY'],
             LAB_COMPARISON_MODE: 'real-gemini', LAB_COMPARISON_DATASET: 'source', LAB_RUN_SCOPE: 'full' };
@@ -184,6 +261,7 @@ const main = async () => {
                 sourceSha256: EXPECTED_SOURCE_SHA256,
                 oracleSha256,
                 backendSourceSha256: candidateBackendSourceSha256,
+                runnerSourceSha256: require('./lab-server').getSourceProvenance().runnerSourceSha256,
             });
         } catch (_) { realGeminiCandidateRunId = null; }
     }
@@ -226,36 +304,14 @@ const main = async () => {
     steps.push(await runStep('artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000));
 
     const generator = path.join(__dirname, 'generate-product-engine-v1-3-proof.js');
+    writeReceiptSnapshot(false);
     const proofStep = await runStep('consolidated-cost-and-proof-generation', NODE, [generator], offline, 60_000);
     steps.push(proofStep);
     steps.push(await runStep('final-artifact-privacy-scan-and-checksum-manifest', 'python', privacyScanArgs, offline, 10 * 60 * 1000));
 
-    const overall = steps.every(step => step.status === 'PASS'
-        || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
-    const receipt = {
-        schemaVersion: 1,
-        runId: crypto.randomUUID(),
-        status: overall ? 'PASS' : 'FAIL',
-        mode: paidOptIn ? 'PAID_OPT_IN' : 'OFFLINE_DEFAULT',
-        startedAt,
-        completedAt: new Date().toISOString(),
-        nodeVersion: process.versions.node,
-        candidateCommit,
-        candidateBranch,
-        candidateBackendSourceSha256,
-        realGeminiCandidateRunId,
-        worktreeCleanAtStart,
-        baselineSha: BASELINE_SHA,
-        sourceCorpusSha256: EXPECTED_SOURCE_SHA256,
-        providerCallsAllowedByEntrypoint: paidOptIn,
-        providerBudgetCapUsd: paidOptIn ? 2 : 0,
-        steps,
-    };
-    const receiptPath = path.join(ARTIFACT_ROOT, 'regression', `verify-${receipt.runId}.json`);
-    fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
-    fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    const receipt = writeReceiptSnapshot(true);
     process.stdout.write(`[verify] ${receipt.status} mode=${receipt.mode} receipt=${receiptPath}\n`);
-    if (!overall) process.exitCode = 1;
+    if (receipt.status !== 'PASS') process.exitCode = 1;
 };
 
 if (require.main === module) main().catch(() => {
@@ -263,4 +319,4 @@ if (require.main === module) main().catch(() => {
     process.exitCode = 1;
 });
 
-module.exports = { findCandidateRealGeminiRunId };
+module.exports = { findCandidateRealGeminiRunId, runCapture };

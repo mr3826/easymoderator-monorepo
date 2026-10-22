@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { assessRealGeminiQuality, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, renderMarkdown, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
+const { assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, renderMarkdown, summarizeCampaignLedger, summarizeRunLedger } = require('./generate-product-engine-v1-3-proof');
 
 describe('evidence artifact selection', () => {
     test('uses file modification time for receipts without a recorded timestamp', () => {
@@ -83,6 +83,13 @@ describe('paid Gemini quality readiness gate', () => {
             'contextDependentAnswerableTurns', 'evaluatedContextDependentAnswerableTurns',
             'crossDomainHandoffTurns', 'evaluatedCrossDomainHandoffTurns',
         ], failedMetrics: [] });
+    });
+
+    test('marks an incomplete Gemini comparison unmeasured while preserving comparison failure separately', () => {
+        expect(assessRealGeminiQuality({ comparisonValid: false }, {
+            unsupportedClaimsSent: 0,
+            falseRefusalSlots: 0,
+        })).toEqual({ status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics: [], failedMetrics: [] });
     });
 
     test('fails on paid-run incomplete fact or answerable-turn coverage', () => {
@@ -180,6 +187,19 @@ describe('artifact privacy status mapping', () => {
     });
 });
 
+describe('Playwright evidence classification', () => {
+    test('does not call a pre-journey process exit an assertion failure', () => {
+        expect(assessPlaywrightExecution(null)).toBe('NOT_RUN');
+        expect(assessPlaywrightExecution({ playwrightExitCode: 0, tests: { passed: 2, failed: 0 } })).toBe('PASS');
+        expect(assessPlaywrightExecution({ playwrightExitCode: 4294967295, tests: {
+            passed: 0, failed: 1, results: [{ status: 'failed', duration: '0ms' }],
+        } })).toBe('INCOMPLETE');
+        expect(assessPlaywrightExecution({ playwrightExitCode: 1, tests: {
+            passed: 1, failed: 1, results: [{ status: 'failed', duration: '20ms' }],
+        } })).toBe('FAIL');
+    });
+});
+
 describe('V1.3 proof Markdown rendering', () => {
     const proof = {
         generatedAt: '2026-10-22T00:00:00.000Z',
@@ -216,6 +236,85 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('This verdict covers the zero-provider-call replay against the source oracle only.');
     });
 
+    test('labels an invalid Gemini comparison as incomplete without claiming a matched photo result', () => {
+        const markdown = renderMarkdown({
+            ...proof,
+            comparisons: { realGemini: { valid: false, model: 'gemini-test', observedPricedProviderChargeUsdAcrossIncompleteAttempts: 0.011893752,
+                textRequestAttemptsBothEngines: 49, visionRequestAttemptsBothEngines: 6,
+                campaignLedger: { requestAttempts: 55, baselineAttempts: 51, candidateAttempts: 4,
+                    providerTextCalls: 48, providerVisionCalls: 6, unpricedOrPendingRequests: 1 } } },
+            verificationEntryPoint: { status: 'IN_PROGRESS', complete: false, steps: [
+                { name: 'postgres-redis-worker-webhook-and-full-backend-regression', status: 'FAIL', timedOut: true },
+                { name: 'backend-security-suite', status: 'FAIL', timedOut: true },
+            ] },
+        }, {
+            ...status,
+            REAL_GEMINI_QUALITY_VERDICT: 'NOT_MEASURED',
+            REAL_GEMINI_STATUS: 'FAIL',
+            POSTGRES_INTEGRATION: 'TIMED_OUT',
+            SECURITY_TESTS: 'TIMED_OUT',
+            BACKEND_REGRESSION: 'TIMED_OUT',
+        }, [], { realGemini: { valid: false, model: 'gemini-test', observedPricedProviderChargeUsdAcrossIncompleteAttempts: 0.011893752,
+            textRequestAttemptsBothEngines: 49, visionRequestAttemptsBothEngines: 6,
+            campaignLedger: { requestAttempts: 55, baselineAttempts: 51, candidateAttempts: 4,
+                providerTextCalls: 48, providerVisionCalls: 6, unpricedOrPendingRequests: 1 } } }, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: { comparisonValid: false },
+            sourceCandidate: null,
+            realCandidate: { requestAttempts: 55, providerUsageRecords: 54, unpricedProviderCalls: 1 },
+            realComparisonStatus: 'FAIL',
+            photosTested: null,
+            photoCategoryMatches: 0,
+            photoColorMatches: 0,
+            integration: null,
+            integrationVerifierStep: { name: 'postgres-redis-worker-webhook-and-full-backend-regression', status: 'FAIL', timedOut: true },
+            playwright: null,
+            privacy: null,
+            independent: null,
+            campaign: { requestCount: 55, maxRequests: 256, visionRequestCount: 6, maxVisionRequests: 12,
+                estimatedProviderChargeUsd: 0.011893752, unpricedRequestCount: 1, ceilingUsd: 2 },
+            campaignSummary: { providerUsageRecords: 54, unpricedOrPendingRequests: 1 },
+            backendRegressionTests: 'NOT_MEASURED',
+            selectedIntegrationTests: 'NOT_MEASURED',
+            webhookTests: 'NOT_MEASURED',
+            totalIncorrectOrUnansweredSlots: null,
+            automatedQaVerdict: 'FAIL',
+            integrationReady: false,
+        });
+
+        expect(markdown).toContain('The matched Gemini comparison is incomplete; quality and matched-pair cost are NOT_MEASURED.');
+        expect(markdown).toContain('No completed true-photo comparison is available.');
+        expect(markdown).toContain('Observed campaign activity remains in the cumulative ledger');
+        expect(markdown).toContain('55 attempts (51 baseline-stage, 4 candidate-stage)');
+        expect(markdown).toContain('The estimated priced usage is $0.01189375 from the cumulative campaign ledger; this is not matched-pair cost.');
+        expect(markdown).toContain('Outer integration verification timed out; no inner integration receipt was written, so individual integration assertions are NOT_MEASURED.');
+        expect(markdown).toContain('Security tests: **TIMED_OUT**');
+        expect(markdown).not.toContain('evaluated unknown unique licensed public photos');
+        expect(markdown).not.toContain('Estimated matched-pair provider cost from priced usage: $0.00000000');
+    });
+
+    test('reports a Playwright process exit with no completed journey as incomplete', () => {
+        const markdown = renderMarkdown(proof, {
+            ...status,
+            PLAYWRIGHT_E2E: 'INCOMPLETE',
+        }, [], {}, {
+            sourceOracle: null,
+            sourceComparison: null,
+            heldoutComparison: null,
+            realComparison: null,
+            integration: null,
+            playwright: { playwrightExitCode: 4294967295, tests: {
+                passed: 0, failed: 1, results: [{ status: 'failed', duration: '0ms' }],
+            } },
+            playwrightAssessment: 'INCOMPLETE',
+        });
+
+        expect(markdown).toContain('Playwright process exited with code 4294967295; its report contains no completed browser journey, so browser behavior and accessibility are NOT_MEASURED.');
+        expect(markdown).toContain('| Browser QA | INCOMPLETE |');
+    });
+
     test('documents the assistant-grounded context rule for false-refusal scoring', () => {
         const markdown = renderMarkdown(proof, status, [], {}, {
             sourceOracle: null,
@@ -224,9 +323,10 @@ describe('V1.3 proof Markdown rendering', () => {
             realComparison: null,
         });
 
-        expect(markdown).toContain('Context-dependent false refusals are evaluated only when every earlier turn in that conversation executed and an earlier assistant turn had a SEND disposition for a non-refusal reply with a contract-valid READY presentation grounding the same product.');
+        expect(markdown).toContain('False-refusal scoring accepts a current turn with VERIFIED product evidence and a matching contract-valid READY presentation.');
+        expect(markdown).toContain('Otherwise, a context-dependent turn is evaluated only when every earlier turn in that conversation executed and an earlier assistant turn had a SEND disposition for a non-refusal reply with a contract-valid READY presentation grounding the same product.');
         expect(markdown).toContain('This is approved replay output; actual Messenger delivery is not established.');
-        expect(markdown).toContain('An intervening product `NOT_FOUND` clears that active context; expected turns without a complete grounding chain remain not evaluable.');
+        expect(markdown).toContain('An intervening product `NOT_FOUND` clears prior assistant context; context-only turns without current evidence and a complete grounding chain remain not evaluable.');
     });
 
     test('calculates cost per verified answer turn separately from cost per verified fact slot', () => {
@@ -234,6 +334,7 @@ describe('V1.3 proof Markdown rendering', () => {
             estimatedProviderChargeUsd: 0.014899,
             verifiedCorrectTurns: 13,
             verifiedCorrectAnswers: 16,
+            unpricedProviderCalls: 0,
         })).toEqual({
             estimatedCostPerCandidateVerifiedAnswerUsd: 0.014899 / 13,
             estimatedCostPerCandidateVerifiedFactSlotUsd: 0.014899 / 16,
@@ -242,9 +343,19 @@ describe('V1.3 proof Markdown rendering', () => {
             estimatedProviderChargeUsd: 0.014899,
             verifiedCorrectTurns: 0,
             verifiedCorrectAnswers: 16,
+            unpricedProviderCalls: 0,
         })).toEqual({
             estimatedCostPerCandidateVerifiedAnswerUsd: null,
             estimatedCostPerCandidateVerifiedFactSlotUsd: 0.014899 / 16,
+        });
+        expect(calculateCandidateCostMetrics(true, {
+            estimatedProviderChargeUsd: 0.014899,
+            verifiedCorrectTurns: 13,
+            verifiedCorrectAnswers: 16,
+            unpricedProviderCalls: 1,
+        })).toEqual({
+            estimatedCostPerCandidateVerifiedAnswerUsd: null,
+            estimatedCostPerCandidateVerifiedFactSlotUsd: null,
         });
     });
 
@@ -303,6 +414,25 @@ describe('V1.3 proof Markdown rendering', () => {
         });
     });
 
+    test('summarizes campaign attempts separately from provider-reported calls', () => {
+        expect(summarizeCampaignLedger({ unpricedRequestCount: 1, calls: [
+            { stage: 'baseline-v1-2-source-real-gemini-baseline-id', status: 'provider_reported', vision: false },
+            { stage: 'baseline-v1-2-source-real-gemini-baseline-id', status: 'pending', vision: false },
+            { stage: 'candidate-v1-3-source-real-gemini-candidate-id', status: 'provider_reported', vision: true },
+        ] })).toEqual({
+            requestAttempts: 3,
+            providerUsageRecords: 2,
+            providerTextCalls: 1,
+            providerVisionCalls: 1,
+            textRequestAttempts: 2,
+            visionRequestAttempts: 1,
+            unpricedOrPendingRequests: 1,
+            baselineAttempts: 2,
+            candidateAttempts: 1,
+        });
+        expect(summarizeCampaignLedger(null).requestAttempts).toBeNull();
+    });
+
     test('renders the integration receipt path from the selected evidence package', () => {
         const markdown = renderMarkdown(proof, status, [], {}, {
             sourceOracle: null,
@@ -337,7 +467,7 @@ describe('V1.3 proof Markdown rendering', () => {
             sourceOracle: null,
             sourceComparison: null,
             heldoutComparison: null,
-            realComparison: { model: 'gemini-3.1-flash-lite' },
+            realComparison: { comparisonValid: true, model: 'gemini-3.1-flash-lite' },
             realCandidate: {
                 verifiedCorrectAnswers: 16,
                 verifiedCorrectTurns: 13,

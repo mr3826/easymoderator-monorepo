@@ -19,9 +19,18 @@ const assistantApprovedProductOutput = (item, productId) => item.evaluationStatu
     && Array.isArray(item.presentation?.products)
     && item.presentation.products.some(product => String(product.id) === String(productId));
 
+const currentGroundedProductPresentation = (item, productId) => item.evaluationStatus === EXECUTED
+    && item.productEvidence?.status === 'VERIFIED'
+    && (item.productEvidence?.productIds || []).map(String).includes(String(productId))
+    && item.presentation?.status === 'READY'
+    && item.presentation?.contractValid === true
+    && Array.isArray(item.presentation?.products)
+    && item.presentation.products.some(product => String(product.id) === String(productId));
+
 const hasActiveAssistantGroundedContext = (item, personaTurns) => {
     const contextProductId = item.oracle?.sourceContextProductId;
     const requestedProductId = item.oracle?.productId;
+    if (requestedProductId && currentGroundedProductPresentation(item, requestedProductId)) return true;
     if (!contextProductId || !requestedProductId || String(contextProductId) !== String(requestedProductId)) return true;
 
     const turnNumber = Number(item.turn);
