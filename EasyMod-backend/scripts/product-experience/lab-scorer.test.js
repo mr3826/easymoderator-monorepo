@@ -88,6 +88,13 @@ describe('Product Engine Lab multilingual fact scoring', () => {
         })).toBe(true);
     });
 
+    test('recognizes a sent reply that says it has no confirmed policy information and offers to check', () => {
+        expect(isSafeCrossDomainHandoff({
+            response: 'I do not have confirmed information regarding the exchange policy. I would be happy to check with the shop for you to see if we can get those details.',
+            disposition: 'SEND', crossDomainHandoffs: ['merchant_policy'], answerableSlots: 0, correctAnsweredSlots: 0,
+        })).toBe(true);
+    });
+
     test.each([
         ['এই বিষয়ে নিশ্চিত তথ্য আমার কাছে নেই। আমাদের একজন প্রতিনিধি আপনাকে জানিয়ে দেবেন।', 'SAFE_FALLBACK'],
         ['Ei bepare confirmed info amar kache nei. Amader team theke apnake janiye deya hobe.', 'SAFE_FALLBACK'],
