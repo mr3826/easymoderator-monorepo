@@ -88,8 +88,8 @@ const DELIVERY_TERMS = /\b(?:delivery|deliver|shipping|ship|courier|dispatch|rid
 const PRODUCT_TERMS = /\b(?:products?|items?|catalog(?:ue)?|merchandise|ponno)\b|পণ্য|প্রোডাক্ট|আইটেম|জিনিস|মালামাল/i;
 const PRODUCT_INFORMATION_TERMS = /\b(?:information|info|details|data|records?)\b|তথ্য|বিবরণ|বিস্তারিত/i;
 const PRODUCT_ABSENCE_ASSERTION = /\b(?:there\s+(?:are|is)\s+)?(?:no|zero)\s+(?:products?|items?|merchandise)\b|\bwe\s+(?:(?:do|does)\s+not|don't|doesn't)\s+have\s+(?:(?:any|this|that|these|those|the)\s+)?(?:products?|items?|merchandise)\b|\b(?:our|the)\s+catalog(?:ue)?\s+(?:is|looks?)\s+(?:empty|blank)\b|\b(?:our|the)\s+(?:shop|store)\s+(?:has|have)\s+(?:no|zero|not\s+any)\s+(?:products?|items?)\b|(?:আমাদের|দোকানে|শপে)\s*(?:কোনো|কোন|একটিও)?\s*(?:পণ্য|প্রোডাক্ট|আইটেম|জিনিস)\s*(?:নেই|নাই)|ক্যাটালগে?.{0,24}(?:পণ্য|প্রোডাক্ট|আইটেম)\s*(?:নেই|নাই)|(?:ক্যাটালগ|ক্যাটালগে)\s*(?:খালি|ফাঁকা)/i;
-const DELIVERY_ASSERTION = /\b(?:we\s+(?:can|will|do)\s+(?:deliver|ship)|delivery\s+(?:(?:options?|services?)\s+)?(?:is\s+|are\s+)?available|nationwide\s+delivery|will\s+arrive|can\s+arrive|ships?\s+to)\b|ডেলিভারি\s*(?:হবে|পাবেন|দেওয়া হয়|দেওয়া হয়)/i;
-const DELIVERY_NEGATIVE_ASSERTION = /\b(?:delivery|shipping|courier)\s+(?:is\s+)?(?:not\s+available|unavailable|not\s+supported|not\s+offered|not\s+possible)|\bwe\s+(?:cannot|can't|won't|do\s+not|don't)\s+(?:deliver|ship)\b|ডেলিভারি\s*(?:হবে না|পাবেন না|দেওয়া হয় না|দেওয়া হয় না)/i;
+const DELIVERY_ASSERTION = /\b(?:we\s+(?:can|will|do)\s+(?:deliver|ship)|delivery(?:\s+(?:options?|services?))?\s*[:,-]?\s*(?:is\s+|are\s+)?available|nationwide\s+delivery|will\s+arrive|can\s+arrive|ships?\s+to)\b|ডেলিভারি\s*(?:হবে|পাবেন|দেওয়া হয়|দেওয়া হয়)/i;
+const DELIVERY_NEGATIVE_ASSERTION = /\b(?:delivery|shipping|courier)(?:\s+(?:options?|services?))?\s*[:,-]?\s*(?:is\s+|are\s+)?(?:not\s+available|unavailable|not\s+supported|not\s+offered|not\s+possible)|\bwe\s+(?:cannot|can't|won't|do\s+not|don't)\s+(?:deliver|ship)\b|ডেলিভারি\s*(?:হবে না|পাবেন না|দেওয়া হয় না|দেওয়া হয় না)/i;
 const COMMITMENT_TIMELINE = /(?:(?<![\p{L}\p{N}])[0-9০-৯]{1,2}\s*(?:[-–]\s*[0-9০-৯]{1,2}\s*)?(?:(?:(?:business|working)\s+)?(?:minutes?|hours?|days?|weeks?)|মিনিট|ঘণ্টা|ঘন্টা|দিন(?:ে)?|সপ্তাহ(?:ে)?)(?![\p{L}\p{N}])|\b(?:today|tomorrow|same[- ]day|next day|within 24 hours|one day|two days|three days)\b|আজ|আগামীকাল|২৪\s*ঘণ্টা|এক\s*দিন|দুই\s*দিন|তিন\s*দিন)/giu;
 const ORDER_CONFIRMATION_CLAIM = /\b(?:order\s+(?:is\s+)?(?:confirmed|placed|created|received|processing)|(?:confirmed|placed)\s+(?:your\s+)?order|we\s+(?:have\s+)?(?:confirmed|placed)\s+your\s+order)\b|অর্ডার\s*(?:কনফার্ম|নিশ্চিত|হয়ে গেছে|হয়ে গেছে)/i;
 const PAYMENT_CONFIRMATION_CLAIM = /\b(?:payment\s+(?:was\s+)?(?:received|verified|confirmed|successful)|paid\s+successfully|transaction\s*(?:id|trxid)\s*(?:is\s*)?(?:verified|confirmed)|we\s+received\s+(?:your\s+)?(?:payment|money)|money\s+received)\b|পেমেন্ট\s*(?:পেয়েছি|পেয়েছি|ভেরিফাই|নিশ্চিত)|টাকা\s*(?:পেয়েছি|পেয়েছি)/i;
@@ -994,13 +994,14 @@ const deliveryTimelineScopeMatches = (candidateClause, policySentence, allPolicy
     const policyIsUniversal = isUniversalDeliveryPolicy(policySentence);
     const policyCoversBangladesh = policyScopes.some(scope =>
         scope.location === 'bangladesh' && scope.direction === 'inside');
+    const candidateScopes = extractLocationScopes(candidateClause);
     const policyScopeRequired = hasLocationRestriction(policySentence)
         && !policyIsUniversal
         && !policyCoversBangladesh;
     if (policyScopeRequired && !policyScopes.length) return false;
-    if (!policyScopes.length || policyIsUniversal || policyCoversBangladesh) return true;
+    if (policyIsUniversal || policyCoversBangladesh) return true;
+    if (!policyScopes.length) return candidateScopes.length === 0;
 
-    const candidateScopes = extractLocationScopes(candidateClause);
     if (!candidateScopes.length) return false;
     const allScopes = allPolicySentences.flatMap(extractLocationScopes);
     return policyScopes.some(policyScope => candidateScopes.some(candidateScope => {
@@ -1061,9 +1062,14 @@ const unsupportedDomainClaims = (candidate, evidence) => {
     violations.push(...unsupportedPaymentMethodClaims(candidate, evidence));
 
     for (const clause of splitClaimClauses(candidate)) {
-        if (!DELIVERY_TERMS.test(clause)) continue;
+        if (!DELIVERY_TERMS.test(clause) || isPurePaymentPolicyAvailability(clause)) continue;
         const candidateTimelines = timelineTokens(clause);
-        const sentences = policySentences(evidence).filter(sentence => DELIVERY_TERMS.test(sentence));
+        const sentences = policySentences(evidence).filter(sentence => DELIVERY_TERMS.test(sentence)
+            && !/^\s*---/.test(sentence)
+            && !/^\s*Accepted payment:/i.test(sentence)
+            && (DELIVERY_ASSERTION.test(sentence)
+                || DELIVERY_NEGATIVE_ASSERTION.test(sentence)
+                || timelineTokens(sentence).length > 0));
         if (candidateTimelines.length) {
             const supported = sentences.some(sentence => {
                 if (isNegativePolicyClaim(sentence) !== isNegativePolicyClaim(clause)) return false;

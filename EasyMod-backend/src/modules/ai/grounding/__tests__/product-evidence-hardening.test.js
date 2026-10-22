@@ -1455,6 +1455,41 @@ describe('product evidence trust boundaries', () => {
     });
 
     test.each([
+        ['Delivery is available nationwide across Bangladesh.', 'unsupported_delivery_commitment'],
+        ['Delivery options are available.', 'unsupported_delivery_commitment'],
+        ['We can deliver outside Dhaka in 3 days.', 'unsupported_delivery_timeline'],
+    ])('payment-only policy cannot authorize delivery claims: %s', (candidate, violation) => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence,
+            '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: Cash on Delivery (COD) ONLY.');
+
+        const result = evaluateCandidate({
+            candidate,
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain(violation);
+    });
+
+    test('an unscoped delivery policy does not authorize a location-specific delivery claim', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence, 'Delivery is available.');
+
+        const result = evaluateCandidate({
+            candidate: 'Delivery is available nationwide across Bangladesh.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_delivery_commitment');
+    });
+
+    test.each([
         ['ঢাকার বাইরে ৩ দিনে ডেলিভারি হবে।', 'unsupported_delivery_timeline'],
         ['ঢাকার বাইরে ডেলিভারি হবে।', 'unsupported_delivery_commitment'],
     ])('an inside-only policy rejects unsupported Bengali delivery coverage: %s', (candidate, violation) => {
