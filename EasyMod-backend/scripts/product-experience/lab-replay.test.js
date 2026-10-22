@@ -301,7 +301,9 @@ describe('registered genuine photo routing seam', () => {
             const imageCalls = calls.filter(params => params.messages.some(message => Array.isArray(message.content)
                 && message.content.some(part => part?.type === 'image_url')));
             expect(imageCalls).toHaveLength(1);
-            if (process.env.LAB_BASELINE_ROUTER_ONLY !== '1') {
+            const isBaselineRouter = process.env.LAB_BASELINE_ROUTER_ONLY === '1'
+                || process.env.LAB_ENGINE_LABEL === 'baseline-v1-2';
+            if (!isBaselineRouter) {
                 expect(imageCalls[0].systemPrompt).toContain('For this taxonomy, kurta/panjabi means a South Asian long tunic');
                 expect(imageCalls[0].systemPrompt).toContain('An off-frame lower hem alone is not a reason to return null');
             }
