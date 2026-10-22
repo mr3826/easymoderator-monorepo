@@ -1684,6 +1684,68 @@ describe('product evidence trust boundaries', () => {
         expect(result.violations).not.toContain('unsupported_stock_claim');
     });
 
+    test.each(['Payment is available.', 'Payment methods are available.'])(
+        'generic payment availability needs at least one accepted policy method: %s',
+        candidate => {
+            const result = evaluateCandidate({
+                candidate,
+                evidence: grounding.emptyEvidence(SHOP),
+                language: 'en',
+                modelGenerated: true,
+            });
+
+            expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+            expect(result.violations).toContain('unsupported_payment_method:unknown');
+        },
+    );
+
+    test('generic payment availability is supported by an accepted method policy', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence,
+            '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: Cash on Delivery (COD) ONLY.');
+
+        const result = evaluateCandidate({
+            candidate: 'Payment is available.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a policy-backed payment statement is independent of a NOT_FOUND product lookup', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.productStatus = grounding.ProductEvidenceStatus.NOT_FOUND;
+        grounding.withPolicyText(evidence,
+            '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nAccepted payment: advance payment via bKash to the personal number 01711111111.');
+
+        const result = evaluateCandidate({
+            candidate: 'bKash payment is available.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('a NOT_FOUND product lookup does not bypass payment policy validation', () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.productStatus = grounding.ProductEvidenceStatus.NOT_FOUND;
+
+        const result = evaluateCandidate({
+            candidate: 'bKash payment is available.',
+            evidence,
+            language: 'en',
+            modelGenerated: true,
+        });
+
+        expect(result.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
+        expect(result.violations).toContain('unsupported_payment_method:bkash');
+        expect(result.violations).not.toContain('availability_asserted_for_absent_product');
+    });
+
     test('generic delivery options availability reaches delivery policy', () => {
         const evidence = grounding.emptyEvidence(SHOP);
         grounding.withPolicyText(evidence, '--- SHOP PAYMENT & DELIVERY (authoritative) ---\nDelivery: available nationwide across Bangladesh.');

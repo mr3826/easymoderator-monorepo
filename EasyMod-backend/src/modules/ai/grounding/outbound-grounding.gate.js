@@ -218,6 +218,10 @@ const availabilitySubjectTerms = (clause) => {
         .filter(term => !AVAILABILITY_CONTEXT_FILLERS.has(term));
 };
 
+const isPurePaymentPolicyAvailability = (clause) =>
+    (PAYMENT_SEMANTIC_CONTEXT.test(clause) || hasBarePaymentMethodAvailability(clause))
+    && !availabilitySubjectTerms(clause).length;
+
 const productIdentityTerms = (product) => identifyingTerms([
     product?.name,
     product?.nameBn,
@@ -952,6 +956,15 @@ const unsupportedPaymentMethodClaims = (candidate, evidence) => {
             && !hasPaymentMethodRoute
             && !hasPaymentDestination) continue;
         if (hasProductIdentity && !hasExplicitPaymentContext && !hasPaymentMethodAction) continue;
+        const genericPaymentAvailability = hasExplicitPaymentContext
+            && !hasKnownPaymentMethod
+            && !hasPaymentMethodRoute
+            ? availabilityAssertion(paymentClaim)
+            : null;
+        if (genericPaymentAvailability
+            && (genericPaymentAvailability !== 'IN_STOCK' || supported.size === 0)) {
+            violations.push('unsupported_payment_method:unknown');
+        }
         if (!PAYMENT_METHOD_ASSERTION.test(paymentClaim) && !hasPaymentMethodAction) continue;
         if (hasPaymentDestination) {
             for (const phone of candidatePhoneNumbers) {
@@ -1017,8 +1030,7 @@ const unsupportedStockClaim = (candidate, evidence) => {
                 || DELIVERY_NEGATIVE_ASSERTION.test(clause))
                 && DELIVERY_TERMS.test(clause)
                 && !subjectTerms.length;
-            const purePaymentPolicy = (PAYMENT_SEMANTIC_CONTEXT.test(clause) || hasBarePaymentMethodAvailability(clause))
-                && !subjectTerms.length;
+            const purePaymentPolicy = isPurePaymentPolicyAvailability(clause);
             if (pureDeliveryPolicy || purePaymentPolicy) return false;
             return true;
         });
@@ -1213,6 +1225,7 @@ const evaluateCandidate = ({
                 && DELIVERY_TERMS.test(clause)
                 && PRODUCT_INFORMATION_TERMS.test(clause);
             return availabilityAssertion(clause)
+                && !isPurePaymentPolicyAvailability(clause)
                 && (!DELIVERY_TERMS.test(clause) || productAndDeliveryInfo);
         });
         if (assertsAvailability) {
