@@ -142,17 +142,17 @@ const resolveExplicitProductEvidence = ({ shopId, candidate }) => {
 const CONTEXT_PRODUCT_QUESTION = /\b(?:price|cost|dam|daam|koto|stock|available|availability|size|sizes|color|colour|rong|rang|material|fabric|fit|length|inseam|outseam|shoulder|sleeve|pockets?|buttons?|measurements?|measure|inch|gsm|yarn|count|lace|embroidery|twill|wash|washed|fade|fading|shrink|cotton|polyester|modal|silk|nylon|oversized|cut)\b|দাম|মূল্য|কত|স্টক|আছে|সাইজ|মাপ|রং|রঙ|উপাদান|কাপড়|কাপড়|লম্বা|দৈর্ঘ্য|হাতা|কাঁধ|ইঞ্চি|ফিট|পকেট|বুক|কোমর|হিপ|ধোয়া|ধোয়া|বিবর্ণ/i;
 const PRICE_NEGOTIATION = /\b(?:discount|offer|coupon|bargain|negotiable|fixed price|price negotiation|ekdam|ek\s+dam)\b|দাম\s*(?:কম|রাখলে|দিলে|করলে)|এক\s*দাম|একদাম|ডিসকাউন্ট|ছাড়|ছাড়|অফার|ফিক্সড\s*দাম|দাম\s*নেগোশিয়েবল/i;
 const CONTEXT_PRESERVING_POLICY_QUESTION = /\b(?:delivery|shipping|courier|return|exchange|refund|cash\s+on\s+delivery|cod|payment|paid|transaction|advance|discount|offer|coupon|bargain|negotiable|delivery\s+charge|delivery\s+fee|open\s+(?:the\s+)?parcel|arrive\s+together|separately|order|cancel|cancellation|booking|tracking|dispatch|ekdam|ek\s+dam)\b|ডেলিভারি|কুরিয়ার|কুরিয়ার|পার্সেল|রিটার্ন|এক্সচেঞ্জ|রিফান্ড|পেমেন্ট|পেইড|লেনদেন|অগ্রিম|অর্ডার|বাতিল|ট্র্যাকিং|ডিসপ্যাচ|দাম\s*(?:কম|রাখলে|দিলে|করলে)|এক\s*দাম|একদাম|ডিসকাউন্ট|ছাড়|ছাড়|অফার/i;
-const EXPLICIT_PRODUCT_REFERENCE = /\b(?:cargo|panjabi|punjabi|kamiz|kamij|kameez|kurti|saree|denim|jacket|trouser|trousers|pant|pants|legging|leggings|shirt|t[\s-]?shirt|dress)\b|পাঞ্জাবি|কামিজ|প্যান্ট|ট্রাউজার|লেগিংস|জ্যাকেট/i;
+const EXPLICIT_PRODUCT_REFERENCE = /\b(?:cargo|panjabi|punjabi|kurta|kamiz|kamij|kameez|kurti|sari|saree|denim|jacket|trouser|trousers|pant|pants|legging|leggings|shirt|t[\s-]?shirt|dress)\b|পাঞ্জাবি|কামিজ|প্যান্ট|ট্রাউজার|লেগিংস|জ্যাকেট/i;
 
 const productCategoriesInText = value => {
     const text = String(value || '');
     const categories = [];
-    if (/\b(?:panjabi|punjabi)\b|পাঞ্জাবি/i.test(text)) categories.push('panjabi');
+    if (/\b(?:panjabi|punjabi|kurta)\b|পাঞ্জাবি/i.test(text)) categories.push('panjabi');
     const lower = /\b(?:cargo|pant|pants|trouser|trousers|legging|leggings)\b|প্যান্ট|ট্রাউজার|লেগিংস/i.test(text);
     if (lower) categories.push('lower_clothing');
-    if (/\b(?:kamiz|kamij|kameez|kurti|saree|dress)\b|কামিজ|শাড়ি|শাড়ি/i.test(text)) categories.push('women_clothing');
+    if (/\b(?:kamiz|kamij|kameez|kurti|sari|saree|dress)\b|কামিজ|শাড়ি|শাড়ি/i.test(text)) categories.push('women_clothing');
     if (!lower && /\b(?:denim|jacket)\b|জ্যাকেট/i.test(text)) categories.push('outerwear');
-    if (/\b(?:t[\s-]?shirts?|tees?)\b|টি-?শার্ট/i.test(text)) categories.push('upper_clothing');
+    if (/\b(?:shirts?|t[\s-]?shirts?|tees?)\b|টি-?শার্ট/i.test(text)) categories.push('upper_clothing');
     return [...new Set(categories)];
 };
 
@@ -1172,6 +1172,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         return {
             response: grounding.productPhotoCatalogNoMatchReply(language, {
                 onlyFirstPhoto: photoMatchEnabled() && imageUrls.length > 1,
+                matchingDisabled: !photoMatchEnabled(),
             }),
             confidence: 1.0,
             source: 'grounding_image_no_match',

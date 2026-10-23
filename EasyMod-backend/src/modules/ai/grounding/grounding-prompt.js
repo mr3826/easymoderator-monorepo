@@ -53,7 +53,14 @@ const productImageNoProductReply = (language) => pick({
 }, language);
 
 /** A customer photo produced only a partial catalog match, not a product identity. */
-const productPhotoCatalogNoMatchReply = (language, { onlyFirstPhoto = false } = {}) => {
+const productPhotoCatalogNoMatchReply = (language, { onlyFirstPhoto = false, matchingDisabled = false } = {}) => {
+    if (matchingDisabled) {
+        return pick({
+            bn: 'ছবি দেখে পণ্য মেলানোর সুবিধাটি এখন চালু নেই। পণ্যের নাম বললে ক্যাটালগে দেখে বলতে পারি।',
+            en: "Photo matching isn't available right now. Please tell me the product name so I can check the catalog.",
+            mixed: 'Photo diye product match kora ekhon available nei. Product-er nam bolle catalog e check kore bolte pari.',
+        }, language);
+    }
     const reply = pick({
         bn: 'এই ছবির সঙ্গে দোকানের ক্যাটালগের কোনো পণ্য নিশ্চিতভাবে মেলাতে পারছি না। পণ্যের নাম বা ট্যাগের পরিষ্কার ছবি দিলে দেখে বলতে পারি।',
         en: "I can't confidently match this photo to a product in the shop's catalog. Please share the product name or a clear photo of its tag so I can check.",

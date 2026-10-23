@@ -179,6 +179,46 @@ COMPATIBILITY: Evaluation harness and evidence documentation only. Production ba
 FINAL_VERDICT: Photo acceptance remains FAIL; AUTOMATED_QA_VERDICT remains FAIL and INTEGRATION_READY remains NO. Do not switch Gemini Pro into production. The observed category-field failure does not distinguish vision output from parser or label rejection, and the third receipt is not fully code-attested.
 ```
 
+## Follow-up decision — explicit garment context and honest photo-disabled response
+
+```text
+DECISION_ID: V13-EXPLICIT-GARMENT-CONTEXT-AND-PHOTO-STATE-01
+OBSERVED_PROBLEM: The independent read-only review found that "kurta" and "sari" were absent from the explicit product-category guard. A price query could therefore inherit a different garment's verified conversation context. The same review found that when photo matching was disabled, the deterministic customer reply said the photo could not be confidently matched, implying image analysis had run.
+MERCHANT_IMPACT: Wrong-context price replies can misstate a catalog item's current price. Inaccurate photo-state wording can misrepresent what the assistant checked and prompt merchants to trust an unperformed analysis.
+CUSTOMER_IMPACT: Customers must receive prices for the garment they named and a truthful explanation when photo matching is unavailable.
+CURRENT_IMPLEMENTATION: Context reuse is guarded by a list of garment aliases and category labels; the photo no-match helper had no separate disabled-feature state.
+OPTIONS_CONSIDERED: Leave both as documentation caveats; broaden context reuse; add the missing garment aliases to the existing taxonomy and provide a disabled-state customer reply.
+RECOMMENDED_CHANGE: Classify "kurta" with panjabi, "sari" with saree/kamiz, and shirt aliases with upper clothing; explicit category conflicts then trigger a fresh scoped catalog search. When photo matching is disabled, tell the customer that photo matching is unavailable and ask for a product name.
+ALTERNATIVES_REJECTED: Do not reuse prior product evidence for a differently named category. Do not say a photo was matched or failed to match if no image analysis ran. No new routing, catalog, API, or provider feature is required.
+SECURITY_IMPACT: No change to tenant-scoped product re-fetch, product evidence requirements, media authorization, outbound validation, or commerce actions.
+COST_IMPACT: No provider calls added; deterministic unit coverage only.
+FUTURE_COMPATIBILITY: Uses the existing context category guard and photo reply helper; no persisted schema or API contract changes.
+TESTABLE_ACCEPTANCE_CRITERIA: A kurta price query after shirt context and a sari price query after kurta context perform a fresh catalog search and do not re-fetch or answer from the previous product. Disabled photo matching returns an unavailable-state reply, not a failed-match reply, and sends no photo to a model.
+IMPLEMENTATION_OWNER: Lead orchestrator / AI Product.
+INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only review.
+FINAL_VERDICT: Implement and rerun focused intent-router tests; retain overall QA FAIL unless all independent integration and vision gates pass.
+```
+
+## Follow-up decision — bounded currency normalization in privacy scan
+
+```text
+DECISION_ID: V13-PRIVACY-USD-PHONE-SCAN-01
+OBSERVED_PROBLEM: The independent reviewer demonstrated that the Markdown privacy scanner replaced every numeric cell below a `_USD` heading before applying phone-pattern checks, so an unlisted phone-shaped value such as `01712345678` could evade the heuristic.
+MERCHANT_IMPACT: A privacy report could miss customer contact data embedded in a cost field, reducing confidence in the evidence package.
+CUSTOMER_IMPACT: Customer contact details must remain detectable regardless of the table heading.
+CURRENT_IMPLEMENTATION: USD cells containing any numeric value were normalized as monetary amounts, with no upper bound.
+OPTIONS_CONSIDERED: Remove USD normalization and accept currency false positives; mask only bounded plausible USD amounts; add exceptions based on known phone contacts only.
+RECOMMENDED_CHANGE: Normalize only numeric `_USD` cells whose absolute Decimal value is at most USD 1,000,000,000. Larger phone-shaped values remain visible to the sensitive-pattern scanner. Keep exact source-contact matching and all other scanning intact.
+ALTERNATIVES_REJECTED: Do not whitelist values based on known source contacts or exempt all currency columns. Do not expand the exception to arbitrary high values.
+SECURITY_IMPACT: Fail-closed privacy detection is strengthened for large phone-shaped values; plausible cost amounts remain excluded to prevent false positives.
+COST_IMPACT: No provider or runtime cost; one local scanner unit test.
+FUTURE_COMPATIBILITY: Markdown proof currency formatting below the conservative bound remains supported. Values above it may require explicit safe formatting and a scanner-reviewed change.
+TESTABLE_ACCEPTANCE_CRITERIA: A plausible decimal USD amount stays clear of phone false positives, an 11-digit Bangladesh phone under a `_USD` heading still triggers a sensitive-pattern match, and the full scanner unit suite passes.
+IMPLEMENTATION_OWNER: Lead orchestrator / ResponseTrace privacy tooling.
+INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only review.
+FINAL_VERDICT: Apply the bounded exception and validate the current evidence package after final proof generation.
+```
+
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

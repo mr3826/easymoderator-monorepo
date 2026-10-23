@@ -353,6 +353,37 @@ describe('B — Bengali product-intent gate', () => {
         expect(differentCategory.grounding.verifiedProducts.map(product => product.id)).not.toContain('cargo-1');
     });
 
+    test.each([
+        ['kurta', 'Everyday Shirt', 'Blue Kurta', 'kurta-1'],
+        ['sari', 'Blue Kurta', 'Red Sari', 'sari-1'],
+    ])('an explicit %s price question does not reuse a different garment context', async (query, contextTitle, matchName, matchId) => {
+        const now = new Date();
+        productSearch.getProductsByIds.mockResolvedValue([{
+            id: 'context-product', shop_id: SHOP, name: contextTitle, price: 1450,
+            quantity: 4, track_quantity: true, variants: [],
+        }]);
+        productSearch.searchByAttributes.mockResolvedValueOnce([{
+            id: matchId, shop_id: SHOP, name: matchName, price: 2350,
+            quantity: 2, track_quantity: true, variants: [],
+        }]);
+        const history = [{
+            role: 'assistant',
+            sourceReferences: [{ kind: 'product', id: 'context-product', title: contextTitle, contextEligible: true }],
+            createdAt: now.toISOString(),
+        }];
+
+        const result = await route({
+            shopId: SHOP, message: `${query} price?`, history,
+            systemPrompt: 'BASE', language: 'English', now: new Date(now.getTime() + 1000),
+        });
+        productSearch.getProductsByIds.mockResolvedValue([]);
+
+        expect(productSearch.searchByAttributes).toHaveBeenCalled();
+        expect(productSearch.getProductsByIds).not.toHaveBeenCalled();
+        expect(result.grounding.verifiedProducts.map(product => product.id)).toContain(matchId);
+        expect(result.grounding.verifiedProducts.map(product => product.id)).not.toContain('context-product');
+    });
+
     test('a mixed price and delivery question answers the catalog price and leaves the fee unknown', async () => {
         productSearch.searchByAttributes.mockResolvedValue([{
             id: 'panjabi-bn-1', shop_id: SHOP, name: 'Premium Black Panjabi',
@@ -1281,7 +1312,8 @@ describe('D — customer photo → product matching', () => {
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(
             expect.objectContaining({ query: 'eita ache?' }));
         expect(result.source).toBe('grounding_image_no_match');
-        expect(result.response).toMatch(/can't confidently match this photo/i);
+        expect(result.response).toMatch(/photo matching isn't available right now/i);
+        expect(result.response).not.toMatch(/can't confidently match this photo/i);
         expect(result.response).not.toMatch(/only checked the first photo/i);
         expect(llm.chat).not.toHaveBeenCalled();
     });

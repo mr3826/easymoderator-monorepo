@@ -8,6 +8,7 @@ from collections import deque
 import codecs
 import csv
 from datetime import datetime, timezone
+from decimal import Decimal
 import hashlib
 from io import BytesIO
 import json
@@ -359,8 +360,10 @@ def normalize_markdown_table_row_for_scan(line: str) -> str:
         return line
     cells = line.split("|")
     for index, cell in enumerate(cells[:-1]):
+        amount = cells[index + 1].strip()
         if (re.search(r"`[^`]*_USD`?\s*$", cell.strip(), re.IGNORECASE)
-                and re.fullmatch(r"\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)\s*", cells[index + 1])):
+                and re.fullmatch(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", amount)
+                and abs(Decimal(amount)) <= Decimal("1000000000")):
             cells[index + 1] = " [USD amount] "
     return re.sub(r"[ \t]+(?=\|)", "", "|".join(cells))
 
