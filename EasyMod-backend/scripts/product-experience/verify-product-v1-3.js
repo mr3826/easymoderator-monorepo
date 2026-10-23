@@ -18,6 +18,7 @@ const SOURCE_CSV = path.join(WORKSPACE_ROOT, 'customer-simulator.csv');
 const EXPECTED_SOURCE_SHA256 = '892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6';
 const BASELINE_ROOT = path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
+const DOCKER_PREFLIGHT_TIMEOUT_MS = 5000;
 const paidOptIn = process.argv.includes('--paid-gemini');
 const PLAYWRIGHT_GATE_TIMEOUT_MS = 20 * 60 * 1000;
 const resolvePaidGeminiKey = (env = process.env) => {
@@ -26,10 +27,30 @@ const resolvePaidGeminiKey = (env = process.env) => {
     return userEnvironmentKey || processScopedKey || null;
 };
 const shouldRequireDockerEngine = (env = process.env) => env.LAB_EXTERNAL_SERVICES !== 'true';
+const dockerInfo = (run = spawnSync) => run('docker', ['info', '--format', '{{.ServerVersion}}'], {
+    encoding: 'utf8', windowsHide: true, timeout: DOCKER_PREFLIGHT_TIMEOUT_MS,
+});
 const partitionStartupValidation = issues => ({
     blocking: issues.filter(issue => issue !== 'DOCKER_ENGINE_UNAVAILABLE'),
     failedPrerequisites: issues.filter(issue => issue === 'DOCKER_ENGINE_UNAVAILABLE'),
 });
+const canRunIntegration = startupValidation => !startupValidation.failedPrerequisites.includes('DOCKER_ENGINE_UNAVAILABLE');
+const classifyStepExecution = ({ exitCode, timedOut, output = '' }) => {
+    const structuredStatusLine = output.split(/\r?\n/).reverse().find(line => line.trim().startsWith('{"status":'));
+    if (structuredStatusLine) {
+        try {
+            const structuredStatus = JSON.parse(structuredStatusLine).status;
+            if (structuredStatus === 'BLOCKED') return 'BLOCKED';
+            if (structuredStatus === 'FAIL') return 'FAIL';
+        } catch (_) { /* Keep the subprocess exit status authoritative when output is malformed. */ }
+    }
+    return exitCode === 0 && !timedOut ? 'PASS' : 'FAIL';
+};
+const verificationReceiptStatus = (complete, steps) => {
+    if (steps.some(step => step.status === 'FAIL')) return 'FAIL';
+    if (steps.some(step => step.status === 'BLOCKED')) return 'BLOCKED';
+    return complete ? 'PASS' : 'IN_PROGRESS';
+};
 
 const runCapture = (command, args, env, timeoutMs = 20 * 60 * 1000) => new Promise(resolve => {
     const child = spawn(command, args, {
@@ -81,7 +102,7 @@ const runStep = async (name, command, args, env, timeoutMs) => {
     clearInterval(heartbeat);
     const step = {
         name,
-        status: execution.exitCode === 0 && !execution.timedOut ? 'PASS' : 'FAIL',
+        status: classifyStepExecution(execution),
         exitCode: execution.exitCode,
         timedOut: execution.timedOut,
         startedAt,
@@ -215,7 +236,7 @@ const main = async () => {
     const python = spawnSync('python', ['--version'], { encoding: 'utf8', windowsHide: true });
     if (python.status !== 0 || !/^Python 3\./m.test(`${python.stdout || ''}${python.stderr || ''}`)) validation.push('PYTHON_3_REQUIRED');
     if (shouldRequireDockerEngine(process.env)) {
-        const docker = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], { encoding: 'utf8', windowsHide: true });
+        const docker = dockerInfo();
         if (docker.status !== 0 || !String(docker.stdout || '').trim()) validation.push('DOCKER_ENGINE_UNAVAILABLE');
     }
     const paidGeminiKey = resolvePaidGeminiKey(process.env);
@@ -236,7 +257,7 @@ const main = async () => {
     const receiptPath = path.join(ARTIFACT_ROOT, 'regression', `verify-${runId}.json`);
     const steps = startupValidation.failedPrerequisites.map(failureCode => ({
         name: 'docker-engine-preflight',
-        status: 'FAIL',
+        status: 'BLOCKED',
         exitCode: 1,
         timedOut: false,
         startedAt,
@@ -249,11 +270,10 @@ const main = async () => {
     let realGeminiCandidateRunId = null;
     const offline = requiredEnv();
     const writeReceiptSnapshot = complete => {
-        const failed = steps.some(step => step.status === 'FAIL');
         const receipt = {
             schemaVersion: 1,
             runId,
-            status: complete ? (failed ? 'FAIL' : 'PASS') : failed ? 'FAIL' : 'IN_PROGRESS',
+            status: verificationReceiptStatus(complete, steps),
             complete,
             mode: paidOptIn ? 'PAID_OPT_IN' : 'OFFLINE_DEFAULT',
             startedAt,
@@ -284,7 +304,22 @@ const main = async () => {
         LAB_ORACLE_PATH: path.join(ARTIFACT_ROOT, 'benchmarks', 'heldout-customer-truth-oracle.json'),
     };
     steps.push(await runStep('held-out-oracle-preparation', NODE, [path.join(__dirname, 'benchmark-oracle.js')], heldoutOracleEnv));
-    steps.push(await runStep('postgres-redis-worker-webhook-and-full-backend-regression', NODE, [path.join(__dirname, 'run-integration.js')], offline, 50 * 60 * 1000));
+    if (canRunIntegration(startupValidation)) {
+        steps.push(await runStep('postgres-redis-worker-webhook-and-full-backend-regression', NODE, [path.join(__dirname, 'run-integration.js')], offline, 50 * 60 * 1000));
+    } else {
+        steps.push({
+            name: 'postgres-redis-worker-webhook-and-full-backend-regression',
+            status: 'BLOCKED',
+            exitCode: null,
+            timedOut: false,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            outputSha256: null,
+            failureCode: 'DOCKER_ENGINE_UNAVAILABLE',
+            timeoutCleanup: null,
+            summary: ['No Compose project was started and no existing external service was contacted.'],
+        });
+    }
     const securityEnv = { ...offline, GROWTH_OS_ENABLED: 'false' };
     const securityScript = JSON.parse(fs.readFileSync(path.join(BACKEND_ROOT, 'package.json'), 'utf8')).scripts['test:security'];
     const securityReportPath = path.join(os.tmpdir(), `product-v13-security-${crypto.randomUUID()}.json`);
@@ -434,4 +469,4 @@ if (require.main === module) main().catch(() => {
     process.exitCode = 1;
 });
 
-module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, partitionStartupValidation, requiredEnv, resolvePaidGeminiKey, runCapture, shouldRequireDockerEngine };
+module.exports = { canRunIntegration, classifyStepExecution, dockerInfo, finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, partitionStartupValidation, requiredEnv, resolvePaidGeminiKey, runCapture, shouldRequireDockerEngine, verificationReceiptStatus };

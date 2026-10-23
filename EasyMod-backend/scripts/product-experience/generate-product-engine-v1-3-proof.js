@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 const { execFileSync } = require('node:child_process');
 
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
@@ -14,8 +15,18 @@ const COMPARISON_ROOT = path.join(ARTIFACT_ROOT, 'comparisons');
 const RUN_ROOT = path.join(ARTIFACT_ROOT, 'runs');
 const SOURCE_PATH = path.join(WORKSPACE_ROOT, 'customer-simulator.csv');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
+const SEMANTIC_USEFULNESS_CEILING_USD = 0.85;
 const CAMPAIGN_ID = process.env.LAB_CAMPAIGN_ID || 'v13-cf6f18b2-2a9a-4831-ad42-2b8509bfcd35';
 const { summarizeTurnEvidence } = require('./turn-evidence-metrics');
+const {
+    SCORE_FIELDS,
+    USEFULNESS_RUBRIC_VERSION,
+    buildUsefulnessCases,
+    selectJudgeConsistencyCases,
+    summarizeJudgeConsistency,
+    summarizeUsefulnessResults,
+} = require('./semantic-usefulness');
+const { GEMINI_PRICE_SNAPSHOT, GEMINI_PRO_PRICE_SNAPSHOT } = require('./evaluation-budget');
 const PROOF_JSON = path.join(ARTIFACT_ROOT, 'product-engine-v1.3-proof.json');
 const PROOF_MARKDOWN = path.join(DOC_ROOT, 'PRODUCT_ENGINE_V1_3_INTEGRATION_CUSTOMER_TRUTH_PROOF.md');
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -524,11 +535,288 @@ const assessRealGeminiQuality = (comparison, candidate, expected = null) => {
         && candidate.crossDomainHandoffTurns !== expected.crossDomainHandoffTurns) failedMetrics.push('oracleCrossDomainHandoffDenominator');
     return { status: failedMetrics.length ? 'FAIL' : 'PASS', metricsAvailable: true, missingMetrics: [], failedMetrics };
 };
-const runArtifactFor = (entry, engineName) => {
+const summarizeRealGeminiHeldoutEvaluation = ({ comparison, candidate, run, currentRunnerSourceSha256, expected }) => {
+    if (!comparison) return {
+        status: 'NOT_RUN', runnerProvenanceStatus: 'NOT_RUN',
+        quality: { status: 'NOT_RUN', metricsAvailable: false, missingMetrics: [], failedMetrics: [] },
+    };
+    if (comparison.mode !== 'real-gemini' || comparison.dataset !== 'heldout' || comparison.comparisonValid !== true) return {
+        status: 'NOT_MEASURED', runnerProvenanceStatus: 'NOT_MEASURED',
+        quality: { status: 'NOT_MEASURED', metricsAvailable: false, missingMetrics: [], failedMetrics: [] },
+    };
+    const runnerProvenanceStatus = !run?.runnerSourceSha256 || !currentRunnerSourceSha256 ? 'NOT_MEASURED'
+        : run.runnerSourceSha256 === currentRunnerSourceSha256 ? 'PASS' : 'DIFFERENT';
+    const quality = assessRealGeminiQuality(comparison, candidate, expected);
+    const status = runnerProvenanceStatus === 'DIFFERENT' || quality.status === 'FAIL' ? 'FAIL'
+        : runnerProvenanceStatus === 'PASS' && quality.status === 'PASS' ? 'PASS' : 'NOT_MEASURED';
+    return { status, runnerProvenanceStatus, quality };
+};
+
+const summarizeCustomerUsefulnessEvaluation = ({
+    comparison, evaluation, baselineRun, candidateRun, currentHead, currentRunnerSourceSha256,
+    comparisonSha256, reportPath = null, reportSha256 = null,
+}) => {
+    const notRun = { status: 'NOT_RUN', sampleSize: null, expectedSampleSize: 200, candidate: null, baseline: null };
+    if (!comparison || comparison.mode !== 'real-gemini' || comparison.dataset !== 'heldout'
+        || comparison.comparisonValid !== true) return notRun;
+    if (!evaluation) return notRun;
+    const base = {
+        evaluationId: evaluation.evaluationId || null,
+        comparisonId: comparison.comparisonId || null,
+        model: evaluation.provenance?.model || null,
+        provider: evaluation.provenance?.provider || null,
+        consistencyModel: evaluation.provenance?.consistencyJudge?.model || null,
+        consistencyProvider: evaluation.provenance?.consistencyJudge?.provider || null,
+        rubricVersion: evaluation.provenance?.rubricVersion || null,
+        campaignId: evaluation.budget?.campaignId || null,
+        resultPath: reportPath,
+        resultSha256: reportSha256,
+        estimatedProviderChargeUsd: Number.isFinite(evaluation.budget?.estimatedProviderChargeUsd)
+            ? evaluation.budget.estimatedProviderChargeUsd : null,
+        reservedWorstCaseUsd: Number.isFinite(evaluation.budget?.reservedWorstCaseUsd)
+            ? evaluation.budget.reservedWorstCaseUsd : null,
+        providerInvoice: evaluation.budget?.providerInvoice || 'NOT_AVAILABLE',
+        sampleSize: Number.isSafeInteger(evaluation.summary?.sampleSize) ? evaluation.summary.sampleSize : null,
+        expectedSampleSize: Number.isSafeInteger(evaluation.summary?.expectedSampleSize)
+            ? evaluation.summary.expectedSampleSize : 200,
+        baseline: evaluation.summary?.baseline || null,
+        candidate: evaluation.summary?.candidate || null,
+        answerability: evaluation.summary?.answerability || null,
+        languageBreakdown: evaluation.summary?.languageBreakdown || null,
+        judgeConsistency: evaluation.summary?.judgeConsistency || null,
+        usefulnessStatus: evaluation.summary?.usefulnessStatus || null,
+        screeningCriteria: evaluation.summary?.screeningCriteria || null,
+        candidateMinusBaselineOverallMean: Number.isFinite(evaluation.summary?.candidateMinusBaselineOverallMean)
+            ? evaluation.summary.candidateMinusBaselineOverallMean : null,
+        pairedPreference: evaluation.summary?.pairedPreference || null,
+        allRequestsPriced: evaluation.budget?.unpricedRequestCount === 0,
+        runnerProvenanceStatus: 'NOT_MEASURED',
+        primaryResultsConsistencyStatus: 'NOT_MEASURED',
+    };
+    const mismatch = evaluation.kind !== 'paired-blinded-customer-usefulness-evaluation'
+        || evaluation.comparison?.comparisonId !== comparison.comparisonId
+        || evaluation.comparison?.comparisonSha256 !== comparisonSha256
+        || evaluation.comparison?.datasetSha256 !== comparison.datasetSha256
+        || evaluation.comparison?.oracleSha256 !== comparison.oracleSha256
+        || evaluation.comparison?.baselineRunId !== baselineRun?.runId
+        || evaluation.comparison?.candidateRunId !== candidateRun?.runId
+        || evaluation.comparison?.baselineRunSha256 !== comparison.results?.find(item => item.engine === 'baseline-v1-2')?.artifactSha256
+        || evaluation.comparison?.candidateRunSha256 !== comparison.results?.find(item => item.engine === 'candidate-v1-3')?.artifactSha256
+        || evaluation.comparison?.candidateCommit !== currentHead
+        || comparison.candidateCommit !== currentHead
+        || baselineRun?.sourceRevision !== comparison.baselineCommit
+        || candidateRun?.sourceRevision !== currentHead;
+    if (mismatch) return { ...base, status: 'STALE' };
+    const runnerProvenanceStatus = evaluation.provenance?.runnerSourceSha256 === currentRunnerSourceSha256
+        && baselineRun?.runnerSourceSha256 === currentRunnerSourceSha256
+        && candidateRun?.runnerSourceSha256 === currentRunnerSourceSha256 ? 'PASS' : 'DIFFERENT';
+    if (runnerProvenanceStatus !== 'PASS') return { ...base, status: 'STALE', runnerProvenanceStatus };
+    const summary = evaluation.summary || {};
+    const languageEntries = Object.entries(summary.languageBreakdown || {});
+    const languageDenominator = languageEntries.reduce((sum, [, item]) => sum + (Number.isSafeInteger(item?.denominator) ? item.denominator : 0), 0);
+    const scoreMetricsComplete = arm => SCORE_FIELDS.every(field => Number.isFinite(arm?.[field]?.sum)
+        && Number.isFinite(arm?.[field]?.mean) && arm[field].denominator === 200)
+        && arm?.unnecessaryClarification?.denominator === 200
+        && arm?.repetitive?.denominator === 200
+        && arm?.excessiveSalesPressure?.denominator === 200
+        && arm?.falseRefusal?.denominator === 29;
+    const languageMetricsComplete = languageEntries.length === 3
+        && ['bangla', 'banglish', 'english'].every(language => Number.isSafeInteger(summary.languageBreakdown?.[language]?.denominator)
+            && summary.languageBreakdown[language].denominator > 0
+            && Number.isFinite(summary.languageBreakdown[language].candidate?.languageClarity?.mean)
+            && summary.languageBreakdown[language].candidate.languageClarity.denominator === summary.languageBreakdown[language].denominator
+            && Number.isFinite(summary.languageBreakdown[language].baseline?.languageClarity?.mean)
+            && summary.languageBreakdown[language].baseline.languageClarity.denominator === summary.languageBreakdown[language].denominator)
+        && languageDenominator === 200;
+    let expectedConsistencyCaseIds = [];
+    let expectedUsefulnessCases = [];
+    try {
+        expectedUsefulnessCases = buildUsefulnessCases({
+            baselineRun,
+            candidateRun,
+            comparisonId: comparison.comparisonId,
+        });
+        expectedConsistencyCaseIds = selectJudgeConsistencyCases(expectedUsefulnessCases).map(item => item.caseId);
+    } catch (_) {
+        expectedConsistencyCaseIds = [];
+    }
+    const primaryResults = Array.isArray(evaluation.results) ? evaluation.results : [];
+    const consistencyResults = Array.isArray(evaluation.consistencyResults) ? evaluation.consistencyResults : [];
+    const expectedPrimaryCaseIds = new Set(expectedUsefulnessCases.map(item => item.caseId));
+    const primaryCaseIds = new Set(primaryResults.map(item => item?.caseId));
+    const primaryResultsValid = primaryResults.length === 200
+        && expectedPrimaryCaseIds.size === 200
+        && primaryCaseIds.size === 200
+        && [...expectedPrimaryCaseIds].every(caseId => primaryCaseIds.has(caseId))
+        && primaryResults.every(item => item.judge?.provider === 'gemini-lite'
+            && item.judge?.model === GEMINI_PRICE_SNAPSHOT.model
+            && Number.isFinite(item.scores?.candidate?.overallUsefulness)
+            && Number.isFinite(item.scores?.baseline?.overallUsefulness));
+    let recomputedUsefulness = null;
+    let primaryResultsConsistencyStatus = 'FAIL';
+    try {
+        const primaryResultsById = new Map(primaryResults.map(item => [item.caseId, item]));
+        const primaryJudgeResults = expectedUsefulnessCases.map(item => {
+            const result = primaryResultsById.get(item.caseId);
+            if (!result) throw new Error('MISSING_PRIMARY_RESULT');
+            const scores = result.scores || {};
+            const candidateLabel = item.presentation.armToEngine.A === 'candidate' ? 'A' : 'B';
+            const baselineLabel = candidateLabel === 'A' ? 'B' : 'A';
+            const preference = scores.preference === 'tie' ? 'TIE'
+                : scores.preference === 'candidate' ? candidateLabel
+                    : scores.preference === 'baseline' ? baselineLabel : null;
+            return {
+                caseId: item.caseId,
+                judge: {
+                    A: item.presentation.armToEngine.A === 'candidate' ? scores.candidate : scores.baseline,
+                    B: item.presentation.armToEngine.B === 'candidate' ? scores.candidate : scores.baseline,
+                    preference,
+                    rationale: scores.rationale,
+                },
+            };
+        });
+        recomputedUsefulness = summarizeUsefulnessResults(expectedUsefulnessCases, primaryJudgeResults);
+        const reportedPrimarySummary = {
+            paired: summary.paired,
+            baseline: summary.baseline,
+            candidate: summary.candidate,
+            answerability: {
+                answerableTurns: summary.answerability?.answerableTurns,
+                notAnswerableTurns: summary.answerability?.notAnswerableTurns,
+            },
+            languageBreakdown: summary.languageBreakdown,
+            candidateMinusBaselineOverallMean: summary.candidateMinusBaselineOverallMean,
+            screeningCriteria: summary.screeningCriteria,
+            usefulnessStatus: summary.usefulnessStatus,
+        };
+        const recomputedPrimarySummary = {
+            paired: recomputedUsefulness.paired,
+            baseline: recomputedUsefulness.baseline,
+            candidate: recomputedUsefulness.candidate,
+            answerability: {
+                answerableTurns: recomputedUsefulness.answerability.answerableTurns,
+                notAnswerableTurns: recomputedUsefulness.answerability.notAnswerableTurns,
+            },
+            languageBreakdown: recomputedUsefulness.languageBreakdown,
+            candidateMinusBaselineOverallMean: recomputedUsefulness.candidateMinusBaselineOverallMean,
+            screeningCriteria: recomputedUsefulness.screeningCriteria,
+            usefulnessStatus: recomputedUsefulness.status,
+        };
+        primaryResultsConsistencyStatus = isDeepStrictEqual(reportedPrimarySummary, recomputedPrimarySummary)
+            ? 'PASS' : 'FAIL';
+    } catch (_) {
+        primaryResultsConsistencyStatus = 'FAIL';
+    }
+    const consistencyResultsValid = expectedConsistencyCaseIds.length === 30
+        && consistencyResults.length === 30
+        && consistencyResults.map(item => item.caseId).join('\n') === expectedConsistencyCaseIds.join('\n')
+        && consistencyResults.every(item => item.judge?.provider === 'gemini-pro'
+            && item.judge?.model === GEMINI_PRO_PRICE_SNAPSHOT.model
+            && Number.isFinite(item.scores?.candidate?.overallUsefulness)
+            && Number.isFinite(item.scores?.baseline?.overallUsefulness));
+    const judgeConsistency = summary.judgeConsistency || {};
+    const consistencyStrataComplete = [
+        'bangla:ANSWERABLE', 'bangla:NOT_ANSWERABLE',
+        'banglish:ANSWERABLE', 'banglish:NOT_ANSWERABLE',
+        'english:ANSWERABLE', 'english:NOT_ANSWERABLE',
+    ].every(key => judgeConsistency.stratumCounts?.[key] === 5);
+    let recomputedConsistencyMatches = false;
+    try {
+        const recomputed = summarizeJudgeConsistency(expectedUsefulnessCases, summary.paired, consistencyResults.map(item => ({
+            caseId: item.caseId,
+            baseline: item.scores?.baseline,
+            candidate: item.scores?.candidate,
+            preference: item.scores?.preference,
+        })));
+        recomputedConsistencyMatches = JSON.stringify(recomputed) === JSON.stringify(judgeConsistency);
+    } catch (_) {
+        recomputedConsistencyMatches = false;
+    }
+    const expectedOverallStatus = summary.usefulnessStatus === 'PASS' && judgeConsistency.status === 'PASS'
+        ? 'PASS'
+        : ['INCOMPLETE', undefined].includes(summary.usefulnessStatus) || judgeConsistency.status === 'INCOMPLETE'
+            ? 'INCOMPLETE' : 'FAIL';
+    const complete = evaluation.status === summary.status
+        && summary.status === expectedOverallStatus
+        && summary.complete === true
+        && summary.allRequestsPriced === true
+        && ['PASS', 'FAIL'].includes(summary.usefulnessStatus)
+        && ['PASS', 'FAIL'].includes(judgeConsistency.status)
+        && summary.sampleSize === 200 && summary.expectedSampleSize === 200
+        && summary.screeningCriteria?.completeHeldoutCoverage === true
+        && summary.screeningCriteria?.answerabilityClassCoverage === true
+        && evaluation.provenance?.expectedCases === 200
+        && evaluation.provenance?.expectedRequests === 200
+        && evaluation.provenance?.actualRequests === 200
+        && evaluation.provenance?.provider === 'gemini-lite'
+        && evaluation.provenance?.model === GEMINI_PRICE_SNAPSHOT.model
+        && evaluation.provenance?.rubricVersion === USEFULNESS_RUBRIC_VERSION
+        && evaluation.provenance?.thinkingLevel === null
+        && evaluation.provenance?.temperature === 0
+        && evaluation.provenance?.maxInputTokens === 4096
+        && evaluation.provenance?.maxOutputTokens === 512
+        && evaluation.provenance?.consistencyJudge?.provider === 'gemini-pro'
+        && evaluation.provenance?.consistencyJudge?.model === GEMINI_PRO_PRICE_SNAPSHOT.model
+        && evaluation.provenance?.consistencyJudge?.thinkingLevel === 'low'
+        && evaluation.provenance?.consistencyJudge?.temperature === 0
+        && evaluation.provenance?.consistencyJudge?.expectedCases === 30
+        && evaluation.provenance?.consistencyJudge?.expectedRequests === 30
+        && evaluation.provenance?.consistencyJudge?.actualRequests === 30
+        && evaluation.provenance?.consistencyJudge?.casesPerLanguageAnswerabilityStratum === 5
+        && evaluation.budget?.requestCount === 230
+        && evaluation.budget?.expectedRequests === 230
+        && evaluation.budget?.visionRequestCount === 0
+        && evaluation.budget?.unpricedRequestCount === 0
+        && evaluation.budget?.ceilingUsd === SEMANTIC_USEFULNESS_CEILING_USD
+        && Number.isFinite(evaluation.budget?.reservedWorstCaseUsd)
+        && evaluation.budget.reservedWorstCaseUsd > 0
+        && evaluation.budget.reservedWorstCaseUsd <= SEMANTIC_USEFULNESS_CEILING_USD
+        && Number.isFinite(evaluation.budget?.estimatedProviderChargeUsd)
+        && evaluation.budget.estimatedProviderChargeUsd <= SEMANTIC_USEFULNESS_CEILING_USD
+        && evaluation.budget?.providerInvoice === 'NOT_AVAILABLE'
+        && primaryResultsValid
+        && primaryResultsConsistencyStatus === 'PASS'
+        && consistencyResultsValid
+        && judgeConsistency.sampleSize === 30
+        && judgeConsistency.expectedSampleSize === 30
+        && recomputedConsistencyMatches
+        && consistencyStrataComplete
+        && judgeConsistency.screeningCriteria?.completeCoverage === true
+        && judgeConsistency.screeningCriteria?.preferenceAgreementAtLeast60Percent === true
+        && judgeConsistency.screeningCriteria?.bothMeanAbsoluteDifferencesAtMost1 === true
+        && summary.answerability?.answerableTurns === 29
+        && summary.answerability?.notAnswerableTurns === 171
+        && languageMetricsComplete
+        && scoreMetricsComplete(summary.candidate)
+        && scoreMetricsComplete(summary.baseline)
+        && Number.isFinite(summary.candidate?.overallUsefulness?.sum)
+        && summary.candidate.overallUsefulness.denominator === 200
+        && Number.isFinite(summary.candidate.overallUsefulness.mean)
+        && Number.isFinite(summary.baseline?.overallUsefulness?.sum)
+        && summary.baseline.overallUsefulness.denominator === 200
+        && Number.isFinite(summary.baseline.overallUsefulness.mean)
+        && summary.pairedPreference?.denominator === 200;
+    if (!complete) return { ...base, status: 'INCOMPLETE', runnerProvenanceStatus, primaryResultsConsistencyStatus };
+    return {
+        ...base,
+        status: summary.status === 'PASS' ? 'PASS' : summary.status === 'FAIL' ? 'FAIL' : 'INCOMPLETE',
+        runnerProvenanceStatus,
+        primaryResultsConsistencyStatus,
+    };
+};
+const readVerifiedRunArtifactBytes = (result, bytes, required = false) => {
+    if (!result || !Buffer.isBuffer(bytes)) return null;
+    const recordedHash = result.artifactSha256;
+    if (required && !/^[a-f0-9]{64}$/.test(recordedHash || '')) return null;
+    if (recordedHash && (!/^[a-f0-9]{64}$/.test(recordedHash) || sha256(bytes) !== recordedHash)) return null;
+    try { return JSON.parse(bytes.toString('utf8')); } catch (_) { return null; }
+};
+
+const runArtifactFor = (entry, engineName, requireHash = false) => {
     const result = entry?.value.results?.find(item => item.engine === engineName);
     const filename = result?.artifactPath ? pathInside(ARTIFACT_ROOT, result.artifactPath) : null;
     if (!filename || !fs.existsSync(filename)) return null;
-    try { return readJson(filename); } catch (_) { return null; }
+    try { return readVerifiedRunArtifactBytes(result, fs.readFileSync(filename), requireHash); } catch (_) { return null; }
 };
 
 const metric = value => Number.isFinite(value) ? value : 'NOT_MEASURED';
@@ -551,7 +839,9 @@ const isIntegrationServiceReady = (integration, serviceName) => {
 };
 const verificationStepState = step => !step ? 'NOT_RUN'
     : step.timedOut ? 'TIMED_OUT'
-        : step.status === 'PASS' ? 'PASS' : 'INCOMPLETE';
+        : step.status === 'PASS' ? 'PASS' : step.status === 'BLOCKED' ? 'BLOCKED' : 'INCOMPLETE';
+const proofGeneratorStatus = verdict => verdict === 'PASS' ? 'PASS' : verdict === 'FAIL' ? 'FAIL' : 'BLOCKED';
+const proofGeneratorExitCode = verdict => verdict === 'PASS' ? 0 : 1;
 const assessPlaywrightExecution = report => {
     if (!report) return 'NOT_RUN';
     if (report.playwrightExitCode === 0 && (report.tests?.failed || 0) === 0 && (report.tests?.passed || 0) > 0) return 'PASS';
@@ -670,9 +960,12 @@ const main = () => {
         ? matchingComparison('deterministic', 'heldout', heldoutHash, heldoutOracleSha, currentEngineHash) : null;
     const realComparisonEntry = sourceOracle
         ? matchingComparison('real-gemini', 'source', sourceHash, sourceOracleSha, currentEngineHash) : null;
+    const realHeldoutComparisonEntry = heldoutOracle
+        ? matchingComparison('real-gemini', 'heldout', heldoutHash, heldoutOracleSha, currentEngineHash) : null;
     const sourceComparison = sourceComparisonEntry?.value || null;
     const heldoutComparison = heldoutComparisonEntry?.value || null;
     const realComparison = realComparisonEntry?.value || null;
+    const realHeldoutComparison = realHeldoutComparisonEntry?.value || null;
     const realComparisonValid = realComparison?.comparisonValid === true;
     const sourceCandidate = comparisonSummary(sourceComparisonEntry, 'candidate-v1-3');
     const sourceBaseline = comparisonSummary(sourceComparisonEntry, 'baseline-v1-2');
@@ -683,6 +976,33 @@ const main = () => {
     const sourceRun = runArtifactFor(sourceComparisonEntry, 'candidate-v1-3');
     const realBaselineRun = runArtifactFor(realComparisonEntry, 'baseline-v1-2');
     const realRun = runArtifactFor(realComparisonEntry, 'candidate-v1-3');
+    const realHeldoutBaseline = comparisonSummary(realHeldoutComparisonEntry, 'baseline-v1-2');
+    const realHeldoutCandidate = comparisonSummary(realHeldoutComparisonEntry, 'candidate-v1-3');
+    const realHeldoutBaselineRun = runArtifactFor(realHeldoutComparisonEntry, 'baseline-v1-2', true);
+    const realHeldoutRun = runArtifactFor(realHeldoutComparisonEntry, 'candidate-v1-3', true);
+    const realHeldoutComparisonSha256 = realHeldoutComparisonEntry?.filename
+        ? sha256(fs.readFileSync(realHeldoutComparisonEntry.filename)) : null;
+    const customerUsefulnessEntry = realHeldoutComparison
+        ? newestMatching(path.join(ARTIFACT_ROOT, 'reports'), item => item.kind === 'paired-blinded-customer-usefulness-evaluation'
+            && item.comparison?.comparisonId === realHeldoutComparison.comparisonId
+            && item.comparison?.baselineRunId === realHeldoutBaselineRun?.runId
+            && item.comparison?.candidateRunId === realHeldoutRun?.runId)
+        : null;
+    const customerUsefulnessReportPath = customerUsefulnessEntry?.filename
+        ? path.relative(ARTIFACT_ROOT, customerUsefulnessEntry.filename).replace(/\\/g, '/') : null;
+    const customerUsefulnessReportSha256 = customerUsefulnessEntry?.filename
+        ? sha256(fs.readFileSync(customerUsefulnessEntry.filename)) : null;
+    const customerUsefulnessEvaluation = summarizeCustomerUsefulnessEvaluation({
+        comparison: realHeldoutComparison,
+        evaluation: customerUsefulnessEntry?.value || null,
+        baselineRun: realHeldoutBaselineRun,
+        candidateRun: realHeldoutRun,
+        currentHead: head,
+        currentRunnerSourceSha256,
+        comparisonSha256: realHeldoutComparisonSha256,
+        reportPath: customerUsefulnessReportPath,
+        reportSha256: customerUsefulnessReportSha256,
+    });
     const realBaselineRunLedgerPath = realBaselineRun?.runId ? path.join(ARTIFACT_ROOT, 'runs', `${realBaselineRun.runId}.budget-ledger.json`) : null;
     const realBaselineRunLedger = realBaselineRunLedgerPath && fs.existsSync(realBaselineRunLedgerPath)
         ? readJson(realBaselineRunLedgerPath) : null;
@@ -759,7 +1079,7 @@ const main = () => {
             evaluated: Number.isFinite(evaluated) ? evaluated : null, rate: null };
     const notMeasured = note => ({ status: 'NOT_MEASURED', numerator: null, denominator: null, rate: null, note });
     const customerQualityMetricAudit = {
-        uncertainty: 'No population confidence intervals were calculated. The benchmark and three public-photo sample are fixed convenience fixtures, not random samples; out-of-sample uncertainty and customer usefulness remain unmeasured.',
+        uncertainty: 'No population confidence intervals were calculated. The benchmark and three public-photo sample are fixed convenience fixtures, not random samples; out-of-sample customer usefulness remains unmeasured. The paired LLM judge uses the Gemini family and is supporting evidence, not independent ground truth.',
         metrics: {
             PRODUCT_IDENTITY_ACCURACY: {
                 source: notMeasured('Identity-only accuracy is not isolated from the aggregate fact-slot score.'),
@@ -814,8 +1134,17 @@ const main = () => {
                 note: 'Visible category and color are supporting attributes, not catalog SKU identity accuracy.',
             },
             CUSTOMER_USEFULNESS_SCORE: {
-                source: notMeasured('No blinded, separately configured semantic evaluator or usefulness score was recorded.'),
-                realGemini: notMeasured('No blinded, separately configured semantic evaluator or usefulness score was recorded.'),
+                source: notMeasured('Semantic usefulness is evaluated on the paid held-out Gemini pair.'),
+                realGemini: {
+                    status: customerUsefulnessEvaluation.status,
+                    candidate: customerUsefulnessEvaluation.candidate?.overallUsefulness || null,
+                    baseline: customerUsefulnessEvaluation.baseline?.overallUsefulness || null,
+                    candidateUsefulAtLeast4: customerUsefulnessEvaluation.candidate?.usefulAtLeast4 || null,
+                    pairedPreference: customerUsefulnessEvaluation.pairedPreference || null,
+                    candidateMinusBaselineMean: customerUsefulnessEvaluation.candidateMinusBaselineOverallMean ?? null,
+                    sampleSize: customerUsefulnessEvaluation.sampleSize,
+                    note: 'Randomized blinded A/B pairs scored by a separately configured Gemini Pro evaluator; same-family correlation remains and the deterministic oracle remains authoritative for facts.',
+                },
             },
         },
     };
@@ -888,6 +1217,22 @@ const main = () => {
     };
     const sourceTruthQuality = assessRealGeminiQuality(sourceComparison, sourceCandidate, expectedCustomerDenominators);
     const realGeminiQuality = assessRealGeminiQuality(realComparison, realCandidate, expectedCustomerDenominators);
+    const heldoutExpectedDenominators = heldoutOracle ? {
+        sourceTurns: heldoutOracle.source?.turns,
+        eligibleFactSlots: heldoutOracle.summary?.eligibleFactSlots,
+        answerableProductTurns: heldoutOracle.summary?.answerableProductTurns,
+        falseRefusalExpectedTurns: heldoutOracle.summary?.answerableProductTurns,
+        contextDependentAnswerableTurns: heldoutOracle.turns?.filter(turn => turn.eligibility === 'ANSWERABLE'
+            && turn.textOnlyMetricEligible === true && turn.sourceContextProductId).length,
+        crossDomainHandoffTurns: heldoutOracle.summary?.crossDomainHandoffRequests,
+    } : null;
+    const realGeminiHeldoutEvaluation = summarizeRealGeminiHeldoutEvaluation({
+        comparison: realHeldoutComparison,
+        candidate: realHeldoutCandidate,
+        run: realHeldoutRun,
+        currentRunnerSourceSha256,
+        expected: heldoutExpectedDenominators,
+    });
     const sourceTruthMetricsAvailable = Boolean(sourceComparisonValid && sourceCandidate);
     const visualAcceptanceComplete = visualCaseCoverage.representedCaseTypes === visualCaseCoverage.requiredCaseTypes
         && photos.length > 0 && photos.every(photo => photo.productCatalogIdentityScored === true);
@@ -908,6 +1253,8 @@ const main = () => {
         && verificationReceipt.steps.every(step => step.status === 'PASS' || step.status === 'NOT_RUN_OFFLINE_DEFAULT');
     const requiredEvidencePresent = sourceComparisonValid && heldoutComparisonValid && integrationPass && playwrightPass
         && securityPass && privacyPass && realGeminiStatus === 'PASS' && realGeminiQuality.status === 'PASS'
+        && realGeminiHeldoutEvaluation.status === 'PASS'
+        && customerUsefulnessEvaluation.status === 'PASS'
         && genuinePhotoQuality.status === 'PASS' && visualAcceptanceComplete
         && runnerProvenanceStatus === 'PASS' && independentPass;
     const hasNonTimeoutVerificationFailure = verificationReceipt?.steps?.some(step => step.status === 'FAIL' && !step.timedOut
@@ -917,6 +1264,8 @@ const main = () => {
             .some(item => (item && item.status === 'FAIL') || (item && item.comparisonValid === false))
         || playwrightAssessment === 'FAIL'
         || realGeminiQuality.status === 'FAIL'
+        || realGeminiHeldoutEvaluation.status === 'FAIL'
+        || customerUsefulnessEvaluation.status === 'FAIL'
         || genuinePhotoQuality.status === 'FAIL';
     const automatedQaVerdict = assessAutomatedQaVerdict({
         hasAutomatedFailure,
@@ -935,6 +1284,11 @@ const main = () => {
     const totalIncorrectOrUnansweredSlots = Array.isArray(sourceRun?.turns) ? sourceRun.turns
         .filter(turn => turn.oracle?.textOnlyMetricEligible && turn.oracle?.eligibility === 'ANSWERABLE')
         .reduce((sum, turn) => sum + (turn.factScores?.incorrectOrUnansweredSlots || 0), 0) : null;
+    const usefulnessCandidateMean = customerUsefulnessEvaluation.candidate?.overallUsefulness?.mean;
+    const usefulnessBaselineMean = customerUsefulnessEvaluation.baseline?.overallUsefulness?.mean;
+    const machineUsefulnessScore = Number.isFinite(usefulnessCandidateMean)
+        ? `${usefulnessCandidateMean.toFixed(3)}/5 (n=${customerUsefulnessEvaluation.sampleSize}); V1.2 ${Number.isFinite(usefulnessBaselineMean) ? usefulnessBaselineMean.toFixed(3) : 'NOT_MEASURED'}/5; delta ${Number.isFinite(customerUsefulnessEvaluation.candidateMinusBaselineOverallMean) ? customerUsefulnessEvaluation.candidateMinusBaselineOverallMean.toFixed(3) : 'NOT_MEASURED'}`
+        : 'NOT_MEASURED';
     const machineStatus = {
         PROJECT: 'EasyModerator',
         MILESTONE: 'Product Engine V1.3',
@@ -1017,8 +1371,10 @@ const main = () => {
         GEMINI_LITE_PHOTO_FOLLOW_UP_COST_USD: currentBoundGeminiLitePhotoRun?.estimatedProviderChargeUsd ?? 'NOT_MEASURED',
         GEMINI_LITE_PHOTO_FOLLOW_UP_RESERVED_USD: currentBoundGeminiLitePhotoRun?.reservedWorstCaseUsd ?? 'NOT_MEASURED',
         GEMINI_LITE_PHOTO_FOLLOW_UP_IDENTITY_SCORED: currentBoundGeminiLitePhotoRun?.identityScored === true ? 'YES' : 'NO',
-        REAL_GEMINI_HELDOUT_EVALUATION: 'NOT_RUN',
-        CUSTOMER_USEFULNESS_SCORE: 'NOT_MEASURED',
+        REAL_GEMINI_HELDOUT_EVALUATION: realGeminiHeldoutEvaluation.status,
+        REAL_GEMINI_HELDOUT_RUNNER_PROVENANCE: realGeminiHeldoutEvaluation.runnerProvenanceStatus,
+        CUSTOMER_USEFULNESS_SCORE: machineUsefulnessScore,
+        CUSTOMER_USEFULNESS_EVALUATION: customerUsefulnessEvaluation.status,
         V13_DISTINCT_CAMPAIGN_LEDGER_COUNT: aggregateBudgetReconciliation.distinctCampaignCount,
         V13_AGGREGATE_CAMPAIGN_REQUESTS: aggregateBudgetReconciliation.requestCount ?? 'NOT_MEASURED',
         V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS: aggregateBudgetReconciliation.visionRequestCount ?? 'NOT_MEASURED',
@@ -1078,6 +1434,29 @@ const main = () => {
             oracleSha256: heldoutComparison.oracleSha256,
             baseline: heldoutBaseline,
             candidate: heldoutCandidate,
+        } : null,
+        realGeminiHeldout: realHeldoutComparison ? {
+            comparisonId: realHeldoutComparison.comparisonId,
+            valid: realHeldoutComparison.comparisonValid,
+            status: realGeminiHeldoutEvaluation.status,
+            quality: realGeminiHeldoutEvaluation.quality,
+            model: realHeldoutComparison.model,
+            sourceSha256: realHeldoutComparison.datasetSha256,
+            oracleSha256: realHeldoutComparison.oracleSha256,
+            expected: heldoutExpectedDenominators,
+            runnerProvenance: {
+                status: realGeminiHeldoutEvaluation.runnerProvenanceStatus,
+                paidCandidateRunnerSha256: realHeldoutRun?.runnerSourceSha256 || null,
+                currentRunnerSha256: currentRunnerSourceSha256,
+            },
+            semanticEvaluation: customerUsefulnessEvaluation,
+            baseline: realHeldoutBaseline,
+            candidate: realHeldoutCandidate,
+            semanticEvaluation: customerUsefulnessEvaluation,
+            estimatedProviderChargeUsdBothEngines: realHeldoutComparison.comparisonValid
+                ? realHeldoutComparison.results.reduce((sum, result) => sum
+                    + (Number.isFinite(result.summary?.estimatedProviderChargeUsd) ? result.summary.estimatedProviderChargeUsd : 0), 0)
+                : null,
         } : null,
         realGemini: realComparison ? {
             comparisonId: realComparison.comparisonId,
@@ -1162,6 +1541,7 @@ const main = () => {
             heldoutTurns: heldoutOracle?.source?.turns ?? null,
         },
         customerQualityMetricAudit,
+        customerUsefulnessEvaluation,
         visualCaseCoverage,
         comparisons: comparisonDetails,
         supplementaryGeminiProPhotoDiagnostics: {
@@ -1259,12 +1639,14 @@ const main = () => {
             'Three licensed public photos are a small vision probe and are not customer-upload photos or a representative accuracy study.',
             'Synthetic source turns do not establish conversion, merchant time saved, adoption, or ROI.',
             'Fake Meta transport and local test data do not establish live Meta delivery or production behavior.',
+            'The customer-usefulness judge is a separate Gemini Pro configuration in the same model family as the response generator; its scores support review and do not establish independent truth.',
             'INCORRECT_PRODUCT_ANSWERS is not separately measured; incorrectOrUnansweredFactSlots combines partial answers and false refusals.',
         ],
     };
 
     const markdown = renderMarkdown(proof, machineStatus, sourceRunResults, comparisonDetails, {
         sourceOracle, sourceComparison, sourceCandidate, sourceBaseline, heldoutComparison, heldoutBaseline, heldoutCandidate,
+        realGeminiHeldout: comparisonDetails.realGeminiHeldout,
         realComparison, realBaseline, realCandidate, realGeminiQuality, genuinePhotoQuality,
         customerQualityMetricAudit, visualCaseCoverage,
         photosTested, photoCategoryMatches, photoColorMatches,
@@ -1281,7 +1663,7 @@ const main = () => {
     fs.writeFileSync(PROOF_JSON, `${JSON.stringify(proof, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     fs.writeFileSync(PROOF_MARKDOWN, markdown, 'utf8');
     process.stdout.write(JSON.stringify({
-        status: automatedQaVerdict === 'FAIL' ? 'FAIL' : 'PASS',
+        status: proofGeneratorStatus(automatedQaVerdict),
         proofJson: PROOF_JSON,
         proofMarkdown: PROOF_MARKDOWN,
         sourceComparisonValid,
@@ -1296,7 +1678,7 @@ const main = () => {
         answerableProductTurns: machineStatus.ANSWERABLE_PRODUCT_TURNS,
         verifiedCorrectAnswers: machineStatus.VERIFIED_CORRECT_ANSWERS,
     }) + '\n');
-    if (automatedQaVerdict === 'FAIL') process.exitCode = 1;
+    if (proofGeneratorExitCode(automatedQaVerdict) !== 0) process.exitCode = 1;
 };
 
 function summarizeRunLedger(ledger) {
@@ -1405,6 +1787,15 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
                 + metricDisplay(metric.visibleCategory) + '; visible color ' + metricDisplay(metric.visibleColor)
                 + '; catalog SKU identity ' + metricDisplay(metric.catalogIdentity);
             note = metric.note || 'Catalog identity not scored.';
+        }
+        if (name === 'CUSTOMER_USEFULNESS_SCORE') {
+            deterministic = 'NOT_APPLICABLE';
+            const baselineMean = metric.realGemini?.baseline?.mean;
+            const candidateMean = metric.realGemini?.candidate?.mean;
+            const useful = metric.realGemini?.candidateUsefulAtLeast4;
+            const preference = metric.realGemini?.pairedPreference;
+            paid = `${metric.realGemini?.status || 'NOT_MEASURED'}; V1.3 ${Number.isFinite(candidateMean) ? candidateMean.toFixed(3) : 'NOT_MEASURED'}/5 (n=${metric.realGemini?.sampleSize ?? 'NOT_MEASURED'}); V1.2 ${Number.isFinite(baselineMean) ? baselineMean.toFixed(3) : 'NOT_MEASURED'}/5; scores 4-5 ${useful?.numerator ?? 'NOT_MEASURED'}/${useful?.denominator ?? 'NOT_MEASURED'}; preference candidate/baseline/tie ${preference?.candidatePreferred ?? 'NOT_MEASURED'}/${preference?.baselinePreferred ?? 'NOT_MEASURED'}/${preference?.tie ?? 'NOT_MEASURED'}`;
+            note = metric.realGemini?.note || 'Same-family LLM judge; factual claims remain governed by the deterministic oracle.';
         }
         return '| ' + name + ' | ' + deterministic + ' | ' + paid + ' | ' + note + ' |';
     });
@@ -1531,6 +1922,41 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
     const rejectedReservationLabel = rejectedCampaignAttempts === 1 ? 'rejected reservation' : 'rejected reservations';
     const observedIncompleteCost = Number.isFinite(comparisons.realGemini?.observedPricedProviderChargeUsdAcrossIncompleteAttempts)
         ? `$${comparisons.realGemini.observedPricedProviderChargeUsdAcrossIncompleteAttempts.toFixed(8)}` : 'NOT_MEASURED';
+    const heldoutGeminiBlock = details.realGeminiHeldout
+        ? `Held-out Gemini comparison: ${details.realGeminiHeldout.status}; ${details.realGeminiHeldout.candidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realGeminiHeldout.expected?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realGeminiHeldout.candidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realGeminiHeldout.expected?.answerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified. Context failures: ${details.realGeminiHeldout.candidate?.contextResolutionFailures ?? 'NOT_MEASURED'} across ${details.realGeminiHeldout.candidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_MEASURED'}/${details.realGeminiHeldout.expected?.contextDependentAnswerableTurns ?? 'NOT_MEASURED'} held-out context turns; safe handoffs: ${details.realGeminiHeldout.candidate?.safeCrossDomainHandoffs ?? 'NOT_MEASURED'}/${details.realGeminiHeldout.expected?.crossDomainHandoffTurns ?? 'NOT_MEASURED'}. Runner provenance: ${details.realGeminiHeldout.runnerProvenance?.status || 'NOT_MEASURED'}; matched-pair estimated spend: ${Number.isFinite(details.realGeminiHeldout.estimatedProviderChargeUsdBothEngines) ? `$${details.realGeminiHeldout.estimatedProviderChargeUsdBothEngines.toFixed(8)}` : 'NOT_MEASURED'}.`
+        : `Held-out Gemini comparison: ${status.REAL_GEMINI_HELDOUT_EVALUATION}; customer usefulness is separately scored: ${status.CUSTOMER_USEFULNESS_SCORE}.`;
+    const usefulness = details.realGeminiHeldout?.semanticEvaluation;
+    const usefulnessLabels = {
+        overallUsefulness: 'Overall usefulness',
+        relevance: 'Relevance',
+        contextContinuity: 'Context continuity',
+        languageClarity: 'Language clarity',
+        naturalness: 'Naturalness',
+        conciseCompleteness: 'Concise completeness',
+        nextStepHelpfulness: 'Next-step helpfulness',
+        customerQuestionResolution: 'Question resolution',
+    };
+    const usefulnessScoreRows = usefulness ? SCORE_FIELDS.map(field => {
+        const baseline = usefulness.baseline?.[field];
+        const candidate = usefulness.candidate?.[field];
+        return `| ${usefulnessLabels[field] || field} | ${Number.isFinite(baseline?.mean) ? baseline.mean.toFixed(3) : 'NOT_MEASURED'}/5 | ${Number.isFinite(candidate?.mean) ? candidate.mean.toFixed(3) : 'NOT_MEASURED'}/5 | ${candidate?.denominator ?? 'NOT_MEASURED'} |`;
+    }).join('\n') : '';
+    const usefulnessBehaviorRows = usefulness ? [
+        ['Unnecessary clarification', 'unnecessaryClarification'],
+        ['Repetitive wording', 'repetitive'],
+        ['Excessive sales pressure', 'excessiveSalesPressure'],
+        ['False refusal on oracle-answerable turns', 'falseRefusal'],
+    ].map(([label, field]) => {
+        const baseline = usefulness.baseline?.[field];
+        const candidate = usefulness.candidate?.[field];
+        return `| ${label} | ${baseline?.numerator ?? 'NOT_MEASURED'}/${baseline?.denominator ?? 'NOT_MEASURED'} | ${candidate?.numerator ?? 'NOT_MEASURED'}/${candidate?.denominator ?? 'NOT_MEASURED'} |`;
+    }).join('\n') : '';
+    const usefulnessLanguageRows = usefulness ? Object.entries(usefulness.languageBreakdown || {}).map(([language, metrics]) =>
+        `| ${language} | ${metrics.baseline?.languageClarity?.mean?.toFixed?.(3) ?? 'NOT_MEASURED'}/5 | ${metrics.candidate?.languageClarity?.mean?.toFixed?.(3) ?? 'NOT_MEASURED'}/5 | ${metrics.denominator} |`
+    ).join('\n') : '';
+    const customerUsefulnessBlock = usefulness && usefulness.status !== 'NOT_RUN'
+        ? `### Blinded customer-usefulness comparison\n\nStatus: **${usefulness.status}**. Gemini Pro judge model: ${usefulness.model || 'NOT_MEASURED'}; rubric: ${usefulness.rubricVersion || 'NOT_MEASURED'}. V1.2/V1.3 paired sample: ${usefulness.sampleSize ?? 'NOT_MEASURED'}/${usefulness.expectedSampleSize} held-out turns. Shared oracle answerability: ${usefulness.answerability?.answerableTurns ?? 'NOT_MEASURED'} answerable and ${usefulness.answerability?.notAnswerableTurns ?? 'NOT_MEASURED'} not answerable. Candidate scores of 4 or 5: ${usefulness.candidate?.usefulAtLeast4?.numerator ?? 'NOT_MEASURED'}/${usefulness.candidate?.usefulAtLeast4?.denominator ?? 'NOT_MEASURED'}. Blind pair preference, candidate/tie/baseline: ${usefulness.pairedPreference?.candidatePreferred ?? 'NOT_MEASURED'}/${usefulness.pairedPreference?.tie ?? 'NOT_MEASURED'}/${usefulness.pairedPreference?.baselinePreferred ?? 'NOT_MEASURED'}. Overall mean difference: ${Number.isFinite(usefulness.candidateMinusBaselineOverallMean) ? usefulness.candidateMinusBaselineOverallMean.toFixed(3) : 'NOT_MEASURED'}. Estimated judge spend: ${Number.isFinite(usefulness.estimatedProviderChargeUsd) ? `$${usefulness.estimatedProviderChargeUsd.toFixed(8)}` : 'NOT_MEASURED'}; worst-case reserved: ${Number.isFinite(usefulness.reservedWorstCaseUsd) ? `$${usefulness.reservedWorstCaseUsd.toFixed(8)}` : 'NOT_MEASURED'}; invoice: ${usefulness.providerInvoice || 'NOT_AVAILABLE'}. Report: ${usefulness.resultPath || 'NOT_RECORDED'} (SHA-256 ${usefulness.resultSha256 || 'NOT_RECORDED'}).\n\n| Score | V1.2 mean | V1.3 mean | n |\n|---|---:|---:|---:|\n${usefulnessScoreRows}\n\n| Behavior flag | V1.2 count/n | V1.3 count/n |\n|---|---:|---:|\n${usefulnessBehaviorRows}\n\n| Language | V1.2 clarity | V1.3 clarity | n |\n|---|---:|---:|---:|\n${usefulnessLanguageRows}\n\nA/B order was randomized, and engine names, scenario IDs, product IDs, and expected answers were hidden. Both replies shared the deterministic oracle answerability class so the judge could score false refusals. The generator and judge are both Gemini-family models, so these scores are supporting evidence only; factual correctness remains determined by the frozen catalog oracle. Per-case structured ratings and rationales are retained in the report.`
+        : 'Blinded customer-usefulness evaluation: NOT_RUN.';
     const geminiBlock = details.realComparison?.comparisonValid === true
         ? `Credential status: ${comparisons.realGemini.credentialStatus || 'NOT_MEASURED'}; the process-scoped value is not recorded. Model: ${comparisons.realGemini.model || 'not recorded'}. Provider-reported traffic across matched arms: ${comparisons.realGemini.providerTextCallsBothEngines ?? 'NOT_MEASURED'} text and ${comparisons.realGemini.providerVisionCallsBothEngines ?? 'NOT_MEASURED'} vision calls. Request attempts across matched arms: ${comparisons.realGemini.textRequestAttemptsBothEngines ?? 'NOT_MEASURED'} text and ${comparisons.realGemini.visionRequestAttemptsBothEngines ?? 'NOT_MEASURED'} vision. Candidate run ledger: ${details.realCandidate?.requestAttempts ?? 'NOT_MEASURED'} request attempts, ${details.realCandidate?.providerUsageRecords ?? 'NOT_MEASURED'} provider usage records, ${rejectedCampaignAttempts} ${rejectedReservationLabel}. Estimated matched-pair spend from priced usage: $${Number(comparisons.realGemini.estimatedProviderChargeUsdBothEngines || 0).toFixed(8)}; provider invoice: NOT_AVAILABLE. Candidate route coverage: ${details.realCandidate?.routeExecutedTurns ?? 'NOT_MEASURED'}/200 executed, ${details.realCandidate?.routeNotRunTurns ?? 'NOT_MEASURED'} not run. Candidate quality gate: ${comparisons.realGemini.quality?.status || 'NOT_MEASURED'}; ${details.realCandidate?.verifiedCorrectAnswers ?? 'NOT_MEASURED'}/${details.realCandidate?.eligibleFactSlots ?? 'NOT_MEASURED'} fact slots and ${details.realCandidate?.verifiedCorrectTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.evaluatedAnswerableProductTurns ?? 'NOT_MEASURED'} answerable turns verified; context resolution failures ${details.realCandidate?.contextResolutionFailures ?? 'NOT_MEASURED'} across ${details.realCandidate?.evaluatedContextDependentAnswerableTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.contextDependentAnswerableTurns ?? 'NOT_MEASURED'} fully executed conversation chains (${details.realCandidate?.contextResolutionNotEvaluableTurns ?? 'NOT_MEASURED'} not evaluable); cross-domain safety ${details.realCandidate?.safeCrossDomainHandoffs ?? 'NOT_MEASURED'} safe, ${details.realCandidate?.unsafeCrossDomainHandoffs ?? 'NOT_MEASURED'} unsafe across ${details.realCandidate?.evaluatedCrossDomainHandoffTurns ?? 'NOT_MEASURED'}/${details.realCandidate?.crossDomainHandoffTurns ?? 'NOT_MEASURED'} executed turns (${details.realCandidate?.crossDomainHandoffNotRunTurns ?? 'NOT_MEASURED'} not run). Runner provenance: ${comparisons.realGemini.runnerProvenance?.status || 'NOT_MEASURED'}; paid/current runner hashes ${comparisons.realGemini.runnerProvenance?.paidCandidateRunnerSha256 || 'NOT_RECORDED'}/${comparisons.realGemini.runnerProvenance?.currentRunnerSha256 || 'NOT_RECORDED'}. Candidate unpriced provider calls: ${unpricedCandidateCalls}; ${unpricedCandidateCalls === 0 ? 'all recorded candidate provider usage was priced.' : unpricedCandidateCalls === 'NOT_MEASURED' ? 'provider pricing coverage was not measured from the run ledger.' : 'candidate provider cost estimate may be incomplete.'}`
         : details.realComparison
@@ -1588,6 +2014,7 @@ Generated: ${proof.generatedAt}
 | Gemini comparison | ${status.REAL_GEMINI_STATUS || 'NOT_CAPTURED'} |
 | Gemini credential | ${status.REAL_GEMINI_CREDENTIAL_STATUS || 'NOT_CAPTURED'} |
 | Real Gemini candidate quality | ${status.REAL_GEMINI_QUALITY_VERDICT} |
+| Real Gemini held-out quality | ${status.REAL_GEMINI_HELDOUT_EVALUATION} |
 | Real Gemini photo acceptance | ${status.REAL_GEMINI_VISION_VERDICT || 'NOT_CAPTURED'} |
 | Browser QA | ${status.PLAYWRIGHT_E2E || 'NOT_CAPTURED'} |
 | Backend security tests | ${status.SECURITY_TESTS || 'NOT_CAPTURED'} |
@@ -1649,6 +2076,10 @@ ${exampleText}
 ## E. Gemini
 
 ${geminiBlock}
+
+${heldoutGeminiBlock}
+
+${customerUsefulnessBlock}
 
 ${falseRefusalBlock}
 
@@ -1733,6 +2164,39 @@ This default is offline. To opt into the bounded real Gemini comparison, the cur
 
 The opt-in run uses a persistent campaign ledger capped at $2, 256 requests and 12 vision requests. It does not send live Meta messages or modify production.
 
+To run the frozen 200-turn held-out corpus against real Gemini, use a fresh campaign ID and a ceiling that fits the remaining aggregate authorization. Set \`LAB_ARTIFACT_ROOT\` to the evidence package root before running. The command below reads only the Windows User-scope \`EM_GEMINI_KEY\`, exposes it to the current process under the legacy provider variable, and restores all process variables after the run:
+
+\`\`\`powershell
+$artifactRoot = $env:LAB_ARTIFACT_ROOT
+if ([string]::IsNullOrWhiteSpace($artifactRoot)) { throw 'Set LAB_ARTIFACT_ROOT to the current evidence package root.' }
+$userKey = [Environment]::GetEnvironmentVariable('EM_GEMINI_KEY', 'User')
+if ([string]::IsNullOrWhiteSpace($userKey)) { throw 'Windows User-scope EM_GEMINI_KEY is unavailable.' }
+$campaignId = 'v13-heldout-' + [guid]::NewGuid().ToString('N')
+$keys = @{
+  'EM-GEMINI-KEY' = $userKey
+  LAB_COMPARISON_MODE = 'real-gemini'
+  LAB_COMPARISON_DATASET = 'heldout'
+  LAB_RUN_SCOPE = 'full'
+  LAB_CAMPAIGN_ID = $campaignId
+  LAB_CAMPAIGN_CEILING_USD = '0.80'
+}
+$previous = @{}
+foreach ($name in $keys.Keys) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+try {
+  foreach ($name in $keys.Keys) { [Environment]::SetEnvironmentVariable($name, $keys[$name], 'Process') }
+  node scripts/product-experience/run-engine-comparison.js
+  if ($LASTEXITCODE -ne 0) { throw 'Held-out Gemini comparison failed.' }
+} finally {
+  foreach ($name in $keys.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }
+  $keys['EM-GEMINI-KEY'] = $null
+  $keys = $null
+  $previous = $null
+  $userKey = $null
+}
+\`\`\`
+
+The comparison scores the frozen held-out oracle's product facts and conversation coverage. It does not measure customer usefulness or image recognition; those remain separate gates.
+
 ## Machine-readable status
 
 Machine-readable proof: \`${proof.candidate.evidenceRoot}\\product-engine-v1.3-proof.json\`.
@@ -1750,4 +2214,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, isIntegrationServiceReady, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields };
+module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, isIntegrationServiceReady, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, proofGeneratorExitCode, proofGeneratorStatus, readVerifiedRunArtifactBytes, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeCustomerUsefulnessEvaluation, summarizeGeminiProDiagnostics, summarizeRealGeminiHeldoutEvaluation, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields };

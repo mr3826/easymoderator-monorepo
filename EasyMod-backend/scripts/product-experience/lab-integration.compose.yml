@@ -19,7 +19,7 @@ services:
       retries: 45
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--databases", "16", "--maxmemory", "128mb"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--databases", "23", "--maxmemory", "128mb"]
     ports:
       - "127.0.0.1:${LAB_REDIS_PORT}:6379"
     tmpfs:

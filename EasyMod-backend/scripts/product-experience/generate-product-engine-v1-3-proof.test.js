@@ -3,7 +3,231 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, isIntegrationServiceReady, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields } = require('./generate-product-engine-v1-3-proof');
+const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, isIntegrationServiceReady, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, proofGeneratorExitCode, proofGeneratorStatus, readVerifiedRunArtifactBytes, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeCustomerUsefulnessEvaluation, summarizeGeminiProDiagnostics, summarizeRealGeminiHeldoutEvaluation, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields } = require('./generate-product-engine-v1-3-proof');
+const { buildUsefulnessCases, selectJudgeConsistencyCases, summarizeJudgeConsistency, summarizeUsefulnessResults } = require('./semantic-usefulness');
+
+describe('paid held-out Gemini evaluation summary', () => {
+    const comparison = { mode: 'real-gemini', dataset: 'heldout', comparisonValid: true };
+    const expected = {
+        sourceTurns: 200,
+        eligibleFactSlots: 37,
+        answerableProductTurns: 29,
+        falseRefusalExpectedTurns: 29,
+        contextDependentAnswerableTurns: 24,
+        crossDomainHandoffTurns: 6,
+    };
+    const candidate = {
+        unsupportedClaimsSent: 0, falseRefusalSlots: 0, contextResolutionFailures: 0, unsafeCrossDomainHandoffs: 0,
+        falseRefusalExpectedTurns: 29, falseRefusalEvaluatedTurns: 29,
+        verifiedCorrectAnswers: 37, eligibleFactSlots: 37, evaluatedFactSlots: 37,
+        verifiedCorrectTurns: 29, evaluatedAnswerableProductTurns: 29,
+        contextDependentAnswerableTurns: 24, evaluatedContextDependentAnswerableTurns: 24,
+        crossDomainHandoffTurns: 6, evaluatedCrossDomainHandoffTurns: 6,
+        sourceTurns: 200, routeExecutedTurns: 200, routeNotRunTurns: 0,
+    };
+
+    test('requires complete held-out oracle coverage and current runner provenance', () => {
+        expect(summarizeRealGeminiHeldoutEvaluation({
+            comparison,
+            candidate,
+            run: { runnerSourceSha256: 'a'.repeat(64) },
+            currentRunnerSourceSha256: 'a'.repeat(64),
+            expected,
+        })).toEqual({
+            status: 'PASS',
+            runnerProvenanceStatus: 'PASS',
+            quality: { status: 'PASS', metricsAvailable: true, missingMetrics: [], failedMetrics: [] },
+        });
+    });
+
+    test('fails the held-out result when the recorded runner differs from the current runner', () => {
+        const result = summarizeRealGeminiHeldoutEvaluation({
+            comparison,
+            candidate,
+            run: { runnerSourceSha256: 'b'.repeat(64) },
+            currentRunnerSourceSha256: 'a'.repeat(64),
+            expected,
+        });
+        expect(result.status).toBe('FAIL');
+        expect(result.runnerProvenanceStatus).toBe('DIFFERENT');
+        expect(result.quality.status).toBe('PASS');
+    });
+});
+
+describe('blinded customer-usefulness evidence binding', () => {
+    const comparison = {
+        mode: 'real-gemini', dataset: 'heldout', comparisonValid: true, comparisonId: 'comparison-1',
+        candidateCommit: 'candidate-sha', baselineCommit: 'baseline-sha', datasetSha256: 'dataset-sha', oracleSha256: 'oracle-sha',
+        results: [
+            { engine: 'baseline-v1-2', artifactSha256: 'b'.repeat(64) },
+            { engine: 'candidate-v1-3', artifactSha256: 'c'.repeat(64) },
+        ],
+    };
+    const runTurns = [];
+    const cellCounts = {
+        bangla: { ANSWERABLE: 5, NOT_ANSWERABLE: 50 },
+        banglish: { ANSWERABLE: 7, NOT_ANSWERABLE: 38 },
+        english: { ANSWERABLE: 17, NOT_ANSWERABLE: 83 },
+    };
+    let turnIndex = 0;
+    for (const [language, answerability] of Object.entries(cellCounts)) {
+        for (const [eligibility, count] of Object.entries(answerability)) {
+            for (let row = 0; row < count; row += 1) {
+                turnIndex += 1;
+                runTurns.push({
+                    scenarioId: `case-${String(turnIndex).padStart(3, '0')}`,
+                    personaId: `P${String(Math.floor((turnIndex - 1) / 10) + 1).padStart(2, '0')}`,
+                    turn: ((turnIndex - 1) % 10) + 1,
+                    inputRedacted: `Question ${turnIndex}`,
+                    finalReplyRedacted: `Baseline answer ${turnIndex}`,
+                    language,
+                    oracle: { eligibility },
+                });
+            }
+        }
+    }
+    const baselineRun = {
+        runId: 'baseline-run', status: 'completed', sourceRevision: 'baseline-sha', runnerSourceSha256: 'e'.repeat(64), turns: runTurns,
+    };
+    const candidateRun = {
+        runId: 'candidate-run', status: 'completed', sourceRevision: 'candidate-sha', runnerSourceSha256: 'e'.repeat(64),
+        turns: runTurns.map(turn => ({ ...turn, finalReplyRedacted: turn.finalReplyRedacted.replace('Baseline', 'Candidate') })),
+    };
+    const usefulnessCases = buildUsefulnessCases({ baselineRun, candidateRun, comparisonId: 'comparison-1' });
+    const consistencyCases = selectJudgeConsistencyCases(usefulnessCases);
+    const armScore = rating => ({
+        overallUsefulness: rating, relevance: rating, contextContinuity: rating, languageClarity: rating, naturalness: rating,
+        conciseCompleteness: rating, nextStepHelpfulness: rating, customerQuestionResolution: rating,
+        unnecessaryClarification: false, repetitive: false, excessiveSalesPressure: false, falseRefusal: false,
+    });
+    const primaryResults = usefulnessCases.map((item, index) => ({
+        caseId: item.caseId,
+        judge: { provider: 'gemini-lite', model: 'gemini-3.1-flash-lite' },
+        scores: {
+            baseline: armScore(index % 2 === 0 ? 3 : 4),
+            candidate: armScore(index < 40 ? 5 : 4),
+            preference: 'candidate',
+            rationale: 'The candidate reply is more helpful.',
+        },
+    }));
+    const primaryById = new Map(primaryResults.map(item => [item.caseId, item]));
+    const primaryJudgeResults = usefulnessCases.map(item => {
+        const result = primaryById.get(item.caseId);
+        const candidateLabel = item.presentation.armToEngine.A === 'candidate' ? 'A' : 'B';
+        return { caseId: item.caseId, judge: {
+            A: item.presentation.armToEngine.A === 'candidate' ? result.scores.candidate : result.scores.baseline,
+            B: item.presentation.armToEngine.B === 'candidate' ? result.scores.candidate : result.scores.baseline,
+            preference: candidateLabel,
+            rationale: result.scores.rationale,
+        } };
+    });
+    const primarySummary = summarizeUsefulnessResults(usefulnessCases, primaryJudgeResults);
+    const consistencyResults = consistencyCases.map(item => ({
+        caseId: item.caseId,
+        judge: { provider: 'gemini-pro', model: 'gemini-3.1-pro-preview' },
+        scores: { ...primaryById.get(item.caseId).scores },
+    }));
+    const judgeConsistency = summarizeJudgeConsistency(usefulnessCases, primarySummary.paired, consistencyResults.map(item => ({
+        caseId: item.caseId, ...item.scores,
+    })));
+    const evaluation = {
+        kind: 'paired-blinded-customer-usefulness-evaluation', evaluationId: 'evaluation-1', status: 'PASS',
+        comparison: {
+            comparisonId: 'comparison-1', comparisonSha256: 'd'.repeat(64), datasetSha256: 'dataset-sha', oracleSha256: 'oracle-sha',
+            baselineRunId: 'baseline-run', baselineRunSha256: 'b'.repeat(64),
+            candidateRunId: 'candidate-run', candidateRunSha256: 'c'.repeat(64), candidateCommit: 'candidate-sha',
+        },
+        provenance: { provider: 'gemini-lite', model: 'gemini-3.1-flash-lite', rubricVersion: 'customer-usefulness-paired-v2', runnerSourceSha256: 'e'.repeat(64),
+            thinkingLevel: null, temperature: 0, maxInputTokens: 4096, maxOutputTokens: 512,
+            expectedCases: 200, expectedRequests: 200, actualRequests: 200,
+            consistencyJudge: { provider: 'gemini-pro', model: 'gemini-3.1-pro-preview', thinkingLevel: 'low', temperature: 0,
+                expectedCases: 30, expectedRequests: 30, actualRequests: 30, casesPerLanguageAnswerabilityStratum: 5 } },
+        budget: { campaignId: 'v13-semantic-test', ceilingUsd: 0.85, requestCount: 230, expectedRequests: 230, visionRequestCount: 0, unpricedRequestCount: 0,
+            estimatedProviderChargeUsd: 0.2, reservedWorstCaseUsd: 0.8, providerInvoice: 'NOT_AVAILABLE' },
+        summary: {
+            status: 'PASS', usefulnessStatus: primarySummary.status, judgeConsistency, paired: primarySummary.paired,
+            complete: true, allRequestsPriced: true, sampleSize: 200, expectedSampleSize: 200,
+            screeningCriteria: primarySummary.screeningCriteria,
+            answerability: primarySummary.answerability,
+            baseline: primarySummary.baseline,
+            candidate: primarySummary.candidate,
+            languageBreakdown: primarySummary.languageBreakdown,
+            candidateMinusBaselineOverallMean: primarySummary.candidateMinusBaselineOverallMean,
+            pairedPreference: primarySummary.pairedPreference,
+        },
+        results: primaryResults,
+        consistencyResults,
+    };
+    const args = {
+        comparison, evaluation, baselineRun, candidateRun, currentHead: 'candidate-sha',
+        currentRunnerSourceSha256: 'e'.repeat(64), comparisonSha256: 'd'.repeat(64),
+        reportPath: 'reports/customer-usefulness-evaluation-1.json', reportSha256: 'f'.repeat(64),
+    };
+
+    test('accepts a complete paired report only when it binds to both current run artifacts and runner source', () => {
+        expect(summarizeCustomerUsefulnessEvaluation(args)).toMatchObject({
+            status: 'PASS', evaluationId: 'evaluation-1', sampleSize: 200, model: 'gemini-3.1-flash-lite',
+            consistencyModel: 'gemini-3.1-pro-preview', provider: 'gemini-lite', consistencyProvider: 'gemini-pro',
+            candidate: { overallUsefulness: { sum: 840, denominator: 200, mean: 4.2 } },
+            baseline: { overallUsefulness: { sum: 700, denominator: 200, mean: 3.5 } },
+            resultPath: args.reportPath, resultSha256: 'f'.repeat(64),
+        });
+    });
+
+    test('does not accept a passing summary when recorded per-case scores fail the usefulness screen', () => {
+        const contradictoryEvaluation = {
+            ...evaluation,
+            results: evaluation.results.map(result => ({
+                ...result,
+                scores: { ...result.scores, candidate: { ...result.scores.candidate, overallUsefulness: 2 } },
+            })),
+        };
+
+        expect(summarizeCustomerUsefulnessEvaluation({ ...args, evaluation: contradictoryEvaluation }).status).toBe('INCOMPLETE');
+    });
+
+    test('requires the exact held-out primary case IDs, not merely 200 unique rows', () => {
+        const wrongCaseSet = {
+            ...evaluation,
+            results: evaluation.results.map((result, index) => index === 0 ? { ...result, caseId: 'unexpected-case' } : result),
+        };
+
+        expect(summarizeCustomerUsefulnessEvaluation({ ...args, evaluation: wrongCaseSet }).status).toBe('INCOMPLETE');
+    });
+
+    test('rejects a stale runner binding and incomplete provider usage', () => {
+        expect(summarizeCustomerUsefulnessEvaluation({
+            ...args,
+            evaluation: { ...evaluation, provenance: { ...evaluation.provenance, runnerSourceSha256: 'a'.repeat(64) } },
+        }).status).toBe('STALE');
+        expect(summarizeCustomerUsefulnessEvaluation({
+            ...args,
+            evaluation: { ...evaluation, budget: { ...evaluation.budget, unpricedRequestCount: 1 } },
+        }).status).toBe('INCOMPLETE');
+    });
+
+    test('rejects an otherwise complete report with an unapproved model or spend ceiling', () => {
+        expect(summarizeCustomerUsefulnessEvaluation({
+            ...args,
+            evaluation: { ...evaluation, provenance: { ...evaluation.provenance, model: 'unapproved-model' } },
+        }).status).toBe('INCOMPLETE');
+        expect(summarizeCustomerUsefulnessEvaluation({
+            ...args,
+            evaluation: { ...evaluation, budget: { ...evaluation.budget, ceilingUsd: 2 } },
+        }).status).toBe('INCOMPLETE');
+    });
+});
+
+describe('comparison run artifact integrity', () => {
+    test('does not load a paid held-out response artifact whose bytes differ from its recorded checksum', () => {
+        const bytes = Buffer.from('{"runId":"verified"}');
+        const result = { artifactSha256: require('node:crypto').createHash('sha256').update(bytes).digest('hex') };
+
+        expect(readVerifiedRunArtifactBytes(result, bytes, true)).toEqual({ runId: 'verified' });
+        expect(readVerifiedRunArtifactBytes(result, Buffer.from('{"runId":"changed"}'), true)).toBeNull();
+        expect(readVerifiedRunArtifactBytes({}, bytes, true)).toBeNull();
+    });
+});
 
 describe('integration receipt service readiness', () => {
     test('accepts real external services only when protocol queries ran on loopback TCP endpoints', () => {
@@ -557,6 +781,17 @@ describe('aggregate automated QA verdict', () => {
             hasAutomatedFailure: false, sourceTruthMetricsAvailable: true, qualityPass: true,
             requiredEvidencePresent: true, automatedStepsPass: true, photoStatus: 'PASS',
         })).toBe('PASS');
+    });
+});
+
+describe('proof generator command status', () => {
+    test('returns success only when automated QA passes', () => {
+        expect(proofGeneratorStatus('PASS')).toBe('PASS');
+        expect(proofGeneratorExitCode('PASS')).toBe(0);
+        expect(proofGeneratorStatus('BLOCKED')).toBe('BLOCKED');
+        expect(proofGeneratorExitCode('BLOCKED')).toBe(1);
+        expect(proofGeneratorStatus('FAIL')).toBe('FAIL');
+        expect(proofGeneratorExitCode('FAIL')).toBe(1);
     });
 });
 

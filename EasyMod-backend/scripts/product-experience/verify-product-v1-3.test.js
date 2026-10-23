@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, partitionStartupValidation, requiredEnv, resolvePaidGeminiKey, runCapture, shouldRequireDockerEngine } = require('./verify-product-v1-3');
+const { canRunIntegration, classifyStepExecution, dockerInfo, finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, partitionStartupValidation, requiredEnv, resolvePaidGeminiKey, runCapture, shouldRequireDockerEngine, verificationReceiptStatus } = require('./verify-product-v1-3');
 const { run: runIntegrationCommand } = require('./run-integration');
 
 describe('offline verifier environment isolation', () => {
@@ -58,6 +58,41 @@ describe('verifier startup dependency classification', () => {
         expect(shouldRequireDockerEngine({ LAB_EXTERNAL_SERVICES: 'true' })).toBe(false);
         expect(shouldRequireDockerEngine({ LAB_EXTERNAL_SERVICES: 'TRUE' })).toBe(true);
         expect(shouldRequireDockerEngine({})).toBe(true);
+    });
+
+    test('skips the integration runner when Docker preflight fails so unowned services are not probed', () => {
+        const startup = partitionStartupValidation(['DOCKER_ENGINE_UNAVAILABLE']);
+        expect(canRunIntegration(startup)).toBe(false);
+        expect(canRunIntegration(partitionStartupValidation([]))).toBe(true);
+    });
+});
+
+describe('verifier blocked status propagation', () => {
+    test('preserves BLOCKED through subprocess and completed-receipt classification', () => {
+        expect(classifyStepExecution({ exitCode: 1, timedOut: false, output: '{"status":"BLOCKED"}' })).toBe('BLOCKED');
+        expect(classifyStepExecution({ exitCode: 1, timedOut: false, output: '{"status":"FAIL"}' })).toBe('FAIL');
+        expect(classifyStepExecution({ exitCode: 0, timedOut: false, output: '' })).toBe('PASS');
+        expect(verificationReceiptStatus(false, [{ status: 'BLOCKED' }])).toBe('BLOCKED');
+        expect(verificationReceiptStatus(true, [{ status: 'PASS' }, { status: 'BLOCKED' }])).toBe('BLOCKED');
+        expect(verificationReceiptStatus(true, [{ status: 'FAIL' }, { status: 'BLOCKED' }])).toBe('FAIL');
+    });
+});
+
+describe('Docker engine preflight timeout', () => {
+    test('bounds the Docker API probe so a stalled Desktop daemon cannot hang offline QA', () => {
+        const calls = [];
+        const timedOut = Object.assign(new Error('spawnSync docker ETIMEDOUT'), { code: 'ETIMEDOUT' });
+        const result = dockerInfo((command, args, options) => {
+            calls.push({ command, args, options });
+            return { status: null, stdout: '', stderr: '', error: timedOut };
+        });
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].command).toBe('docker');
+        expect(calls[0].args).toEqual(['info', '--format', '{{.ServerVersion}}']);
+        expect(calls[0].options.timeout).toBe(5000);
+        expect(result.status).toBeNull();
+        expect(result.error.code).toBe('ETIMEDOUT');
     });
 });
 

@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { getSourceProvenance } = require('./lab-server');
+const { resolveComparisonOptions } = require('./comparison-options');
 
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
@@ -143,17 +144,7 @@ const outcome = (baseline, candidate, direction) => {
 };
 
 const main = async () => {
-    const mode = process.env.LAB_COMPARISON_MODE || 'deterministic';
-    const datasetName = process.env.LAB_COMPARISON_DATASET || 'source';
-    const scope = process.env.LAB_RUN_SCOPE || 'full';
-    const personaId = process.env.LAB_PERSONA_ID || '';
-    if (!['deterministic', 'real-gemini'].includes(mode) || !['source', 'heldout'].includes(datasetName)) {
-        throw new Error('Choose comparison mode deterministic/real-gemini and dataset source/heldout.');
-    }
-    if (!['full', 'persona'].includes(scope) || (scope === 'persona' && !/^P(?:0[1-9]|1\d|20)$/.test(personaId))) {
-        throw new Error('Comparison replay scope is invalid.');
-    }
-    if (mode === 'real-gemini' && datasetName !== 'source') throw new Error('Paid source-corpus evaluation uses the original 200 turns; held-out evaluation remains offline.');
+    const { mode, datasetName, scope, personaId, campaignCeilingUsd } = resolveComparisonOptions(process.env);
     if (mode === 'real-gemini' && (typeof process.env['EM-GEMINI-KEY'] !== 'string' || !process.env['EM-GEMINI-KEY'].trim())) {
         throw new Error('Process-scoped EM-GEMINI-KEY is unavailable; no provider request was made.');
     }
@@ -186,7 +177,6 @@ const main = async () => {
     const runnerProvenance = getSourceProvenance();
     const campaignId = mode === 'real-gemini' ? (process.env.LAB_CAMPAIGN_ID || V13_CAMPAIGN_ID) : null;
     const campaignLedgerPath = campaignId ? path.join(ARTIFACT_ROOT, 'campaigns', campaignId, 'budget-ledger.json') : null;
-    const campaignCeilingUsd = 2;
     if (mode === 'real-gemini') {
         if (!/^[a-zA-Z0-9_.:-]{1,128}$/.test(campaignId)) throw new Error('V1.3 campaign ID is invalid.');
         const { createEvaluationCampaignLedger } = require('./evaluation-campaign-ledger');
@@ -236,7 +226,7 @@ const main = async () => {
             LAB_ORACLE_PATH: oraclePath,
             LAB_CATALOG_FIXTURE: 'v1.2-two-tenant',
             LAB_EVALUATION_CLOCK_MS: String(evaluationClockMs),
-            LAB_RUN_GENUINE_PHOTO_EVAL: mode === 'real-gemini' ? '1' : '0',
+            LAB_RUN_GENUINE_PHOTO_EVAL: mode === 'real-gemini' && datasetName === 'source' ? '1' : '0',
             LAB_RUN_SYNTHETIC_VISION: '0',
             LAB_SOURCE_REVISION: engine.revision,
             LAB_ENGINE_SOURCE_REVISION: `${engine.revision}+backend-src-sha256:${engineHash}`,

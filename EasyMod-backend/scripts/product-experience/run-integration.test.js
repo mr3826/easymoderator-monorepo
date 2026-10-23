@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { resolveExternalServicePorts } = require('./run-integration');
 
 describe('external loopback integration services', () => {
@@ -28,5 +30,14 @@ describe('external loopback integration services', () => {
         [{ LAB_EXTERNAL_SERVICES: 'true', LAB_POSTGRES_PORT: '55abc', LAB_REDIS_PORT: '56379' }, 'integer TCP port'],
     ])('rejects unsafe or incomplete external endpoint configuration %#', (env, expectedMessage) => {
         expect(() => resolveExternalServicePorts(env)).toThrow(expectedMessage);
+    });
+});
+
+describe('isolated Compose Redis configuration', () => {
+    test('provides every logical database used by the backend regression suite', () => {
+        const compose = fs.readFileSync(path.join(__dirname, 'lab-integration.compose.yml'), 'utf8');
+        const match = compose.match(/--databases["',\s]+(\d+)/);
+
+        expect(Number(match?.[1])).toBeGreaterThanOrEqual(23);
     });
 });

@@ -4,13 +4,15 @@ V1.3 evaluates the existing Product Engine against an independent catalog oracle
 
 ## Run the verification
 
-Requirements are Node.js 20, Python 3, and installed backend dependencies. Docker Compose is the default PostgreSQL/Redis provider. If Docker is unavailable, the integration runner also accepts an explicitly selected, disposable PostgreSQL/Redis pair already running in WSL or another user-owned local environment. From `EasyMod-backend` in the isolated V1.3 worktree:
+Requirements are Node.js 20, Python 3, and installed backend dependencies. Docker Compose is the default PostgreSQL/Redis provider; its Redis service exposes 23 logical databases for the regression suite's isolated DBs 20–22. If Docker is unavailable, the integration runner also accepts an explicitly selected, disposable PostgreSQL/Redis pair already running in WSL or another user-owned local environment. Without that explicit external-services selection, a failed Docker preflight skips integration and records `BLOCKED` without contacting existing listeners. From `EasyMod-backend` in the isolated V1.3 worktree:
 
 ```powershell
 npm run verify:product-v1.3
 ```
 
-This is the offline default. It removes provider credentials (including both `EM_GEMINI_KEY` and `EM-GEMINI-KEY`) and all paid-photo opt-ins from child processes, forces offline Test Lab mode, and blocks live Gemini egress. It prepares source and held-out oracles, runs the isolated PostgreSQL/Redis/worker/webhook integration, runs the backend security suite, compares the V1.2 baseline and V1.3 candidate on both corpora, executes Test Lab Playwright checks, scans artifacts for privacy issues, and generates the proof package.
+This is the offline default. It removes provider credentials (including both `EM_GEMINI_KEY` and `EM-GEMINI-KEY`) and all paid-photo opt-ins from child processes, forces offline Test Lab mode, and blocks live Gemini egress. It prepares source and held-out oracles, runs the PostgreSQL/Redis/worker/webhook integration only after service preflight succeeds, runs the backend security suite, compares the V1.2 baseline and V1.3 candidate on both corpora, executes Test Lab Playwright checks, scans artifacts for privacy issues, and generates the proof package.
+
+When a required gate cannot be measured, the proof reports `BLOCKED` and the command exits nonzero. An offline run never turns missing paid-provider, browser, or integration evidence into a pass.
 
 For a user-owned local or WSL service pair, start an empty PostgreSQL database named `easymod_product_lab_test` with role `lab` and password `lab-local-only`, and Redis with at least 23 logical databases. Bind both services to loopback. The runner enforces that PostgreSQL has no user tables, views, or sequences and Redis databases 0–3, 10–15, and 20–22 are empty before it applies migrations or runs tests. Then set the service ports and opt in:
 
@@ -32,6 +34,45 @@ npm run verify:product-v1.3 -- --paid-gemini
 ```
 
 In paid mode, the verifier links the successful candidate run from the matched Gemini comparison into the final Playwright pass. The browser checks the redacted conversation trace and the run's usage and cost display. An offline verifier can reuse a previously recorded paid candidate only when its source corpus, oracle, and backend source hash match the current checkout; otherwise that browser path is reported as not run.
+
+The comparison runner also supports a paid replay of the frozen 200-turn held-out corpus by setting `LAB_COMPARISON_MODE=real-gemini` and `LAB_COMPARISON_DATASET=heldout`. This runs both V1.2 and V1.3 against the same held-out oracle, records factual, context, handoff, cost, and latency outcomes, and omits the separate source-photo probe. Set a fresh `LAB_CAMPAIGN_ID` and `LAB_CAMPAIGN_CEILING_USD` for each run; the ceiling is configurable up to $2 and defaults to $2. The proof contains a PowerShell example that maps only the Windows User-scope `EM_GEMINI_KEY` into the paid process and restores the process environment afterward. This held-out score does not measure semantic customer usefulness or image recognition.
+
+After recording a current, clean, committed held-out comparison, the paired usefulness evaluator scores all 200 V1.2/V1.3 reply pairs. It sends redacted simulated conversations to Gemini 3.1 Flash-Lite with randomized A/B order, hidden engine names, and the same oracle answerability class for both replies. A deterministic sample of 30 cases (five from each language-by-answerability cell) is also scored by Gemini 3.1 Pro Preview as a cross-model consistency screen. The judges receive no expected answers, product IDs, or scenario IDs. They score usefulness, language clarity, naturalness, question resolution, unnecessary clarification, repetition, sales pressure, and false refusal; the deterministic catalog oracle remains authoritative for facts. Both judges belong to the Gemini 3 family, so these scores are supporting evidence rather than independent ground truth. The fresh evaluation has a $0.85 campaign ceiling, 230 total requests, zero retries, and zero vision requests. Each serialized prompt is bounded at 4,096 input bytes and each response at 512 output tokens. At the pinned standard paid rates, the request/token envelope reserves at most $0.78848 ($0.35840 for Flash-Lite and $0.43008 for Pro); the remaining $0.06152 is headroom, not an expected charge. A failed request stops its stage and leaves the result incomplete. These rates match Google's [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing) page checked on 2026-10-24.
+
+Run this from `EasyMod-backend` with the artifact root and comparison ID from the current proof. It reads the Windows User-scope `EM_GEMINI_KEY`, maps it only to the paid process variable expected by the existing Gemini integration, and restores the prior process variables when it exits:
+
+```powershell
+$artifactRoot = $env:LAB_ARTIFACT_ROOT
+if ([string]::IsNullOrWhiteSpace($artifactRoot)) { throw 'Set LAB_ARTIFACT_ROOT to the current evidence package root.' }
+$comparisonId = Read-Host 'Current held-out comparison ID from the proof'
+$userKey = [Environment]::GetEnvironmentVariable('EM_GEMINI_KEY', 'User')
+if ([string]::IsNullOrWhiteSpace($userKey)) { throw 'Windows User-scope EM_GEMINI_KEY is unavailable.' }
+$resultPath = Join-Path $artifactRoot ('reports/customer-usefulness-' + [guid]::NewGuid().ToString() + '.json')
+$variables = @{
+  'EM-GEMINI-KEY' = $userKey
+  NODE_ENV = 'test'
+  EASYMOD_LIVE_GEMINI_EGRESS = '1'
+  LAB_ARTIFACT_ROOT = $artifactRoot
+  LAB_SEMANTIC_COMPARISON_ID = $comparisonId
+  LAB_SEMANTIC_RESULT_PATH = $resultPath
+  LAB_CAMPAIGN_ID = 'v13-semantic-' + [guid]::NewGuid().ToString('N')
+}
+$previous = @{}
+foreach ($name in $variables.Keys) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+try {
+  foreach ($name in $variables.Keys) { [Environment]::SetEnvironmentVariable($name, $variables[$name], 'Process') }
+  npm run eval:product-experience:usefulness
+  if ($LASTEXITCODE -ne 0) { throw 'Customer-usefulness evaluation failed.' }
+} finally {
+  foreach ($name in $variables.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }
+  $variables['EM-GEMINI-KEY'] = $null
+  $variables = $null
+  $previous = $null
+  $userKey = $null
+}
+```
+
+The report records per-case rubric scores, randomized order, token and cost receipts, and comparison/run checksums without recording the credential. Partial or unpriced campaigns remain incomplete and cannot satisfy the usefulness gate.
 
 The browser gate runs the installed engines serially and has a 20-minute verifier timeout. On timeout, the verifier terminates the subprocess tree and records the cleanup result. Any missing report or incomplete ZIP trace remains unmeasured and is not browser or privacy evidence. The overall verifier also applies bounded subprocess-tree cleanup; the integration runner's internal stage budgets fit inside its 50-minute outer deadline, and the backend security suite has a 45-minute deadline.
 
