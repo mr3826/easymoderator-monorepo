@@ -1,42 +1,37 @@
 {
   "reviewer": "Independent Verification Agent (read-only)",
   "verdict": "PASS",
-  "reviewedCodeCommit": "38b4be066b508ee25f7a43a11707139c5fc0f659",
-  "reviewedBackendSourceSha256": "8c2736021a3aeff9d69ab38782eab3a4803b8708d7d20b76cb246fb43d8ddeb7",
-  "reviewedRunnerSourceSha256": "6e1034df8e8c92b8e6d9a48415b57a2c8b91f34f4af63fa06a5f5dbfe34d205d",
-  "reviewedAt": "2026-10-22T15:18:06.2540539Z",
+  "reviewedCodeCommit": "a5a9aec0dc580637f0334e0cafa3ac5412daa621",
+  "reviewedBackendSourceSha256": "e1168c0e5e9cf6132a379053144f85e94089c4c430664de1f62716f26e6a11fa",
+  "reviewedRunnerSourceSha256": "1ec8e07ac2008eb32e0f090923df10407bf07d93ecc14be5b0e9e3813e4ac7a9",
+  "reviewedAt": "2026-10-23T16:54:48.377556Z",
   "focusedTests": {
     "result": "PASS",
-    "suitesPassed": 5,
-    "suitesTotal": 5,
-    "testsPassed": 175,
+    "suitesPassed": 1,
+    "suitesTotal": 1,
+    "testsPassed": 21,
+    "testsTotal": 21,
     "testsFailed": 0,
-    "command": "node.exe node_modules/jest/bin/jest.js --config jest.config.js --runInBand --runTestsByPath scripts/product-experience/generate-product-engine-v1-3-proof.test.js scripts/product-experience/lab-scorer.test.js scripts/product-experience/turn-evidence-metrics.test.js scripts/product-experience/lab-replay.test.js src/modules/ai/__tests__/intent-router.test.js --coverage=false",
-    "note": "Run with Node v20.20.2; intent-router emitted the expected mocked live-reread warning."
+    "command": "python -m unittest test_scan_artifact_privacy",
+    "note": "Run against the exact reviewed commit with temporary files on D:. No provider calls or source edits during the independent review."
   },
   "evidenceAudit": {
-    "receipt": "regression/verify-694c0c21-a54c-43ab-8d86-ad52dfe731b6.json",
+    "receipt": "regression/verify-eabca4d9-2731-4606-8cc5-593780a69c00.json",
     "receiptStatus": "COMPLETE_WITH_QA_FAIL",
-    "recomputedManifestEntries": 147,
-    "manifestInvalidDuplicateMissingMismatchOrOutOfScope": 0,
-    "privacyScanStatus": "PASS",
-    "paidRunMetrics": "200/200 routes; 18/18 fact slots; 15/15 answerable turns; 0/13 context failures; 4/4 safe handoffs; 0 unsupported claims; 0 tenant violations.",
-    "imageGate": "0/3 product-category matches; 3/3 visible-color matches; identity was not scored.",
-    "cost": "Candidate estimated provider cost $0.02195750; baseline $0.01170525; pair total $0.03366275; ledger 164 requests, 6 vision requests, 0 unpriced requests, $0.290959252 reserved worst case under $2 cap.",
-    "timing": "Candidate route p95 5388.844 ms vs baseline 5111.596 ms (+5.42%, regressed); provider p95 2192 ms vs 2276 ms baseline."
+    "candidateCommitMatches": true,
+    "candidateBackendSourceSha256Matches": true,
+    "currentRunnerSha256Matches": true,
+    "paidRunMetrics": "Candidate Gemini route: 200/200 executed; 18/18 fact slots and 15/15 answerable turns verified; context failures 0/13; safe cross-domain handoffs 4/4; unsupported claims 0; false refusals 0; unsafe handoffs 0.",
+    "imageGate": "3 genuine photos; category 2/3; visible color 3/3; catalog identity not scored; 1/15 required visual case types represented.",
+    "cost": "Candidate estimated provider usage $0.02221250; baseline $0.01181600; matched pair $0.03402850; invoice unavailable. Candidate route p95 5841.641 ms vs baseline 5375.354 ms (regressed); provider p95 2481 ms vs baseline 3507 ms (improved).",
+    "integration": "Docker preflight unavailable; PostgreSQL, Redis, worker, webhook, product search, fake Meta transport and full backend integration remain incomplete."
   },
   "limitations": [
-    "Independent PASS means the frozen code, focused test rerun and evidence integrity checks passed; Product Engine automated QA remains FAIL and integration readiness remains NO because the mandatory photo category gate is 0/3.",
-    "Evidence review is local and does not establish live Meta delivery, production behavior, merchant outcomes or ROI.",
-    "The verifier receipt's recorded privacy step predates proof generation. A separate proof-inclusive privacy scan passed, and the independent reviewer recomputed the 147-entry manifest with zero invalid, duplicate, missing, mismatched, out-of-scope or unlisted files; see the final security scan for its checkedAt."
-  ],
-  "finalPackageAudit": {
-    "privacyScanStatus": "PASS",
-    "privacyScanCheckedAt": "2026-10-22T15:12:11.704378Z",
-    "recomputedManifestEntries": 147,
-    "invalidDuplicateMissingMismatchOutOfScopeOrUnlistedEntries": 0,
-    "proofMarkdownAndArchiveHashesMatch": true,
-    "proofAndReviewJsonCopiesMatch": true,
-    "completedReceiptCovered": true
-  }
+    "Independent PASS is scoped to source review and focused scanner-test success; it does not override automated QA FAIL or integration readiness NO.",
+    "The mandatory photo category gate is 2/3 and only 1/15 required visual case types is represented; catalog identity was not scored.",
+    "Docker Engine was unavailable, so PostgreSQL, Redis, message-worker, webhook, product-search and fake-Meta integration were not verified.",
+    "Twelve standalone raster artifacts were not OCR-scanned. Playwright archive raster members were removed during trace sanitization before the privacy scans.",
+    "Provider costs are token-based estimates, not invoices. The aggregate $10 authorization is reconciled manually because per-campaign ledgers do not enforce one shared cap.",
+    "No live Meta delivery, production behavior, merchant adoption, order outcomes, conversion or ROI was tested or established."
+  ]
 }
