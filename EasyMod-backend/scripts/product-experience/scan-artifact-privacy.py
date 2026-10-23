@@ -366,6 +366,11 @@ def sensitive_text_for_scan(path: Path, text: str) -> str:
             "**Validated (redacted):** ",
         )
         return "\n".join(line for line in text.splitlines() if line.startswith(labels))
+    if path.suffix.casefold() == ".md":
+        return "\n".join(
+            re.sub(r"[ \t]+(?=\|)", "", line) if line.lstrip().startswith("|") else line
+            for line in text.splitlines()
+        )
     return text
 
 

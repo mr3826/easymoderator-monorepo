@@ -122,6 +122,18 @@ class LiteralMatcherTests(unittest.TestCase):
         self.assertEqual(SCANNER.count_sensitive_pattern_matches(digest, None), 0)
         self.assertFalse(SCANNER.contains_source_contact(digest, SCANNER.LiteralMatcher({"01312345678"})))
 
+    def test_sensitive_text_scan_ignores_markdown_table_cell_padding_after_usd_amounts(self):
+        report_row = "| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 3.638948014        |"
+        scanned_text = SCANNER.sensitive_text_for_scan(Path("proof.md"), report_row)
+
+        self.assertEqual(SCANNER.count_sensitive_pattern_matches(scanned_text, None), 0)
+
+    def test_sensitive_text_scan_keeps_phone_detection_in_markdown_table_cells(self):
+        report_row = "| Customer phone | 01712345678        |"
+        scanned_text = SCANNER.sensitive_text_for_scan(Path("proof.md"), report_row)
+
+        self.assertGreater(SCANNER.count_sensitive_pattern_matches(scanned_text, None), 0)
+
     def test_sensitive_pattern_scan_does_not_treat_uuid_as_contact(self):
         comparison_id = "14016518-7966-4d6a-baf6-4bdd3cf1c6bb"
         contact_matcher = SCANNER.LiteralMatcher({"0165187966"})
