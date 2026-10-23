@@ -186,6 +186,23 @@ describe('blinded customer-usefulness evidence binding', () => {
         expect(summarizeCustomerUsefulnessEvaluation({ ...args, evaluation: contradictoryEvaluation }).status).toBe('INCOMPLETE');
     });
 
+    test('does not accept paired preference counts that contradict the recorded per-case preferences', () => {
+        const contradictoryEvaluation = {
+            ...evaluation,
+            summary: {
+                ...evaluation.summary,
+                pairedPreference: {
+                    candidatePreferred: 0,
+                    tie: 200,
+                    baselinePreferred: 0,
+                    denominator: 200,
+                },
+            },
+        };
+
+        expect(summarizeCustomerUsefulnessEvaluation({ ...args, evaluation: contradictoryEvaluation }).status).toBe('INCOMPLETE');
+    });
+
     test('requires the exact held-out primary case IDs, not merely 200 unique rows', () => {
         const wrongCaseSet = {
             ...evaluation,

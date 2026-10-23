@@ -678,6 +678,7 @@ const summarizeCustomerUsefulnessEvaluation = ({
         recomputedUsefulness = summarizeUsefulnessResults(expectedUsefulnessCases, primaryJudgeResults);
         const reportedPrimarySummary = {
             paired: summary.paired,
+            pairedPreference: summary.pairedPreference,
             baseline: summary.baseline,
             candidate: summary.candidate,
             answerability: {
@@ -691,6 +692,7 @@ const summarizeCustomerUsefulnessEvaluation = ({
         };
         const recomputedPrimarySummary = {
             paired: recomputedUsefulness.paired,
+            pairedPreference: recomputedUsefulness.pairedPreference,
             baseline: recomputedUsefulness.baseline,
             candidate: recomputedUsefulness.candidate,
             answerability: {
