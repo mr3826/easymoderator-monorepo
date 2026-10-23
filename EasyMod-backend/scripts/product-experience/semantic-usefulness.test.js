@@ -134,6 +134,21 @@ describe('paired, blinded semantic usefulness evaluation', () => {
         expect(caseRecord.presentation.armToEngine.A).not.toBe(caseRecord.presentation.armToEngine.B);
     });
 
+    test('uses the cross-model scoring prompt for consistency cases', () => {
+        const [caseRecord] = buildUsefulnessCases({
+            baselineRun: makeRun([makeTurn('P01', 1, 'Baseline reply')]),
+            candidateRun: makeRun([makeTurn('P01', 1, 'Candidate reply')]),
+            comparisonId: 'crosscheck-prompt',
+        });
+
+        const primaryInput = buildBlindedJudgeInput(caseRecord);
+        const crosscheckInput = buildBlindedJudgeInput(caseRecord, { crosscheck: true });
+
+        expect(crosscheckInput.systemPrompt).toContain('Independently score two blinded replies');
+        expect(crosscheckInput.systemPrompt).not.toBe(primaryInput.systemPrompt);
+        expect(crosscheckInput.messages).toEqual(primaryInput.messages);
+    });
+
     test('rejects baseline and candidate runs with different oracle answerability classes', () => {
         expect(() => buildUsefulnessCases({
             baselineRun: makeRun([makeTurn('P01', 1, 'Baseline', { oracle: { eligibility: 'ANSWERABLE' } })]),
