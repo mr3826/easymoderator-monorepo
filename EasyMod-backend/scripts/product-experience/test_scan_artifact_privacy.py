@@ -140,6 +140,12 @@ class LiteralMatcherTests(unittest.TestCase):
 
         self.assertGreater(SCANNER.count_sensitive_pattern_matches(scanned_text, None), 0)
 
+    def test_sensitive_text_scan_keeps_phone_detection_for_10_digit_bd_usd_cells(self):
+        report_row = "| `UNLISTED_PROVIDER_USAGE_USD` | 0171234567 |"
+        scanned_text = SCANNER.sensitive_text_for_scan(Path("proof.md"), report_row)
+
+        self.assertGreater(SCANNER.count_sensitive_pattern_matches(scanned_text, None), 0)
+
     def test_sensitive_text_scan_keeps_phone_detection_in_markdown_table_cells(self):
         report_row = "| Customer phone | 01712345678        |"
         scanned_text = SCANNER.sensitive_text_for_scan(Path("proof.md"), report_row)

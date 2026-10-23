@@ -203,17 +203,17 @@ FINAL_VERDICT: Implement and rerun focused intent-router tests; retain overall Q
 
 ```text
 DECISION_ID: V13-PRIVACY-USD-PHONE-SCAN-01
-OBSERVED_PROBLEM: The independent reviewer demonstrated that the Markdown privacy scanner replaced every numeric cell below a `_USD` heading before applying phone-pattern checks, so an unlisted phone-shaped value such as `01712345678` could evade the heuristic.
+OBSERVED_PROBLEM: The independent reviewer demonstrated that the Markdown privacy scanner's bounded USD normalization could hide both 11-digit and 10-digit Bangladesh-format contact values (including `01712345678` and `0171234567`) before phone-pattern checks.
 MERCHANT_IMPACT: A privacy report could miss customer contact data embedded in a cost field, reducing confidence in the evidence package.
 CUSTOMER_IMPACT: Customer contact details must remain detectable regardless of the table heading.
-CURRENT_IMPLEMENTATION: USD cells containing any numeric value were normalized as monetary amounts, with no upper bound.
+CURRENT_IMPLEMENTATION: Numeric `_USD` cells are normalized only when their absolute Decimal value is at most USD 1,000,000,000 and the cell does not match the Bangladesh contact pattern.
 OPTIONS_CONSIDERED: Remove USD normalization and accept currency false positives; mask only bounded plausible USD amounts; add exceptions based on known phone contacts only.
-RECOMMENDED_CHANGE: Normalize only numeric `_USD` cells whose absolute Decimal value is at most USD 1,000,000,000. Larger phone-shaped values remain visible to the sensitive-pattern scanner. Keep exact source-contact matching and all other scanning intact.
+RECOMMENDED_CHANGE: Normalize only numeric `_USD` cells whose absolute Decimal value is at most USD 1,000,000,000 and which do not match the Bangladesh contact pattern. Keep phone-shaped values visible to the sensitive-pattern scanner, exact source-contact matching, and all other scanning intact.
 ALTERNATIVES_REJECTED: Do not whitelist values based on known source contacts or exempt all currency columns. Do not expand the exception to arbitrary high values.
 SECURITY_IMPACT: Fail-closed privacy detection is strengthened for large phone-shaped values; plausible cost amounts remain excluded to prevent false positives.
 COST_IMPACT: No provider or runtime cost; one local scanner unit test.
 FUTURE_COMPATIBILITY: Markdown proof currency formatting below the conservative bound remains supported. Values above it may require explicit safe formatting and a scanner-reviewed change.
-TESTABLE_ACCEPTANCE_CRITERIA: A plausible decimal USD amount stays clear of phone false positives, an 11-digit Bangladesh phone under a `_USD` heading still triggers a sensitive-pattern match, and the full scanner unit suite passes.
+TESTABLE_ACCEPTANCE_CRITERIA: A plausible decimal USD amount stays clear of phone false positives; 10-digit and 11-digit Bangladesh contact patterns under a `_USD` heading still trigger sensitive-pattern matches; and the full scanner unit suite passes.
 IMPLEMENTATION_OWNER: Lead orchestrator / ResponseTrace privacy tooling.
 INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only review.
 FINAL_VERDICT: Apply the bounded exception and validate the current evidence package after final proof generation.

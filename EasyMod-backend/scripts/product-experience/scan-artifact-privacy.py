@@ -363,6 +363,7 @@ def normalize_markdown_table_row_for_scan(line: str) -> str:
         amount = cells[index + 1].strip()
         if (re.search(r"`[^`]*_USD`?\s*$", cell.strip(), re.IGNORECASE)
                 and re.fullmatch(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", amount)
+                and not BANGLADESH_CONTACT_PATTERN.fullmatch(amount)
                 and abs(Decimal(amount)) <= Decimal("1000000000")):
             cells[index + 1] = " [USD amount] "
     return re.sub(r"[ \t]+(?=\|)", "", "|".join(cells))
