@@ -121,8 +121,11 @@ Reproducible outputs are grouped under `artifacts/`:
 - `reports/` — a synchronized proof Markdown copy that is included in the privacy scan and checksum manifest.
 - `regression/` — verification entrypoint receipts.
 - `campaigns/` — cumulative provider-call and cost ledger.
+- `cost-reconciliation/` — checksum-verified snapshots of every distinct V1.3 campaign ledger used in the aggregate, plus the V1.2 cost-proof input. The machine proof records both original provenance paths and package-relative archive paths.
 
 The proof Markdown reports scenario IDs and measured outcomes without printing literal source customer messages or model replies. Its evidence-root copy is scanned and checksummed. The source CSV itself, secret values, raw provider credentials, production records, and live Meta messages are not copied into the evidence package.
+
+Budget reconciliation marks the result incomplete when a discovered campaign directory has no ledger or a malformed ledger. It cannot detect a campaign root that is entirely absent from the workspace inventory, so retain the known campaign-root inventory when reconciling cumulative provider exposure.
 
 ## Decision record
 

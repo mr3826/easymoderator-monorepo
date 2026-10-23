@@ -199,6 +199,35 @@ describe('supplementary Gemini Pro evidence and aggregate budget', () => {
         }
     });
 
+    test('archives the reconciled campaign ledgers and V1.2 proof into the evidence package', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-budget-archive-'));
+        const archiveRoot = path.join(workspace, 'package');
+        const ledgerPath = path.join(workspace, '_product-engine-v1-3-evidence', 'campaigns', 'v13-one', 'budget-ledger.json');
+        const v1_2ProofPath = path.join(workspace, '_wt-verified-commerce-v1-2', 'proof.json');
+        fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+        fs.mkdirSync(path.dirname(v1_2ProofPath), { recursive: true });
+        fs.writeFileSync(ledgerPath, JSON.stringify({
+            campaignId: 'v13-one', updatedAt: '2026-01-01T00:00:00.000Z', requestCount: 1,
+            visionRequestCount: 0, unpricedRequestCount: 0, estimatedProviderChargeUsd: 0.01,
+            reservedWorstCaseUsd: 0.02, ceilingUsd: 2,
+        }));
+        fs.writeFileSync(v1_2ProofPath, JSON.stringify({
+            cumulativeProviderCostAccounting: { conservativeTaskSeriesExposureUsd: 0.25 },
+        }));
+        try {
+            const summary = reconcileV13CampaignBudget(workspace, 1, v1_2ProofPath, archiveRoot);
+            const campaign = summary.campaigns.find(item => item.campaignId === 'v13-one');
+            expect(campaign.archivedEvidencePath).toBe('cost-reconciliation/campaign-ledgers/v13-one/budget-ledger.json');
+            expect(fs.readFileSync(path.join(archiveRoot, campaign.archivedEvidencePath), 'utf8'))
+                .toBe(fs.readFileSync(ledgerPath, 'utf8'));
+            expect(summary.v1_2ProofArchivedPath).toBe('cost-reconciliation/v1-2-proof.json');
+            expect(fs.readFileSync(path.join(archiveRoot, summary.v1_2ProofArchivedPath), 'utf8'))
+                .toBe(fs.readFileSync(v1_2ProofPath, 'utf8'));
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
+        }
+    });
+
     test('marks reconciliation incomplete when a campaign ledger snapshot is malformed', () => {
         const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-budget-malformed-'));
         const root = path.join(workspace, '_product-engine-v1-3-evidence', 'campaigns', 'v13-broken');
@@ -209,11 +238,32 @@ describe('supplementary Gemini Pro evidence and aggregate budget', () => {
             expect(summary).toMatchObject({
                 ledgerSnapshotsComplete: false,
                 distinctCampaignCount: 0,
-                status: 'INCOMPLETE_MALFORMED_LEDGER_SNAPSHOTS',
+                status: 'INCOMPLETE_LEDGER_SNAPSHOTS',
                 remainingAggregateAuthorizationUsd: null,
                 malformedLedgerSnapshots: [{
                     sourcePath: '_product-engine-v1-3-evidence/campaigns/v13-broken/budget-ledger.json',
                     reason: 'INVALID_JSON',
+                }],
+            });
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
+        }
+    });
+
+    test('marks reconciliation incomplete when a discovered campaign ledger is missing', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'v13-budget-missing-ledger-'));
+        const root = path.join(workspace, '_product-engine-v1-3-evidence', 'campaigns', 'v13-missing');
+        fs.mkdirSync(root, { recursive: true });
+        try {
+            const summary = reconcileV13CampaignBudget(workspace, 1);
+            expect(summary).toMatchObject({
+                ledgerSnapshotsComplete: false,
+                distinctCampaignCount: 0,
+                status: 'INCOMPLETE_LEDGER_SNAPSHOTS',
+                remainingAggregateAuthorizationUsd: null,
+                malformedLedgerSnapshots: [{
+                    sourcePath: '_product-engine-v1-3-evidence/campaigns/v13-missing/budget-ledger.json',
+                    reason: 'MISSING_LEDGER_FILE',
                 }],
             });
         } finally {
@@ -598,6 +648,9 @@ describe('V1.3 proof Markdown rendering', () => {
                 v1_2ConservativeTaskSeriesExposureUsd: 2.33973275,
                 combinedReservedExposureUsd: 5.077867761, remainingAggregateAuthorizationUsd: 4.922132239,
                 authorizedAggregateBudgetUsd: 10, v1_2ProofSourcePath: '_wt-verified-commerce-v1-2/proof.json',
+                campaigns: [{ archivedEvidencePath: 'cost-reconciliation/campaign-ledgers/v13-one/budget-ledger.json' }],
+                v1_2ProofArchivedPath: 'cost-reconciliation/v1-2-proof.json',
+                coverageNote: 'Missing ledger files in discovered campaign folders are reported.',
             },
         });
 
@@ -606,6 +659,8 @@ describe('V1.3 proof Markdown rendering', () => {
         expect(markdown).toContain('1307 requests, 67 vision requests, 5 unknown-usage calls');
         expect(markdown).toContain('$5.077867761');
         expect(markdown).toContain('$4.922132239 remaining against the $10.00 authorization');
+        expect(markdown).toContain('All 1 ledger snapshots and the V1.2 proof input are included under `cost-reconciliation/`');
+        expect(markdown).toContain('Missing ledger files in discovered campaign folders are reported.');
     });
 
     test('reports the exact 15-case visual coverage instead of counting photos as distinct cases', () => {

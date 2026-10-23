@@ -276,7 +276,22 @@ const collectGeminiLitePhotoDiagnostics = (runRoot, currentHead, currentEngineSo
     .filter(Boolean)
     .sort((left, right) => Date.parse(left.startedAt || '') - Date.parse(right.startedAt || ''));
 
-const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd = 10, v1_2ProofPath = null) => {
+const archivePackageFile = (archiveRoot, relativePath, bytes) => {
+    const absoluteRoot = path.resolve(archiveRoot);
+    const destination = path.resolve(absoluteRoot, relativePath.split('/').join(path.sep));
+    const destinationRelativePath = path.relative(absoluteRoot, destination);
+    if (!destinationRelativePath || destinationRelativePath.startsWith('..') || path.isAbsolute(destinationRelativePath)) {
+        throw new Error('Evidence archive path escapes the package root.');
+    }
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, bytes);
+    if (sha256(fs.readFileSync(destination)) !== sha256(bytes)) {
+        throw new Error('Evidence archive checksum verification failed.');
+    }
+    return destinationRelativePath.replace(/\\/g, '/');
+};
+
+const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd = 10, v1_2ProofPath = null, archiveRoot = null) => {
     const candidates = [];
     const malformedLedgerSnapshots = [];
     if (fs.existsSync(workspaceRoot)) {
@@ -287,9 +302,16 @@ const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd 
             for (const campaignDirectory of fs.readdirSync(campaignRoot, { withFileTypes: true })) {
                 if (!campaignDirectory.isDirectory()) continue;
                 const ledgerPath = path.join(campaignRoot, campaignDirectory.name, 'budget-ledger.json');
-                if (!fs.existsSync(ledgerPath)) continue;
+                if (!fs.existsSync(ledgerPath)) {
+                    malformedLedgerSnapshots.push({
+                        sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
+                        reason: 'MISSING_LEDGER_FILE',
+                    });
+                    continue;
+                }
                 try {
-                    const ledger = readJson(ledgerPath);
+                    const ledgerBytes = fs.readFileSync(ledgerPath);
+                    const ledger = JSON.parse(ledgerBytes.toString('utf8'));
                     if (typeof ledger.campaignId !== 'string') {
                         malformedLedgerSnapshots.push({
                             sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
@@ -299,7 +321,7 @@ const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd 
                     }
                     if (!ledger.campaignId.startsWith('v13-')) continue;
                     const updatedAt = Date.parse(ledger.updatedAt || '');
-                    candidates.push({ ledger, ledgerPath, sortTime: Number.isFinite(updatedAt) ? updatedAt : fs.statSync(ledgerPath).mtimeMs });
+                    candidates.push({ ledger, ledgerBytes, ledgerPath, sortTime: Number.isFinite(updatedAt) ? updatedAt : fs.statSync(ledgerPath).mtimeMs });
                 } catch (_) {
                     malformedLedgerSnapshots.push({
                         sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
@@ -314,32 +336,49 @@ const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd 
         const prior = latestByCampaign.get(candidate.ledger.campaignId);
         if (!prior || candidate.sortTime > prior.sortTime) latestByCampaign.set(candidate.ledger.campaignId, candidate);
     }
-    const campaigns = [...latestByCampaign.values()].map(({ ledger, ledgerPath }) => ({
-        campaignId: ledger.campaignId,
-        sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
-        sourceLedgerSha256: sha256(fs.readFileSync(ledgerPath)),
-        updatedAt: ledger.updatedAt || null,
-        requestCount: Number.isFinite(ledger.requestCount) ? ledger.requestCount : null,
-        visionRequestCount: Number.isFinite(ledger.visionRequestCount) ? ledger.visionRequestCount : null,
-        unknownUsageRequestCount: Number.isFinite(ledger.unpricedRequestCount) ? ledger.unpricedRequestCount : null,
-        estimatedProviderChargeUsd: Number.isFinite(ledger.estimatedProviderChargeUsd) ? ledger.estimatedProviderChargeUsd : null,
-        reservedWorstCaseUsd: Number.isFinite(ledger.reservedWorstCaseUsd) ? ledger.reservedWorstCaseUsd : null,
-        campaignCeilingUsd: Number.isFinite(ledger.ceilingUsd) ? ledger.ceilingUsd : null,
-        providerInvoice: ledger.providerInvoice || 'NOT_AVAILABLE',
-    })).sort((left, right) => left.campaignId.localeCompare(right.campaignId));
+    const campaigns = [...latestByCampaign.values()].map(({ ledger, ledgerBytes, ledgerPath }) => {
+        const sourceLedgerSha256 = sha256(ledgerBytes);
+        const archivedEvidencePath = archiveRoot
+            ? archivePackageFile(
+                archiveRoot,
+                `cost-reconciliation/campaign-ledgers/${encodeURIComponent(ledger.campaignId)}/budget-ledger.json`,
+                ledgerBytes,
+            )
+            : null;
+        return {
+            campaignId: ledger.campaignId,
+            sourcePath: path.relative(workspaceRoot, ledgerPath).replace(/\\/g, '/'),
+            sourceLedgerSha256,
+            archivedEvidencePath,
+            updatedAt: ledger.updatedAt || null,
+            requestCount: Number.isFinite(ledger.requestCount) ? ledger.requestCount : null,
+            visionRequestCount: Number.isFinite(ledger.visionRequestCount) ? ledger.visionRequestCount : null,
+            unknownUsageRequestCount: Number.isFinite(ledger.unpricedRequestCount) ? ledger.unpricedRequestCount : null,
+            estimatedProviderChargeUsd: Number.isFinite(ledger.estimatedProviderChargeUsd) ? ledger.estimatedProviderChargeUsd : null,
+            reservedWorstCaseUsd: Number.isFinite(ledger.reservedWorstCaseUsd) ? ledger.reservedWorstCaseUsd : null,
+            campaignCeilingUsd: Number.isFinite(ledger.ceilingUsd) ? ledger.ceilingUsd : null,
+            providerInvoice: ledger.providerInvoice || 'NOT_AVAILABLE',
+        };
+    }).sort((left, right) => left.campaignId.localeCompare(right.campaignId));
     const sum = (key) => campaigns.every(item => Number.isFinite(item[key]))
         ? campaigns.reduce((total, item) => total + item[key], 0) : null;
     let v1_2ExposureUsd = null;
     let v1_2ProofSourcePath = null;
     let v1_2ProofSha256 = null;
+    let v1_2ProofArchivedPath = null;
     if (v1_2ProofPath && fs.existsSync(v1_2ProofPath)) {
         try {
-            const v1_2Proof = readJson(v1_2ProofPath);
+            const v1_2ProofBytes = fs.readFileSync(v1_2ProofPath);
+            const v1_2Proof = JSON.parse(v1_2ProofBytes.toString('utf8'));
             const value = v1_2Proof.cumulativeProviderCostAccounting?.conservativeTaskSeriesExposureUsd;
             if (Number.isFinite(value)) {
+                const archivedPath = archiveRoot
+                    ? archivePackageFile(archiveRoot, 'cost-reconciliation/v1-2-proof.json', v1_2ProofBytes)
+                    : null;
                 v1_2ExposureUsd = value;
                 v1_2ProofSourcePath = path.relative(workspaceRoot, v1_2ProofPath).replace(/\\/g, '/');
-                v1_2ProofSha256 = sha256(fs.readFileSync(v1_2ProofPath));
+                v1_2ProofSha256 = sha256(v1_2ProofBytes);
+                v1_2ProofArchivedPath = archivedPath;
             }
         } catch (_) { /* missing or malformed historical proof remains unmeasured */ }
     }
@@ -349,6 +388,7 @@ const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd 
     const ledgerSnapshotsComplete = malformedLedgerSnapshots.length === 0;
     return {
         reconciliationMethod: 'latest campaign ledger per distinct campaignId across sibling _product-engine-v1-3-evidence* roots',
+        coverageNote: 'Missing ledger files inside discovered campaign directories make reconciliation incomplete. Campaign roots absent from the workspace inventory cannot be detected automatically.',
         campaigns,
         ledgerSnapshotsComplete,
         malformedLedgerSnapshots,
@@ -362,11 +402,12 @@ const reconcileV13CampaignBudget = (workspaceRoot, authorizedAggregateBudgetUsd 
         v1_2ConservativeTaskSeriesExposureUsd: v1_2ExposureUsd,
         v1_2ProofSourcePath,
         v1_2ProofSha256,
+        v1_2ProofArchivedPath,
         combinedReservedExposureUsd: combinedReservedUsd,
         authorizedAggregateBudgetUsd,
         remainingAggregateAuthorizationUsd: ledgerSnapshotsComplete && Number.isFinite(combinedReservedUsd)
             ? authorizedAggregateBudgetUsd - combinedReservedUsd : null,
-        status: !ledgerSnapshotsComplete ? 'INCOMPLETE_MALFORMED_LEDGER_SNAPSHOTS' : Number.isFinite(combinedReservedUsd)
+        status: !ledgerSnapshotsComplete ? 'INCOMPLETE_LEDGER_SNAPSHOTS' : Number.isFinite(combinedReservedUsd)
             ? (combinedReservedUsd <= authorizedAggregateBudgetUsd ? 'WITHIN_AUTHORIZATION_BY_MANUAL_RECONCILIATION' : 'EXCEEDS_AUTHORIZATION')
             : 'INCOMPLETE',
         aggregateCapEnforcement: 'MANUAL_RECONCILIATION_ONLY; INDIVIDUAL_CAMPAIGN_LEDGERS_DO_NOT_ENFORCE_A_SHARED_CAP',
@@ -687,7 +728,7 @@ const main = () => {
         .filter(run => run.currentCodeBinding === 'PASS').at(-1) || null;
     const v1_2ProofPath = process.env.LAB_V1_2_PROOF_PATH
         || path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2', 'docs', 'ai', 'product-experience-v1-2', 'verified-commerce-proof.json');
-    const aggregateBudgetReconciliation = reconcileV13CampaignBudget(WORKSPACE_ROOT, 10, v1_2ProofPath);
+    const aggregateBudgetReconciliation = reconcileV13CampaignBudget(WORKSPACE_ROOT, 10, v1_2ProofPath, ARTIFACT_ROOT);
     const verificationReceiptPath = process.env.LAB_VERIFY_RECEIPT_PATH || null;
     const verificationReceipt = verificationReceiptPath && fs.existsSync(verificationReceiptPath)
         ? readJson(verificationReceiptPath) : regression;
@@ -1511,9 +1552,9 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         : 'No campaign ledger is available.';
     const reconciliation = details.aggregateBudgetReconciliation || {};
     const aggregateBudgetBlock = reconciliation.ledgerSnapshotsComplete === false
-        ? `Partial V1.3 ledger reconciliation: ${reconciliation.distinctCampaignCount ?? 0} parsed campaigns record ${reconciliation.requestCount ?? 'NOT_MEASURED'} requests and $${Number(reconciliation.reservedWorstCaseUsd || 0).toFixed(9)} known worst-case reserve, but ${reconciliation.malformedLedgerSnapshots?.length || 0} malformed ledger snapshot(s) were found. Aggregate exposure and remaining authorization are **INCOMPLETE / NOT_AVAILABLE**. The malformed snapshot paths and reasons are in the machine proof. Provider invoices are unavailable.`
+        ? `Partial V1.3 ledger reconciliation: ${reconciliation.distinctCampaignCount ?? 0} parsed campaigns record ${reconciliation.requestCount ?? 'NOT_MEASURED'} requests and $${Number(reconciliation.reservedWorstCaseUsd || 0).toFixed(9)} known worst-case reserve, but ${reconciliation.malformedLedgerSnapshots?.length || 0} missing or malformed ledger snapshot(s) were found. Aggregate exposure and remaining authorization are **INCOMPLETE / NOT_AVAILABLE**. The affected paths and reasons are in the machine proof. Provider invoices are unavailable.`
         : Number.isFinite(reconciliation.reservedWorstCaseUsd)
-            ? `Deduplicated latest ledgers across ${reconciliation.distinctCampaignCount} V1.3 campaigns record ${reconciliation.requestCount} requests, ${reconciliation.visionRequestCount} vision requests, ${reconciliation.unknownUsageRequestCount} unknown-usage calls, $${reconciliation.estimatedProviderChargeUsd.toFixed(8)} priced-token estimate and $${reconciliation.reservedWorstCaseUsd.toFixed(9)} reserved exposure. The sum of their individual ceilings is $${reconciliation.sumOfPerCampaignCeilingsUsd.toFixed(2)}; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $${Number(reconciliation.v1_2ConservativeTaskSeriesExposureUsd || 0).toFixed(8)} conservative task-series exposure, for combined reserve $${Number(reconciliation.combinedReservedExposureUsd || 0).toFixed(9)} and $${Number(reconciliation.remainingAggregateAuthorizationUsd || 0).toFixed(9)} remaining against the $${Number(reconciliation.authorizedAggregateBudgetUsd || 10).toFixed(2)} authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: \`${reconciliation.v1_2ProofSourcePath || 'NOT_RECORDED'}\`; V1.3 ledger file hashes and paths are in the machine proof.`
+            ? `Deduplicated latest ledgers across ${reconciliation.distinctCampaignCount} V1.3 campaigns record ${reconciliation.requestCount} requests, ${reconciliation.visionRequestCount} vision requests, ${reconciliation.unknownUsageRequestCount} unknown-usage calls, $${reconciliation.estimatedProviderChargeUsd.toFixed(8)} priced-token estimate and $${reconciliation.reservedWorstCaseUsd.toFixed(9)} reserved exposure. The sum of their individual ceilings is $${reconciliation.sumOfPerCampaignCeilingsUsd.toFixed(2)}; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $${Number(reconciliation.v1_2ConservativeTaskSeriesExposureUsd || 0).toFixed(8)} conservative task-series exposure, for combined reserve $${Number(reconciliation.combinedReservedExposureUsd || 0).toFixed(9)} and $${Number(reconciliation.remainingAggregateAuthorizationUsd || 0).toFixed(9)} remaining against the $${Number(reconciliation.authorizedAggregateBudgetUsd || 10).toFixed(2)} authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: \`${reconciliation.v1_2ProofSourcePath || 'NOT_RECORDED'}\`; V1.3 ledger file hashes and paths are in the machine proof. ${reconciliation.campaigns?.every(item => item.archivedEvidencePath) && reconciliation.v1_2ProofArchivedPath ? `All ${reconciliation.campaigns.length} ledger snapshots and the V1.2 proof input are included under \`cost-reconciliation/\`.` : 'The evidence package cost-input archive is incomplete.'} ${reconciliation.coverageNote || ''}`
         : 'Aggregate V1.3 campaign exposure: NOT_MEASURED.';
     const independentBlock = details.independent
         ? 'Verdict: **' + status.INDEPENDENT_VERIFICATION + '**; reviewer: ' + (details.independent.reviewer || 'not recorded')
