@@ -1,6 +1,6 @@
 # EasyModerator Product Engine V1.3 — Integration & Customer Truth Proof
 
-Generated: 2026-10-23T19:19:05.927Z
+Generated: 2026-10-23T20:22:45.299Z
 
 ## A. Executive verdict
 
@@ -28,10 +28,9 @@ The candidate is not eligible for integration readiness yet. The evidence below 
 - V1.3 tested code commit: `33ca2b76f1fe8f43dce10523ddfec3ab7ff9860d` on `feature/product-engine-v1.3-customer-truth`.
 - Evidence checkout: `D:\easymod\_wt-product-engine-v1-3`.
 - Evidence package root: `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01`.
-- Evidence relocation: the clean package was copied from `D:\easymod\_product-engine-v1-3-evidence-final-20261023-07`; `integration/tmp` and the prior checksum manifest were excluded. Of 263 retained files, 260 were byte-identical to the preserved source root; the proof JSON, proof Markdown and privacy report were refreshed. The original root and verifier receipt remain unchanged; report artifact pointers refer to this clean package root.
 - Backend source SHA-256: `e1168c0e5e9cf6132a379053144f85e94089c4c430664de1f62716f26e6a11fa`.
 - Worktree clean at verification start: **YES**.
-- Worktree clean when the proof was generated: **YES**. Verification receipt: `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01\regression\verify-67545ddf-3fd4-49ce-9427-721f8217941c.json`.
+- Worktree clean when the proof was generated: **NO**. Verification receipt: `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01\regression\verify-67545ddf-3fd4-49ce-9427-721f8217941c.json`.
 - Other agent worktrees touched: **NO**. Production changed: **NO**. Push, merge and deploy: **NO**.
 - Production release remains unauthorized.
 
@@ -111,11 +110,11 @@ Disposition: SEND; correct answer slots: 1/1.
 
 ## E. Gemini
 
-Credential status: AUTHENTICATED; the process-scoped value is not recorded. Model: gemini-3.1-flash-lite. Provider-reported traffic across matched arms: 158 text and 6 vision calls. Request attempts across matched arms: 158 text and 6 vision. Candidate run ledger: 109 request attempts, 109 provider usage records, 0 rejected reservations. Estimated matched-pair spend from priced usage: $0.03296650; provider invoice: NOT_AVAILABLE. Candidate route coverage: 200/200 executed, 0 not run. Candidate quality gate: PASS; 18/18 fact slots and 15/15 answerable turns verified; context resolution failures 0 across 13/13 fully executed conversation chains (0 not evaluable); cross-domain safety 4 safe, 0 unsafe across 4/4 executed turns (0 not run). Runner provenance: PASS; paid/current runner hashes 613801b8e1ca0773e0c4ea928ed4836a370fbe27c13587cbc1dbd0fdd2a66eb0/613801b8e1ca0773e0c4ea928ed4836a370fbe27c13587cbc1dbd0fdd2a66eb0. Candidate unpriced provider calls: 0; all recorded candidate provider usage was priced.
+Credential status: AUTHENTICATED; the process-scoped value is not recorded. Model: gemini-3.1-flash-lite. Provider-reported traffic across matched arms: 158 text and 6 vision calls. Request attempts across matched arms: 158 text and 6 vision. Candidate run ledger: 109 request attempts, 109 provider usage records, 0 rejected reservations. Estimated matched-pair spend from priced usage: $0.03331425; provider invoice: NOT_AVAILABLE. Candidate route coverage: 200/200 executed, 0 not run. Candidate quality gate: PASS; 18/18 fact slots and 15/15 answerable turns verified; context resolution failures 0 across 13/13 fully executed conversation chains (0 not evaluable); cross-domain safety 4 safe, 0 unsafe across 4/4 executed turns (0 not run). Runner provenance: PASS; paid/current runner hashes 7b19413df9db2aa646bf6270ef43c24cfdd7dd0e6e1a53521d6451f85d3df3c3/7b19413df9db2aa646bf6270ef43c24cfdd7dd0e6e1a53521d6451f85d3df3c3. Candidate unpriced provider calls: 0; all recorded candidate provider usage was priced.
 
 Candidate false refusals: 0 slots across 15/15 evaluated/expected answerable turns (0 not evaluable).
 
-Observed campaign activity remains in the cumulative ledger: 164/256 requests, 6/12 vision requests, 164 provider-reported calls and 0 unpriced or pending request(s). Estimated priced usage: $0.03296650; worst-case reserved: $0.29063050 of $2.00 ceiling. Invoice unavailable.
+Observed campaign activity remains in the cumulative ledger: 164/256 requests, 6/12 vision requests, 164 provider-reported calls and 0 unpriced or pending request(s). Estimated priced usage: $0.03331425; worst-case reserved: $0.29081075 of $2.00 ceiling. Invoice unavailable.
 
 Supplementary Pro diagnostic: NOT_RUN.
 
@@ -171,14 +170,14 @@ The Playwright runner starts a loopback Test Lab for the browser run and stops i
 
 - Security tests: **PASS**. Egress guard: PASS; blocked non-loopback attempts: 0.
 - Tenant violations: 0; unscoped catalog reads: 0.
-- Pre-proof artifact privacy scan: **PASS** at 2026-10-23T19:11:14.263957Z. The final scan report and checksum manifest are generated after this proof; inspect their timestamps and entries to confirm coverage. The proof Markdown is at `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01\reports\product-engine-v1.3-proof.md`, and the machine proof is at `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01\product-engine-v1.3-proof.json`.
+- Pre-proof artifact privacy scan: **PASS** at 2026-10-23T20:21:29.687250Z. The final scan report and checksum manifest are generated after this proof; inspect their timestamps and entries to confirm coverage. The proof Markdown is at `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01\reports\product-engine-v1.3-proof.md`, and the machine proof is at `D:\easymod\_product-engine-v1-3-evidence-final-20261024-01\product-engine-v1.3-proof.json`.
 - No credential values are stored in the proof package.
 
 ## J. Cost and merchant economics
 
-Estimated matched-pair provider cost from priced usage: $0.03296650. Candidate unpriced provider calls: 0. Rejected campaign ledger attempts: 0 (blocked before provider usage). All recorded provider usage was priced. Candidate cost per verified product-answer turn: $0.00144142; per verified fact slot: $0.00120118. Deterministic source replay router p50/p95: 4.098 ms / 12.908 ms. Paid candidate route p50/p95: 4296.333 ms / 5395.042 ms; baseline: 3.619 ms / 5248.813 ms. Paid candidate provider p50/p95: 1072 ms / 1881 ms (baseline 1184 ms / 2221 ms). These route timings exclude webhook, queue, database and customer-facing network latency.
+Estimated matched-pair provider cost from priced usage: $0.03331425. Candidate unpriced provider calls: 0. Rejected campaign ledger attempts: 0 (blocked before provider usage). All recorded provider usage was priced. Candidate cost per verified product-answer turn: $0.00143310; per verified fact slot: $0.00119425. Deterministic source replay router p50/p95: 4.098 ms / 12.908 ms. Paid candidate route p50/p95: 4455.219 ms / 5346.926 ms; baseline: 1.27 ms / 5213.681 ms. Paid candidate provider p50/p95: 997 ms / 1502 ms (baseline 1077 ms / 2247 ms). These route timings exclude webhook, queue, database and customer-facing network latency.
 
-Deduplicated latest ledgers across 21 V1.3 campaigns record 2621 requests, 121 vision requests, 5 unknown-usage calls, $0.61313153 priced-token estimate and $5.086028023 reserved exposure. The sum of their individual ceilings is $33.42; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $2.33973275 conservative task-series exposure, for combined reserve $7.425760773 and $2.574239227 remaining against the $10.00 authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: `_wt-verified-commerce-v1-2/docs/ai/product-experience-v1-2/verified-commerce-proof.json`; V1.3 ledger file hashes and paths are in the machine proof.
+Deduplicated latest ledgers across 23 V1.3 campaigns record 2949 requests, 133 vision requests, 5 unknown-usage calls, $0.67960328 priced-token estimate and $5.667497026 reserved exposure. The sum of their individual ceilings is $37.42; those ledgers do not enforce one shared aggregate cap. The V1.2 proof records $2.33973275 conservative task-series exposure, for combined reserve $8.007229776 and $1.992770224 remaining against the $10.00 authorization by manual reconciliation. Provider invoices are unavailable. V1.2 source: `_wt-verified-commerce-v1-2/docs/ai/product-experience-v1-2/verified-commerce-proof.json`; V1.3 ledger file hashes and paths are in the machine proof. All 23 ledger snapshots and the V1.2 proof input are included under `cost-reconciliation/`. Missing ledger files inside discovered campaign directories make reconciliation incomplete. Campaign roots absent from the workspace inventory cannot be detected automatically.
 
 No merchant time saved, adoption, order outcomes, conversion or ROI data exists in this test. Commercial evidence is therefore **NOT ESTABLISHED**.
 
@@ -186,12 +185,12 @@ No merchant time saved, adoption, order outcomes, conversion or ROI data exists 
 
 - Source comparison: Valid: **YES**. V1.2 verified answers: 7; V1.3 verified answers: 18. V1.2 context failures: 11; V1.3: 0 across 13/13 complete conversation chains. V1.3 context turns not evaluable: 0.
 - Held-out comparison: Valid: **YES**. V1.2 verified answers: 28; V1.3 verified answers: 37.
-- Paid Gemini source comparison: verified fact answers 7/18 baseline to 18/18 candidate; fully answered turns 5/15 baseline to 15/15 candidate. Quality verdict: PASS. Paid matched-pair estimated cost: $0.03296650; candidate $0.02162125 vs baseline $0.01134525 (REGRESSED). Paid route p95 outcome: REGRESSED; provider p95 outcome: IMPROVED. Paid public-photo probe: category 2/3, visible color 3/3; catalog identity NOT SCORED.
+- Paid Gemini source comparison: verified fact answers 7/18 baseline to 18/18 candidate; fully answered turns 5/15 baseline to 15/15 candidate. Quality verdict: PASS. Paid matched-pair estimated cost: $0.03331425; candidate $0.02149650 vs baseline $0.01181775 (REGRESSED). Paid route p95 outcome: REGRESSED; provider p95 outcome: IMPROVED. Paid public-photo probe: category 2/3, visible color 3/3; catalog identity NOT SCORED.
 - Deterministic and paid model results are kept separate. Comparison outputs include dataset, oracle, catalog, engine-source and runner hashes.
 
 ## L. Independent verification
 
-Verdict: **PASS**; reviewer: Independent Verification Agent (read-only); reviewed code commit: 33ca2b76f1fe8f43dce10523ddfec3ab7ff9860d; reviewed runner hash: 613801b8e1ca0773e0c4ea928ed4836a370fbe27c13587cbc1dbd0fdd2a66eb0; focused tests: 66/66; final scan: NOT_RECORDED; manifest recomputation: NOT_RECORDED; remaining limitations: Automated QA remains FAIL and integration readiness remains NO because the required genuine-vision coverage is incomplete.; Only three genuine photos were tested; category scored 2/3, catalog identity was not scored, and only 1/15 required visual case types is represented.; Twelve standalone raster artifacts were not OCR-scanned.; Provider spend is estimated from token usage, not invoiced. The shared 10 USD aggregate authorization is manually reconciled.; No live Meta delivery, production behavior, merchant adoption, order outcomes, conversion, or ROI was tested or established..
+Verdict: **PASS**; reviewer: Independent Verification Agent (read-only); reviewed code commit: 33ca2b76f1fe8f43dce10523ddfec3ab7ff9860d; reviewed runner hash: 7b19413df9db2aa646bf6270ef43c24cfdd7dd0e6e1a53521d6451f85d3df3c3; focused tests: 68/68; final scan: NOT_RECORDED; manifest recomputation: NOT_RECORDED; remaining limitations: Product QA remains FAIL and integration readiness remains NO because only 1/15 required visual case types is represented and catalog identity was not scored.; Twelve standalone raster artifacts are not OCR-scanned.; Campaign roots entirely absent from workspace inventory cannot be detected automatically; a missing ledger inside a discovered campaign directory marks reconciliation incomplete.; Provider costs are estimates, not invoices, and the shared 10 USD authorization is manually reconciled rather than enforced as one global cap.; No live Meta delivery, production behavior, merchant adoption, conversion, or ROI was established..
 
 The review applies to the exact code SHA and runner hash recorded above. Any code change after that review invalidates its verdict. Product QA and integration remain at the statuses shown in Section A.
 
@@ -230,9 +229,9 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261024
 | `V1_2_BASE_SHA` | 957bb991a18db1949369a6f805822b8c8b69889b |
 | `V1_3_BRANCH` | feature/product-engine-v1.3-customer-truth |
 | `V1_3_FINAL_SHA` | 33ca2b76f1fe8f43dce10523ddfec3ab7ff9860d |
-| `WORKTREE_CLEAN` | true |
+| `WORKTREE_CLEAN` | false |
 | `WORKTREE_CLEAN_AT_VERIFICATION_START` | true |
-| `WORKTREE_CLEAN_AT_PROOF_GENERATION` | true |
+| `WORKTREE_CLEAN_AT_PROOF_GENERATION` | false |
 | `VERIFICATION_ENTRYPOINT_STATUS` | FAIL |
 | `VERIFICATION_ENTRYPOINT_COMPLETE` | YES |
 | `SOURCE_PERSONAS` | 20 |
@@ -284,7 +283,7 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261024
 | `REAL_GEMINI_FALSE_REFUSAL_TURNS_EXPECTED` | 15 |
 | `REAL_GEMINI_FALSE_REFUSAL_TURNS_EVALUATED` | 15 |
 | `REAL_GEMINI_FALSE_REFUSAL_TURNS_NOT_EVALUABLE` | 0 |
-| `REAL_PROVIDER_ESTIMATED_COST_USD` | 0.0329665 |
+| `REAL_PROVIDER_ESTIMATED_COST_USD` | 0.033314250000000004 |
 | `REAL_OBSERVED_PRICED_USAGE_ESTIMATE_USD` | NOT_APPLICABLE |
 | `REAL_GEMINI_STATUS` | PASS |
 | `REAL_GEMINI_QUALITY_VERDICT` | PASS |
@@ -305,17 +304,17 @@ Machine-readable proof: `D:\easymod\_product-engine-v1-3-evidence-final-20261024
 | `GEMINI_LITE_PHOTO_FOLLOW_UP_IDENTITY_SCORED` | NO |
 | `REAL_GEMINI_HELDOUT_EVALUATION` | NOT_RUN |
 | `CUSTOMER_USEFULNESS_SCORE` | NOT_MEASURED |
-| `V13_DISTINCT_CAMPAIGN_LEDGER_COUNT` | 21 |
-| `V13_AGGREGATE_CAMPAIGN_REQUESTS` | 2621 |
-| `V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS` | 121 |
+| `V13_DISTINCT_CAMPAIGN_LEDGER_COUNT` | 23 |
+| `V13_AGGREGATE_CAMPAIGN_REQUESTS` | 2949 |
+| `V13_AGGREGATE_CAMPAIGN_VISION_REQUESTS` | 133 |
 | `V13_AGGREGATE_UNKNOWN_USAGE_REQUESTS` | 5 |
-| `V13_AGGREGATE_ESTIMATED_COST_USD` | 0.613131527 |
-| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 5.086028022999998 |
-| `V13_SUM_OF_CAMPAIGN_CEILINGS_USD` | 33.42 |
+| `V13_AGGREGATE_ESTIMATED_COST_USD` | 0.6796032789999998 |
+| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 5.667497025999999 |
+| `V13_SUM_OF_CAMPAIGN_CEILINGS_USD` | 37.42 |
 | `V12_CONSERVATIVE_TASK_SERIES_EXPOSURE_USD` | 2.33973275 |
 | `AUTHORIZED_AGGREGATE_BUDGET_USD` | 10 |
-| `COMBINED_RESERVED_EXPOSURE_USD` | 7.425760772999999 |
-| `REMAINING_AGGREGATE_AUTHORIZATION_USD` | 2.5742392270000014 |
+| `COMBINED_RESERVED_EXPOSURE_USD` | 8.007229775999999 |
+| `REMAINING_AGGREGATE_AUTHORIZATION_USD` | 1.992770224000001 |
 | `AGGREGATE_BUDGET_RECONCILIATION` | WITHIN_AUTHORIZATION_BY_MANUAL_RECONCILIATION |
 | `PROVIDER_BUDGET_EXHAUSTED` | NO |
 | `POSTGRES_INTEGRATION` | PASS |
