@@ -354,6 +354,17 @@ def strip_embedded_code(text: str) -> str:
     return re.sub(r"<(script|style)\b[^>]*>.*?</\1\s*>", " ", text, flags=re.IGNORECASE | re.DOTALL)
 
 
+def normalize_markdown_table_row_for_scan(line: str) -> str:
+    if not line.lstrip().startswith("|"):
+        return line
+    cells = line.split("|")
+    for index, cell in enumerate(cells[:-1]):
+        if (re.search(r"`[^`]*_USD`?\s*$", cell.strip(), re.IGNORECASE)
+                and re.fullmatch(r"\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)\s*", cells[index + 1])):
+            cells[index + 1] = " [USD amount] "
+    return re.sub(r"[ \t]+(?=\|)", "", "|".join(cells))
+
+
 def sensitive_text_for_scan(path: Path, text: str) -> str:
     if path.suffix.casefold() in {".js", ".css", ".trace", ".network", ".stacks"}:
         return ""
@@ -368,7 +379,7 @@ def sensitive_text_for_scan(path: Path, text: str) -> str:
         return "\n".join(line for line in text.splitlines() if line.startswith(labels))
     if path.suffix.casefold() == ".md":
         return "\n".join(
-            re.sub(r"[ \t]+(?=\|)", "", line) if line.lstrip().startswith("|") else line
+            normalize_markdown_table_row_for_scan(line)
             for line in text.splitlines()
         )
     return text

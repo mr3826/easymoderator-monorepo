@@ -128,6 +128,12 @@ class LiteralMatcherTests(unittest.TestCase):
 
         self.assertEqual(SCANNER.count_sensitive_pattern_matches(scanned_text, None), 0)
 
+    def test_sensitive_text_scan_ignores_phone_shaped_digits_in_usd_table_cells(self):
+        report_row = "| `V13_AGGREGATE_WORST_CASE_RESERVED_USD` | 3.0134567890 |"
+        scanned_text = SCANNER.sensitive_text_for_scan(Path("proof.md"), report_row)
+
+        self.assertEqual(SCANNER.count_sensitive_pattern_matches(scanned_text, None), 0)
+
     def test_sensitive_text_scan_keeps_phone_detection_in_markdown_table_cells(self):
         report_row = "| Customer phone | 01712345678        |"
         scanned_text = SCANNER.sensitive_text_for_scan(Path("proof.md"), report_row)
