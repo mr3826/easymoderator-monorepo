@@ -12,6 +12,30 @@ node scripts/product-experience/run-integration.js  # recommended: disposable DB
 npm run test:meta:e2e                             # needs dedicated disposable PostgreSQL + Redis
 ```
 
+The runner defaults to a project-scoped PostgreSQL 16 / Redis 7 Compose stack.
+When Docker is unavailable, an explicit external-service mode is available for
+an isolated PostgreSQL database and Redis process already running on the local
+machine or in WSL:
+
+```powershell
+$env:LAB_EXTERNAL_SERVICES = 'true'
+$env:LAB_POSTGRES_PORT = '55432'
+$env:LAB_REDIS_PORT = '56379'
+node scripts/product-experience/run-integration.js
+```
+
+That mode connects only to `127.0.0.1`, requires the empty
+`easymod_product_lab_test` database with role `lab` / password
+`lab-local-only`, and requires Redis to expose at least 23 logical databases
+with indexes 0–3, 10–15, and 20–22 empty. The runner verifies both protocol
+endpoints and records their actual versions before migrations. It does not
+create, start, or stop externally managed services, so the caller remains
+responsible for their lifecycle and cleanup. The receipt records the loopback
+client endpoint but does not inspect other listener interfaces; keep both
+service listeners bound to loopback.
+Provider credentials are stripped and the same Node egress guard remains
+active.
+
 Setup, fixtures and the live-Meta procedure:
 [`docs/testing/META_E2E_TEST_SETUP.md`](../../../docs/testing/META_E2E_TEST_SETUP.md).
 
@@ -40,10 +64,11 @@ Setup, fixtures and the live-Meta procedure:
 The provider `fetch` and the Meta Graph `axios.get/post` hops are captured in
 [`transport.js`](./transport.js); unexpected outbound provider fetches and
 non-Graph `axios.get/post` calls throw. The standalone Jest command does not
-install an OS-wide network firewall. The recommended product integration
-runner starts disposable services and installs a Node API egress fence that
-allows loopback hosts while rejecting non-loopback network operations. It does
-not restrict loopback access to the disposable service ports, and it is not an
+install an OS-wide network firewall. The product integration runner installs
+a Node API egress fence that allows loopback hosts while rejecting non-loopback
+network operations. In Compose mode it starts disposable services; in external
+mode it uses the explicitly configured user-owned loopback services. The guard
+does not restrict loopback access to the service ports, and it is not an
 OS-wide network firewall.
 
 Most scenarios cover the full signed-webhook pipeline. Two boundary cases are

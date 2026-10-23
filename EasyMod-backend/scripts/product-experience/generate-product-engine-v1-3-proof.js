@@ -498,6 +498,16 @@ const safeText = (value, maxLength = 220) => String(value || '')
     .replace(/(?<!\d)(?:\+?880[\s().-]*)?0?1[3-9](?:[\s().-]*\d){8}(?!\d)/gu, '[PHONE]')
     .replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 const passState = value => value === true ? 'PASS' : value === false ? 'FAIL' : 'NOT_RUN';
+const isIntegrationServiceReady = (integration, serviceName) => {
+    const service = integration?.services?.find(item => item.name === serviceName);
+    if (!service) return false;
+    if (service.health === 'compose-healthcheck') return true;
+    return service.provisioning === 'external-loopback'
+        && service.host === '127.0.0.1'
+        && Number.isInteger(service.port) && service.port >= 1024 && service.port <= 65535
+        && service.health === 'protocol-query'
+        && typeof service.version === 'string' && service.version.trim().length > 0;
+};
 const verificationStepState = step => !step ? 'NOT_RUN'
     : step.timedOut ? 'TIMED_OUT'
         : step.status === 'PASS' ? 'PASS' : 'INCOMPLETE';
@@ -799,9 +809,10 @@ const main = () => {
     const heldoutComparisonValid = heldoutComparison?.comparisonValid === true;
     const integrationPass = integration ? integration.status === 'PASS' : null;
     const postgresPass = integrationPass === null ? null : integrationPass
-        && integration.services?.some(service => service.name === 'postgres' && service.health === 'compose-healthcheck');
+        && integration?.migrations?.exitCode === 0
+        && isIntegrationServiceReady(integration, 'postgres');
     const redisPass = integrationPass === null ? null : integrationPass
-        && integration.services?.some(service => service.name === 'redis' && service.health === 'compose-healthcheck');
+        && isIntegrationServiceReady(integration, 'redis');
     const selectedIntegrationPass = integration?.jest?.selectedIntegration?.exitCode === 0
         && !integration.jest.selectedIntegration.timedOut;
     const webhookPass = integration?.jest?.webhookPipelineE2E?.exitCode === 0
@@ -1457,8 +1468,11 @@ function renderMarkdown(proof, status, examples, comparisons, details) {
         '',
         'Required output coverage is partial: the run records fixture provenance/checksum, visible category/color, redacted provider output, redacted customer response, latency, estimated token cost, and an unverified-material flag. It does not record independently known catalog SKU identity, retrieved catalog candidates, a final SKU match, calibrated confidence/ambiguity, or a complete per-attribute reliability annotation. Catalog product identity accuracy is therefore NOT_MEASURED.',
     ].join('\n');
+    const integrationServiceDescription = details.integration?.serviceMode?.provider === 'user-provisioned-wsl-loopback'
+        ? `user-provisioned WSL PostgreSQL ${safeText(details.integration.services?.find(service => service.name === 'postgres')?.version || 'version not recorded')} and Redis ${safeText(details.integration.services?.find(service => service.name === 'redis')?.version || 'version not recorded')} on 127.0.0.1; read-only protocol checks passed before migrations`
+        : 'a disposable project-scoped Docker Compose stack';
     const integrationBlock = details.integration?.jest?.selectedIntegration || details.integration?.jest?.webhookPipelineE2E || details.integration?.jest?.backendRegression
-        ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use a disposable project-scoped stack. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
+        ? `Receipt status: **${details.integration.status}**; PostgreSQL and Redis use ${integrationServiceDescription}. Selected integration: ${details.selectedIntegrationTests}; webhook pipeline: ${details.webhookTests}; full backend regression: ${details.backendRegressionTests}. Receipts: \`${proof.candidate.evidenceRoot}\\integration\`.`
         : details.integrationVerifierStep
             ? `Outer integration verification ${details.integrationVerifierStep.timedOut ? 'timed out' : 'did not produce an inner receipt'}; no inner integration receipt was written, so individual integration assertions are NOT_MEASURED. Runner status: ${verificationStepState(details.integrationVerifierStep)}; subprocess cleanup: ${details.integrationVerifierStep.timeoutCleanup || 'NOT_RECORDED'}.`
             : 'Local integration: NOT_RUN.';
@@ -1695,4 +1709,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields };
+module.exports = { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, backendSourceSha256, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, isIntegrationServiceReady, matchesCurrentVerificationCommit, matchingComparison, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields };

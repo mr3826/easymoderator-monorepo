@@ -3,7 +3,24 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields } = require('./generate-product-engine-v1-3-proof');
+const { assessAutomatedQaVerdict, assessGenuinePhotoQuality, assessPlaywrightExecution, assessRealGeminiQuality, calculateCandidateCostMetrics, collectGeminiLitePhotoDiagnostics, collectGeminiProPhotoDiagnostics, independentVerificationMatches, independentVerificationStatus, isIntegrationServiceReady, matchesCurrentVerificationCommit, newestMatching, privacyScanPassed, reconcileV13CampaignBudget, renderMarkdown, safeExamples, summarizeCampaignLedger, summarizeGeminiProDiagnostics, summarizeRequiredVisualCaseCoverage, summarizeRunLedger, worktreeStatusFields } = require('./generate-product-engine-v1-3-proof');
+
+describe('integration receipt service readiness', () => {
+    test('accepts real external services only when protocol queries ran on loopback TCP endpoints', () => {
+        const receipt = { services: [
+            { name: 'postgres', provisioning: 'external-loopback', host: '127.0.0.1', port: 55432, health: 'protocol-query', version: '18.6' },
+            { name: 'redis', provisioning: 'external-loopback', host: '127.0.0.1', port: 56379, health: 'protocol-query', version: '8.0.5' },
+            { name: 'postgres', provisioning: 'external-loopback', host: '0.0.0.0', port: 55432, health: 'protocol-query', version: '18.6' },
+            { name: 'redis', provisioning: 'external-loopback', host: '127.0.0.1', port: 65536, health: 'protocol-query', version: '8.0.5' },
+        ] };
+
+        expect(isIntegrationServiceReady(receipt, 'postgres')).toBe(true);
+        expect(isIntegrationServiceReady(receipt, 'redis')).toBe(true);
+        expect(isIntegrationServiceReady({ services: [receipt.services[2]] }, 'postgres')).toBe(false);
+        expect(isIntegrationServiceReady({ services: [receipt.services[3]] }, 'redis')).toBe(false);
+        expect(isIntegrationServiceReady({ services: [{ name: 'redis', health: 'compose-healthcheck' }] }, 'redis')).toBe(true);
+    });
+});
 
 describe('required visual case coverage audit', () => {
     test('counts one clean single-product case and does not treat the three-photo probe as 3 of 15 cases', () => {

@@ -120,6 +120,13 @@ DATABASE_URL=postgres://e2e:e2e@127.0.0.1:55432/easymod_integration_test \
 
 See [EasyMod-backend/README.md](EasyMod-backend/README.md) and [EasyMod-frontend/README.md](EasyMod-frontend/README.md) for module-specific setup, environment variables, testing, and architecture.
 
+The full V1.3 Product Engine integration runner defaults to Docker Compose. If
+Docker is unavailable, it can use an explicitly selected user-owned PostgreSQL
+and Redis pair on `127.0.0.1`; it verifies an empty test database and Redis
+logical databases before running migrations and worker/webhook suites. See the
+[V1.3 verification guide](docs/ai/product-experience-v1-3/README.md) for the
+external-service setup and cleanup requirements.
+
 Launch-critical Meta deletion/deauthorization behavior, the authenticated/public
 route inventory, webhook guarantees, external-media policy, required production
 configuration, and rollback instructions live in

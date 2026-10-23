@@ -20,6 +20,12 @@ const BASELINE_ROOT = path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
 const paidOptIn = process.argv.includes('--paid-gemini');
 const PLAYWRIGHT_GATE_TIMEOUT_MS = 20 * 60 * 1000;
+const resolvePaidGeminiKey = (env = process.env) => {
+    const userEnvironmentKey = String(env.EM_GEMINI_KEY || '').trim();
+    const processScopedKey = String(env['EM-GEMINI-KEY'] || '').trim();
+    return userEnvironmentKey || processScopedKey || null;
+};
+const shouldRequireDockerEngine = (env = process.env) => env.LAB_EXTERNAL_SERVICES !== 'true';
 const partitionStartupValidation = issues => ({
     blocking: issues.filter(issue => issue !== 'DOCKER_ENGINE_UNAVAILABLE'),
     failedPrerequisites: issues.filter(issue => issue === 'DOCKER_ENGINE_UNAVAILABLE'),
@@ -170,7 +176,7 @@ const findCandidateRealGeminiRunId = ({ comparisonRoot, sourceSha256, oracleSha2
 const requiredEnv = () => {
     const env = { ...process.env };
     for (const key of [
-        'EM-GEMINI-KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'OPENAI_API_KEY',
+        'EM-GEMINI-KEY', 'EM_GEMINI_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'OPENAI_API_KEY',
         'ANTHROPIC_API_KEY', 'EASYMOD_LIVE_GEMINI_EGRESS', 'LAB_REAL_GEMINI_RUN_ID',
         'LAB_GEMINI_PRO_PHOTO_PROBE', 'LAB_PRO_PHOTO_CAMPAIGN_ID', 'LAB_PRO_PHOTO_RESULT_PATH',
         'LAB_GEMINI_LITE_PHOTO_DIAGNOSTIC', 'LAB_GEMINI_LITE_PHOTO_CAMPAIGN_ID',
@@ -208,9 +214,12 @@ const main = async () => {
     } catch (_) { validation.push('SOURCE_CORPUS_UNAVAILABLE'); }
     const python = spawnSync('python', ['--version'], { encoding: 'utf8', windowsHide: true });
     if (python.status !== 0 || !/^Python 3\./m.test(`${python.stdout || ''}${python.stderr || ''}`)) validation.push('PYTHON_3_REQUIRED');
-    const docker = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], { encoding: 'utf8', windowsHide: true });
-    if (docker.status !== 0 || !String(docker.stdout || '').trim()) validation.push('DOCKER_ENGINE_UNAVAILABLE');
-    if (paidOptIn && !process.env['EM-GEMINI-KEY']?.trim()) validation.push('EM_GEMINI_KEY_UNAVAILABLE');
+    if (shouldRequireDockerEngine(process.env)) {
+        const docker = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], { encoding: 'utf8', windowsHide: true });
+        if (docker.status !== 0 || !String(docker.stdout || '').trim()) validation.push('DOCKER_ENGINE_UNAVAILABLE');
+    }
+    const paidGeminiKey = resolvePaidGeminiKey(process.env);
+    if (paidOptIn && !paidGeminiKey) validation.push('EM_GEMINI_KEY_UNAVAILABLE');
     const startupValidation = partitionStartupValidation(validation);
     if (startupValidation.blocking.length) {
         process.stderr.write(`[verify] BLOCKED ${startupValidation.blocking.join(',')}\n`);
@@ -306,7 +315,7 @@ const main = async () => {
     }
 
     if (paidOptIn) {
-        const paidEnv = { ...offline, 'EM-GEMINI-KEY': process.env['EM-GEMINI-KEY'],
+        const paidEnv = { ...offline, 'EM-GEMINI-KEY': paidGeminiKey,
             LAB_COMPARISON_MODE: 'real-gemini', LAB_COMPARISON_DATASET: 'source', LAB_RUN_SCOPE: 'full' };
         const paidComparison = await runStep('paid-gemini-source-and-genuine-photo-comparison-cap-usd-2', NODE, [path.join(__dirname, 'run-engine-comparison.js')], paidEnv, 35 * 60 * 1000);
         steps.push(paidComparison);
@@ -425,4 +434,4 @@ if (require.main === module) main().catch(() => {
     process.exitCode = 1;
 });
 
-module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, partitionStartupValidation, requiredEnv, runCapture };
+module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, partitionStartupValidation, requiredEnv, resolvePaidGeminiKey, runCapture, shouldRequireDockerEngine };

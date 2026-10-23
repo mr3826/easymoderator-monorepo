@@ -107,6 +107,8 @@ const hashLabRunnerSources = () => {
         'EasyMod-backend/scripts/product-experience/gemini-evaluation-client.test.js',
         'EasyMod-backend/scripts/product-experience/gemini-pro-diagnostic-transport.js',
         'EasyMod-backend/scripts/product-experience/gemini-pro-diagnostic-transport.test.js',
+        'EasyMod-backend/scripts/product-experience/run-integration.js',
+        'EasyMod-backend/scripts/product-experience/run-integration.test.js',
         'EasyMod-backend/scripts/product-experience/no-egress.js',
         'EasyMod-backend/jest.product-engine-v1-3.config.js',
         'EasyMod-backend/scripts/product-experience/lab-ui/index.html',

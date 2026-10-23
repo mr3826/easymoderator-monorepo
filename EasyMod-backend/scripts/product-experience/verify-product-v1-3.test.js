@@ -3,13 +3,13 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, partitionStartupValidation, requiredEnv, runCapture } = require('./verify-product-v1-3');
+const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, partitionStartupValidation, requiredEnv, resolvePaidGeminiKey, runCapture, shouldRequireDockerEngine } = require('./verify-product-v1-3');
 const { run: runIntegrationCommand } = require('./run-integration');
 
 describe('offline verifier environment isolation', () => {
     test('removes credentials and every provider opt-in from default child processes', () => {
         const optIns = [
-            'EM-GEMINI-KEY', 'LAB_RUN_MODE', 'LAB_GEMINI_PRO_PHOTO_PROBE', 'LAB_PRO_PHOTO_CAMPAIGN_ID',
+            'EM-GEMINI-KEY', 'EM_GEMINI_KEY', 'LAB_RUN_MODE', 'LAB_GEMINI_PRO_PHOTO_PROBE', 'LAB_PRO_PHOTO_CAMPAIGN_ID',
             'LAB_PRO_PHOTO_RESULT_PATH', 'LAB_GEMINI_LITE_PHOTO_DIAGNOSTIC',
             'LAB_GEMINI_LITE_PHOTO_CAMPAIGN_ID', 'LAB_GEMINI_LITE_PHOTO_RESULT_PATH',
             'LAB_RUN_GENUINE_PHOTO_EVAL', 'LAB_RUN_SYNTHETIC_VISION', 'EASYMOD_LIVE_GEMINI_EGRESS',
@@ -33,6 +33,14 @@ describe('offline verifier environment isolation', () => {
     });
 });
 
+describe('explicit paid Gemini key handoff', () => {
+    test('prefers the requested user environment key and trims it for the paid-only child process', () => {
+        expect(resolvePaidGeminiKey({ EM_GEMINI_KEY: ' user-key ', 'EM-GEMINI-KEY': 'process-key' })).toBe('user-key');
+        expect(resolvePaidGeminiKey({ 'EM-GEMINI-KEY': ' process-key ' })).toBe('process-key');
+        expect(resolvePaidGeminiKey({ EM_GEMINI_KEY: '  ', 'EM-GEMINI-KEY': '  ' })).toBeNull();
+    });
+});
+
 describe('verifier startup dependency classification', () => {
     test('records a missing Docker engine as a failed integration prerequisite without blocking independent gates', () => {
         expect(typeof partitionStartupValidation).toBe('function');
@@ -44,6 +52,12 @@ describe('verifier startup dependency classification', () => {
             blocking: ['CANDIDATE_BRANCH_MISMATCH', 'EM_GEMINI_KEY_UNAVAILABLE'],
             failedPrerequisites: ['DOCKER_ENGINE_UNAVAILABLE'],
         });
+    });
+
+    test('does not require Docker when an external local integration service pair is explicitly requested', () => {
+        expect(shouldRequireDockerEngine({ LAB_EXTERNAL_SERVICES: 'true' })).toBe(false);
+        expect(shouldRequireDockerEngine({ LAB_EXTERNAL_SERVICES: 'TRUE' })).toBe(true);
+        expect(shouldRequireDockerEngine({})).toBe(true);
     });
 });
 
