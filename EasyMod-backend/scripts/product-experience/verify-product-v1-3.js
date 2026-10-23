@@ -20,6 +20,10 @@ const BASELINE_ROOT = path.join(WORKSPACE_ROOT, '_wt-verified-commerce-v1-2');
 const BASELINE_SHA = '957bb991a18db1949369a6f805822b8c8b69889b';
 const paidOptIn = process.argv.includes('--paid-gemini');
 const PLAYWRIGHT_GATE_TIMEOUT_MS = 20 * 60 * 1000;
+const partitionStartupValidation = issues => ({
+    blocking: issues.filter(issue => issue !== 'DOCKER_ENGINE_UNAVAILABLE'),
+    failedPrerequisites: issues.filter(issue => issue === 'DOCKER_ENGINE_UNAVAILABLE'),
+});
 
 const runCapture = (command, args, env, timeoutMs = 20 * 60 * 1000) => new Promise(resolve => {
     const child = spawn(command, args, {
@@ -207,17 +211,32 @@ const main = async () => {
     const docker = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], { encoding: 'utf8', windowsHide: true });
     if (docker.status !== 0 || !String(docker.stdout || '').trim()) validation.push('DOCKER_ENGINE_UNAVAILABLE');
     if (paidOptIn && !process.env['EM-GEMINI-KEY']?.trim()) validation.push('EM_GEMINI_KEY_UNAVAILABLE');
-    if (validation.length) {
-        process.stderr.write(`[verify] BLOCKED ${validation.join(',')}\n`);
+    const startupValidation = partitionStartupValidation(validation);
+    if (startupValidation.blocking.length) {
+        process.stderr.write(`[verify] BLOCKED ${startupValidation.blocking.join(',')}\n`);
         process.exitCode = 1;
         return;
+    }
+    if (startupValidation.failedPrerequisites.length) {
+        process.stderr.write(`[verify] CONTINUING WITH FAILED LOCAL DEPENDENCIES ${startupValidation.failedPrerequisites.join(',')}\n`);
     }
 
     fs.mkdirSync(path.join(ARTIFACT_ROOT, 'security'), { recursive: true });
     fs.mkdirSync(path.join(ARTIFACT_ROOT, 'regression'), { recursive: true });
     const runId = crypto.randomUUID();
     const receiptPath = path.join(ARTIFACT_ROOT, 'regression', `verify-${runId}.json`);
-    const steps = [];
+    const steps = startupValidation.failedPrerequisites.map(failureCode => ({
+        name: 'docker-engine-preflight',
+        status: 'FAIL',
+        exitCode: 1,
+        timedOut: false,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        outputSha256: null,
+        failureCode,
+        timeoutCleanup: null,
+        summary: ['Docker is unavailable; independent automated QA stages continue.'],
+    }));
     let realGeminiCandidateRunId = null;
     const offline = requiredEnv();
     const writeReceiptSnapshot = complete => {
@@ -406,4 +425,4 @@ if (require.main === module) main().catch(() => {
     process.exitCode = 1;
 });
 
-module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, requiredEnv, runCapture };
+module.exports = { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, manifestContainsCurrentFileHash, partitionStartupValidation, requiredEnv, runCapture };

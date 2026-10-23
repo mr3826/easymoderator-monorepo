@@ -219,6 +219,26 @@ INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only review.
 FINAL_VERDICT: Apply the bounded exception and validate the current evidence package after final proof generation.
 ```
 
+## Follow-up decision — continue independent verification when Docker is unavailable
+
+```text
+DECISION_ID: V13-VERIFIER-DOCKER-DEPENDENCY-ISOLATION-01
+OBSERVED_PROBLEM: The verification entrypoint treated DOCKER_ENGINE_UNAVAILABLE as a fatal startup-validation error and exited before creating a receipt or running the independent oracle, security, Gemini, Playwright, privacy, and proof stages. This was reproduced after the service-level probe returned unavailable.
+MERCHANT_IMPACT: A local infrastructure failure prevented the team from learning the candidate's independent quality and security results, while leaving only a console-level blocker.
+CUSTOMER_IMPACT: The Product Engine still cannot be approved for integration without PostgreSQL/Redis/worker evidence; unrelated quality checks can still reduce uncertainty.
+CURRENT_IMPLEMENTATION: Startup validation collected the Docker error with candidate SHA, dataset, Node, Python, key, and baseline errors, then returned on any validation finding.
+OPTIONS_CONSIDERED: Keep the fail-fast behavior; skip all tests that mention integration; classify only Docker unavailability as a failed preflight step and continue the remaining stages.
+RECOMMENDED_CHANGE: Keep true prerequisites such as an invalid worktree, wrong Node version, unavailable frozen baseline or source corpus, missing requested credential, and Python unavailable as fatal startup blockers. Record Docker unavailability as a failed verifier step, then allow the isolated integration command and all independent gates to run and fail or pass on their own evidence.
+ALTERNATIVES_REJECTED: Do not silently skip the integration requirement, fabricate a healthy service, alter Docker/WSL settings, or mark the full verifier successful when the Docker gate fails.
+SECURITY_IMPACT: No service is stopped, reconfigured, or reused. The integration runner remains isolated and retains its no-egress policy.
+COST_IMPACT: No additional provider calls from the classification change; the explicitly authorized paid comparison remains under its existing $2 verifier cap.
+FUTURE_COMPATIBILITY: Startup prerequisites remain machine-readable in the receipt; the existing `steps` array records Docker failure and final receipt status remains nonzero.
+TESTABLE_ACCEPTANCE_CRITERIA: A missing Docker prerequisite is partitioned from fatal startup errors; the verifier can initialize evidence and continue independent stages with a failed status, while fatal source, baseline, branch, runtime, Python, or required-key errors still stop before execution.
+IMPLEMENTATION_OWNER: Lead orchestrator / SRE.
+INDEPENDENT_CHALLENGER: Independent Verification Agent, read-only review after candidate freeze.
+FINAL_VERDICT: Make Docker an integration-scoped failure instead of an early exit, then run the full entrypoint once to capture every remaining feasible gate.
+```
+
 ## Boundaries retained
 
 - No order creation, payment confirmation, stock reservation, courier booking,

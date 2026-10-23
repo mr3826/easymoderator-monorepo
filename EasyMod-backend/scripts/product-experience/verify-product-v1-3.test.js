@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, requiredEnv, runCapture } = require('./verify-product-v1-3');
+const { finalizeEvidenceAndRefreshManifest, findCandidateRealGeminiRunId, partitionStartupValidation, requiredEnv, runCapture } = require('./verify-product-v1-3');
 const { run: runIntegrationCommand } = require('./run-integration');
 
 describe('offline verifier environment isolation', () => {
@@ -30,6 +30,20 @@ describe('offline verifier environment isolation', () => {
                 else process.env[key] = value;
             }
         }
+    });
+});
+
+describe('verifier startup dependency classification', () => {
+    test('records a missing Docker engine as a failed integration prerequisite without blocking independent gates', () => {
+        expect(typeof partitionStartupValidation).toBe('function');
+        expect(partitionStartupValidation([
+            'DOCKER_ENGINE_UNAVAILABLE',
+            'CANDIDATE_BRANCH_MISMATCH',
+            'EM_GEMINI_KEY_UNAVAILABLE',
+        ])).toEqual({
+            blocking: ['CANDIDATE_BRANCH_MISMATCH', 'EM_GEMINI_KEY_UNAVAILABLE'],
+            failedPrerequisites: ['DOCKER_ENGINE_UNAVAILABLE'],
+        });
     });
 });
 

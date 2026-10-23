@@ -4,13 +4,15 @@ V1.3 evaluates the existing Product Engine against an independent catalog oracle
 
 ## Run the verification
 
-Requirements are Node.js 20, Python 3, installed backend dependencies, and a working local Docker Engine. From `EasyMod-backend` in the isolated V1.3 worktree:
+Requirements are Node.js 20, Python 3, and installed backend dependencies. A working local Docker Engine is required to pass the PostgreSQL/Redis/worker integration gate. From `EasyMod-backend` in the isolated V1.3 worktree:
 
 ```powershell
 npm run verify:product-v1.3
 ```
 
 This is the offline default. It removes provider credentials and all paid-photo opt-ins from child processes, forces offline Test Lab mode, and blocks live Gemini egress. It prepares source and held-out oracles, runs the isolated PostgreSQL/Redis/worker/webhook integration, runs the backend security suite, compares the V1.2 baseline and V1.3 candidate on both corpora, executes Test Lab Playwright checks, scans artifacts for privacy issues, and generates the proof package.
+
+If Docker Engine is unavailable, the verifier records a failed Docker prerequisite and continues the independent oracle, security, comparison, browser, and privacy stages. The isolated backend integration step still fails and the command exits nonzero; overall integration readiness remains `NO`.
 
 Real Gemini evaluation is opt-in. The exact process that launches the command must already contain `EM-GEMINI-KEY`:
 
