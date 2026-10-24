@@ -959,7 +959,7 @@ describe('MetaMessengerProvider', () => {
             expect(axios.post).not.toHaveBeenCalled();
         });
 
-        test('includes messaging_type MESSAGE_TAG and tag when decision carries an out-of-window message_tag', async () => {
+        test('defense-in-depth: a retired tag on an allowed decision NEVER reaches the wire', async () => {
             const channel = { id: 'c-tag', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_TAG' };
             await provider.sendMessage({
                 channel,
@@ -967,11 +967,34 @@ describe('MetaMessengerProvider', () => {
                 normalizedMessage: { text: 'order shipped', attachments: [] },
                 decision: { allow: true, augment: { message_tag: 'POST_PURCHASE_UPDATE' } },
             });
-            expect(axios.post).toHaveBeenCalledWith(
-                expect.stringContaining('/me/messages'),
-                expect.objectContaining({ messaging_type: 'MESSAGE_TAG', tag: 'POST_PURCHASE_UPDATE' }),
-                expect.anything(),
-            );
+            const [, body] = axios.post.mock.calls[0];
+            // Meta returns error 100 for retired tags since 2026-04-27; the
+            // provider must not put a doomed tag on the wire even if an
+            // upstream layer somehow allowed it.
+            expect(body.messaging_type).toBe('RESPONSE');
+            expect(body).not.toHaveProperty('tag');
+        });
+
+        test('an explicitly permitted HUMAN_AGENT tag (permission granted) is sent as MESSAGE_TAG', async () => {
+            const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+            try {
+                const channel = { id: 'c-tag2', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_TAG2' };
+                await provider.sendMessage({
+                    channel,
+                    recipientId: 'PSID_TAG2',
+                    normalizedMessage: { text: 'human follow-up', attachments: [] },
+                    decision: { allow: true, augment: { message_tag: 'HUMAN_AGENT' } },
+                });
+                expect(axios.post).toHaveBeenCalledWith(
+                    expect.stringContaining('/me/messages'),
+                    expect.objectContaining({ messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' }),
+                    expect.anything(),
+                );
+            } finally {
+                if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+                else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+            }
         });
 
         test('in-window send (no augment) is unaffected: RESPONSE type, no tag field', async () => {

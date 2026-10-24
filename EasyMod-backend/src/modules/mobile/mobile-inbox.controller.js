@@ -8,10 +8,12 @@ const conversationController = require('../conversation/conversation.controller'
 const { Message, AuditLog } = require('../entities');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
+const { isAllowedMessageTag } = require('../policy/rules/templateRequired.rule');
 
 const MAX_PAGE_SIZE = 50;
 const SUPPORTED_CHANNELS = new Set(['facebook', 'messenger', 'web', 'webchat', 'telegram']);
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+const HUMAN_AGENT_CLOCK_MS = 7 * TWENTY_FOUR_HOURS_MS;
 
 function positiveInteger(value, fallback, maximum) {
     const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -88,8 +90,14 @@ const replyConversation = asyncHandler(async (req, res) => {
         throw new AppError('Message exceeds maximum length of 2000 characters', 400, 'MESSAGE_TOO_LONG');
     }
 
-    // Meta 24-hour messaging policy check for Facebook / Messenger channels
+    // Meta 24-hour messaging policy check for Facebook / Messenger channels.
+    // A supplied message_tag only counts if templateRequired.rule currently
+    // allows it (retired Meta tags are rejected, HUMAN_AGENT needs the
+    // permission flag and a verified event inside its 7-day clock); an
+    // invalid tag supplied on an in-window reply is a client error, not
+    // something to silently ignore.
     const isMeta = ['facebook', 'messenger'].includes(String(conversation.channel || '').toLowerCase());
+    let validTag = null;
     if (isMeta) {
         let lastCustomerAt = NaN;
         if (conversation.last_customer_message_at) {
@@ -105,10 +113,28 @@ const replyConversation = asyncHandler(async (req, res) => {
             }
         }
 
-        const tag = req.body?.message_tag;
-        if (Number.isFinite(lastCustomerAt) && (Date.now() - lastCustomerAt > TWENTY_FOUR_HOURS_MS) && !tag) {
-            throw new AppError('Cannot reply: Outside Meta 24-hour messaging window. Customer must message first.', 422, 'OUTSIDE_24H_WINDOW');
+        const requestedTag = req.body?.message_tag;
+        validTag = requestedTag && isAllowedMessageTag(String(requestedTag))
+            ? String(requestedTag)
+            : null;
+        const outside24h = Number.isFinite(lastCustomerAt)
+            ? Date.now() - lastCustomerAt > TWENTY_FOUR_HOURS_MS
+            : true;
+
+        if (outside24h) {
+            if (!validTag) {
+                throw new AppError('Cannot reply: Outside Meta 24-hour messaging window. Customer must message first.', 422, 'OUTSIDE_24H_WINDOW');
+            }
+            const withinAgentClock = Number.isFinite(lastCustomerAt)
+                && Date.now() - lastCustomerAt <= HUMAN_AGENT_CLOCK_MS;
+            if (!withinAgentClock) {
+                throw new AppError('Cannot reply: outside the verified 7-day human-agent window.', 422, 'OUTSIDE_24H_WINDOW');
+            }
+        } else if (requestedTag && !validTag) {
+            throw new AppError('message_tag is not an allowed Meta message tag for this app', 422, 'MESSAGE_TAG_NOT_ALLOWED');
         }
+    } else if (req.body?.message_tag) {
+        throw new AppError('message_tag is only valid for Meta channels', 422, 'MESSAGE_TAG_NOT_ALLOWED');
     }
 
     const idempotencyKey = req.get('X-Idempotency-Key') || req.body?.idempotencyKey || null;
@@ -130,8 +156,8 @@ const replyConversation = asyncHandler(async (req, res) => {
             user_id: req.user?.id || req.user?.userId || null,
         },
     };
-    if (req.body?.message_tag) {
-        messageData.message_tag = String(req.body.message_tag);
+    if (validTag) {
+        messageData.message_tag = validTag;
     }
 
     const message = await conversationService.createMessage(conversationId, shopId, messageData);

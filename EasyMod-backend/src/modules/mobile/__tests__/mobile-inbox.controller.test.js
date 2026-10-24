@@ -182,34 +182,87 @@ describe('mobile Inbox write contract (replyConversation & setAiMode)', () => {
         }));
     });
 
-    test('permits reply outside Meta 24-hour window when message_tag is explicitly supplied', async () => {
-        const res = response();
+    test('a retired message_tag does NOT bypass the 24h window on the mobile path', async () => {
+        const next = jest.fn();
         const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
         conversationService.getConversationById.mockResolvedValue({
             id: 'conv-123',
             channel: 'messenger',
             last_customer_message_at: thirtyHoursAgo,
         });
-        conversationService.createMessage.mockResolvedValue({
-            id: 'msg-tagged',
-            conversation_id: 'conv-123',
-            content: 'Your order has been shipped',
-        });
-        conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: true });
 
         const req = {
             params: { conversationId: 'conv-123' },
             shop: { id: 'shop-a' },
+            // Meta returns error 100 for POST_PURCHASE_UPDATE since 2026-04-27.
             body: { message: 'Your order has been shipped', message_tag: 'POST_PURCHASE_UPDATE' },
             get: jest.fn(),
         };
 
-        await controller.replyConversation(req, res, jest.fn());
+        await controller.replyConversation(req, response(), next);
 
-        expect(conversationService.createMessage).toHaveBeenCalledWith('conv-123', 'shop-a', expect.objectContaining({
-            message_tag: 'POST_PURCHASE_UPDATE',
+        expect(conversationService.createMessage).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'OUTSIDE_24H_WINDOW',
+            status: 422,
         }));
-        expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    test('an unrecognized message_tag on an in-window reply is rejected, not silently ignored', async () => {
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({
+            id: 'conv-123',
+            channel: 'messenger',
+            last_customer_message_at: new Date().toISOString(),
+        });
+
+        await controller.replyConversation({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { message: 'hello', message_tag: 'MADE_UP_TAG' },
+            get: jest.fn(),
+        }, response(), next);
+
+        expect(conversationService.createMessage).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'MESSAGE_TAG_NOT_ALLOWED',
+            status: 422,
+        }));
+    });
+
+    test('HUMAN_AGENT bypasses the window only when the app holds the Meta permission (flag)', async () => {
+        const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+        process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+        try {
+            const res = response();
+            const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+            conversationService.getConversationById.mockResolvedValue({
+                id: 'conv-123',
+                channel: 'messenger',
+                last_customer_message_at: thirtyHoursAgo,
+            });
+            conversationService.createMessage.mockResolvedValue({
+                id: 'msg-tagged',
+                conversation_id: 'conv-123',
+                content: 'Your order has been shipped',
+            });
+            conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: true });
+
+            await controller.replyConversation({
+                params: { conversationId: 'conv-123' },
+                shop: { id: 'shop-a' },
+                body: { message: 'Your order has been shipped', message_tag: 'HUMAN_AGENT' },
+                get: jest.fn(),
+            }, res, jest.fn());
+
+            expect(conversationService.createMessage).toHaveBeenCalledWith('conv-123', 'shop-a', expect.objectContaining({
+                message_tag: 'HUMAN_AGENT',
+            }));
+            expect(res.status).toHaveBeenCalledWith(201);
+        } finally {
+            if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+        }
     });
 
     test('toggles AI mode to pause and resume', async () => {

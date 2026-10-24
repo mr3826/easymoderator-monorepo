@@ -5,8 +5,10 @@
  * Talks to the Meta Graph API on behalf of a connected Page.
  *
  * All outbound sends MUST receive a PolicyDecision with allow=true.
- * When decision.augment.message_tag is set (twentyFourHourWindow rule, for
- * out-of-24h-window sends), it is put on the wire as the Send API `tag`.
+ * When decision.augment.message_tag is set AND currently valid per
+ * templateRequired.rule (twentyFourHourWindow augments a tag only for an
+ * explicitly requested, permission-held, evidence-backed case), it is put on
+ * the wire as the Send API `tag`; retired/unknown tags are never emitted.
  *
  * Every Graph API call atomically reserves its rate-limit slot immediately
  * beforehand via rateLimit.rule's reserveSendSlot() — see the send loop
@@ -23,6 +25,7 @@ const config = require('../../../config/config');
 const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
 const { reserveSendSlot, releaseSendSlot } = require('../../policy/rules/rateLimit.rule');
+const { isAllowedMessageTag } = require('../../policy/rules/templateRequired.rule');
 const { evaluatePageEligibility } = require('../meta-page-eligibility');
 const {
     recordGraphError,
@@ -1062,9 +1065,14 @@ class MetaMessengerProvider extends ChannelProvider {
             throw new Error('sendMessage: text or attachment is required');
         }
         for (const body of bodies) {
-            if (decision.augment?.message_tag) {
+            // Defense-in-depth: only a CURRENTLY-valid tag may reach the wire.
+            // Meta returns error 100 for retired tags (since 2026-04-27), and
+            // policy (templateRequired.rule) is the enforcement point — this
+            // guard keeps any stale allow-path from firing doomed requests.
+            const wireTag = decision.augment?.message_tag;
+            if (wireTag && isAllowedMessageTag(wireTag)) {
                 body.messaging_type = 'MESSAGE_TAG';
-                body.tag = decision.augment.message_tag;
+                body.tag = wireTag;
             } else {
                 body.messaging_type = 'RESPONSE';
             }
