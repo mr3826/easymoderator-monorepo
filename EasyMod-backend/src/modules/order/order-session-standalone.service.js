@@ -8,8 +8,8 @@ const getOrderServiceImports = () => require('./order.service');
 const ShopEntity = require('../shop/shop.entity');
 const PaymentConfigEntity = require('../payment/payment-config.entity');
 const CustomerEntity = require('../customer/customer.entity');
-const { getBdSettings, hasSelfMfs } = require('../shop/shop-bd-settings');
-const { verifyPaymentScreenshot } = require('../payment/self-mfs-handler.service');
+// P0-2: screenshot OCR verification is no longer wired into checkout —
+// payment truth comes only from merchant confirmation or verified webhooks.
 const { isNegatedMutation } = require('../ai/intent/stage2-rules');
 const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
 
@@ -833,27 +833,15 @@ class OrderSessionService {
                 const gateways = step_data.enabled_gateways || ['cod'];
                 const gateway = this.extractPaymentGateway(answer, gateways);
                 if (gateway) {
+                    // P0-2: a self-MFS selection is an instruction to pay the
+                    // merchant's number — never automated verification. Payment
+                    // truth comes only from merchant confirmation or a verified
+                    // gateway webhook; the OCR screenshot path is removed so no
+                    // checkout flow can tell a customer "payment confirmed" from
+                    // an image (see self-mfs-handler for merchant-side review).
                     step_data.payment_method = gateway;
-                    // For Self MFS shops, route MFS payments to screenshot verification
-                    const isMfsPayment = ['bkash', 'nagad', 'rocket'].includes(gateway.toLowerCase());
-                    if (isMfsPayment) {
-                        const bdSettings = await getBdSettings(session.shop_id);
-                        if (hasSelfMfs(bdSettings)) {
-                            step_data.expected_mfs_type = bdSettings.mfs_type;
-                            step_data.expected_mfs_number = bdSettings.mfs_number;
-                            nextStep = 'AWAITING_MFS_SCREENSHOT';
-                            const mfsLabel = bdSettings.mfs_type === 'nagad' ? 'নগদ' : bdSettings.mfs_type === 'rocket' ? 'রকেট' : 'বিকাশ';
-                            prompt = pickLang(lang,
-                                `${mfsLabel} নম্বর: ${bdSettings.mfs_number}\n\nউপরের নম্বরে ৳${step_data.total || ''} পাঠিয়ে স্ক্রিনশট দিন।`,
-                                `${mfsLabel} number: ${bdSettings.mfs_number}\n\nSend ৳${step_data.total || ''} to the number above and share the screenshot.`);
-                        } else {
-                            nextStep = 'COLLECTING_NOTES';
-                            prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
-                        }
-                    } else {
-                        nextStep = 'COLLECTING_NOTES';
-                        prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
-                    }
+                    nextStep = 'COLLECTING_NOTES';
+                    prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
                 } else {
                     prompt = OrderSessionService.buildPaymentPrompt(gateways, {
                         zone: step_data.delivery_zone,
@@ -866,40 +854,18 @@ class OrderSessionService {
             }
 
             case 'AWAITING_MFS_SCREENSHOT': {
-                if (step_data.mfs_payment_verified) {
-                    // Already verified (e.g. re-enter from summary back)
-                    nextStep = 'COLLECTING_NOTES';
-                    prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
-                    break;
-                }
-                // rawMessage carries the imageUrl when called from the chatbot controller
-                const screenshotUrl = rawMessage?.imageUrl || null;
-                if (!screenshotUrl) {
-                    const mfsLabel = step_data.expected_mfs_type === 'nagad' ? 'নগদ' : step_data.expected_mfs_type === 'rocket' ? 'রকেট' : 'বিকাশ';
-                    prompt = pickLang(lang,
-                        `${mfsLabel} স্ক্রিনশট পাঠান।`,
-                        `Please send your ${step_data.expected_mfs_type || 'MFS'} payment screenshot.`);
-                    break;
-                }
-                const verification = await verifyPaymentScreenshot({
-                    shopId: session.shop_id,
-                    orderId: session.order_id,
-                    imageUrl: screenshotUrl,
-                    expectedAmount: step_data.total || null,
-                    expectedReceiver: step_data.expected_mfs_number,
-                    mfsType: step_data.expected_mfs_type
-                });
-                if (verification.verified) {
-                    step_data.mfs_payment_verified = true;
-                    step_data.mfs_trx_id = verification.trxId;
-                    step_data.mfs_amount_paid = verification.amount;
-                    nextStep = 'COLLECTING_NOTES';
-                    prompt = pickLang(lang,
-                        `পেমেন্ট নিশ্চিত হয়েছে ✅ (TrxID: ${verification.trxId})।\nকোনো বিশেষ নির্দেশনা আছে?`,
-                        `Payment confirmed ✅ (TrxID: ${verification.trxId}). Any special instructions?`);
-                } else {
-                    prompt = `${verification.reason}\n\n` + pickLang(lang, 'আবার স্ক্রিনশট পাঠান।', 'Please resend the screenshot.');
-                }
+                // Legacy recovery (P0-2): historical sessions may still carry
+                // this step. The machine no longer verifies screenshots, so
+                // return to the payment question with no claim about payment
+                // status — nothing collected here marks anything paid.
+                nextStep = 'COLLECTING_PAYMENT';
+                prompt = OrderSessionService.buildPaymentPrompt(
+                    step_data.enabled_gateways || ['cod'],
+                    { zone: step_data.delivery_zone, charge: step_data.delivery_charge },
+                    lang
+                ) + pickLang(lang,
+                    '\n\nপেমেন্ট নিশ্চিত করতে ব্যবসায়ীর সাথে সমন্বয় করুন।',
+                    '\n\nThe merchant confirms payment before the order is marked paid.');
                 break;
             }
 
@@ -2179,7 +2145,7 @@ class OrderSessionService {
             'COLLECTING_ADDRESS':   pickLang(L, 'আপনার ডেলিভারির ঠিকানা কি?', "What's your delivery address?"),
             'COLLECTING_ZONE':      pickLang(L, 'আপনার ডেলিভারি এলাকা নির্বাচন করুন', 'Select your delivery area'),
             'COLLECTING_PAYMENT':      pickLang(L, 'পেমেন্ট পদ্ধতি নির্বাচন করুন', 'Select payment method'),
-            'AWAITING_MFS_SCREENSHOT': pickLang(L, 'পেমেন্ট স্ক্রিনশট পাঠান', 'Send your payment screenshot'),
+            'AWAITING_MFS_SCREENSHOT': pickLang(L, 'পেমেন্ট পদ্ধতি নির্বাচন করুন', 'Select payment method'),
             'COLLECTING_NOTES':        pickLang(L, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions?'),
             'ORDER_SUMMARY':        pickLang(L, 'অর্ডার নিশ্চিত করুন', 'Confirm order')
         };

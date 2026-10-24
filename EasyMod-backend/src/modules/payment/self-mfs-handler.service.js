@@ -1,15 +1,17 @@
 /**
  * SelfMfsHandler
  *
- * Handles the "self MFS" payment flow for BD F-commerce:
- *   Customer sends a bKash/Nagad/Rocket screenshot →
- *   1. Gemini Vision OCR extracts TrxID, amount, sender/receiver phone
- *   2. Fraud checks: duplicate TrxID, amount match, receiver number match
- *   3. On pass: writes TrxIDLog record, returns verified payment data
- *   4. On fail: returns descriptive rejection reason for the bot to relay
+ * OCR SCREENSHOT ANALYSIS HELPER for BD F-commerce self-MFS review:
+ *   Customer screenshot → Gemini Vision extracts TrxID, amount, phones →
+ *   heuristic fraud checks (duplicate TrxID, amount, receiver, MFS type) →
+ *   TrxIDLog record + descriptive reason.
  *
- * Called from order-session-standalone.service.js when step = AWAITING_MFS_SCREENSHOT
- * and a new message with an image arrives.
+ * TRUTH POLICY (Pilot+ P0-2): a pass result is heuristic OCR EVIDENCE ONLY.
+ * It is not payment verification and must never be surfaced to a customer as
+ * confirmation. Only merchant confirmation (payment.service) or a signature-
+ * and-verify gateway webhook may set payment_status='paid'. The checkout
+ * step machine no longer calls this service (order-session-standalone P0-2);
+ * callers must keep that invariant.
  */
 
 const llmService = require('../ai/llm.service');

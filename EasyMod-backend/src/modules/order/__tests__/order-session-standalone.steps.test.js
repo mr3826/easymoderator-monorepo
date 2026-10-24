@@ -611,6 +611,61 @@ describe('COLLECTING_ZONE → payment routing', () => {
     });
 });
 
+// Pilot+ P0-2: an OCR screenshot is NOT payment verification. The step machine
+// must never tell a customer "Payment confirmed" from a screenshot, and the
+// historical AWAITING_MFS_SCREENSHOT step (whose gateway condition was already
+// unsatisfiable — enabled ids are only 'cod'|'self-mfs') recovers to the
+// payment question instead of claiming verification. Payment truth remains
+// merchant confirmation / verified gateway webhook only.
+describe('self-MFS payment truth (P0-2)', () => {
+    const { verifyPaymentScreenshot } = require('../../payment/self-mfs-handler.service');
+
+    test('a legacy AWAITING_MFS_SCREENSHOT step never claims payment confirmed', async () => {
+        verifyPaymentScreenshot.mockResolvedValue({ verified: true, trxId: 'TRXFAKE1', amount: 1650 });
+        const session = makeSession({
+            current_step: 'AWAITING_MFS_SCREENSHOT',
+            step_data: {
+                language: 'en',
+                enabled_gateways: ['cod', 'self-mfs'],
+                delivery_zone: 'inside_dhaka',
+                delivery_charge: 60,
+                total: 1710,
+            },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'see attachment', {
+            imageUrl: 'https://cdn.example.test/screenshot.png',
+        });
+
+        expect(verifyPaymentScreenshot).not.toHaveBeenCalled();
+        expect(res.step_data.mfs_payment_verified).toBeUndefined();
+        expect(res.prompt).not.toMatch(/Payment confirmed|পেমেন্ট নিশ্চিত/i);
+        expect(res.current_step).toBe('COLLECTING_PAYMENT');
+    });
+
+    test('answering "bkash" when self-mfs is enabled advances without any screenshot claim', async () => {
+        const session = makeSession({
+            current_step: 'COLLECTING_PAYMENT',
+            step_data: { language: 'en', enabled_gateways: ['cod', 'self-mfs'], delivery_zone: 'inside_dhaka', delivery_charge: 60 },
+        });
+        const res = await OrderSessionService.handleCurrentStep(session, 'bkash', null);
+
+        expect(verifyPaymentScreenshot).not.toHaveBeenCalled();
+        expect(res.current_step).toBe('COLLECTING_NOTES');
+        expect(res.prompt).not.toMatch(/screenshot|স্ক্রিনশট/i);
+        expect(res.step_data.payment_method).toBe('self-mfs');
+    });
+
+    test('service source contains no OCR-confirmation success path at all', () => {
+        const fs = require('fs');
+        const src = fs.readFileSync(require.resolve('../order-session-standalone.service'), 'utf8');
+        expect(src).not.toMatch(/verifyPaymentScreenshot/);
+        expect(src).not.toMatch(/Payment confirmed ✅/);
+        expect(src).not.toMatch(/পেমেন্ট নিশ্চিত হয়েছে/);
+        expect(src).not.toMatch(/mfs_payment_verified\s*=\s*true/);
+    });
+});
+
 // Founder feedback 2026-06-13: infer the delivery zone from the typed address and
 // apply the charge automatically; only ask inside/outside Dhaka when it's unclear.
 describe('COLLECTING_ADDRESS → zone auto-detection', () => {
