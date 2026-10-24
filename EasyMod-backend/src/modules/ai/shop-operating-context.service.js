@@ -16,16 +16,21 @@ const crypto = require('crypto');
  *   overrides those stale defaults with the shop's CURRENT settings.
  *
  * Architecture:
- *   - Payment ground truth: shop.settings.bd (self-MFS = owner's personal
- *     bKash/Nagad/Rocket number) via shop-bd-settings. There is no automated
- *     online gateway — without self-MFS the shop is COD-only.
+ *   - Payment ground truth (P0-3): a payment rail is advertised ONLY when the
+ *     SAME authoritative enablement the checkout uses says so —
+ *     PaymentConfig.is_enabled (gateway 'self-mfs') AND the owner's personal
+ *     number in shop.settings.bd (shop-bd-settings). Without both, the shop is
+ *     COD-only. Enabled-state lookup failure fails CLOSED to the COD-only
+ *     block: an unreadable config must never widen what the bot may claim.
  *   - Courier ground truth: the shop's database-enforced AI-default delivery
  *     integration (is_ai_default + is_active + is_connected).
  *   Built fresh from the DB on every reply, so a setting change is reflected the
  *   instant the owner saves it — no re-embedding, no cache to invalidate.
  *
- * Returns '' on any failure so the caller degrades gracefully: the prompt is
- * simply un-grounded for that turn, never broken.
+ * Returns '' only when shopId is missing or construction fails unexpectedly;
+ * enablement/setting read failures degrade to the COD-only block above (and
+ * the outbound grounding gate independently rejects payment claims without
+ * enabled evidence).
  */
 
 const { getBdSettings, hasSelfMfs } = require('../shop/shop-bd-settings');
@@ -68,12 +73,22 @@ const hashOperatingContext = (context) => {
 const getOperatingContext = async (shopId, { strict = false } = {}) => {
     if (!shopId) return '';
     try {
-        const [bdSettings, courier] = await Promise.all([
+        const PaymentConfigEntity = require('../payment/payment-config.entity');
+        const [bdSettings, enabledSelfMfs, courier] = await Promise.all([
             strict ? getBdSettings(shopId) : getBdSettings(shopId).catch(() => null),
+            strict
+                ? PaymentConfigEntity.findOne({ where: { shop_id: shopId, gateway: 'self-mfs', is_enabled: true } })
+                // Fail CLOSED: an unreadable enablement must NOT advertise any
+                // advance-payment rail; the COD-only block is the fallback.
+                : PaymentConfigEntity.findOne({ where: { shop_id: shopId, gateway: 'self-mfs', is_enabled: true } })
+                    .catch(() => null),
             getActiveCourierName(shopId, { strict }),
         ]);
 
-        const selfMfs = !!(bdSettings && hasSelfMfs(bdSettings));
+        // P0-3 single authority: the number exists AND the merchant's PaymentConfig
+        // enablement says the rail is on. A failed lookup fails CLOSED (the catch
+        // above throws into the outer handler -> COD-only block below).
+        const selfMfs = !!(enabledSelfMfs && bdSettings && hasSelfMfs(bdSettings));
 
         const lines = [
             "--- SHOP PAYMENT & DELIVERY (authoritative: this shop's CURRENT settings — follow strictly) ---",

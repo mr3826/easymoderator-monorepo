@@ -90,4 +90,29 @@ const hasSelfMfs = (bdSettings) =>
     Boolean(bdSettings.mfs_number) &&
     Boolean(bdSettings.mfs_type);
 
-module.exports = { getBdSettings, updateBdSettings, hasSelfMfs, BD_PHONE_REGEX };
+/**
+ * Remove personal-MFS payment truth from shop.settings.bd (P0-3).
+ *
+ * Called when the merchant DISABLES or DELETES the self-mfs PaymentConfig, so
+ * no stale number can keep being advertised after the authoritative row is
+ * off. Unrelated bd keys (google sheet etc.) and other settings domains are
+ * preserved; a shop with nothing configured is a silent no-op.
+ * @param {string} shopId
+ * @returns {Promise<object|null>} cleared bd settings, or null when nothing to clear
+ */
+const clearSelfMfs = async (shopId) => {
+    const shop = await Shop.findByPk(shopId);
+    if (!shop) return null;
+    const bd = shop.settings?.bd;
+    if (!bd || (bd.mfs_mode == null && bd.mfs_type == null && bd.mfs_number == null)) {
+        return null;
+    }
+
+    const clearedBd = { ...bd, mfs_mode: null, mfs_type: null, mfs_number: null };
+    const newSettings = mergeAndSanitizeSettings(shop.settings || {}, { bd: clearedBd });
+    await shop.update({ settings: newSettings });
+    await invalidateShopSettingsCaches(shopId);
+    return newSettings.bd;
+};
+
+module.exports = { getBdSettings, updateBdSettings, hasSelfMfs, clearSelfMfs, BD_PHONE_REGEX };

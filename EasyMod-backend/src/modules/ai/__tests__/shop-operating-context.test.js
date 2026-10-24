@@ -6,7 +6,8 @@
  * Verifies the grounding that stops the bot from advertising payment rails the
  * shop hasn't connected:
  *   - Zero config  → "Cash on Delivery ONLY" + explicit no-advance-payment rules
- *   - Self-MFS set → lists the owner's personal bKash/Nagad number for advance
+ *   - Self-MFS set AND its PaymentConfig enabled → lists the owner's personal
+ *     bKash/Nagad number for advance (P0-3: the enabled-row is mandatory)
  *   - Courier set  → names the connected courier
  *
  * Collaborators are mocked so this is a fast, deterministic unit test.
@@ -21,9 +22,13 @@ jest.mock('src/modules/shop/shop-bd-settings', () => ({
 jest.mock('src/modules/delivery/delivery-integration.entity', () => ({
     findOne: jest.fn(),
 }));
+jest.mock('src/modules/payment/payment-config.entity', () => ({
+    findOne: jest.fn(),
+}));
 
 const bd = require('src/modules/shop/shop-bd-settings');
 const DeliveryIntegration = require('src/modules/delivery/delivery-integration.entity');
+const PaymentConfig = require('src/modules/payment/payment-config.entity');
 const { getOperatingContext, hashOperatingContext } = require('src/modules/ai/shop-operating-context.service');
 
 const COD_DEFAULTS = {
@@ -34,6 +39,8 @@ beforeEach(() => {
     jest.clearAllMocks();
     bd.getBdSettings.mockResolvedValue({ ...COD_DEFAULTS });
     DeliveryIntegration.findOne.mockResolvedValue(null);
+    // Default: nothing explicitly enabled (checkout's own fallback is COD).
+    PaymentConfig.findOne.mockResolvedValue(null);
 });
 
 test('zero config → COD-only with explicit no-advance-payment rules', async () => {
@@ -53,6 +60,7 @@ test('self-MFS configured → lists the personal number for advance payment', as
     bd.getBdSettings.mockResolvedValue({
         mfs_mode: 'self', mfs_type: 'bkash', mfs_number: '01711111111',
     });
+    PaymentConfig.findOne.mockResolvedValue({ gateway: 'self-mfs', is_enabled: true });
 
     const ctx = await getOperatingContext('shop-1');
 
@@ -80,6 +88,7 @@ test('missing shopId returns empty string (graceful)', async () => {
 test('DB failure degrades to the safe COD-only block, never throws', async () => {
     bd.getBdSettings.mockRejectedValue(new Error('db down'));
     DeliveryIntegration.findOne.mockRejectedValue(new Error('db down'));
+    PaymentConfig.findOne.mockRejectedValue(new Error('db down'));
 
     // When config is unreadable, fall back to the safest possible stance:
     // COD-only (never advertises a payment rail we can't confirm exists).
@@ -91,6 +100,7 @@ test('DB failure degrades to the safe COD-only block, never throws', async () =>
 test('strict send-time reads propagate setting store failures', async () => {
     bd.getBdSettings.mockRejectedValue(new Error('db down'));
     DeliveryIntegration.findOne.mockRejectedValue(new Error('db down'));
+    PaymentConfig.findOne.mockRejectedValue(new Error('db down'));
 
     await expect(getOperatingContext('shop-1', { strict: true }))
         .rejects.toThrow('db down');
