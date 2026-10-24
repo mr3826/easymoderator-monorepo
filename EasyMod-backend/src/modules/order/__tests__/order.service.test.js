@@ -749,4 +749,55 @@ describe('Order Service', () => {
             });
         });
     });
+
+    // Pilot+ F3: the conversational checkout commits orders with
+    // order_status 'confirmed' — the vocabulary used across the API validator,
+    // controllers, dashboard and webhooks. enforceStateConsistency must not
+    // silently rename a real, committed order to 'draft' behind the merchant's
+    // back, while still coercing genuinely unknown values.
+    describe('State consistency at creation (Pilot+ F3)', () => {
+        const runCreateInternal = async (orderDataOverrides) => {
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'us-1' });
+            Product.findAll = jest.fn().mockResolvedValue([{
+                id: 'prod-1', name: 'Test Product', price: 100.00, quantity: 10, track_quantity: false,
+            }]);
+            Order.create = jest.fn().mockImplementation((data) => Promise.resolve({
+                ...createMockOrder(), ...data,
+            }));
+            OrderItem.create = jest.fn().mockResolvedValue({ id: 'item-1' });
+
+            return orderService.createOrderInternal('shop-1', {
+                customer_name: 'Test',
+                customer_phone: '01712345678',
+                items: [{ product_id: 'prod-1', quantity: 1 }],
+                payment_status: 'pending',
+                ...orderDataOverrides,
+            });
+        };
+
+        it.each(['confirmed', 'processing', 'completed', 'cancelled', 'draft'])(
+            'creation preserves the live validator vocabulary status "%s"',
+            async (status) => {
+                const order = await runCreateInternal({ order_status: status });
+                expect(order.order_status).toBe(status);
+            }
+        );
+
+        it('legacy statuses placed/paid/fulfilled/refunded are still recognized', async () => {
+            for (const status of ['placed', 'paid', 'fulfilled', 'refunded']) {
+                const order = await runCreateInternal({ order_status: status });
+                expect(order.order_status).toBe(status);
+            }
+        });
+
+        it('a genuinely unknown status is still coerced to draft', async () => {
+            const order = await runCreateInternal({ order_status: 'not-a-real-state' });
+            expect(order.order_status).toBe('draft');
+        });
+
+        it('an invalid payment_status is still coerced to pending', async () => {
+            const order = await runCreateInternal({ payment_status: 'weird' });
+            expect(order.payment_status).toBe('pending');
+        });
+    });
 });

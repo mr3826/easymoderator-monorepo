@@ -19,7 +19,12 @@ const SHOP_PREFIX_LENGTH = 8;
 const RTO_RISK_THRESHOLD = 70;
 
 // State machine definitions
-const ORDER_STATES = ['draft', 'placed', 'paid', 'fulfilled', 'cancelled', 'refunded'];
+// Pilot+ F3: this is the coercion allow-list for order_status at creation, NOT
+// the workflow definition. It must cover the LIVE vocabulary actually written
+// by the API validator (draft|confirmed|processing|completed|cancelled), the
+// conversational checkout ('confirmed'), and the legacy values below —
+// otherwise a real committed order was silently renamed to 'draft'.
+const ORDER_STATES = ['draft', 'confirmed', 'processing', 'completed', 'placed', 'paid', 'fulfilled', 'cancelled', 'refunded'];
 const PAYMENT_STATES = ['pending', 'paid', 'unpaid', 'refunded', 'partially_paid'];
 const COD_PAYMENT_STATUSES = ['unpaid', 'pending', null, undefined];
 
