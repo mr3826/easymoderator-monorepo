@@ -14,12 +14,22 @@ EasyModerator's entire platform depends on continued Meta API access. A restrict
 - NEVER send to customers with `customer.messenger_opted_out = true`
 - Rate limit: **170 DMs/hour/page** (EM soft limit, Meta hard limit: 200/hr)
 
-### 2. Messenger Messaging Rules
+### 2. Messenger Messaging Rules (updated 2026-10-24 — Meta tag retirement)
 - Standard messaging: **only within 24-hour window** from last user message
-- Outside 24-hour window: ONLY with an approved Message Tag
-  - `POST_PURCHASE_UPDATE` — confirmed purchase order updates
-  - `CONFIRMED_EVENT_UPDATE` — events user registered for
-  - `ACCOUNT_UPDATE` — changes to user's account with the app
+  (window re-opens on qualifying customer actions, not only messages)
+- Outside 24-hour window: **the classic Message Tags are DEAD at the API.**
+  Meta deprecated them 2026-02-09 and returns error code 100 since 2026-04-27
+  for `POST_PURCHASE_UPDATE`, `CONFIRMED_EVENT_UPDATE`, `ACCOUNT_UPDATE`.
+  EasyModerator MUST NOT emit them (policy: twentyFourHourWindow/templateRequired
+  rules hold such sends instead; Pilot+ fix 2026-10-24).
+- `HUMAN_AGENT` survives but requires the separate approved Human Agent
+  permission, applies only to MANUAL representative replies (never bot sends),
+  and runs on a 7-day clock from the customer's last message. Gated behind
+  `META_HUMAN_AGENT_TAG_ENABLED` (default off) until App Review grants it.
+- Post-window outreach alternatives (future, each needs explicit decision/consent):
+  Utility/Marketing Messages on Messenger (opt-in), Sponsored Messages, private
+  replies to comments (7 days), one-time notifications. None are automated
+  promotions today.
 - NEVER use Message Tags for: promotional content, discounts, reactivation blasts
 
 ### 3. Rate Limiting — Current Implementation
@@ -119,9 +129,9 @@ When a feature is blocked, offer the safe alternative:
 
 | Blocked Request | Safe Alternative |
 |----------------|-----------------|
-| Blast all followers with promotion | Use `ACCOUNT_UPDATE` tag for renewal reminders only |
+| Blast all followers with promotion | Opt-in Marketing Messages flow only (legacy ACCOUNT_UPDATE tag is dead at the API) |
 | DM all commenters immediately | DM only keyword-trigger commenters, within rate limits |
-| Cold promo to all contacts | Build opt-in flow → use `POST_PURCHASE_UPDATE` for order confirmations |
+| Cold promo to all contacts | Build opt-in flow; order confirmations ride the re-opened 24h window or opt-in Marketing Messages (legacy POST_PURCHASE_UPDATE tag is dead at the API) |
 | Scrape phones from comments | Collect phone in DM conversation ("Please share your delivery number") |
 | Auto-engage (likes/follows) | Focus on DM quality — engagement gaming violates Meta TOS |
 | Remove rate limits for speed | Increase soft limit incrementally (max 185/hr) with monitoring |
