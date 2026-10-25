@@ -15,8 +15,10 @@ jest.mock('../../notification/merchant-notification.service', () => ({
 const request = require('supertest');
 const { createFixtures } = require('../../../../tests/helpers/pilot-intelligence.fixtures');
 const {
-    ShopPilotFeatures, KnowledgeGap, CustomerOpportunity, OrderSession, Message,
+    ShopPilotFeatures, KnowledgeGap, CustomerOpportunity, Message,
 } = require('../../entities');
+const OrderSession = require('../../order/order-session.entity');
+const { Conversation: ConversationModel } = require('../../conversation/conversation.entity');
 const interactions = require('../interactions.service');
 const opportunityService = require('../../customer-intelligence/opportunity.service');
 const conversationService = require('../../conversation/conversation.service');
@@ -262,8 +264,8 @@ describe('P+03 action queue + handoff ownership (API level)', () => {
 
         await request(app).patch(`/api/conversation/${conversation.id}`)
             .set(auth(staffA, shop.id)).send({ hitl: true }).expect(200);
-        const reloaded = await conversationService.getConversationById(conversation.id, shop.id);
-        expect(String(reloaded.assignee_id)).toBe(String(staffA.id ?? staffA.userId ?? reloaded.assignee_id));
+        const reloaded = await ConversationModel.findByPk(conversation.id);
+        expect(String(reloaded.assignee_id)).toBe(String(staffA.id));
 
         const takeover = await request(app).patch(`/api/conversation/${conversation.id}`)
             .set(auth(staffB, shop.id)).send({ hitl: true });
