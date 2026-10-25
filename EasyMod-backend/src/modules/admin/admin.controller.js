@@ -151,9 +151,13 @@ const Joi = require('joi');
 const pilotFeatures = require('../pilot-features/pilot-features.service');
 
 const shopIdSchema = Joi.string().guid({ version: ['uuidv4', 'uuidv5', 'uuidv1'] }).required();
-const pilotPatchSchema = Joi.object({
-  customer_intelligence: Joi.boolean(),
-  order_confidence_mode: Joi.string().valid(...pilotFeatures.ORDER_CONFIDENCE_MODES),
+    const pilotPatchSchema = Joi.object({
+        customer_intelligence: Joi.boolean(),
+        // Pilot+ V1 flags (platform-controlled; default off).
+        interaction_choices: Joi.boolean(),
+        action_queue: Joi.boolean(),
+        knowledge_suggestions: Joi.boolean(),
+        order_confidence_mode: Joi.string().valid(...pilotFeatures.ORDER_CONFIDENCE_MODES),
   order_confidence_config: Joi.object({
     high_value_cod_threshold: Joi.number().integer().min(0).max(1000000),
     address_min_length: Joi.number().integer().min(0).max(100),

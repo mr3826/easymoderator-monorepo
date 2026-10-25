@@ -723,6 +723,40 @@ describe('MetaMessengerProvider', () => {
             });
         });
 
+        test('P+02: quick replies ride the text body; invalid entries are dropped', async () => {
+            axios.post.mockResolvedValueOnce({ data: { message_id: 'mid_qr' } });
+
+            const quick_replies = [
+                { title: 'আবার দেখুন', payload: 'p1:11111111-1111-1111-1111-111111111111:checkout.review' },
+                { title: 'this title is way too long to fit meta', payload: 'p1:11111111-1111-1111-1111-111111111111:checkout.cancel' },
+                { title: 'No payload', payload: '' },
+            ];
+            await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_QR',
+                normalizedMessage: { text: 'আপনার অর্ডার', quick_replies, attachments: [] },
+                decision,
+            });
+
+            const sent = axios.post.mock.calls[0][1].message;
+            expect(sent.text).toBe('আপনার অর্ডার');
+            expect(sent.quick_replies).toHaveLength(1);
+            expect(sent.quick_replies[0]).toMatchObject({ content_type: 'text' });
+        });
+
+        test('P+02: oversized reply sets are capped at Meta 13 limit', async () => {
+            axios.post.mockResolvedValueOnce({ data: { message_id: 'mid_cap' } });
+            const quick_replies = Array.from({ length: 20 }, (_, i) => ({
+                title: `opt ${i}`, payload: `p1:11111111-1111-1111-1111-111111111111:checkout.review`,
+            }));
+            await provider.sendMessage({
+                channel, recipientId: 'PSID_CAP',
+                normalizedMessage: { text: 'pick', quick_replies, attachments: [] },
+                decision,
+            });
+            expect(axios.post.mock.calls[0][1].message.quick_replies).toHaveLength(13);
+        });
+
         test('preserves acknowledged text when a later attachment call fails', async () => {
             axios.post
                 .mockResolvedValueOnce({ data: { message_id: 'mid_text_partial' } })

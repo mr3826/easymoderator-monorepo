@@ -206,6 +206,7 @@ async function handleOrderFlow({
                 meta: {
                     order_session: susp?.suspended ? 'suspended_for_handoff' : 'handoff_release_only',
                     intentId,
+                    session_id: active.id,
                 },
             };
         }
@@ -229,6 +230,7 @@ async function handleOrderFlow({
                     intentId,
                     resume_step: active.current_step,
                     resume_hint: defer?.resume_hint || null,
+                    session_id: active.id,
                 },
             };
         }
@@ -292,6 +294,7 @@ async function handleOrderFlow({
             sourceReferences: null,
             meta: {
                 order_session: 'continue',
+                session_id: active.id,
                 step: step.current_step,
                 state: step.state || null,
                 completed: !!step.completed,

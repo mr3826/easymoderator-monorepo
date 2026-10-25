@@ -1936,6 +1936,7 @@ async function processMessageJob(job) {
     let historyExcludeIds = messageId ? [messageId] : [];
     let replyContext = jobReplyContext;
     let logicalTurnId = null;
+    let burstTurnMessages = null;
     if (job.data.burstFlush) {
         const burst = require('../jobs/burst-coalescer');
         await burst.clearBurstState(conversationId); // next inbound opens a fresh window
@@ -1950,7 +1951,23 @@ async function processMessageJob(job) {
         historyExcludeIds = turn.messageIds;
         replyContext = turn.messages.at(-1)?.metadata?.reply_to || null;
         logicalTurnId = turn.logicalTurnId;
+        burstTurnMessages = turn.messages;
     }
+
+    // P+02: an interactive choice tap arrives as an ordinary (text-empty)
+    // inbound whose durable row carries quick_reply.payload — the ingress
+    // already verified signature, persisted the receipt and deduped. Here we
+    // only READ the reference; execution happens after the guards, through the
+    // interaction kernel, which reloads all business state server-side.
+    let tappedPayload = null;
+    try {
+        if (job.data.burstFlush) {
+            tappedPayload = burstTurnMessages?.at(-1)?.metadata?.quick_reply?.payload || null;
+        } else if (messageId && typeof Message.findByPk === 'function') {
+            const inboundRow = await Message.findByPk(messageId, { attributes: ['metadata'] });
+            tappedPayload = inboundRow?.metadata?.quick_reply?.payload || null;
+        }
+    } catch (_) { tappedPayload = null; }
 
     // Resolve the channel once and pass it to every step that needs it. With
     // multi-page shops (one shop owns N FB Pages), routing
@@ -2334,8 +2351,84 @@ async function processMessageJob(job) {
     let orderFlow = { handled: false };
     let knowledgeGapCaptured = false;
     let fallbackKnowledgeGapSource = null;
-    try {
-        const { handleOrderFlow } = require('../modules/conversation/order-flow.service');
+
+    // P+02: resolve a choice tap (opaque p1: reference, or a bare number that
+    // matches a live registry proposal outside capture-steps) BEFORE the order
+    // bridge. The kernel re-checks shop/customer/page/conversation scope,
+    // expiry, single-use and the bound business context, and executes ONLY
+    // through existing authoritative paths with the same mutationsAllowed
+    // policy a typed answer gets. Replays are pure no-ops.
+    let interactionTurn = false;
+    {
+        let payloadToResolve = tappedPayload && String(tappedPayload).startsWith('p1:')
+            ? String(tappedPayload)
+            : null;
+        if (!payloadToResolve && /^[1-9]$/.test(String(effMessage || '').trim())) {
+            try {
+                const pilotFeatures = require('../modules/pilot-features/pilot-features.service');
+                if (await pilotFeatures.isInteractionChoicesEnabled(shopId)) {
+                    const interactions = require('../modules/interactions/interactions.service');
+                    payloadToResolve = await interactions.findNumberedLivePayload({
+                        shopId, conversationId, number: String(effMessage).trim(),
+                    });
+                }
+            } catch (_) { payloadToResolve = null; }
+        }
+        if (payloadToResolve) {
+            interactionTurn = true;
+            try {
+                const interactions = require('../modules/interactions/interactions.service');
+                const outcome = await interactions.resolveInteraction({
+                    payload: payloadToResolve,
+                    shopId,
+                    customerChannelId: recipientId,
+                    metaChannelId,
+                    conversationId,
+                    conversation,
+                    mutationsAllowed: isAutoSendMode(businessMode)
+                        && channelAISettings.allow_order_creation !== false,
+                    platform,
+                    recipientId,
+                    turnId,
+                    turnStartedAt,
+                    traceId: stableTraceId,
+                });
+                if (!outcome.resolved && outcome.code === 'INTERACTION_ALREADY_HANDLED') {
+                    return { skipped: true, reason: 'interaction_replay', conversationId };
+                }
+                orderFlow = outcome.resolved ? {
+                    handled: true,
+                    response: outcome.response,
+                    confidence: 1.0,
+                    sourceReferences: null,
+                    meta: { order_session: 'interaction_resolved', ...(outcome.meta || {}) },
+                } : {
+                    handled: true,
+                    confidence: 1.0,
+                    sourceReferences: null,
+                    response: detectedLanguage === 'en'
+                        ? 'That option is no longer active — just send me a message instead. 🙂'
+                        : 'এই অপশনটি আর সক্রিয় নেই — সরাসরি বার্তা লিখুন। 🙂',
+                    meta: { order_session: 'interaction_rejected', code: outcome.code },
+                };
+            } catch (interactionErr) {
+                console.error(`[worker] interaction resolve failed for conv ${conversationId}:`, interactionErr.message);
+                orderFlow = {
+                    handled: true,
+                    confidence: 1.0,
+                    sourceReferences: null,
+                    response: detectedLanguage === 'en'
+                        ? 'Something went wrong — send me a message instead and I will help. 🙂'
+                        : 'কিছু একটা সমস্যা হয়েছে — সরাসরি বার্তা লিখুন, সাহায্য করব। 🙂',
+                    meta: { order_session: 'interaction_error' },
+                };
+            }
+        }
+    }
+
+    if (!interactionTurn) {
+        try {
+            const { handleOrderFlow } = require('../modules/conversation/order-flow.service');
         {
             // Preserve the original turn trace for the existing live call site;
             // retries may arrive as a new BullMQ job ID without mutating BullMQ's
@@ -2370,6 +2463,7 @@ async function processMessageJob(job) {
         }
         // Non-purchase messages remain non-fatal and fall through to conversational AI.
     }
+    } // if (!interactionTurn)
 
     if (shadowProposal?.intentId === 'PURCHASE_INTENT_START') {
         try {
@@ -2388,6 +2482,54 @@ async function processMessageJob(job) {
             }
         } catch (shadowDivergenceErr) {
             console.warn(`[worker] Stage-2 divergence record skipped for conv ${conversationId}: ${shadowDivergenceErr.message}`);
+        }
+    }
+
+    // P+02: at verified friction points, attach a registry proposal to this
+    // turn's reply so the customer can tap instead of type. Flag-gated
+    // (interaction_choices, default off) and non-fatal: any failure means the
+    // plain-text conversation continues exactly as before.
+    let turnInteractionId = null;
+    {
+        const ofMeta = orderFlow.meta || {};
+        let proposalKind = null;
+        if (ofMeta.order_session === 'continue' && ofMeta.step === 'ORDER_SUMMARY' && ofMeta.session_id) {
+            proposalKind = 'CHECKOUT_DECISION';
+        } else if (ofMeta.order_session === 'question_deferred' && ofMeta.session_id) {
+            proposalKind = 'CHECKOUT_RESUME';
+        } else if (ofMeta.order_session === 'suspended_for_handoff' && ofMeta.session_id) {
+            proposalKind = 'HUMAN_SUPPORT';
+        }
+        if (proposalKind) {
+            try {
+                const pilotFeatures = require('../modules/pilot-features/pilot-features.service');
+                if (await pilotFeatures.isInteractionChoicesEnabled(shopId)) {
+                    const interactions = require('../modules/interactions/interactions.service');
+                    const OrderSessionService = require('../modules/order/order-session-standalone.service');
+                    const boundSession = await OrderSessionService
+                        .getSessionForInteraction(ofMeta.session_id, shopId)
+                        .catch(() => null);
+                    // Without a reloadable bound session there is no honest
+                    // context version — do NOT create a proposal whose confirm
+                    // could fire against repriced state.
+                    const proposal = boundSession
+                        ? await interactions.createProposal({
+                            shopId,
+                            customerId: conversation.customer_id || null,
+                            customerChannelId: recipientId,
+                            metaChannelId,
+                            conversationId,
+                            kind: proposalKind,
+                            language: detectedLanguage === 'en' ? 'en' : 'bn',
+                            session: boundSession,
+                            contextVersion: interactions.contextVersionFor(boundSession),
+                        })
+                        : null;
+                    turnInteractionId = proposal?.interactionId || null;
+                }
+            } catch (proposalErr) {
+                console.error(`[worker] interaction proposal failed (non-fatal) conv ${conversationId}:`, proposalErr.message);
+            }
         }
     }
 
@@ -2534,6 +2676,7 @@ async function processMessageJob(job) {
             automation_mode: aiSettings.automation_mode,
             ai_disclosure_applied: aiDisclosureApplied,
             order_flow: orderFlow.meta || null,
+            interaction_id: turnInteractionId || null,
             sourceReferences: sourceReferences || null,
             product_presentation: productPresentation || null,
             grounding_decision: groundingVerdict?.decision || null,
@@ -2640,6 +2783,27 @@ async function processMessageJob(job) {
         // A retrieval outage is not an answer: drop confidence so the existing
         // low-confidence gate below holds the turn and pulls in a human.
         if (groundingVerdict.reasonCode === grounding.ReasonCode.RETRIEVAL_FAILED) confidence = 0;
+        // P+02 (safe clarification): when the grounded answer offers no path
+        // forward, let the customer pick delivery info / a human instead of
+        // typing. Non-session turns only; flag-gated; non-fatal.
+        if (!orderFlow.handled && !turnInteractionId) {
+            try {
+                const pilotFeatures = require('../modules/pilot-features/pilot-features.service');
+                if (await pilotFeatures.isInteractionChoicesEnabled(shopId)) {
+                    const interactions = require('../modules/interactions/interactions.service');
+                    const proposal = await interactions.createProposal({
+                        shopId,
+                        customerId: conversation.customer_id || null,
+                        customerChannelId: recipientId,
+                        metaChannelId,
+                        conversationId,
+                        kind: 'CLARIFY_NEEDS',
+                        language: detectedLanguage === 'en' ? 'en' : 'bn',
+                    });
+                    turnInteractionId = proposal?.interactionId || null;
+                }
+            } catch (_) { turnInteractionId = turnInteractionId || null; }
+        }
     }
     let repliedText = rawResponse;
     let disclosureApplied = false;
@@ -3222,6 +3386,15 @@ async function processMessageJob(job) {
             };
         }
         const provider = getProvider(policyChannelTypeForSend);
+        let turnQuickReplies = null;
+        const turnInteractionIdForSend = aiMessage?.metadata?.interaction_id || null;
+        if (turnInteractionIdForSend) {
+            try {
+                const interactions = require('../modules/interactions/interactions.service');
+                const rendered = await interactions.renderQuickReplies(turnInteractionIdForSend);
+                if (rendered?.quick_replies?.length) turnQuickReplies = rendered.quick_replies;
+            } catch (_) { turnQuickReplies = null; }
+        }
         providerSendAttempted = true;
         lifecycleLogger.info('ai_auto_send_attempt', {
             shopId,
@@ -3234,6 +3407,12 @@ async function processMessageJob(job) {
             recipientId: String(recipientId),
             normalizedMessage: {
                 text: finalText,
+                // P+02: server-rendered registry quick replies bound to THIS
+                // message's interaction row (opaque payloads only). Sending
+                // still went through the full policy chain above; render
+                // failure degrades to plain text — the conversation never
+                // depends on interactive capability.
+                quick_replies: turnQuickReplies || undefined,
                 // Only media the grounding gate accepted: a verified product of
                 // THIS shop, owning this exact URL.
                 attachments: outboundAttachments,
@@ -3247,6 +3426,13 @@ async function processMessageJob(job) {
             const error = new Error('Provider did not confirm the outbound send');
             error.code = 'PROVIDER_NO_SEND';
             throw error;
+        }
+        if (turnInteractionIdForSend) {
+            // Delivery ack makes the proposal genuinely tappable (GENERATED->SENT).
+            try {
+                const { markSent } = require('../modules/interactions/interactions.service');
+                await markSent(turnInteractionIdForSend);
+            } catch (_) { /* text conversation unaffected */ }
         }
     } catch (err) {
         if (err?.retryable || err?.code === 'DELIVERY_LOCK_BUSY' || err?.code === 'DELIVERY_LOCK_UNAVAILABLE') {

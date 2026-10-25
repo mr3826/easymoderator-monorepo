@@ -38,6 +38,13 @@ const KNOWN = new Set([
     'order_confidence.outcome_recorded',
     'order_confidence.outcome_hook_failed',
     'pilot_features.lookup_failed',
+    'interaction.generated',
+    'interaction.rejected',
+    'interaction.consumed',
+    'interaction.dispatch_failed',
+    'gap_suggestion.generated',
+    'gap_suggestion.published',
+    'gap_suggestion.dismissed',
 ]);
 
 function increment(name, by = 1) {

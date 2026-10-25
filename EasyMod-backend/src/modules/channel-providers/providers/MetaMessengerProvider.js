@@ -1041,9 +1041,23 @@ class MetaMessengerProvider extends ChannelProvider {
             : [];
         const bodies = [];
         if (normalizedMessage.text?.trim()) {
+            const messageBody = { text: normalizedMessage.text.trim() };
+            // P+02: quick replies ride the TEXT body (Meta: <=13, title <=20
+            // chars, payload <=1000 chars, content_type text). Invalid entries
+            // are dropped, never truncated onto the wire; if the whole set is
+            // invalid the text still sends (safe fallback stays possible).
+            const raw = Array.isArray(normalizedMessage.quick_replies) ? normalizedMessage.quick_replies : [];
+            const quickReplies = raw
+                .filter(qr => typeof qr?.title === 'string' && qr.title.trim()
+                    && qr.title.trim().length <= 20
+                    && typeof qr?.payload === 'string' && qr.payload.length
+                    && qr.payload.length <= 1000)
+                .slice(0, 13)
+                .map(qr => ({ title: qr.title.trim(), content_type: 'text', payload: qr.payload }));
+            if (quickReplies.length) messageBody.quick_replies = quickReplies;
             bodies.push({
                 recipient: { id: recipientId },
-                message: { text: normalizedMessage.text.trim() }
+                message: messageBody,
             });
         }
         for (const attachment of attachments) {

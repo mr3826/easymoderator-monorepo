@@ -24,6 +24,10 @@ const OFF = Object.freeze({
     customerIntelligence: false,
     orderConfidenceMode: 'off',
     orderConfidenceConfig: { ...DEFAULT_ORDER_CONFIDENCE_CONFIG },
+    // Pilot+ V1 flags (ADR-0009 discipline: platform-controlled, default off).
+    interactionChoices: false,
+    actionQueue: false,
+    knowledgeSuggestions: false,
 });
 
 const getModel = () => {
@@ -53,6 +57,9 @@ function toFeatures(row) {
         customerIntelligence: row.customer_intelligence === true,
         orderConfidenceMode: mode,
         orderConfidenceConfig: sanitizeConfig(row.order_confidence_config),
+        interactionChoices: row.interaction_choices === true,
+        actionQueue: row.action_queue === true,
+        knowledgeSuggestions: row.knowledge_suggestions === true,
     };
 }
 
@@ -81,6 +88,18 @@ async function isCustomerIntelligenceEnabled(shopId) {
     return (await getPilotFeatures(shopId)).customerIntelligence;
 }
 
+async function isInteractionChoicesEnabled(shopId) {
+    return (await getPilotFeatures(shopId)).interactionChoices;
+}
+
+async function isActionQueueEnabled(shopId) {
+    return (await getPilotFeatures(shopId)).actionQueue;
+}
+
+async function isKnowledgeSuggestionsEnabled(shopId) {
+    return (await getPilotFeatures(shopId)).knowledgeSuggestions;
+}
+
 function serialize(row, shopId) {
     const features = toFeatures(row);
     return {
@@ -88,6 +107,9 @@ function serialize(row, shopId) {
         customer_intelligence: features.customerIntelligence,
         order_confidence_mode: features.orderConfidenceMode,
         order_confidence_config: features.orderConfidenceConfig,
+        interaction_choices: features.interactionChoices,
+        action_queue: features.actionQueue,
+        knowledge_suggestions: features.knowledgeSuggestions,
         updated_by: row?.updated_by || null,
         updated_at: row?.updated_at || null,
     };
@@ -121,6 +143,15 @@ async function setPilotFeatures(shopId, updates, actorUserId, { transaction = nu
         order_confidence_config: updates.order_confidence_config !== undefined
             ? sanitizeConfig({ ...previous.order_confidence_config, ...updates.order_confidence_config })
             : previous.order_confidence_config,
+        interaction_choices: typeof updates.interaction_choices === 'boolean'
+            ? updates.interaction_choices
+            : previous.interaction_choices,
+        action_queue: typeof updates.action_queue === 'boolean'
+            ? updates.action_queue
+            : previous.action_queue,
+        knowledge_suggestions: typeof updates.knowledge_suggestions === 'boolean'
+            ? updates.knowledge_suggestions
+            : previous.knowledge_suggestions,
         updated_by: actorUserId || null,
     };
     if (!ORDER_CONFIDENCE_MODES.includes(next.order_confidence_mode)) {
@@ -139,7 +170,14 @@ async function setPilotFeatures(shopId, updates, actorUserId, { transaction = nu
 /** Global kill switch: every shop back to pre-pilot behaviour, no deploy. */
 async function disableAll(actorUserId, { transaction = null } = {}) {
     const [affected] = await getModel().update(
-        { customer_intelligence: false, order_confidence_mode: 'off', updated_by: actorUserId || null },
+        {
+            customer_intelligence: false,
+            order_confidence_mode: 'off',
+            interaction_choices: false,
+            action_queue: false,
+            knowledge_suggestions: false,
+            updated_by: actorUserId || null,
+        },
         { where: {}, ...(transaction ? { transaction } : {}) },
     );
     return { affected };
@@ -150,6 +188,9 @@ module.exports = {
     DEFAULT_ORDER_CONFIDENCE_CONFIG,
     getPilotFeatures,
     isCustomerIntelligenceEnabled,
+    isInteractionChoicesEnabled,
+    isActionQueueEnabled,
+    isKnowledgeSuggestionsEnabled,
     getForAdmin,
     setPilotFeatures,
     disableAll,

@@ -1362,10 +1362,18 @@ class OrderSessionService {
     }
 
     /**
+     * P+02: load a bound session for interaction resolution by id+shop —
+     * INCLUDING terminal states, so the resolver can honestly reject stale
+     * context instead of silently acting on it. Scoped by shop at query time.
+     */
+    static async getSessionForInteraction(sessionId, shopId) {
+        return OrderSession.findOne({ where: { id: sessionId, shop_id: shopId } });
+    }
+
+    /**
      * Get session state
      */
-    static async getSessionState(sessionId, shopId) {
-        const session = await OrderSession.findOne({
+    static async getSessionState(sessionId, shopId) {        const session = await OrderSession.findOne({
             where: { id: sessionId, shop_id: shopId }
         });
 

@@ -32,6 +32,26 @@ const mockUpdateConversationState = jest.fn();
 const mockSubscriptionFindOne = jest.fn();
 const mockRecoveryStartTurn = jest.fn();
 const mockRecoveryTransition = jest.fn();
+const mockMessageFindByPk = jest.fn();
+const mockResolveInteraction = jest.fn();
+const mockFindNumberedLivePayload = jest.fn();
+const mockRenderQuickReplies = jest.fn();
+const mockMarkSent = jest.fn();
+const mockCreateProposal = jest.fn();
+const mockIsInteractionChoicesEnabled = jest.fn(async () => true);
+const mockGetSessionForInteraction = jest.fn();
+
+jest.mock('src/modules/interactions/interactions.service', () => ({
+    resolveInteraction: mockResolveInteraction,
+    findNumberedLivePayload: mockFindNumberedLivePayload,
+    renderQuickReplies: mockRenderQuickReplies,
+    markSent: mockMarkSent,
+    createProposal: mockCreateProposal,
+    contextVersionFor: (session) => `${session.current_step}:`,
+}));
+jest.mock('src/modules/pilot-features/pilot-features.service', () => ({
+    isInteractionChoicesEnabled: mockIsInteractionChoicesEnabled,
+}));
 
 jest.mock('bullmq', () => ({
     Worker: jest.fn(),
@@ -51,7 +71,7 @@ jest.mock('src/utils/ops-alert', () => ({ opsAlert: jest.fn(async () => {}) }));
 jest.mock('src/utils/sse-manager', () => ({ emit: jest.fn() }));
 jest.mock('src/modules/conversation/conversation.entity', () => ({
     Conversation: { findOne: mockConversationFindOne },
-    Message: { findAll: mockMessageFindAll, count: mockMessageCount },
+    Message: { findAll: mockMessageFindAll, count: mockMessageCount, findByPk: mockMessageFindByPk },
 }));
 jest.mock('src/modules/conversation/conversation-state-standalone.service', () => ({
     detectLanguage: jest.fn(() => 'en'),
@@ -104,6 +124,7 @@ jest.mock('src/modules/ai/recovery/turn-recovery.service', () => ({
 }));
 jest.mock('src/modules/order/order-session-standalone.service', () => ({
     getActiveSession: jest.fn(async () => null),
+    getSessionForInteraction: mockGetSessionForInteraction,
 }));
 jest.mock('src/modules/ai/intent/stage2-rules', () => ({
     classify: jest.fn(() => ({
@@ -137,6 +158,7 @@ jest.mock('src/modules/ai/grounding', () => ({
     })),
     logGroundingDecision: jest.fn(),
     isModelGenerated: jest.fn(() => false),
+    withSourceText: jest.fn((evidence) => evidence),
 }));
 
 const { processMessageJob } = require('src/jobs/message-worker');
@@ -175,6 +197,13 @@ const channelSettings = {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockMessageFindByPk.mockResolvedValue(null);
+    mockIsInteractionChoicesEnabled.mockResolvedValue(true);
+    mockFindNumberedLivePayload.mockResolvedValue(null);
+    mockRenderQuickReplies.mockResolvedValue(null);
+    mockCreateProposal.mockResolvedValue(null);
+    mockMarkSent.mockResolvedValue(true);
+    mockGetSessionForInteraction.mockResolvedValue(null);
     mockChannel.status = 'CONNECTED';
     mockCacheGet.mockReset().mockResolvedValue(null);
     mockCacheDel.mockReset().mockResolvedValue(1);
@@ -209,11 +238,11 @@ beforeEach(() => {
     });
     mockEvaluateOutbound.mockReset().mockResolvedValue({ allow: true, decisionId: 'policy-1', transform: null });
     mockSendMessage.mockReset().mockResolvedValue({ providerMessageId: 'provider-1' });
-    mockStoreAIResponse.mockImplementation(async (_conversationId, content) => ({
+    mockStoreAIResponse.mockImplementation(async (_conversationId, content, opts = {}) => ({
         message: {
             id: 'ai-1',
             content,
-            metadata: {},
+            metadata: { ...(opts.interaction_id ? { interaction_id: opts.interaction_id } : {}) },
             update: mockStoredMessageUpdate,
         },
     }));
@@ -483,4 +512,127 @@ test('a mode change during policy evaluation is rechecked before provider delive
         metadata: expect.objectContaining({ delivered: false, held_reason: 'mode_changed', delivery_state: 'HELD' }),
         delivery_state: 'HELD',
     }));
+});
+
+// ─── P+02 structured customer choices ─────────────────────────────────────────
+const TAP = 'p1:44444444-4444-4444-4444-444444444444:checkout.confirm';
+
+test('P+02: a resolved choice tap executes through the kernel and flows through normal mode handling', async () => {
+    mockMessageFindByPk.mockResolvedValue({ metadata: { quick_reply: { payload: TAP } } });
+    mockResolveInteraction.mockResolvedValue({
+        resolved: true,
+        response: 'Order #7 confirmed ✅',
+        meta: { completed: true, order: { id: 'ord-7', order_number: 7 } },
+    });
+
+    const result = await processMessageJob(makeJob({ message: '' }));
+
+    expect(mockResolveInteraction).toHaveBeenCalledWith(expect.objectContaining({
+        shopId: 'shop-1',
+        conversationId: 'conv-1',
+        customerChannelId: 'recipient-1',
+        mutationsAllowed: true,
+    }));
+    expect(mockHandleOrderFlow).not.toHaveBeenCalled();
+    // committed-order truth: the deterministic post-mutation template carries
+    // the order number (never the tap itself as authority)
+    expect(mockStoreAIResponse.mock.calls[0][1]).toMatch(/#7/);
+    expect(result).toEqual(expect.objectContaining({ sent: true }));
+});
+
+test('P+02: a replayed tap is a pure no-op (no message, no send)', async () => {
+    mockMessageFindByPk.mockResolvedValue({ metadata: { quick_reply: { payload: TAP } } });
+    mockResolveInteraction.mockResolvedValue({ resolved: false, code: 'INTERACTION_ALREADY_HANDLED' });
+
+    const result = await processMessageJob(makeJob({ message: '' }));
+
+    expect(result).toEqual(expect.objectContaining({ skipped: true, reason: 'interaction_replay' }));
+    expect(mockStoreAIResponse).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+});
+
+test('P+02: a tap in DRAFT mode never mutates (mutationsAllowed false) and stays a draft', async () => {
+    mockGetShopAiSettings.mockResolvedValue(shopSettings('DRAFT'));
+    mockMessageFindByPk.mockResolvedValue({ metadata: { quick_reply: { payload: TAP } } });
+    mockResolveInteraction.mockResolvedValue({ resolved: true, response: 'Review summary', meta: {} });
+
+    await processMessageJob(makeJob({ message: '' }));
+
+    expect(mockResolveInteraction).toHaveBeenCalledWith(
+        expect.objectContaining({ mutationsAllowed: false }),
+    );
+    expect(mockSendMessage).not.toHaveBeenCalled();
+});
+
+test('P+02: ORDER_SUMMARY turn attaches a registry proposal, renders quick replies and marks SENT on ack', async () => {
+    mockHandleOrderFlow.mockResolvedValue({
+        handled: true,
+        response: 'Review: ৳1650 — confirm?',
+        confidence: 1.0,
+        meta: { order_session: 'continue', step: 'ORDER_SUMMARY', session_id: 'sess-9' },
+    });
+    mockGetSessionForInteraction.mockResolvedValue({
+        id: 'sess-9', current_step: 'ORDER_SUMMARY', status: 'ACTIVE',
+        step_data: { confirmed_summary_hash: 'h1' },
+    });
+    mockCreateProposal.mockResolvedValue({ interactionId: 'iid-1', options: [] });
+    mockRenderQuickReplies.mockResolvedValue({
+        quick_replies: [{ title: 'Confirm', content_type: 'text', payload: TAP }],
+        textFallback: '1) Confirm',
+    });
+
+    await processMessageJob(makeJob());
+
+    expect(mockCreateProposal).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'CHECKOUT_DECISION',
+        shopId: 'shop-1',
+        conversationId: 'conv-1',
+    }));
+    expect(mockStoreAIResponse.mock.calls[0][2]).toMatchObject({ interaction_id: 'iid-1' });
+    expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+        normalizedMessage: expect.objectContaining({
+            quick_replies: [expect.objectContaining({ payload: TAP })],
+        }),
+    }));
+    expect(mockMarkSent).toHaveBeenCalledWith('iid-1');
+});
+
+test('P+02: with the pilot flag off no proposal is created and sends stay plain text', async () => {
+    mockIsInteractionChoicesEnabled.mockResolvedValue(false);
+    mockHandleOrderFlow.mockResolvedValue({
+        handled: true,
+        response: 'Review: ৳1650',
+        confidence: 1.0,
+        meta: { order_session: 'continue', step: 'ORDER_SUMMARY', session_id: 'sess-9' },
+    });
+
+    await processMessageJob(makeJob());
+
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+    const sent = mockSendMessage.mock.calls[0][0];
+    expect(sent.normalizedMessage.quick_replies).toBeUndefined();
+});
+
+test('P+02: a bare-number reply resolves only via the numbered equivalence path', async () => {
+    mockFindNumberedLivePayload.mockResolvedValue(
+        'p1:55555555-5555-5555-5555-555555555555:checkout.resume',
+    );
+    mockResolveInteraction.mockResolvedValue({ resolved: true, response: 'ঠিকানা দিন', meta: { resumed_step: 'COLLECTING_ADDRESS' } });
+
+    await processMessageJob(makeJob({ message: '2' }));
+
+    expect(mockFindNumberedLivePayload).toHaveBeenCalledWith({ shopId: 'shop-1', conversationId: 'conv-1', number: '2' });
+    expect(mockResolveInteraction).toHaveBeenCalled();
+    expect(mockHandleOrderFlow).not.toHaveBeenCalled();
+});
+
+test('P+02: forged/unknown payload tap gets an honest fallback, not a silent drop', async () => {
+    mockMessageFindByPk.mockResolvedValue({ metadata: { quick_reply: { payload: TAP } } });
+    mockResolveInteraction.mockResolvedValue({ resolved: false, code: 'INTERACTION_UNKNOWN' });
+
+    await processMessageJob(makeJob({ message: '' }));
+
+    expect(mockHandleOrderFlow).not.toHaveBeenCalled();
+    const stored = mockStoreAIResponse.mock.calls[0][1];
+    expect(stored).toMatch(/no longer active/i);
 });
