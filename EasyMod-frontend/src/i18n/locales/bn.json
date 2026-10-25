@@ -2118,6 +2118,43 @@
       "triggerKeywordsPlaceholder": "যেমন: complain, refund"
     }
   },
+  "faqSettings": {
+    "gaps": {
+      "title": "কাস্টমার বারবার যেসব প্রশ্ন করছে",
+      "subtitle": "কাস্টমারের আসল প্রশ্ন যা আপনার দোকান এখনো উত্তর দেয়নি। উত্তর আপনি নিজে লিখবেন — কিছুই অটোমেটিক প্রকাশ হবে না।",
+      "askedTimes": "{{count}} বার জিজ্ঞেস করেছে",
+      "openSettings": "সেটিংস খুলুন",
+      "writeAnswer": "উত্তর লিখুন",
+      "dismiss": "বাদ দিন",
+      "publish": "উত্তর প্রকাশ করুন",
+      "questionLabel": "প্রশ্ন",
+      "answerLabel": "আপনার উত্তর",
+      "answerPlaceholder": "কাস্টমারকে ঠিক কোন উত্তরটি দিতে চান, সেটি লিখুন।",
+      "dismissTitle": "কেন এই প্রশ্নটি বাদ দিচ্ছেন?",
+      "dismissConfirm": "বাদ দিন",
+      "published": "আপনার FAQ-এ উত্তরটি প্রকাশ হয়েছে।",
+      "dismissed": "প্রস্তাবটি বাদ দেওয়া হয়েছে।",
+      "actionFailed": "কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।",
+      "refreshed": "এই প্রশ্নটির অবস্থা বদলে গেছে — তালিকা রিফ্রেশ করা হয়েছে।",
+      "status": {
+        "IN_REVIEW": "রিভিউতে আছে"
+      },
+      "domain": {
+        "PAYMENT": "পেমেন্ট",
+        "DELIVERY": "ডেলিভারি",
+        "PRODUCT": "প্রোডাক্ট",
+        "POLICY": "পলিসি",
+        "OTHER": "অন্যান্য"
+      },
+      "dismissReasons": {
+        "NOT_USEFUL": "কাজের না",
+        "ALREADY_ANSWERED": "আগেই উত্তর আছে",
+        "CONFIG_ONLY": "সেটিংস ঠিক করলেই হবে",
+        "OUTDATED": "পুরনো",
+        "OTHER": "অন্যান্য"
+      }
+    }
+  },
   "subscription": {
     "title": "প্ল্যান ও বিলিং",
     "subtitle": "প্ল্যান বেছে নিন, allowance দেখুন, এবং শপের নিয়ন্ত্রণ নিজের হাতে রাখুন",

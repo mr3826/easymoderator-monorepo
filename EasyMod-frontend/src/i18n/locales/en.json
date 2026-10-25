@@ -2118,6 +2118,43 @@
       "triggerKeywordsPlaceholder": "e.g. complain, refund"
     }
   },
+  "faqSettings": {
+    "gaps": {
+      "title": "Questions customers keep asking",
+      "subtitle": "Real customer questions your shop has not answered yet. You write every answer — nothing is published automatically.",
+      "askedTimes": "asked {{count}} times",
+      "openSettings": "Open settings",
+      "writeAnswer": "Write answer",
+      "dismiss": "Dismiss",
+      "publish": "Publish answer",
+      "questionLabel": "Question",
+      "answerLabel": "Your answer",
+      "answerPlaceholder": "Write the exact answer customers should receive.",
+      "dismissTitle": "Why dismiss this question?",
+      "dismissConfirm": "Dismiss",
+      "published": "Answer published to your FAQs.",
+      "dismissed": "Suggestion dismissed.",
+      "actionFailed": "Something went wrong. Please try again.",
+      "refreshed": "This question changed on the server — the list was refreshed.",
+      "status": {
+        "IN_REVIEW": "In review"
+      },
+      "domain": {
+        "PAYMENT": "Payment",
+        "DELIVERY": "Delivery",
+        "PRODUCT": "Product",
+        "POLICY": "Policy",
+        "OTHER": "Other"
+      },
+      "dismissReasons": {
+        "NOT_USEFUL": "Not useful",
+        "ALREADY_ANSWERED": "Already answered",
+        "CONFIG_ONLY": "Settings fix it",
+        "OUTDATED": "Outdated",
+        "OTHER": "Other"
+      }
+    }
+  },
   "subscription": {
     "title": "Plan & Billing",
     "subtitle": "Choose a plan, track your allowance, and keep your shop in control",
