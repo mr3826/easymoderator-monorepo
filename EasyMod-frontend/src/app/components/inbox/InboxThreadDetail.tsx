@@ -21,6 +21,8 @@ import type {
   SuggestionVisibility,
 } from "@/api/types/conversation";
 import { InboxComposer } from "./InboxComposer";
+import OpportunityCard from "../customers/OpportunityCard";
+import type { Opportunity } from "@/api/types/customer-intelligence";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -374,6 +376,8 @@ interface InboxThreadDetailProps {
   onResolve: () => void;
   onLoadOlderMessages: () => void;
   onDismissSuggestion: (msgId: string) => void | Promise<void>;
+  /** P+01: authoritative opportunity state changed from within the inbox strip. */
+  onOpportunityChanged?: (opportunity: Opportunity) => void;
   onSetShowResolveDialog: (show: boolean) => void;
   onSetResolveNote: (note: string) => void;
   onMessageSent: (message: Message) => void;
@@ -407,6 +411,7 @@ export function InboxThreadDetail({
   onResolve,
   onLoadOlderMessages,
   onDismissSuggestion,
+  onOpportunityChanged,
   onSetShowResolveDialog,
   onSetResolveNote,
   onMessageSent,
@@ -642,6 +647,18 @@ export function InboxThreadDetail({
         <div className="bg-red-50 border-b border-red-200 px-6 py-2 flex items-center gap-2 text-sm text-destructive font-bn">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <span>{t("inbox.windowExpired")}</span>
+        </div>
+      )}
+
+      {/* P+01 Inbox Lead Intelligence — the same authoritative opportunity the
+          Customers page shows; reasons are recorded facts, never a score. */}
+      {selectedConversation.open_opportunity && (
+        <div className="border-b border-gray-100 bg-gray-50/60 px-4 md:px-6 py-3" data-testid="inbox-lead-insight">
+          <OpportunityCard
+            opportunity={selectedConversation.open_opportunity}
+            showCustomer={false}
+            onChanged={(updated) => onOpportunityChanged?.(updated)}
+          />
         </div>
       )}
 

@@ -21,6 +21,7 @@ import {
   type Message,
   type ResponseTemplate,
 } from "@/api/types/conversation";
+import type { Opportunity } from "@/api/types/customer-intelligence";
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
@@ -1029,6 +1030,26 @@ export default function UnifiedInbox() {
     });
   };
 
+  // P+01: merchant acted on the inbox lead (contacted / dismissed / state
+  // conflict resolved server-side). Keep the projection in sync with the
+  // authoritative response; terminal states clear the chip and the strip.
+  const handleOpportunityChanged = (updated: Opportunity) => {
+    const live = updated.status === "OPEN" || updated.status === "ACTIONED";
+    const targetId = updated.conversation_id || selectedConversation?.id;
+    const apply = (conversation: Conversation | null): Conversation | null => (
+      !conversation || conversation.id !== targetId
+        ? conversation
+        : {
+            ...conversation,
+            open_opportunity: live
+              ? { ...conversation.open_opportunity, ...updated } as Opportunity
+              : null,
+          }
+    );
+    setConversations((prev) => prev.map(apply) as Conversation[]);
+    setSelectedConversation(apply);
+  };
+
   const handleDismissSuggestion = async (messageId: string) => {
     if (!selectedConversation) return;
     try {
@@ -1187,6 +1208,7 @@ export default function UnifiedInbox() {
             onResolve={handleResolveConversation}
             onLoadOlderMessages={loadOlderMessages}
             onDismissSuggestion={handleDismissSuggestion}
+            onOpportunityChanged={handleOpportunityChanged}
             onSetShowResolveDialog={setShowResolveDialog}
             onSetResolveNote={setResolveNote}
             onMessageSent={handleMessageSent}

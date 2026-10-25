@@ -3,9 +3,10 @@
  * Extracted from UnifiedInbox.tsx (D2 split).
  */
 import { motion } from "motion/react";
-import { Search, UserCheck, CheckCircle2, Loader2, MessageCircle } from "lucide-react";
+import { Search, UserCheck, CheckCircle2, Loader2, MessageCircle, Sparkles } from "lucide-react";
 import type { Conversation } from "@/api/types/conversation";
 import { Badge } from "@/app/components/ui/badge";
+import { strengthStyles } from "../customers/customerDisplay";
 import { useTranslation } from "react-i18next";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
@@ -187,6 +188,16 @@ export function InboxThreadList({
                         {conversation.status === "closed" && (
                           <span title={t("inbox.resolved")} className="inline-flex">
                             <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                          </span>
+                        )}
+                        {conversation.open_opportunity && (
+                          <span
+                            data-testid="lead-chip"
+                            title={t(`customer360.strength.${conversation.open_opportunity.strength}`)}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ${strengthStyles[conversation.open_opportunity.strength]}`}
+                          >
+                            <Sparkles className="w-2.5 h-2.5" aria-hidden="true" />
+                            {t(`customer360.strength.${conversation.open_opportunity.strength}`)}
                           </span>
                         )}
                       </div>
