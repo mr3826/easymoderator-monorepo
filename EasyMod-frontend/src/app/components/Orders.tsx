@@ -1129,23 +1129,27 @@ export default function Orders() {
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.customerChat')}</h3>
-              {conversationSnippets.length === 0 ? (
-                <p className="text-sm text-gray-500">{t('orders.detailModal.noChatSnippet')}</p>
+              {linkedConversationId ? (
+                conversationSnippets.length === 0 ? (
+                  <p className="text-sm text-gray-500">{t('orders.detailModal.linkedChatEmpty')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {conversationSnippets.map((line, idx) => (
+                      <p key={`${selectedOrder.id}-msg-${idx}`} className="rounded-lg bg-white p-3 text-sm text-gray-700 border border-gray-200">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )
               ) : (
-                <div className="space-y-2">
-                  {conversationSnippets.map((line, idx) => (
-                    <p key={`${selectedOrder.id}-msg-${idx}`} className="rounded-lg bg-white p-3 text-sm text-gray-700 border border-gray-200">
-                      {line}
-                    </p>
-                  ))}
-                </div>
+                <p className="text-sm text-gray-500">{t('orders.detailModal.noChatSnippet')}</p>
               )}
               {/* FE-08: navigation only ever for the conversation VERIFIED to
                   belong to this order's customer, via the canonical inbox deep link. */}
               {linkedConversationId && (
                 <button
                   type="button"
-                  onClick={() => navigate(`/inbox?conversation=${linkedConversationId}`)}
+                  onClick={() => navigate(`/inbox?conversation=${encodeURIComponent(linkedConversationId)}`)}
                   className="mt-3 text-sm font-semibold text-blue-700 hover:underline font-bn"
                 >
                   {t('orders.detailModal.openConversation')}

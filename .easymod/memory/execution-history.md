@@ -1,5 +1,47 @@
 # Execution History
-**Last Updated:** 2026-10-25 (Pilot+ V1 merchant momentum)
+**Last Updated:** 2026-10-25 (Merchant Workspace V1 — increment 1)
+
+## 2026-10-25 — Merchant Workspace V1 increment 1: safe composer macros, verified order→chat link, dead-code removal
+
+**Task:** Execute the three Gate-0-flagged contract corrections (FE-01, FE-08,
+FE-03) as a child branch of the frozen Pilot+ V1 candidate `9f562aaf`, without
+restarting or touching the Pilot+ workstream, other agents' worktrees, or
+production.
+
+**Outcome:** Complete in `feat/merchant-workspace-v1-increment1` (worktree
+`D:\easymod\_wt-merchant-workspace-v1-increment1`; evidence
+`docs/merchant-workspace-v1/increment-1-handoff.md`). FE-01 replaced the ten
+hard-coded quick-reply fallbacks (which asserted order/stock/payment/courier/
+charge/return/COD/dispatch facts and were shown even when the templates API
+FAILED) with five claim-free ones — only information-requests or
+promise-to-follow-up; template click still only fills the editable composer
+(no auto-send, no AI-grounding inheritance, both asserted). FE-08 replaced the
+order-detail name search (`getConversations({search:name,limit:1})`, which the
+list endpoint silently ignores — it actually returned the shop's most recently
+ACTIVE conversation, i.e. possibly a different customer's chat) with the
+verified shop-scoped `customer_id` association already enforced server-side,
+a client-side identity recheck, an honest unavailable state for manual/unlinked
+orders, AbortController stale-response protection, and the canonical
+`/inbox?conversation=<id>` deep link. FE-03 removed the dead
+assign/close/reopen helpers targeting unmounted routes (zero references; the
+canonical tested PATCH contract unchanged).
+
+**Tests:** tsc 0; frontend vitest 644/644 (+16 new: claim-free invariants,
+empty/API-failure/inactive-template wiring, unlinked/wrong-customer/empty/
+stale-discard cases); Playwright pilot-plus 10/10 on BOTH chromium and firefox
+(7 Pilot+ regression journeys + 3 new increment journeys with request-level
+assertions); vite build green. No backend files changed (`git diff
+--name-only 9f562aaf..HEAD -- EasyMod-backend` empty); backend suites inherited
+the Pilot+ green state by construction.
+
+**Schema:** none. `Order.customerId` is a frontend normalisation field over the
+existing `customer_id` column.
+
+**Meta Risk:** reduced — the merchant UI no longer offers hard-coded
+customer-truth claims, and no order can display another customer's
+conversation. Live full-stack preview blocked by host Docker Desktop engine
+(machine reboot; WSL stopped) — not a code issue; lab restart documented in
+the handoff. PRODUCTION_RELEASE_AUTHORIZED=NO; nothing pushed/merged/deployed.
 
 ## 2026-10-25 — Pilot+ V1: lead intelligence, structured choices, action queue, context-preserving checkout, knowledge-gap actions
 

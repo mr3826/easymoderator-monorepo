@@ -69,6 +69,32 @@ describe('Conversation Domain API', () => {
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/conversation', { params: { status: 'active', page: 2 } });
     });
+
+    // FE-08: the optional second argument must thread the AbortSignal to the
+    // HTTP layer for stale-request cancellation, and must OMIT the key entirely
+    // when no signal is supplied so single-arg callers keep their exact config.
+    it('passes an AbortSignal to the HTTP client when provided', async () => {
+      (httpClient.get as any).mockResolvedValue({ data: { data: {} } });
+      const controller = new AbortController();
+
+      await conversation.getConversations({ customer_id: 'cust-1' }, controller.signal);
+
+      expect(httpClient.get).toHaveBeenCalledWith(
+        '/api/conversation',
+        { params: { customer_id: 'cust-1' }, signal: controller.signal }
+      );
+    });
+
+    it('omits the signal key when no AbortSignal is supplied', async () => {
+      (httpClient.get as any).mockResolvedValue({ data: { data: {} } });
+
+      await conversation.getConversations({ customer_id: 'cust-1' });
+
+      expect(httpClient.get).toHaveBeenCalledWith(
+        '/api/conversation',
+        { params: { customer_id: 'cust-1' } }
+      );
+    });
   });
 
   describe('AiReplyMode normalization', () => {

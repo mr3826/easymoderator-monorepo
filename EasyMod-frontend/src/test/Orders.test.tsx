@@ -145,6 +145,26 @@ describe('FE-08 order → conversation association', () => {
     expect(apiClient.getMessages).not.toHaveBeenCalled()
   })
 
+  it('distinguishes a linked-but-empty conversation from having no link at all', async () => {
+    const { apiClient } = await import('@/api')
+    vi.mocked(apiClient.getOrders).mockResolvedValue([normalizedOrder({ customerId: 'cust-1' })])
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      data: [{ id: 'conv-9', customer_id: 'cust-1' }],
+      total: 1, page: 1, pageSize: 1,
+    })
+    ;(apiClient.getMessages as any).mockResolvedValue({ messages: [], pagination: { page: 1, totalPages: 1 } })
+
+    render(<MemoryRouter><Orders /></MemoryRouter>)
+    await openDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('The linked conversation has no recent messages.')).toBeInTheDocument()
+    })
+    // honest, non-contradictory: NOT "no chat snippet found", but the verified link remains
+    expect(screen.queryByText('No chat snippet found.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /open conversation in inbox/i })).toBeInTheDocument()
+  })
+
   it('discards a slower request for a previously opened order (stale response guard)', async () => {
     const { apiClient } = await import('@/api')
     const slow = normalizedOrder({ id: 'slow-1', orderNumber: 'ORD-SLOW', customerId: 'cust-slow' })
