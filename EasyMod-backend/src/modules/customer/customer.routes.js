@@ -143,4 +143,35 @@ router.get('/:customerId/memory/context', async (req, res, next) => {
     }
 });
 
+// ─── MW-V1 CRM Lite: staff-private customer notes (doc 05) ─────────────────
+// Membership, shop-scope and author rules are enforced INSIDE
+// customer-notes.service; audits reference ids/lengths only.
+
+const customerNotesController = require('./customer-notes.controller');
+const customerNotesValidator = require('./customer-notes.validator');
+
+router.get(
+    '/:id/notes',
+    validate({ params: customerNotesValidator.byId, query: customerNotesValidator.listQuery }),
+    customerNotesController.listNotes
+);
+
+router.post(
+    '/:id/notes',
+    validate({ params: customerNotesValidator.byId, body: customerNotesValidator.body }),
+    customerNotesController.createNote
+);
+
+router.patch(
+    '/:id/notes/:noteId',
+    validate({ params: customerNotesValidator.byNoteId, body: customerNotesValidator.body }),
+    customerNotesController.updateNote
+);
+
+router.delete(
+    '/:id/notes/:noteId',
+    validate({ params: customerNotesValidator.byNoteId }),
+    customerNotesController.deleteNote
+);
+
 module.exports = router;

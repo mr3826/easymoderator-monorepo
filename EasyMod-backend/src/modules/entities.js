@@ -35,6 +35,7 @@ const KnowledgeGap = require('./analytics/knowledge-gap.entity');
 const SupportTicket = require('./support/support-ticket.entity');
 const ResponseTemplate = require('./template/response-template.entity');
 const CustomerPreference = require('./customer/customer-preference.entity');
+const CustomerNote = require('./customer/customer-note.entity');
 const TrxIDLog = require('./payment/trx-id-log.entity');
 const PaymentTransaction = require('./billing/payment-transaction.entity');
 const OwnerNotification = require('./notification/owner-notification.entity');
@@ -436,6 +437,12 @@ CustomerPreference.belongsTo(Customer, { foreignKey: 'customer_id', as: 'custome
 Customer.hasOne(CustomerPreference, { foreignKey: 'customer_id', as: 'preference' });
 Shop.hasMany(CustomerPreference, { foreignKey: 'shop_id', as: 'customer_preferences' });
 
+// MW-V1 CRM Lite: staff-private notes bound to the shop-scoped customer
+CustomerNote.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+CustomerNote.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+Customer.hasMany(CustomerNote, { foreignKey: 'customer_id', as: 'notes' });
+Shop.hasMany(CustomerNote, { foreignKey: 'shop_id', as: 'customer_notes' });
+
 // TrxIDLog — MFS payment screenshot audit trail
 TrxIDLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 TrxIDLog.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
@@ -608,6 +615,7 @@ module.exports = {
     SupportTicket,
     ResponseTemplate,
     CustomerPreference,
+    CustomerNote,
     TrxIDLog,
     PaymentTransaction,
     OwnerNotification,
