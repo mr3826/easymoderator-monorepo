@@ -88,35 +88,6 @@ export async function sendMessage(
   return response.data.data;
 }
 
-export async function assignConversation(
-  conversationId: string,
-  assigneeId: string | null
-): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.patch(
-    `/api/conversation/${conversationId}/assign`,
-    { assigneeId }
-  );
-  return response.data.data;
-}
-
-export async function closeConversation(
-  conversationId: string,
-  resolutionNote?: string
-): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.post(
-    `/api/conversation/${conversationId}/close`,
-    { resolutionNote }
-  );
-  return response.data.data;
-}
-
-export async function reopenConversation(conversationId: string): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.post(
-    `/api/conversation/${conversationId}/reopen`
-  );
-  return response.data.data;
-}
-
 // Messages
 export async function getMessages(
   conversationId: string,
