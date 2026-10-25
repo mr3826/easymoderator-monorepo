@@ -25,6 +25,7 @@ const RESERVED = /(repeat\s*buyer|at\s*risk|rto|fraud|scammer|blacklist|whitelis
 const fail = (message, code, statusCode) => {
     const error = new AppError(message, statusCode);
     error.code = code;
+    error.statusCode = statusCode; // see notes service: .status alone does not survive reply()
     throw error;
 };
 

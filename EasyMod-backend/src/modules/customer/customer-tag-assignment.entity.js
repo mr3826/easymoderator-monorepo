@@ -26,6 +26,10 @@ const CustomerTagAssignment = sequelize.define('CustomerTagAssignment', {
 }, {
     tableName: 'customer_tag_assignments',
     underscored: true,
+    // The assignment fact is immutable (replaced wholesale); the table keeps
+    // created_at only — no updated_at column exists.
+    createdAt: 'created_at',
+    updatedAt: false,
     indexes: [
         { unique: true, fields: ['tag_id', 'customer_id'] },
         { fields: ['shop_id', 'customer_id'] },

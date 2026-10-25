@@ -6,7 +6,12 @@ class ConversationValidator {
             page: Joi.number().integer().min(1).default(1),
             limit: Joi.number().integer().min(1).max(100).default(20),
             status: Joi.string().valid('active', 'closed', 'archived'),
-            channel: Joi.string().valid('telegram', 'messenger', 'instagram', 'web', 'webchat')
+            channel: Joi.string().valid('telegram', 'messenger', 'instagram', 'web', 'webchat'),
+            // MW-V1: verified-association filter used by the inbox context panel
+            // and Order→Inbox link. Service applies it INSIDE the JWT shop scope
+            // (whereClause { shop_id, customer_id }); typed here because the
+            // module-level helpers validator rejects unknown query keys.
+            customer_id: Joi.string().uuid()
         })
     };
 

@@ -13,6 +13,9 @@ const MAX_PAGE = 100;
 const fail = (message, code, statusCode) => {
     const error = new AppError(message, statusCode);
     error.code = code;
+    // AppError exposes .status; controllers/handlers in this repo read
+    // .statusCode — set both so the declared class survives every path.
+    error.statusCode = statusCode;
     throw error;
 };
 
