@@ -104,6 +104,8 @@ class OrderValidator {
     getOrders = {
         query: Joi.object({
             search: Joi.string().trim().optional(),
+            // MW-V1: verified association for the customer-context panel.
+            customer_id: Joi.string().uuid().optional(),
             start_date: Joi.date().iso().optional().messages({
                 'date.format': 'Start date must be a valid ISO 8601 date'
             }),

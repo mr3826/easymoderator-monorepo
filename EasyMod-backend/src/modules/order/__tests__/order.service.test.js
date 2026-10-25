@@ -629,6 +629,18 @@ describe('Order Service', () => {
                 .rejects
                 .toThrow('You do not have access to this shop');
         });
+
+        // MW-V1 customer-context panel: recent orders per conversation's customer,
+        // filtered by the authoritative id INSIDE the shop scope (never cross-shop).
+        it('filters by customer_id within the shop scope', async () => {
+            Order.findAll = jest.fn().mockResolvedValue([]);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+
+            await orderService.listOrders('user-1', 'shop-1', { customer_id: 'cust-9' });
+
+            const callArgs = Order.findAll.mock.calls[0][0];
+            expect(callArgs.where).toMatchObject({ shop_id: 'shop-1', customer_id: 'cust-9' });
+        });
     });
 
     describe('confirmOrder', () => {

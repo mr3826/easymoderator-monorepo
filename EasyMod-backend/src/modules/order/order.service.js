@@ -623,6 +623,12 @@ const listOrders = async (userId, shopId, filters = {}) => {
         shop_id: shopId
     };
 
+    // MW-V1: authoritative customer association filter (id, never name); always
+    // intersected with the shop scope above.
+    if (filters.customer_id) {
+        whereClause.customer_id = filters.customer_id;
+    }
+
     // Date Range Filter
     if (filters.start_date || filters.end_date) {
         whereClause.created_at = {};

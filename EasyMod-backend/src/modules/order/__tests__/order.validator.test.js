@@ -1,6 +1,21 @@
 const orderValidator = require('../order.validator');
 
 describe('order.validator', () => {
+  describe('getOrders — MW-V1 customer association', () => {
+    it('accepts a uuid customer_id filter', () => {
+      const { error } = orderValidator.getOrders.query.validate({
+        customer_id: '550e8400-e29b-41d4-a716-446655440000',
+        limit: 3,
+      });
+      expect(error).toBeUndefined();
+    });
+
+    it('rejects a non-uuid customer_id (no name-shaped identity smuggling)', () => {
+      const { error } = orderValidator.getOrders.query.validate({ customer_id: 'Rahim Uddin' });
+      expect(error).toBeDefined();
+    });
+  });
+
   describe('updateOrder', () => {
     it('accepts REST path id with update body (no body orderId required)', () => {
       const paramsResult = orderValidator.updateOrder.params.validate({
