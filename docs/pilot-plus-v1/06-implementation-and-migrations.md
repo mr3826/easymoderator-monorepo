@@ -46,11 +46,28 @@ unauthorized; local lab seeds are fresh anyway).
 ## Feature commits (append per increment)
 | Phase | Workstream | SHA(s) |
 |---|---|---|
-| 4 | P+01 backend projection | pending |
-| 4 | P+01 inbox UI | pending |
-| 5 | P+02 interactions module | pending |
-| 5 | P+02 provider quick_replies + resolver | pending |
-| 6 | P+03 action aggregate + handoff claims | pending |
-| 7 | P+04 interruption classes | pending |
-| 8 | P+05 suggestions module | pending |
-| 9 | FE polish (all) | pending |
+| 4 | P+01 backend projection | 73cb406e |
+| 4 | P+01 inbox UI (chip + strip via OpportunityCard reuse) | 6a5b9b20 |
+| 7 | P+04 interruption classes (bridge v2, SUSPENDED status, belt, resume hint, meta session_id) | 1ac2b92c |
+| 5 | P+02 interactions kernel + provider + worker wiring + flags + migration | b2a6c8f4 |
+| 6 | P+03 action-queue read model + ownership conflicts + handoff reason (backend) | 24a7f565 |
+| 8 | P+05 gap-suggestions pipeline + capture hygiene + daily job + API (backend) | a29a5701 |
+| 9 | P+03 ActionQueuePanel FE | delegated agent (pending) |
+| 9 | P+05 FaqSettings suggestions FE | delegated agent (pending) |
+| 6 | P+03 FE | pending |
+
+### Corrections to earlier plans (recorded, not hidden)
+- order_sessions.status is VARCHAR (no DB CHECK) -> the "20261025_002_pilotplus_session_status"
+  migration is NOT needed; JS-side ENUM extension only (entity + inline model). No DB migration for P+04.
+- Messages delivery_state has no INDETERMINATE value; reconciliation class uses FAILED +
+  executed_mutation_without_outbound_send metadata + outbox NEEDS_RECONCILIATION (verified).
+- Migrations shipped: 20261025_001 (customer_interactions + 3 flag columns), 20261025_002
+  (knowledge_gap_suggestions). Both fully additive/reversible as planned.
+
+### Evidence (unit) running totals
+- P+01: 10 backend + 5 FE component tests; i18n coverage guard green.
+- P+02: 17 kernel + 7 provider + 12 worker + pilot-features tests.
+- P+03: 8 queue read-model + 5 ownership + controller-boundary updated.
+- P+04: 24 bridge (classes incl. resume) + 11 steps-belt + 2 worker-hint + stage2.
+- P+05: 13 grouping/lifecycle + 4 redaction matrix.
+- Phase-3 P0 suites: see table above (523+364+21+8+... per commit).
