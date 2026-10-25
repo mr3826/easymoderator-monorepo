@@ -1237,19 +1237,10 @@ class ConversationController {
                 }
             );
 
-            // Notify other agent tabs of ownership and workflow changes. Manual
-            // takeover is state-only; system escalation uses human-handoff.service
-            // and is the only path allowed to send a holding message.
-            if (hitl !== undefined || status !== undefined) {
-                sseManager.emit(shopId, 'hitl_changed', {
-                    conversation_id: conversationId,
-                    hitl: conversation.hitl,
-                    status: conversation.status,
-                    needs_merchant_reply: conversation.needs_merchant_reply,
-                    needs_merchant_reply_reason: conversation.needs_merchant_reply_reason,
-                    ai_is_replying: conversation.ai_is_replying,
-                });
-            }
+            // MW-V1 D3/SSE: the ownership/workflow event is emitted once, inside
+            // conversation.service.updateConversation, and now carries the
+            // assignee. Manual takeover remains state-only; system escalation
+            // (human-handoff.service) keeps its own holding-message path.
 
             // When re-enabling AI (HITL off), clear the 30-min manual-reply pause so the AI
             // can respond immediately instead of waiting out the remainder of the timer.
@@ -1295,14 +1286,7 @@ class ConversationController {
                 await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
             }
 
-            sseManager.emit(shopId, 'hitl_changed', {
-                conversation_id: conversationId,
-                hitl: conversation.hitl,
-                status: conversation.status,
-                needs_merchant_reply: conversation.needs_merchant_reply,
-                needs_merchant_reply_reason: conversation.needs_merchant_reply_reason,
-                ai_is_replying: conversation.ai_is_replying,
-            });
+            // Workflow SSE is emitted once by the service (MW-V1 D3).
 
             res.json({
                 success: true,
