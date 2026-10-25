@@ -101,4 +101,23 @@ export interface InboxActionsResponse {
   generated_at: string;
   /** True when one or more sources failed; the queue never fabricates work. */
   partial: boolean;
+  /** MW-V1: server-computed counts over the FULL collection (never page-derived). */
+  counts?: InboxActionCounts;
+}
+
+/** Built-in work views over the same recomputed read model (no saved-view engine). */
+export type InboxActionView =
+  | 'attention'
+  | 'mine'
+  | 'unassigned'
+  | 'handoff'
+  | 'recovery'
+  | 'opportunities'
+  | 'review';
+
+export interface InboxActionCounts {
+  by_bucket: Record<string, number>;
+  views: Partial<Record<InboxActionView, number>>;
+  total: number;
+  returned: number;
 }

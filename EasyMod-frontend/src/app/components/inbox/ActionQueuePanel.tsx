@@ -21,6 +21,7 @@ import {
   type InboxActionItem,
   type InboxActionNextType,
   type InboxActionReasonCode,
+  type InboxActionView,
 } from "@/api/types/inbox";
 import { Badge } from "@/app/components/ui/badge";
 import { formatRelative } from "../customers/customerDisplay";
@@ -36,6 +37,21 @@ const BUCKET_LABEL_KEYS: Record<InboxActionBucketName, string> = {
   DRAFT_RECOVERY: "inbox.actions.bucket.DRAFT_RECOVERY",
   PURCHASE_OPPORTUNITY: "inbox.actions.bucket.PURCHASE_OPPORTUNITY",
   KNOWLEDGE_GAP: "inbox.actions.bucket.KNOWLEDGE_GAP",
+};
+
+// MW-V1 built-in work views (literals for the translation-coverage guard).
+const QUEUE_VIEWS: InboxActionView[] = [
+  "attention", "mine", "unassigned", "handoff", "recovery", "opportunities", "review",
+];
+
+const VIEW_LABEL_KEYS: Record<InboxActionView, string> = {
+  attention: "inbox.actions.views.attention",
+  mine: "inbox.actions.views.mine",
+  unassigned: "inbox.actions.views.unassigned",
+  handoff: "inbox.actions.views.handoff",
+  recovery: "inbox.actions.views.recovery",
+  opportunities: "inbox.actions.views.opportunities",
+  review: "inbox.actions.views.review",
 };
 
 const REASON_LABEL_KEYS: Record<InboxActionReasonCode, string> = {
@@ -85,13 +101,17 @@ export function ActionQueuePanel({ onSseRefresh }: ActionQueuePanelProps) {
   const navigate = useNavigate();
   const [result, setResult] = useState<InboxActionsResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // MW-V1: built-in server-backed views. 'attention' = every open item.
+  const [view, setView] = useState<InboxActionView>('attention');
   const requestIdRef = useRef(0);
+  const viewRef = useRef<InboxActionView>(view);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (forView?: InboxActionView) => {
+    const active = forView ?? viewRef.current;
     const requestId = ++requestIdRef.current;
     setRefreshing(true);
     try {
-      const next = await getInboxActions();
+      const next = await getInboxActions(active);
       if (requestId === requestIdRef.current) setResult(next);
     } catch {
       // Fail closed and silently — the inbox itself is untouched by this strip.
@@ -105,12 +125,20 @@ export function ActionQueuePanel({ onSseRefresh }: ActionQueuePanelProps) {
   useEffect(() => { onSseRefreshRef.current = onSseRefresh; });
 
   useEffect(() => {
-    onSseRefreshRef.current?.(refresh);
+    onSseRefreshRef.current?.(() => void refresh());
     void refresh();
   }, [refresh]);
 
+  const changeView = (next: InboxActionView) => {
+    setView(next);
+    viewRef.current = next;
+    void refresh(next);
+  };
+
   const items = result && !result.featureDisabled ? result.data.items : [];
-  if (!items.length) return null;
+  const counts = result && !result.featureDisabled ? result.data.counts : undefined;
+  if (!result || result.featureDisabled) return null;
+  if (items.length === 0 && !(counts && counts.total > 0)) return null;
 
   // Server already sorts bucket asc → oldest fact first; group for display
   // without re-ordering, skipping empty buckets.
@@ -126,7 +154,7 @@ export function ActionQueuePanel({ onSseRefresh }: ActionQueuePanelProps) {
     >
       <div className="flex items-center justify-between gap-2 px-4 md:px-8 pt-2.5 pb-1">
         <h2 className="text-sm font-semibold text-gray-900 font-bn">
-          {t("inbox.actions.title", { total: items.length })}
+          {t("inbox.actions.title", { total: counts?.total ?? items.length })}
         </h2>
         <button
           type="button"
@@ -141,12 +169,44 @@ export function ActionQueuePanel({ onSseRefresh }: ActionQueuePanelProps) {
         </button>
       </div>
 
+      {counts && (
+        <div
+          role="tablist"
+          aria-label={t("inbox.actions.views.label")}
+          className="flex gap-1.5 overflow-x-auto px-4 md:px-8 pb-1.5"
+        >
+          {counts && QUEUE_VIEWS.filter((v) => (counts.views?.[v] ?? 0) > 0 || v === "attention" || v === view).map((v) => {
+            const n = counts.views?.[v] ?? 0;
+            return (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={view === v}
+                onClick={() => changeView(v)}
+                data-testid={`queue-view-${v}`}
+                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium font-bn transition ${
+                  view === v
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {t(VIEW_LABEL_KEYS[v])}
+                <span className="ml-1 tabular-nums">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div
         className="max-h-56 overflow-y-auto px-4 md:px-8 pb-3"
         tabIndex={0}
-        aria-label={t("inbox.actions.title", { total: items.length })}
+        aria-label={t("inbox.actions.title", { total: counts?.total ?? items.length })}
       >
-        {groups.map(({ bucket, bucketItems }) => (
+        {items.length === 0 ? (
+          <p className="py-3 text-sm text-gray-500 font-bn">{t("inbox.actions.views.empty")}</p>
+        ) : groups.map(({ bucket, bucketItems }) => (
           <div key={bucket} className="mt-1.5 first:mt-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
               {t(BUCKET_LABEL_KEYS[INBOX_ACTION_BUCKET_NAME[bucket]])}

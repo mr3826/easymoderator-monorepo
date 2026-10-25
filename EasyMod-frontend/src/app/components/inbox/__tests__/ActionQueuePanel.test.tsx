@@ -162,4 +162,61 @@ describe('ActionQueuePanel (P+03)', () => {
     fireEvent.click(screen.getByTestId('action-queue-refresh'));
     await waitFor(() => expect(inboxApi.getInboxActions).toHaveBeenCalledTimes(2));
   });
+
+  // ─── MW-V1 Phase 6: server-backed built-in views ──────────────────────────
+  const withCounts = (items: InboxActionItem[], total: number, views: Record<string, number>): InboxActionsResult => ({
+    featureDisabled: false,
+    data: {
+      items,
+      generated_at: '2026-10-25T01:00:00Z',
+      partial: false,
+      counts: { by_bucket: { '1': views.handoff ?? 0 }, views, total, returned: items.length },
+    },
+  });
+
+  it('renders view chips with SERVER counts, not page counts', async () => {
+    // only 2 items on this page but the server says 12 total, 5 unassigned
+    inboxApi.getInboxActions.mockResolvedValue(withCounts(
+      [item(), item({ item_key: 'hitl:conv-2', conversation_id: 'conv-2' })],
+      12,
+      { attention: 12, mine: 3, unassigned: 5, handoff: 8, recovery: 4 },
+    ));
+    render(<ActionQueuePanel />);
+
+    const mineChip = await screen.findByTestId('queue-view-mine');
+    expect(mineChip.textContent).toContain('3');
+    const unassignedChip = screen.getByTestId('queue-view-unassigned');
+    expect(unassignedChip.textContent).toContain('5');
+    // zero-count optional views are not rendered
+    expect(screen.queryByTestId('queue-view-opportunities')).not.toBeInTheDocument();
+    expect(screen.getByText(/Top actions \(12\)/)).toBeInTheDocument();
+  });
+
+  it('switching a view refetches with the selected view id', async () => {
+    inboxApi.getInboxActions
+      .mockResolvedValueOnce(withCounts([item()], 7, { attention: 7, unassigned: 2 }))
+      .mockResolvedValueOnce(withCounts(
+        [item({ item_key: 'hitl:conv-9', conversation_id: 'conv-9' }),
+         item({ item_key: 'hitl:conv-8', conversation_id: 'conv-8', source: { type: 'conversation', id: 'conv-8' } })],
+        7,
+        { attention: 7, unassigned: 2 },
+      ));
+    render(<ActionQueuePanel />);
+    await waitFor(() => expect(inboxApi.getInboxActions).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByTestId('queue-view-unassigned'));
+
+    await waitFor(() => expect(inboxApi.getInboxActions).toHaveBeenLastCalledWith('unassigned'));
+    expect(inboxApi.getInboxActions).toHaveBeenNthCalledWith(1, 'attention');
+    const rows = await screen.findAllByTestId('action-item');
+    expect(rows).toHaveLength(2);
+    expect(screen.getByTestId('queue-view-unassigned')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('legacy response without counts renders exactly as before (no chips)', async () => {
+    inboxApi.getInboxActions.mockResolvedValue(okResult([item()]));
+    render(<ActionQueuePanel />);
+    await waitFor(() => expect(screen.getAllByTestId('action-item')).toHaveLength(1));
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
 });

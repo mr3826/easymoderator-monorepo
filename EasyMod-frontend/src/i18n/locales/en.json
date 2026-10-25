@@ -708,6 +708,17 @@
       "title": "Top actions ({{total}})",
       "refresh": "Refresh action queue",
       "assigned": "Assigned",
+      "views": {
+        "label": "Work views",
+        "empty": "No open work in this view.",
+        "attention": "All open",
+        "mine": "Needs my attention",
+        "unassigned": "Unassigned",
+        "handoff": "Human handoff",
+        "recovery": "Send recovery",
+        "opportunities": "Opportunities",
+        "review": "Awaiting review"
+      },
       "dueBy": "Due {{time}}",
       "bucket": {
         "NEEDS_HUMAN": "Needs a person",

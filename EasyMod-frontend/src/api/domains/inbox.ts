@@ -10,7 +10,7 @@
 import { httpClient } from '@/shared/lib/http/client';
 import type { AxiosResponse } from 'axios';
 import type { ApiResponse } from '../types/common';
-import type { InboxActionsResponse } from '../types/inbox';
+import type { InboxActionView, InboxActionsResponse } from '../types/inbox';
 
 export type InboxActionsResult =
   | { featureDisabled: false; data: InboxActionsResponse }
@@ -30,10 +30,11 @@ export function isFeatureDisabled(error: unknown): boolean {
   return (e?.code ?? e?.response?.data?.error?.code) === 'FEATURE_DISABLED';
 }
 
-export async function getInboxActions(): Promise<InboxActionsResult> {
+export async function getInboxActions(view: InboxActionView = 'attention'): Promise<InboxActionsResult> {
   try {
     const response: AxiosResponse<ApiResponse<InboxActionsResponse>> = await httpClient.get(
       '/api/inbox/actions',
+      { params: { view } },
     );
     return { featureDisabled: false, data: response.data.data };
   } catch (error) {
