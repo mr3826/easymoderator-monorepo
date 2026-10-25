@@ -52,9 +52,26 @@ unauthorized; local lab seeds are fresh anyway).
 | 5 | P+02 interactions kernel + provider + worker wiring + flags + migration | b2a6c8f4 |
 | 6 | P+03 action-queue read model + ownership conflicts + handoff reason (backend) | 24a7f565 |
 | 8 | P+05 gap-suggestions pipeline + capture hygiene + daily job + API (backend) | a29a5701 |
-| 9 | P+03 ActionQueuePanel FE | delegated agent (pending) |
-| 9 | P+05 FaqSettings suggestions FE | delegated agent (pending) |
-| 6 | P+03 FE | pending |
+| 9 | P+03 ActionQueuePanel FE (SSE conversation_updated wiring, i18n en/bn) | cab30997 |
+| 9 | P+05 FaqSettings suggestions FE (i18n en/bn) | 1cbc90a4 |
+| — | Pilot+ real-stack integration suite (10/10 real PG+Redis, both migrations) | in cab30997 (+f32a3c5a import fix) |
+| — | P0-3 mechanism correction: write-time enforcement; AI hot path restored to baseline | 3421678b |
+
+### AMENDMENT LOG (recorded, not hidden)
+- **A1 (P0-3 hot path):** per-reply PaymentConfig read inside getOperatingContext was
+  reverted after A/B evidence — it made V1.3 grounding timing suites flake on-branch, and
+  the same two grounding-boundary tests also flake under parallel load at pristine
+  f0f04e4e (V1.3's own proof already recorded Automated QA = FAIL). Both pass 52/52 with
+  `--runInBand --testTimeout=30000` at baseline AND on this branch: load/ordering, not
+  behavior. Final mechanism: enable/disable/delete self-mfs synchronizes shop.settings.bd
+  (clearSelfMfs on disable/delete); AI reads the settings.bd block (single hot-path read,
+  baseline latency); checkout gates on PaymentConfig.is_enabled; outbound grounding gate
+  unchanged. Guard test asserts NO PaymentConfig access on the reply hot path.
+- **A2:** full unit gate convention = `npx jest --coverage=false --runInBand
+  --testTimeout=30000`; nothing quarantined or weakened.
+- **A3:** grounding/privacy unit tests write run artifacts under
+  docs/ai/product-experience-v1*/artifacts/ — generated, deliberately uncommitted
+  (reproducible from proof commands).
 
 ### Corrections to earlier plans (recorded, not hidden)
 - order_sessions.status is VARCHAR (no DB CHECK) -> the "20261025_002_pilotplus_session_status"
