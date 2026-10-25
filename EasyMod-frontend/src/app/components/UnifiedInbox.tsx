@@ -198,19 +198,19 @@ const needsMerchantReply = (conversation: Conversation): boolean => (
     ?? (conversation.hitl === true || conversation.hasAiSuggestion === true)
 );
 
-// Quick-reply fallback templates. Labels (`name`) are translatable; `content`
-// is intentionally informal Banglish reply text shown to the agent as-is.
-const buildFallbackTemplates = (t: TFunc): ResponseTemplate[] => [
-  { id: "fallback-1", name: t("inbox.templates.orderConfirmed"), content: "আপনার অর্ডার confirm হয়েছে ✅ Delivery: 2-3 দিন" },
-  { id: "fallback-2", name: t("inbox.templates.needAddress"), content: "Stock আছে। Address & mobile নম্বর দিন please 🙏" },
-  { id: "fallback-3", name: t("inbox.templates.advancePayment"), content: "Advance ৳[Amount] bKash করুন: 01XXXXXXXXX" },
-  { id: "fallback-4", name: t("inbox.templates.courierUpdate"), content: "আপনার পার্সেল courier এ দেওয়া হয়েছে ✈️" },
-  { id: "fallback-5", name: t("inbox.templates.thankYou"), content: "ধন্যবাদ আপনার order এর জন্য! 😊" },
-  { id: "fallback-6", name: t("inbox.templates.outOfStock"), content: "এই product টা এখন stock এ নেই। 2-3 দিনের মধ্যে available হবে।" },
-  { id: "fallback-7", name: t("inbox.templates.deliveryCharge"), content: "Dhaka তে delivery charge ৳60, Dhaka এর বাইরে ৳120।" },
-  { id: "fallback-8", name: t("inbox.templates.returnWindow"), content: "Return/exchange এর জন্য 3 দিনের মধ্যে জানাবেন please।" },
-  { id: "fallback-9", name: t("inbox.templates.cashOnDelivery"), content: "COD available আছে। Delivery তে টাকা দিতে পারবেন।" },
-  { id: "fallback-10", name: t("inbox.templates.dispatchToday"), content: "আপনার product টি ready। আজকেই dispatch করব। 🚚" },
+// Quick-reply fallback templates. FE-01: these contain NO business facts.
+// A fallback may only (a) promise to check and follow up, or (b) ask the
+// customer for information. Order/payment/stock/courier/charge/return claims
+// must come from merchant-authored templates or authoritative reads — never
+// from code defaults, because the composer inserts them even when the
+// templates API failed to load. Invariants enforced by
+// src/test/QuickReplySafety.test.ts.
+export const buildFallbackTemplates = (t: TFunc): ResponseTemplate[] => [
+  { id: "fallback-check", name: t("inbox.templates.checkNow"), content: "আমি সঠিক তথ্যটা চেক করে নিচ্ছি 🙏" },
+  { id: "fallback-received", name: t("inbox.templates.replySoon"), content: "আপনার বার্তা পেয়েছি — খুব শীঘ্রই উত্তর দিচ্ছি।" },
+  { id: "fallback-details", name: t("inbox.templates.askDetails"), content: "একটা তথ্য দরকার ছিল, একটু বলবেন? 🙏" },
+  { id: "fallback-address", name: t("inbox.templates.needAddress"), content: "ঠিকানা আর মোবাইল নম্বরটা পাঠিয়ে দিলে সুবিধা হতো 🙏" },
+  { id: "fallback-thanks", name: t("inbox.templates.thankYou"), content: "ধন্যবাদ! 🙏" },
 ];
 
 const META_CHANNELS = ["facebook", "messenger"];

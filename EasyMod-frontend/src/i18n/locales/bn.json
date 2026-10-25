@@ -698,16 +698,11 @@
     "deliveryFailed": "উত্তর পৌঁছায়নি: {{reason}}",
     "channelIssue": "চ্যানেল সমস্যা — {{name}}: {{message}}",
     "templates": {
-      "orderConfirmed": "অর্ডার নিশ্চিত",
+      "checkNow": "চেক করছি",
+      "replySoon": "বার্তা পেয়েছি",
+      "askDetails": "তথ্য জানতে চাই",
       "needAddress": "ঠিকানা প্রয়োজন",
-      "advancePayment": "অগ্রিম পেমেন্ট",
-      "courierUpdate": "কুরিয়ার আপডেট",
-      "thankYou": "ধন্যবাদ",
-      "outOfStock": "স্টক নেই",
-      "deliveryCharge": "ডেলিভারি চার্জ",
-      "returnWindow": "রিটার্ন সময়সীমা",
-      "cashOnDelivery": "ক্যাশ অন ডেলিভারি",
-      "dispatchToday": "আজ পাঠানো হবে"
+      "thankYou": "ধন্যবাদ"
     },
     "actions": {
       "title": "প্রধান কাজ ({{total}})",

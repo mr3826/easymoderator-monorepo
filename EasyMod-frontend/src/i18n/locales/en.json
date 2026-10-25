@@ -698,16 +698,11 @@
     "deliveryFailed": "Reply not delivered: {{reason}}",
     "channelIssue": "Channel issue — {{name}}: {{message}}",
     "templates": {
-      "orderConfirmed": "Order Confirmed",
+      "checkNow": "Let me check",
+      "replySoon": "Message received",
+      "askDetails": "Ask for a detail",
       "needAddress": "Need Address",
-      "advancePayment": "Advance Payment",
-      "courierUpdate": "Courier Update",
-      "thankYou": "Thank You",
-      "outOfStock": "Out of Stock",
-      "deliveryCharge": "Delivery Charge",
-      "returnWindow": "Return Window",
-      "cashOnDelivery": "Cash on Delivery",
-      "dispatchToday": "Dispatch Today"
+      "thankYou": "Thank You"
     },
     "actions": {
       "title": "Top actions ({{total}})",

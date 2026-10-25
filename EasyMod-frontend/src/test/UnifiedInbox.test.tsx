@@ -1324,3 +1324,86 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     expect(screen.queryByRole('button', { name: /Retry/i })).not.toBeInTheDocument()
   })
 })
+
+// FE-01: quick-reply fallbacks must be claim-free, and merchant templates must
+// win whenever they exist — including when the templates API fails.
+describe('FE-01 quick reply fallback wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(apiClient.getMessages as any).mockResolvedValue({
+      messages: [],
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      data: [baseConversation],
+      ai_reply_mode: 'MANUAL',
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.markConversationRead as any).mockResolvedValue({
+      ...baseConversation,
+      unreadCount: 0,
+      lastReadMessageId: 'msg-read',
+    })
+  })
+
+  const openQuickReplies = async () => {
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /quick replies/i }))
+  }
+
+  it('shows only neutral fallback chips when the shop has no templates', async () => {
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([])
+    render(<UnifiedInbox />)
+    await openQuickReplies()
+
+    expect(await screen.findByText('Let me check')).toBeInTheDocument()
+    const legacyClaimLabels = ['Order Confirmed', 'Courier Update', 'Advance Payment', 'Out of Stock', 'Delivery Charge', 'Return Window', 'Cash on Delivery', 'Dispatch Today']
+    for (const label of legacyClaimLabels) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument()
+    }
+  })
+
+  it('inserting a fallback yields claim-free text into the editable composer only (no auto-send)', async () => {
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([])
+    render(<UnifiedInbox />)
+    await openQuickReplies()
+    fireEvent.click(await screen.findByText('Need Address'))
+
+    const composer = screen.getByPlaceholderText(/Type your reply here/i) as HTMLTextAreaElement
+    expect(composer.value).toMatch(/ঠিকানা|নম্বর/)
+    expect(composer.value).not.toMatch(/৳\s?\d|stock|courier|paid|confirmed|COD/i)
+    expect(apiClient.createMessage).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the neutral chips instead of crashing when the templates API fails', async () => {
+    ;(apiClient.getResponseTemplates as any).mockRejectedValue(new Error('boom'))
+    render(<UnifiedInbox />)
+    await openQuickReplies()
+
+    expect(await screen.findByText('Let me check')).toBeInTheDocument()
+  })
+
+  it('lists merchant templates and hides fallbacks when the merchant has any', async () => {
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([
+      { id: 'tpl-1', name: 'My shop reply', content: 'Shop answer', category: 'Quick Reply', is_active: true },
+    ])
+    render(<UnifiedInbox />)
+    await openQuickReplies()
+
+    expect(await screen.findByText('My shop reply')).toBeInTheDocument()
+    expect(screen.queryByText('Let me check')).not.toBeInTheDocument()
+  })
+
+  it('ignores inactive merchant templates without resurrecting claim fallbacks', async () => {
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([
+      { id: 'tpl-1', name: 'Retired reply', content: 'old', is_active: false },
+    ])
+    render(<UnifiedInbox />)
+    await openQuickReplies()
+
+    expect(await screen.findByText('Let me check')).toBeInTheDocument()
+    expect(screen.queryByText('Retired reply')).not.toBeInTheDocument()
+  })
+})
