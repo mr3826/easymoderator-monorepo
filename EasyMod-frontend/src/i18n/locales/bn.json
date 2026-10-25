@@ -708,6 +708,39 @@
       "returnWindow": "রিটার্ন সময়সীমা",
       "cashOnDelivery": "ক্যাশ অন ডেলিভারি",
       "dispatchToday": "আজ পাঠানো হবে"
+    },
+    "actions": {
+      "title": "প্রধান কাজ ({{total}})",
+      "refresh": "অ্যাকশন কিউ রিফ্রেশ করুন",
+      "assigned": "দায়িত্ব দেওয়া",
+      "dueBy": "সময়সীমা {{time}}",
+      "bucket": {
+        "NEEDS_HUMAN": "মানুষ লাগবে",
+        "COMMITTED_WITHOUT_ACK": "পাঠাতে সমস্যা",
+        "CUSTOMER_BLOCKED": "গ্রাহক আটকে আছেন",
+        "DRAFT_RECOVERY": "রিভিউ করার ড্রাফট",
+        "PURCHASE_OPPORTUNITY": "কেনার সুযোগ",
+        "KNOWLEDGE_GAP": "জানার ঘাটতি"
+      },
+      "reason": {
+        "HITL_REQUIRED": "গ্রাহক সরাসরি মানুষের কথা বলেছেন",
+        "HANDOFF_SUSPENDED_CHECKOUT": "মানুষ দেখছেন — চেকআউট থেমে আছে",
+        "SEND_FAILED_AFTER_MUTATION": "অর্ডার আপডেট হয়েছে, কিন্তু উত্তর গ্রাহকের কাছে যায়নি",
+        "SEND_NEEDS_RECONCILIATION": "এই উত্তরটি সত্যিই পাঠানো হয়েছে কিনা দেখে নিন",
+        "CHECKOUT_WAITING_CUSTOMER": "গ্রাহক চেকআউটে আটকে আছেন",
+        "DRAFT_AWAITING_REVIEW": "AI ড্রাফট আপনার অনুমতির অপেক্ষায়",
+        "HELD_MESSAGE": "উত্তর হোল্ডে আছে — পাঠানোর আগে দেখুন",
+        "OPPORTUNITY_OPEN": "অর্ডারের গরম গ্রাহক",
+        "KNOWLEDGE_GAP_OPEN": "AI যে প্রশ্নের উত্তর জানে না"
+      },
+      "next": {
+        "open_conversation": "চ্যাট খুলুন",
+        "review_draft": "ড্রাফট দেখুন",
+        "reconcile_send": "পাঠানো যাচাই করুন",
+        "resume_checkout": "চেকআউট চালু করুন",
+        "review_opportunity": "সুযোগ দেখুন",
+        "review_knowledge_gap": "প্রশ্নটি দেখুন"
+      }
     }
   },
   "products": {

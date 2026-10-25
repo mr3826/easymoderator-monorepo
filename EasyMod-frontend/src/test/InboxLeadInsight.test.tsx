@@ -47,6 +47,11 @@ const oppApi = vi.hoisted(() => ({
 }));
 vi.mock('@/api/domains/customer-intelligence', () => oppApi);
 
+// P+03 action queue: default platform flag is off; keep the strip inert here.
+vi.mock('@/api/domains/inbox', () => ({
+  getInboxActions: vi.fn().mockResolvedValue({ featureDisabled: true }),
+}));
+
 vi.mock('@/app/lib/useSubscriptionFeatures', () => ({
   useSubscriptionFeatures: () => ({
     features: { image_understanding: true, advanced_ai: true, priority_support: true, custom_branding: false },
@@ -160,7 +165,8 @@ describe('P+01 inbox lead intelligence', () => {
     oppApi.dismissOpportunity.mockResolvedValue({
       status: 'DISMISSED', resolved_at: '2026-10-24T09:00:00Z', resolution_reason: 'NOT_INTERESTED',
     });
-    const confirm = within(strip).getAllByRole('button', { name: /^Dismiss$/i }).at(-1)!;
+    const dismissButtons = within(strip).getAllByRole('button', { name: /^Dismiss$/i });
+    const confirm = dismissButtons[dismissButtons.length - 1];
     fireEvent.click(confirm);
 
     await waitFor(() => expect(oppApi.dismissOpportunity).toHaveBeenCalledWith('op-1', 'NOT_INTERESTED'));

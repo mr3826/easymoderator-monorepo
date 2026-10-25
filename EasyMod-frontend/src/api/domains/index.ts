@@ -19,3 +19,4 @@ export * as rtoShield from './rto-shield';
 export * as notification from './notification';
 export * as customerIntelligence from './customer-intelligence';
 export * as orderConfidence from './order-confidence';
+export * as inbox from './inbox';

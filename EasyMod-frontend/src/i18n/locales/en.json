@@ -708,6 +708,39 @@
       "returnWindow": "Return Window",
       "cashOnDelivery": "Cash on Delivery",
       "dispatchToday": "Dispatch Today"
+    },
+    "actions": {
+      "title": "Top actions ({{total}})",
+      "refresh": "Refresh action queue",
+      "assigned": "Assigned",
+      "dueBy": "Due {{time}}",
+      "bucket": {
+        "NEEDS_HUMAN": "Needs a person",
+        "COMMITTED_WITHOUT_ACK": "Delivery trouble",
+        "CUSTOMER_BLOCKED": "Customer blocked",
+        "DRAFT_RECOVERY": "Drafts to review",
+        "PURCHASE_OPPORTUNITY": "Purchase opportunities",
+        "KNOWLEDGE_GAP": "Knowledge gaps"
+      },
+      "reason": {
+        "HITL_REQUIRED": "Customer asked for a human",
+        "HANDOFF_SUSPENDED_CHECKOUT": "Checkout paused while a human steps in",
+        "SEND_FAILED_AFTER_MUTATION": "Order updated, but the reply never reached the customer",
+        "SEND_NEEDS_RECONCILIATION": "Check whether this reply actually went out",
+        "CHECKOUT_WAITING_CUSTOMER": "Customer stuck in checkout",
+        "DRAFT_AWAITING_REVIEW": "AI draft waiting for your OK",
+        "HELD_MESSAGE": "Reply on hold — review before it goes out",
+        "OPPORTUNITY_OPEN": "Ready-to-order customer",
+        "KNOWLEDGE_GAP_OPEN": "Question the AI could not answer"
+      },
+      "next": {
+        "open_conversation": "Open chat",
+        "review_draft": "Review draft",
+        "reconcile_send": "Check send",
+        "resume_checkout": "Resume checkout",
+        "review_opportunity": "Review deal",
+        "review_knowledge_gap": "Review question"
+      }
     }
   },
   "products": {

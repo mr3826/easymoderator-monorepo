@@ -26,6 +26,7 @@ import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
 import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
+import { ActionQueuePanel } from "./inbox/ActionQueuePanel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -257,6 +258,15 @@ export default function UnifiedInbox() {
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // P+03: the action queue is a server read model; any SSE fact it is derived
+  // from (hitl, delivery state, conversation changes) re-pulls it through the
+  // refresh function the panel registers on mount.
+  const actionQueueRefreshRef = useRef<null | (() => void)>(null);
+  const registerActionQueueRefresh = useCallback((refresh: () => void) => {
+    actionQueueRefreshRef.current = refresh;
+  }, []);
+  const refreshActionQueue = useCallback(() => { actionQueueRefreshRef.current?.(); }, []);
 
   const { features: planFeatures } = useSubscriptionFeatures();
   const PAGE_SIZE = 30;
@@ -616,6 +626,7 @@ export default function UnifiedInbox() {
       needs_merchant_reply_reason?: string | null;
       ai_is_replying?: boolean;
     }) => {
+      refreshActionQueue();
       conversationProjectionRevisionRef.current[conversation_id] =
         (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const workflow = {
@@ -636,7 +647,7 @@ export default function UnifiedInbox() {
         delete next[conversation_id];
         return next;
       });
-    }, []),
+    }, [refreshActionQueue]),
 
     onAiPaused: useCallback(({ conversation_id, reason }: { conversation_id: string; reason?: string }) => {
       conversationProjectionRevisionRef.current[conversation_id] =
@@ -672,6 +683,7 @@ export default function UnifiedInbox() {
       content?: string | null;
       created_at?: string | null;
     }) => {
+      refreshActionQueue();
       conversationProjectionRevisionRef.current[conversation_id] =
         (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const currentMessage = messages.find((message) => message.id === message_id);
@@ -778,9 +790,10 @@ export default function UnifiedInbox() {
             : conversation);
         }
       }
-    }, [aiReplyMode, messages]),
+    }, [aiReplyMode, messages, refreshActionQueue]),
 
     onDeliveryFailed: useCallback(({ conversation_id, message_id, reason }: { conversation_id?: string; message_id?: string; reason: string }) => {
+      refreshActionQueue();
       const failedConversationId = conversation_id || selectedConversation?.id;
       const failedMessage = message_id ? messages.find((message) => message.id === message_id) : null;
       if (aiReplyMode === "AUTO" && failedMessage?.sender === "ai") {
@@ -807,7 +820,7 @@ export default function UnifiedInbox() {
           : conversation);
       }
       toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
-    }, [aiReplyMode, messages, selectedConversation?.id]),
+    }, [aiReplyMode, messages, selectedConversation?.id, refreshActionQueue]),
 
     onAiReplyModeChanged: useCallback(({ mode }: { mode: AiReplyMode }) => {
       const normalizedMode = normalizeAiReplyMode(mode);
@@ -874,6 +887,13 @@ export default function UnifiedInbox() {
         return { ...prev, customer: { ...prev.customer, name } };
       });
     }, []),
+
+    // conversation_updated is emitted by surfaces outside this hook's own
+    // mutations (e.g. the mobile app) — the action queue re-pulls rather than
+    // guessing which bucket moved.
+    onConversationUpdated: useCallback(() => {
+      refreshActionQueue();
+    }, [refreshActionQueue]),
   });
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
@@ -1156,6 +1176,8 @@ export default function UnifiedInbox() {
           <span>{t("inbox.offlineBanner")}</span>
         </div>
       )}
+
+      <ActionQueuePanel onSseRefresh={registerActionQueueRefresh} />
 
       <div className="flex-1 flex overflow-hidden">
         <InboxThreadList

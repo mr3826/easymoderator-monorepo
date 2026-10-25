@@ -56,6 +56,11 @@ vi.mock('@/app/lib/useInboxSSE', () => ({
   useInboxSSE: vi.fn()
 }))
 
+// P+03 action queue: platform flag off by default — keep the strip inert and hermetic.
+vi.mock('@/api/domains/inbox', () => ({
+  getInboxActions: vi.fn().mockResolvedValue({ featureDisabled: true }),
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
