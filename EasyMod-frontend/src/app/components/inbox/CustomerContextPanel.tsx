@@ -486,10 +486,14 @@ function OwnershipBlock({ conversation, onChanged }: {
       onChanged?.(updated);
       return true;
     } catch (err) {
-      const e = err as { response?: { data?: { error?: { code?: string; message?: string } } } };
+      const e = err as { response?: { data?: { error?: { code?: string; message?: string } } }; message?: string };
       const code = e?.response?.data?.error?.code;
-      const message = e?.response?.data?.error?.message;
-      if (code === "HUMAN_TAKEOVER_CONFLICT" || code === "HANDOFF_RESOLUTION_CONFLICT") setConflicted(true);
+      // The httpClient normalizes errors (normalizeApiError) onto `.message`,
+      // dropping the raw axios `.response`; mirror the thread takeover handler
+      // so the authoritative conflict reason surfaces, never a fabricated one.
+      const message = e?.response?.data?.error?.message
+        || (typeof e?.message === "string" && e.message && !/request failed|status code/i.test(e.message) ? e.message : "");
+      if (code === "HUMAN_TAKEOVER_CONFLICT" || code === "HANDOFF_RESOLUTION_CONFLICT" || /assigned to another/i.test(message)) setConflicted(true);
       setError(message || t("inbox.context.owner.failed"));
       return false;
     } finally {
