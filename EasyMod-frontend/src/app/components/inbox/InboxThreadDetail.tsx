@@ -5,7 +5,7 @@
 import { memo, useState } from "react";
 import {
   Bot, User, CheckCircle2, Edit3, Loader2, UserCheck, AlertTriangle,
-  Clock, ArrowLeft, Lock, FileText, RotateCcw,
+  Clock, ArrowLeft, Lock, FileText, RotateCcw, PanelRight,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -380,6 +380,9 @@ interface InboxThreadDetailProps {
   onOpportunityChanged?: (opportunity: Opportunity) => void;
   onSetShowResolveDialog: (show: boolean) => void;
   onSetResolveNote: (note: string) => void;
+  /** MW-V1: toggle the customer-context panel (desktop column / mobile sheet). */
+  onToggleContext?: () => void;
+  contextOpen?: boolean;
   onMessageSent: (message: Message) => void;
   onSendFailed: () => void;
   onTemplatesChanged: () => Promise<void>;
@@ -414,6 +417,8 @@ export function InboxThreadDetail({
   onOpportunityChanged,
   onSetShowResolveDialog,
   onSetResolveNote,
+  onToggleContext,
+  contextOpen,
   onMessageSent,
   onSendFailed,
   onTemplatesChanged,
@@ -564,6 +569,22 @@ export function InboxThreadDetail({
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+            {onToggleContext && (
+              <button
+                type="button"
+                onClick={onToggleContext}
+                aria-expanded={contextOpen === true}
+                aria-label={t("inbox.context.title")}
+                title={t("inbox.context.title")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium font-bn ${
+                  contextOpen ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+                data-testid="context-toggle"
+              >
+                <PanelRight className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden md:inline">{t("inbox.context.title")}</span>
+              </button>
+            )}
             {selectedConversation.status !== "closed" && (
               <button
                 onClick={() => onSetShowResolveDialog(true)}

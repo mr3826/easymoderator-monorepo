@@ -26,6 +26,7 @@ import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
 import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
+import CustomerContextPanel from "./inbox/CustomerContextPanel";
 import { ActionQueuePanel } from "./inbox/ActionQueuePanel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -235,6 +236,8 @@ export default function UnifiedInbox() {
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // MW-V1: customer-context panel visibility (persistent column on xl+, sheet below).
+  const [contextOpen, setContextOpen] = useState(false);
   const [templates, setTemplates] = useState<ResponseTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [resolvingConversation, setResolvingConversation] = useState(false);
@@ -1214,6 +1217,7 @@ export default function UnifiedInbox() {
         />
 
         {selectedConversation ? (
+          <>
           <InboxThreadDetail
             selectedConversation={selectedConversation}
             aiReplyMode={aiReplyMode}
@@ -1243,10 +1247,19 @@ export default function UnifiedInbox() {
             onOpportunityChanged={handleOpportunityChanged}
             onSetShowResolveDialog={setShowResolveDialog}
             onSetResolveNote={setResolveNote}
+            onToggleContext={() => setContextOpen((o) => !o)}
+            contextOpen={contextOpen}
             onMessageSent={handleMessageSent}
             onSendFailed={handleMessageSendFailed}
             onTemplatesChanged={loadTemplates}
           />
+          {/* MW-V1: customer context — inline column on xl+, bottom sheet below. */}
+          {contextOpen && (
+            <div className="fixed inset-x-0 bottom-0 top-14 z-40 max-h-[72vh] overflow-y-auto bg-white shadow-2xl xl:static xl:z-auto xl:max-h-none xl:w-80 xl:shrink-0 xl:shadow-none">
+              <CustomerContextPanel conversation={selectedConversation} onClose={() => setContextOpen(false)} />
+            </div>
+          )}
+          </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500 md:flex hidden">
             <p className="font-bn">{t("inbox.selectConversation")}</p>

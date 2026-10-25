@@ -61,6 +61,19 @@ vi.mock('@/api/domains/inbox', () => ({
   getInboxActions: vi.fn().mockResolvedValue({ featureDisabled: true }),
 }))
 
+// MW-V1 customer-context panel domains: inert by default; mounted explicitly.
+vi.mock('@/api/domains/customer-intelligence', () => ({
+  getPilotStatus: vi.fn(async () => ({ customer_intelligence: false, order_confidence_mode: 'off' })),
+  getCustomer360: vi.fn(async () => { throw new Error('not mounted in this test'); }),
+}))
+vi.mock('@/api/domains/order', () => ({
+  getOrders: vi.fn(async () => []),
+}))
+vi.mock('@/api/domains/customer-crm', () => ({
+  listCustomerNotes: vi.fn(async () => ({ data: [], total: 0 })),
+  listCustomerTags: vi.fn(async () => ({ data: [] })),
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
@@ -1405,5 +1418,43 @@ describe('FE-01 quick reply fallback wiring', () => {
 
     expect(await screen.findByText('Let me check')).toBeInTheDocument()
     expect(screen.queryByText('Retired reply')).not.toBeInTheDocument()
+  })
+})
+
+// MW-V1: the customer-context toggle opens the panel for the LIVE conversation,
+// and while the customer_intelligence flag is OFF the gated detail is never fetched.
+describe('MW-V1 customer-context mount', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      data: [baseConversation],
+      ai_reply_mode: 'MANUAL',
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.getMessages as any).mockResolvedValue({
+      messages: [],
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.markConversationRead as any).mockResolvedValue(baseConversation)
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([])
+  })
+
+  it('toggle opens the panel; gated 360 read stays untouched when flag is off', async () => {
+    const ci = await import('@/api/domains/customer-intelligence')
+    render(<UnifiedInbox />)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    })
+
+    expect(screen.queryByTestId('customer-context-panel')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('context-toggle'))
+
+    const panel = await screen.findByTestId('customer-context-panel')
+    expect(panel).toBeInTheDocument()
+    // honest state even for a flag-off / possibly-unlinked conversation:
+    expect(ci.getCustomer360).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('context-close'))
+    await waitFor(() => expect(screen.queryByTestId('customer-context-panel')).not.toBeInTheDocument())
   })
 })
