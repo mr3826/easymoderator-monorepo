@@ -110,8 +110,8 @@ unauthorized; local lab seeds are fresh anyway).
 
 ### Evidence (unit) running totals
 - P+01: 10 backend + 5 FE component tests; i18n coverage guard green.
-- P+02: 17 kernel + 7 provider + 12 worker + pilot-features tests.
+- P+02: 18 kernel + 7 provider + 13 worker + pilot-features tests.
 - P+03: 8 queue read-model + 5 ownership + controller-boundary updated.
 - P+04: 24 bridge (classes incl. resume) + 11 steps-belt + 2 worker-hint + stage2.
-- P+05: 13 grouping/lifecycle + 4 redaction matrix.
+- P+05: 14 grouping/lifecycle + 4 redaction matrix.
 - Phase-3 P0 suites: see table above (523+364+21+8+... per commit).

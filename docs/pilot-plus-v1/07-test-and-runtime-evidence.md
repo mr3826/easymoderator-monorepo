@@ -34,7 +34,7 @@ calls anywhere; no paid provider campaigns; fake transports only.
   shop/customer/page/conversation rejection, expiry, supersession, stale-summary refusal after
   repricing, DRAFT-mode mutation block, transport limits (13/20/1000) + invalid-entry drop,
   retired-tag-free wire, text fallback + numbered equivalence with capture-step collision guard —
-  `interactions.service.test.js` (17), `MetaMessengerProvider.test.js` (+2), worker reply-mode
+  `interactions.service.test.js` (18), `MetaMessengerProvider.test.js` (+2), worker reply-mode
   (+6: tap/replay/draft/summary-attach/flag-off/numbered/forged), integration (concurrent
   Promise.all exactly-once on REAL Postgres conditional update).
 - **P+03** (AC §9.5): one item per fact, removal on authoritative resolution, ranked buckets,
@@ -60,7 +60,7 @@ calls anywhere; no paid provider campaigns; fake transports only.
   (authoritative_action routing + outbound grounding gate on payment claims — existing),
   multi-shop isolation (shop_id on every query + integration), PII never persisted (redaction
   matrix 4 + integration hygiene test), answerability hook (published_at/resolved_faq_id) —
-  `gap-suggestions.service.test.js` (13), capture redaction (+4), integration tests 10-11.
+  `gap-suggestions.service.test.js` (14), capture redaction (+4), integration tests 10-11.
 
 ## 3. Business-outcome invariants (§14) — executable witnesses
 

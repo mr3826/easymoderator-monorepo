@@ -10,7 +10,9 @@
  *   - resolve re-loads and re-checks: shop, customer channel, meta channel,
  *     conversation, option membership, expiry, live status, bound business
  *     context version — any mismatch rejects with no side effect;
- *   - single execution via SELECT ... FOR UPDATE + conditional transition;
+ *   - single execution via conditional status CAS (GENERATED|SENT -> EXECUTING),
+ *     the same fence style as draft approve; expiry self-heals any row stranded
+ *     in EXECUTING by a crash (resolve rejects expired rows),
  *   - every operation re-enters the EXISTING typed-equivalent code path
  *     (step machine, gated cancel, handoff) — a tap can never bypass reply
  *     mode, the Action Gate, material revalidation, consent or policy.

@@ -1,5 +1,60 @@
 # Execution History
-**Last Updated:** 2026-09-01 (Phase 1 exact Page and tenant routing)
+**Last Updated:** 2026-10-25 (Pilot+ V1 merchant momentum)
+
+## 2026-10-25 — Pilot+ V1: lead intelligence, structured choices, action queue, context-preserving checkout, knowledge-gap actions
+
+**Task:** From the verified Product Engine V1.3 tree (`f0f04e4e`) implement the
+five Pilot+ opportunities as one business loop, with the three Domain-Engine P0s
+as isolated prerequisites, full automated QA, independent verification, and a
+founder-reviewable local lab. No production mutation; no other agent's worktree
+or process touched.
+
+**Outcome:** Complete on branch `feat/pilotplus-v1-merchant-momentum`
+(evidence root `docs/pilot-plus-v1/`, machine proof `pilot-plus-v1-proof.json`).
+P0-1 retired Meta tags: outside-window sends now HOLD (never blind-tag; error-100
+tags un-emittable at rule + wire double guard; HUMAN_AGENT behind an off-by-default
+permission flag with a 7-day verified-event clock). P0-2 OCR-payment myth: dead
+"Payment confirmed" branch removed with source + behavior invariants. P0-3 payment
+authority: enable/disable/delete of self-mfs now synchronizes the single AI-read
+source (mechanism corrected after A/B evidence — no hot-path query; see 06/A1).
+F3 committed conversational orders keep their true status. P+01 reuses the
+existing opportunity engine through one authoritative projection in the inbox
+read path. P+02 adds the only new mechanism: a server-side opaque interaction-
+proposal kernel (registry-only options, scope+expiry+bound-version+single-use
+CAS, quick replies within Meta limits, honest text/numbered fallbacks, typed
+equivalence execution). P+03 is a request-time ranked read model over existing
+authorities (no task store) plus claimed-handoff ownership (409s; privileged-only
+force). P+04 splits mid-checkout messages into terminal/pause/defer classes with
+a preserved SUSPENDED state and deterministic resume hint. P+05 clusters gap
+evidence deterministically, routes structured domains to their settings, and
+publishes only merchant-authored answers through the existing FAQ authority.
+All five surfaces sit behind default-off platform flags; kill switch verified
+to disable even in-flight choice taps.
+
+**Tests:** Backend units 4163/4169 (3 red suites proven baseline-inherited tooling
+flakes — fail worse at pristine f0f04e4e; deterministic run convention in 06/A2).
+Real-stack integration 29/29 suites 206/206 including both new additive
+migrations; Meta-shaped E2E 48/48 (fake transport, zero live sends); security
+perimeter 802/802; frontend vitest 628/628 + tsc clean + vite build; Playwright
+Pilot+ journeys 7/7 on chromium and firefox plus 8 live-lab walkthrough
+screenshots; performance deltas measured with EXPLAIN plans (doc 08). Independent
+fresh-context verifier: IMPLEMENTATION_VERIFIED, zero new vulnerabilities.
+Adversarial diff review: 11 findings, all closed.
+
+**Schema:** Additive only — `customer_interactions` (+3 `shop_pilot_features`
+flag columns) and `knowledge_gap_suggestions`; both reversible by drop; no data
+rewrites; `order_sessions.status` needed no migration (plain VARCHAR).
+
+**Meta Risk:** Retired tags can no longer reach the wire; outside-window sends
+fail closed into merchant-visible recovery states; interactive choices traverse
+the full policy chain and can never express payment/delivery/stock truth beyond
+the authoritative records; every new endpoint derives the shop from the JWT only.
+Open item pending founder: Meta App Review for the Human-Agent permission (the
+code path stays inert until granted) and the standing "opt-out exception for
+legacy transactional sends" in the policy chain (unchanged by Pilot+, still
+listed in meta-policy-risks).
+
+---
 
 ## 2026-09-01 - Meta remediation Phase 1: exact Page and tenant routing
 
