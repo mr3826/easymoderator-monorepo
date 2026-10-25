@@ -57,6 +57,7 @@ router.use('/analytics', analyticsRoutes);
 router.use('/rto-shield', require('./rto-shield/rto-shield.routes'));
 // Pilot intelligence (per-shop flag in shop_pilot_features; ADR-0009)
 router.use('/customer-intelligence', require('./customer-intelligence/customer-intelligence.routes'));
+router.use('/inbox', require('./inbox/inbox.routes'));
 router.use('/order-confidence', require('./order-confidence/order-confidence.routes'));
 router.use('/language', banglishRoutes);
 router.use('/voice', voiceProcessingRoutes);

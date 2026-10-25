@@ -91,7 +91,8 @@ describe('draft approval controller boundary', () => {
         expect(mockUpdateConversation).toHaveBeenCalledWith(
             'conversation-1',
             'shop-1',
-            { hitl: true, status: undefined, assignee_id: undefined, resolution_note: undefined },
+            { hitl: true, status: undefined, assignee_id: undefined, resolution_note: undefined, last_seen_message_id: undefined },
+            { actor: { userId: 'merchant-1', role: null }, force: false },
         );
         expect(mockProviderSend).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith({

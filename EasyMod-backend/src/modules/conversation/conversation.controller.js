@@ -1227,7 +1227,14 @@ class ConversationController {
             const conversation = await conversationService.updateConversation(
                 conversationId,
                 shopId,
-                { hitl, status, assignee_id, resolution_note, last_seen_message_id }
+                { hitl, status, assignee_id, resolution_note, last_seen_message_id },
+                {
+                    actor: req.user ? {
+                        userId: req.user.userId || req.user.id || null,
+                        role: req.user.role || null,
+                    } : null,
+                    force: req.body?.force === true,
+                }
             );
 
             // Notify other agent tabs of ownership and workflow changes. Manual

@@ -74,7 +74,14 @@ describe('escalateToHuman', () => {
             platform: 'messenger', recipientId: 123, channel: { id: 'ch1' }, reason: 'low_confidence',
         });
 
-        expect(conversation.update).toHaveBeenCalledWith({ hitl: true });
+        expect(conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+            hitl: true,
+            // P+03: the reason is recorded on the authoritative record itself.
+            metadata: expect.objectContaining({
+                handoff_reason: expect.any(String),
+                handoff_at: expect.any(String),
+            }),
+        }));
         expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', {
             conversation_id: 'c1',
             hitl: true,

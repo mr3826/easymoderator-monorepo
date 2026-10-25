@@ -1369,7 +1369,7 @@ class ConversationService {
         return pending.length;
     }
 
-    async updateConversation(conversationId, shopId, updates) {
+    async updateConversation(conversationId, shopId, updates, opts = {}) {
         const update = async (transaction) => {
             const conversation = await Conversation.findOne({
                 where: { id: conversationId, shop_id: shopId },
@@ -1414,6 +1414,31 @@ class ConversationService {
                 }
             }
             const resuming = updates.hitl === false && !closing;
+            // P+03 (spec §9.4/9.5): ownership is server-authoritative. A
+            // takeover while another agent already owns an OPEN handoff is an
+            // explicit conflict (409), never a silent overwrite — same for a
+            // resolution written over another owner's pending work. Owner and
+            // admin members may force (manager escalation); a forced action
+            // still records the new owner below.
+            const actor = opts.actor || null;
+            const privileged = actor && ['owner', 'admin'].includes(String(actor.role || '').toLowerCase());
+            const sameOwner = actor && conversation.assignee_id
+                && String(conversation.assignee_id) === String(actor.userId);
+            const forced = opts.force === true || actor?.force === true;
+            if (actor && conversation.assignee_id && !sameOwner && !privileged && !forced) {
+                if (updates.hitl === true && conversation.hitl === true) {
+                    const error = new Error('This conversation is already assigned to another team member');
+                    error.code = 'HUMAN_TAKEOVER_CONFLICT';
+                    error.statusCode = 409;
+                    throw error;
+                }
+                if ((updates.hitl === false || updates.status === 'closed') && conversation.hitl === true) {
+                    const error = new Error('Only the assigned teammate (or an admin/owner) can resolve this handoff');
+                    error.code = 'HANDOFF_RESOLUTION_CONFLICT';
+                    error.statusCode = 409;
+                    throw error;
+                }
+            }
             const existingResumeBoundaryState = resumeBoundaryStateFor(conversation);
             if (resuming
                 && existingResumeBoundaryState.present
@@ -1457,6 +1482,11 @@ class ConversationService {
                 };
             }
             if (updates.assignee_id !== undefined) fields.assignee_id = updates.assignee_id;
+            else if (updates.hitl === true && actor?.userId) {
+                // "Take over" == claim: a handoff requested is not a person
+                // responsible until someone (or their manager) is assigned.
+                fields.assignee_id = actor.userId;
+            }
             if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
 
             await conversation.update(fields, ...(transaction ? [{ transaction }] : []));
@@ -1564,6 +1594,7 @@ class ConversationService {
         } catch (error) {
             const wrapped = new Error(`Failed to update conversation: ${error.message}`);
             if (error?.code) wrapped.code = error.code;
+            if (error?.statusCode) wrapped.statusCode = error.statusCode;
             throw wrapped;
         }
     }
