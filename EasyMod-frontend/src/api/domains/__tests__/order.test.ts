@@ -53,6 +53,26 @@ describe('Order Domain API', () => {
       expect(result[0].items[0].quantity).toBe(2);
     });
 
+    // FE-08: the ONLY safe link from an order to a conversation is the
+    // shop-scoped customer id — it must survive normalisation (flat column on
+    // list rows, nested customer object on detail rows). Manual orders without
+    // a customer record must normalise to undefined, never guess by name.
+    it('carries customerId through normalisation (FE-08)', async () => {
+      (httpClient.get as any).mockResolvedValue({
+        data: { data: [
+          { id: '1', customer_name: 'Rahim', customer_id: 'cust-1' },
+          { id: '2', customer: { id: 'cust-2', name: 'Karim' } },
+          { id: '3', customer_name: 'No Link', customer_id: null, customer: null },
+        ] },
+      });
+
+      const result = await order.getOrders();
+
+      expect(result[0].customerId).toBe('cust-1');
+      expect(result[1].customerId).toBe('cust-2');
+      expect(result[2].customerId).toBeUndefined();
+    });
+
     it('returns an empty array when the API sends a non-array payload', async () => {
       (httpClient.get as any).mockResolvedValue({ data: { data: null } });
       const result = await order.getOrders();

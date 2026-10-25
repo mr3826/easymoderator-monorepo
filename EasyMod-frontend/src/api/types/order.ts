@@ -40,6 +40,8 @@ export interface Order {
   id: string;
   orderNumber?: string;
   customerName: string;
+  /** Verified shop-scoped customer id (FE-08) — the only safe order→conversation link. */
+  customerId?: string;
   customerPhone?: string;
   deliveryAddress?: string;
   delivery_address?: DeliveryAddress;

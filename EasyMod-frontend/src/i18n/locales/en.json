@@ -1126,6 +1126,7 @@
       "codPending": "COD pending",
       "customerChat": "Customer Chat (last 3 messages)",
       "noChatSnippet": "No chat snippet found.",
+      "openConversation": "Open conversation in Inbox",
       "note": "Note",
       "notePlaceholder": "Write an order note here",
       "saveNote": "Save Note",

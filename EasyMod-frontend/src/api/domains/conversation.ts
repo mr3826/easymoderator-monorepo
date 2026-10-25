@@ -62,10 +62,11 @@ function normalizeConversationList(
 
 // Conversations
 export async function getConversations(
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<ConversationsResponse> {
   const response: AxiosResponse<ApiResponse<ConversationListResponse>> =
-    await httpClient.get('/api/conversation', { params });
+    await httpClient.get('/api/conversation', { params, ...(signal ? { signal } : {}) });
   return normalizeConversationList(response.data.data);
 }
 

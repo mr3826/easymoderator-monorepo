@@ -76,6 +76,9 @@ export default function Orders() {
   const [showProductSelector, setShowProductSelector] = useState(false);
   const [detailNote, setDetailNote] = useState('');
   const [conversationSnippets, setConversationSnippets] = useState<string[]>([]);
+  // FE-08: id of the conversation that VERIFIEDLY belongs to this order's
+  // customer (null = no safe link → honest unavailable state, never a guess).
+  const [linkedConversationId, setLinkedConversationId] = useState<string | null>(null);
   // Bug #14: inline product search — no separate modal needed
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [showCourierModal, setShowCourierModal] = useState(false);
@@ -197,33 +200,44 @@ export default function Orders() {
     return () => controller.abort();
   }, [dateFilter, appliedSearchQuery, filterStatus]);
 
+  // FE-08: resolve the chat snippet ONLY through the verified shop-scoped
+  // customer id (backend GET /api/conversation already filters customer_id
+  // inside the caller's own shop scope). The previous name search was worse
+  // than it looked: the list endpoint ignores `search`, so this used to show
+  // whatever conversation was most recently ACTIVE — possibly another
+  // customer's. No customerId (manual orders) or no matching thread now
+  // renders the honest "no linked chat" state instead of guessing.
   useEffect(() => {
+    setLinkedConversationId(null);
+    setConversationSnippets([]);
+    const customerId = selectedOrder?.customerId;
+    if (!customerId) return;
+
+    const controller = new AbortController();
     const loadConversationSnippet = async () => {
-      if (!selectedOrder?.customerName) {
-        setConversationSnippets([]);
-        return;
-      }
       try {
-        const list = await apiClient.getConversations({ search: selectedOrder.customerName, limit: 1 });
-        const firstConv = list.data?.[0];
-        if (!firstConv) {
-          setConversationSnippets([]);
-          return;
-        }
-        const messagesResult = await apiClient.getMessages(firstConv.id, { page: 1, limit: 3 });
+        const list = await apiClient.getConversations({ customer_id: customerId, limit: 1 }, controller.signal);
+        // Defensive client-side identity check before touching messages.
+        const linked = (list.data ?? []).find((c) => String(c.customer_id ?? '') === String(customerId));
+        if (!linked) return;
+        const messagesResult = await apiClient.getMessages(linked.id, { page: 1, limit: 3, signal: controller.signal });
+        if (controller.signal.aborted) return;
         const snippets = (messagesResult.messages || [])
           .slice(-3)
           .map((msg) => msg.content)
           .filter(Boolean);
+        setLinkedConversationId(linked.id);
         setConversationSnippets(snippets);
       } catch (err: unknown) {
-        console.error('Failed to load conversation snippet:', err);
-        setConversationSnippets([]);
+        if ((err as { code?: string })?.code !== 'ERR_CANCELED') {
+          console.error('Failed to load conversation snippet:', err);
+        }
       }
     };
 
     loadConversationSnippet();
-  }, [selectedOrder?.id, selectedOrder?.customerName]);
+    return () => controller.abort();
+  }, [selectedOrder?.id, selectedOrder?.customerId]);
 
   const filteredOrders = orders.filter(order => {
     if (filterStatus === 'all') {
@@ -1125,6 +1139,17 @@ export default function Orders() {
                     </p>
                   ))}
                 </div>
+              )}
+              {/* FE-08: navigation only ever for the conversation VERIFIED to
+                  belong to this order's customer, via the canonical inbox deep link. */}
+              {linkedConversationId && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/inbox?conversation=${linkedConversationId}`)}
+                  className="mt-3 text-sm font-semibold text-blue-700 hover:underline font-bn"
+                >
+                  {t('orders.detailModal.openConversation')}
+                </button>
               )}
             </div>
 

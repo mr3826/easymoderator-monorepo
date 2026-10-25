@@ -71,6 +71,9 @@ function normalizeOrder(raw: any): Order {
     id: raw.id,
     orderNumber: raw.orderNumber ?? raw.order_number ?? raw.id,
     customerName: raw.customerName ?? raw.customer_name ?? raw.customer?.name ?? raw.customer?.display_name ?? '',
+    // FE-08: the only verified link from an order to its conversation is the
+    // shop-scoped customer id (flat list column or nested detail object).
+    customerId: raw.customerId ?? raw.customer_id ?? raw.customer?.id ?? undefined,
     customerPhone: raw.customerPhone ?? raw.customer_phone ?? raw.customer?.phone ?? '',
     status: raw.status ?? raw.order_status ?? 'draft',
     channel: raw.channel ?? '',
