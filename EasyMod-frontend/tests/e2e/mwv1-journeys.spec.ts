@@ -8,6 +8,7 @@
  * issues zero gated reads, J11 mobile 390px, J12 no false business status.
  */
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 const mockUser = (over: Record<string, unknown> = {}) => ({ id: 'user-1', full_name: 'Test Owner', email: 'owner@shop.bd', ...over });
 const mockShop = (role = 'owner') => ({ id: 'shop-1', unique_code: 'SHOP1', shop_name: 'My BD Shop', role });
@@ -244,5 +245,17 @@ test.describe('MW-V1 journeys', () => {
         const row = page.getByTestId('context-order-row');
         await expect(row).toContainText('processing');
         await expect(row).not.toContainText(/paid|delivered|refunded/i);
+    });
+
+    test('A11y — context panel has no critical/serious axe violations', async ({ page }) => {
+        const state = freshState();
+        setupRoutes(page, state);
+        await loginAndGo(page);
+        await page.getByText('Rina Akter').first().click();
+        await page.getByTestId('context-toggle').click();
+        await expect(page.getByTestId('customer-context-panel')).toBeVisible();
+        const results = await new AxeBuilder({ page }).include('[data-testid="customer-context-panel"]').analyze();
+        const blocking = results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+        expect(blocking).toEqual([]);
     });
 });
