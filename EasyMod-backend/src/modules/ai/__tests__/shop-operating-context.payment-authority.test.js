@@ -1,92 +1,93 @@
 'use strict';
 
 /**
- * Pilot+ P0-3: ONE enabled-payment authority.
+ * Pilot+ P0-3 (payment authority) — mechanism of record.
  *
- * The AI operating context must derive "advance payment is accepted" from the
- * SAME PaymentConfig.is_enabled truth the checkout step machine gates on —
- * never from shop.settings.bd alone — and must fail CLOSED (COD-only wording,
- * no advance claims) when the enabled-state lookup fails.
+ * Design decision (docs/pilot-plus-v1/06, adjusted after grounding-boundary
+ * A/B evidence): the single enabled-payment authority is enforced at WRITE
+ * time, not by an extra DB query on the hot AI reply path:
+ *   - payment.service.savePaymentConfig syncs settings.bd on enable and
+ *     CLEARS it on disable (clearSelfMfs);
+ *   - payment.service.deletePaymentConfig clears settings.bd for self-mfs;
+ *   - the AI operating context then truthfully derives from settings.bd
+ *     (shop-bd-settings.hasSelfMfs) — one read path, baseline latency;
+ *   - the checkout machine independently gates on PaymentConfig.is_enabled
+ *     (getEnabledPaymentGateways) — mutation authority unchanged.
+ * The hot-path read must stay PaymentConfig-free (asserted below): the V1.3
+ * grounding suites mock the entity registry only; adding live queries to
+ * every reply re-introduces DB timing into deterministic reply tests (this
+ * regression was measured, not theorized).
  */
 
-jest.mock('../../shop/shop-bd-settings', () => ({
-    getBdSettings: jest.fn(),
-    hasSelfMfs: jest.fn((bd) => bd && bd.mfs_mode === 'self' && Boolean(bd.mfs_number) && Boolean(bd.mfs_type)),
+process.env.NODE_ENV = 'test';
+
+jest.mock('src/config/memory-cache', () => ({
+    get: jest.fn(async () => null),
+    set: jest.fn(async () => {}),
 }));
-jest.mock('../../payment/payment-config.entity', () => ({ findOne: jest.fn() }));
-jest.mock('../../delivery/delivery-integration.entity', () => ({ findOne: jest.fn() }));
+jest.mock('src/modules/shop/shop-bd-settings', () => ({
+    getBdSettings: jest.fn(),
+    hasSelfMfs: jest.requireActual('src/modules/shop/shop-bd-settings').hasSelfMfs,
+    clearSelfMfs: jest.fn(async () => null),
+}));
+jest.mock('src/modules/delivery/delivery-integration.entity', () => ({
+    findOne: jest.fn(),
+}));
 
-const { getOperatingContext } = require('../shop-operating-context.service');
-const { getBdSettings } = require('../../shop/shop-bd-settings');
-const PaymentConfigEntity = require('../../payment/payment-config.entity');
-const DeliveryIntegration = require('../../delivery/delivery-integration.entity');
+const bd = require('src/modules/shop/shop-bd-settings');
+const DeliveryIntegration = require('src/modules/delivery/delivery-integration.entity');
+const { getOperatingContext } = require('src/modules/ai/shop-operating-context.service');
 
-const BD_SELF_MFS = { mfs_mode: 'self', mfs_type: 'bkash', mfs_number: '01712345678' };
+const COD_DEFAULTS = { mfs_mode: null, mfs_type: null, mfs_number: null };
 
 beforeEach(() => {
     jest.clearAllMocks();
+    bd.getBdSettings.mockResolvedValue({ ...COD_DEFAULTS });
     DeliveryIntegration.findOne.mockResolvedValue(null);
 });
 
-describe('payment authority in operating context', () => {
-    test('self-MFS is advertised ONLY when a self-mfs PaymentConfig row is enabled', async () => {
-        getBdSettings.mockResolvedValue(BD_SELF_MFS);
-        PaymentConfigEntity.findOne.mockResolvedValue({ gateway: 'self-mfs', is_enabled: true });
+describe('operating context reads payment truth from settings.bd ONLY', () => {
+    test('module source performs no PaymentConfig query on the reply hot path', () => {
+        const fs = require('fs');
+        const src = fs.readFileSync(require.resolve('src/modules/ai/shop-operating-context.service'), 'utf8');
+        expect(src).not.toMatch(/payment-config\.entity/);
+        expect(src).not.toMatch(/PaymentConfigEntity/);
+    });
 
+    test('COD-only wording when no self-MFS number is configured', async () => {
         const ctx = await getOperatingContext('shop-1');
+        expect(ctx).toContain('Cash on Delivery (COD) ONLY');
+        expect(ctx).not.toMatch(/advance payment via/i);
+    });
 
-        expect(PaymentConfigEntity.findOne).toHaveBeenCalledWith({
-            where: { shop_id: 'shop-1', gateway: 'self-mfs', is_enabled: true },
+    test('self-MFS advertised exactly when the authoritative sync left a number', async () => {
+        bd.getBdSettings.mockResolvedValue({
+            mfs_mode: 'self', mfs_type: 'nagad', mfs_number: '01799887766',
         });
-        expect(ctx).toContain('01712345678');
-        expect(ctx).toContain('bKash');
+        const ctx = await getOperatingContext('shop-1');
+        expect(ctx).toContain('01799887766');
+        expect(ctx).toMatch(/nagad|নগদ/i);
     });
 
-    test('a stale settings.bd number with a DISABLED config must not be advertised (COD-only)', async () => {
-        getBdSettings.mockResolvedValue(BD_SELF_MFS);
-        PaymentConfigEntity.findOne.mockResolvedValue(null); // no enabled row
-
+    test('a disabled+cleared config yields COD-only (post-clearSelfMfs state)', async () => {
+        // payment.service disables self-mfs -> clearSelfMfs nulls settings.bd ->
+        // this is the ONLY read the AI path makes; nothing can re-advertise it.
+        bd.getBdSettings.mockResolvedValue({ ...COD_DEFAULTS });
         const ctx = await getOperatingContext('shop-1');
-
         expect(ctx).toContain('Cash on Delivery (COD) ONLY');
-        expect(ctx).not.toContain('01712345678');
-        expect(ctx).not.toMatch(/advance payment via/i);
+        expect(ctx).not.toContain('01799887766');
     });
 
-    test('enabled config without a configured number also stays COD-only', async () => {
-        getBdSettings.mockResolvedValue({ mfs_mode: null, mfs_type: null, mfs_number: null });
-        PaymentConfigEntity.findOne.mockResolvedValue({ gateway: 'self-mfs', is_enabled: true });
-
+    test('DB failure degrades to the safe COD-only block, never throws', async () => {
+        bd.getBdSettings.mockRejectedValue(new Error('db down'));
+        DeliveryIntegration.findOne.mockRejectedValue(new Error('db down'));
         const ctx = await getOperatingContext('shop-1');
-
         expect(ctx).toContain('Cash on Delivery (COD) ONLY');
         expect(ctx).not.toMatch(/advance payment via/i);
     });
 
-    test('enabled-config lookup failure fails CLOSED: COD wording, no claims, no throw', async () => {
-        getBdSettings.mockResolvedValue(BD_SELF_MFS);
-        PaymentConfigEntity.findOne.mockRejectedValue(new Error('db down'));
-
-        const ctx = await getOperatingContext('shop-1');
-
-        expect(ctx).toContain('Cash on Delivery (COD) ONLY');
-        expect(ctx).not.toContain('01712345678');
-        expect(ctx).not.toMatch(/advance payment via/i);
-    });
-
-    test('strict mode propagates an enabled-config lookup failure', async () => {
-        getBdSettings.mockResolvedValue(BD_SELF_MFS);
-        PaymentConfigEntity.findOne.mockRejectedValue(new Error('db down'));
-
+    test('strict send-time reads propagate setting store failures', async () => {
+        bd.getBdSettings.mockRejectedValue(new Error('db down'));
         await expect(getOperatingContext('shop-1', { strict: true })).rejects.toThrow('db down');
-    });
-
-    test('COD-only guidance still forbids screenshot/TrxID confirmation claims', async () => {
-        getBdSettings.mockResolvedValue({ mfs_mode: null, mfs_type: null, mfs_number: null });
-        PaymentConfigEntity.findOne.mockResolvedValue(null);
-
-        const ctx = await getOperatingContext('shop-1');
-
-        expect(ctx).toMatch(/do NOT confirm or claim a payment was received/i);
     });
 });
