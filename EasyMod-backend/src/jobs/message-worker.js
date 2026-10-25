@@ -1969,6 +1969,11 @@ async function processMessageJob(job) {
         }
     } catch (_) { tappedPayload = null; }
 
+    // P+05 hygiene: gap evidence stores the LAST customer utterance of a burst
+    // turn, not the concatenated mini-transcript (PII surface reduction; the
+    // capture service masks the rest).
+    const gapUtterance = burstTurnMessages?.at(-1)?.content || effMessage;
+
     // Resolve the channel once and pass it to every step that needs it. With
     // multi-page shops (one shop owns N FB Pages), routing
     // every send back through the same channel the message arrived on is the
@@ -2827,7 +2832,7 @@ async function processMessageJob(job) {
                 knowledgeGapCaptured = true;
                 void captureKnowledgeGap({
                     shopId,
-                    question: effMessage,
+                    question: gapUtterance,
                     platform,
                     language: detectedLanguage,
                     source: fallbackKnowledgeGapSource || 'low_confidence_handoff',

@@ -20,6 +20,8 @@ const WebhookReceiptReconcilerJob = require('./webhook-receipt-reconciler.job');
 const InboxDeliveryReconcilerJob = require('./inbox-delivery-reconciler.job');
 // Pilot intelligence — Sales Opportunities sweep (ADR-0006)
 const OpportunityDetectorJob = require('./opportunity-detector.job');
+// Pilot+ P+05 — knowledge-gap suggestion sweep (deterministic)
+const GapSuggesterJob = require('./gap-suggester.job');
 
 module.exports = {
     MonthlyUsageReset,
@@ -33,4 +35,5 @@ module.exports = {
     WebhookReceiptReconcilerJob,
     InboxDeliveryReconcilerJob,
     OpportunityDetectorJob,
+    GapSuggesterJob,
 };

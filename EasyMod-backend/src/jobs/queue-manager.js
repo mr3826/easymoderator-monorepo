@@ -15,6 +15,7 @@ const {
     WebhookReceiptReconcilerJob,
     InboxDeliveryReconcilerJob,
     OpportunityDetectorJob,
+    GapSuggesterJob,
 } = require('./index');
 
 class QueueManager {
@@ -53,6 +54,8 @@ class QueueManager {
             ['inbox-delivery-reconciler', 'inboxDeliveryReconciler', InboxDeliveryReconcilerJob],
             // Pilot intelligence — Sales Opportunities sweep; a no-op for shops without the flag
             ['opportunity-detector', 'opportunityDetector', OpportunityDetectorJob],
+            // Pilot+ P+05 — knowledge-gap suggestion sweep; no-op without the flag
+            ['gap-suggester', 'gapSuggester', GapSuggesterJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -204,6 +207,13 @@ class QueueManager {
         await this.queues.opportunityDetector.upsertJobScheduler(
             'opportunity-detector',
             { pattern: '*/10 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
+        // Pilot+ P+05 — daily deterministic knowledge-gap grouping.
+        await this.queues.gapSuggester.upsertJobScheduler(
+            'gap-suggester',
+            { pattern: '15 3 * * *', tz: 'UTC' },
             { name: 'run', data: { dryRun: false } }
         );
 
