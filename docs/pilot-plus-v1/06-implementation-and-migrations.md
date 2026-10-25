@@ -67,8 +67,13 @@ unauthorized; local lab seeds are fresh anyway).
   (clearSelfMfs on disable/delete); AI reads the settings.bd block (single hot-path read,
   baseline latency); checkout gates on PaymentConfig.is_enabled; outbound grounding gate
   unchanged. Guard test asserts NO PaymentConfig access on the reply hot path.
-- **A2:** full unit gate convention = `npx jest --coverage=false --runInBand
-  --testTimeout=30000`; nothing quarantined or weakened.
+- **A2:** full unit gate convention = `npx jest --coverage=false --testTimeout=30000` from
+  EasyMod-backend. 2026-10-25 result: 305/308 suites, 4163/4169 tests. The 3 red suites
+  (scripts/product-experience/{verify-product-v1-3,lab-server,lab-process}) are V1.3 TOOLING
+  tests spawning process trees/HTTP servers: pristine f0f04e4e fails 7 tests in the same
+  trio under one worker, while verify-product-v1-3 passes 12/12 isolated on this branch —
+  load/environment flake inherited from baseline (V1.3's own QA record was FAIL).
+  grounding-boundary passes 52/52 under the stated convention. Nothing quarantined/weakened.
 - **A3:** grounding/privacy unit tests write run artifacts under
   docs/ai/product-experience-v1*/artifacts/ — generated, deliberately uncommitted
   (reproducible from proof commands).
