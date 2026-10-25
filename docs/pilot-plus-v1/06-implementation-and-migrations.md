@@ -54,7 +54,7 @@ unauthorized; local lab seeds are fresh anyway).
 | 8 | P+05 gap-suggestions pipeline + capture hygiene + daily job + API (backend) | a29a5701 |
 | 9 | P+03 ActionQueuePanel FE (SSE conversation_updated wiring, i18n en/bn) | cab30997 |
 | 9 | P+05 FaqSettings suggestions FE (i18n en/bn) | 1cbc90a4 |
-| — | Pilot+ real-stack integration suite (10/10 real PG+Redis, both migrations) | in cab30997 (+f32a3c5a import fix) |
+| — | Pilot+ real-stack integration suite (10/10 real PG+Redis, both migrations) | cab30997 + 8ac4efce |
 | — | P0-3 mechanism correction: write-time enforcement; AI hot path restored to baseline | 3421678b |
 
 ### AMENDMENT LOG (recorded, not hidden)
