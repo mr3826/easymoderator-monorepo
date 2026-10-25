@@ -718,6 +718,13 @@
       "tagsEmpty": "No tags yet.",
       "loading": "Loading…",
       "unavailable": "Some details couldn't load just now.",
+      "notesAdd": "Add note",
+      "notesSave": "Save note",
+      "noteDelete": "Delete",
+      "tagsEdit": "Edit tags",
+      "tagsApply": "Apply",
+      "tagsNoVocabulary": "No tags defined yet — ask an owner/admin to create some.",
+      "crmFailed": "Could not save",
       "noLink": "This conversation is not linked to a customer record.",
       "openOrder": "Open order",
       "rto": {

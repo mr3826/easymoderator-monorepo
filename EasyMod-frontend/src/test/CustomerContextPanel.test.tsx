@@ -13,6 +13,8 @@ const ciApi = vi.hoisted(() => ({ getPilotStatus: vi.fn(), getCustomer360: vi.fn
 const orderApi = vi.hoisted(() => ({ getOrders: vi.fn() }));
 const crmApi = vi.hoisted(() => ({
   listCustomerNotes: vi.fn(), listCustomerTags: vi.fn(), listTagVocabulary: vi.fn(),
+  createCustomerNote: vi.fn(), deleteCustomerNote: vi.fn(),
+  setCustomerTags: vi.fn(), createTag: vi.fn(),
 }));
 const barrel = vi.hoisted(() => ({
   updateConversation: vi.fn(),
@@ -68,6 +70,21 @@ beforeEach(() => {
   ]);
   crmApi.listCustomerNotes.mockResolvedValue({ data: [], total: 0 });
   crmApi.listCustomerTags.mockResolvedValue({ data: [] });
+  crmApi.listTagVocabulary.mockResolvedValue({
+    data: [
+      { id: 'tag-1', shop_id: 'shop-1', name: 'Wholesale inquiry' },
+      { id: 'tag-2', shop_id: 'shop-1', name: 'Needs size help' },
+    ],
+  });
+  crmApi.createCustomerNote.mockImplementation(async (_id: string, body: string) => ({
+    id: 'note-new', shop_id: 'shop-1', customer_id: 'cust-1', body,
+    author_id: 'staff-1', author_name: 'Nowrin Sultana',
+    created_at: '2026-10-25T10:00:00Z', updated_at: '2026-10-25T10:00:00Z',
+  }));
+  crmApi.deleteCustomerNote.mockResolvedValue(undefined);
+  crmApi.setCustomerTags.mockImplementation(async (_id: string, tagIds: string[]) => ({
+    data: [{ id: 'tag-2', shop_id: 'shop-1', name: 'Needs size help' }].filter((x) => tagIds.includes(x.id)),
+  }));
   barrel.updateConversation.mockResolvedValue({ id: 'conv-1', hitl: true, assignee_id: 'staff-1', assignee: { id: 'staff-1', name: 'Nowrin Sultana' } });
 });
 
@@ -202,5 +219,59 @@ describe('CustomerContextPanel', () => {
     const option = await screen.findByText(/Rafiul Karim/, {}, { timeout: 2000 });
     fireEvent.click(option);
     await waitFor(() => expect(barrel.updateConversation).toHaveBeenCalledWith('conv-1', { assignee_id: 'staff-2' }));
+  });
+
+  // ─── MW-V1 Phase 5/6: notes + tags editing ────────────────────────────────
+  it('note composer: writes via the crm domain, refetches, and never auto-sends', async () => {
+    let listCall = 0;
+    crmApi.listCustomerNotes.mockImplementation(async () => {
+      listCall += 1;
+      return listCall === 1
+        ? { data: [], total: 0 }
+        : { data: [{ id: 'note-new', shop_id: 'shop-1', customer_id: 'cust-1', body: 'morning calls preferred', author_id: 'staff-1', author_name: 'Nowrin Sultana', created_at: '2026-10-25T10:00:00Z', updated_at: '2026-10-25T10:00:00Z' }], total: 1 };
+    });
+    render(<CustomerContextPanel conversation={conversation()} />);
+    fireEvent.click(await screen.findByTestId('note-add-open'));
+    fireEvent.change(screen.getByTestId('note-composer'), { target: { value: 'morning calls preferred' } });
+    fireEvent.click(screen.getByTestId('note-save'));
+
+    await waitFor(() => expect(crmApi.createCustomerNote).toHaveBeenCalledWith('cust-1', 'morning calls preferred'));
+    expect(await screen.findByText('morning calls preferred')).toBeInTheDocument();
+    // nothing ever typed into notes reaches the message workflow
+    expect(barrel.updateConversation).not.toHaveBeenCalled();
+  });
+
+  it('note delete is visible to the author only (staff), and calls the crm domain', async () => {
+    crmApi.listCustomerNotes.mockResolvedValue({
+      data: [
+        { id: 'note-mine', shop_id: 'shop-1', customer_id: 'cust-1', body: 'mine', author_id: 'staff-1', author_name: 'Nowrin', created_at: null, updated_at: null },
+        { id: 'note-theirs', shop_id: 'shop-1', customer_id: 'cust-1', body: 'theirs', author_id: 'staff-9', author_name: 'Other', created_at: null, updated_at: null },
+      ],
+      total: 2,
+    });
+    render(<CustomerContextPanel conversation={conversation()} />);
+    await screen.findByText('mine');
+    const deletes = screen.getAllByTestId('note-delete');
+    expect(deletes).toHaveLength(1); // only my own note offers delete (role staff)
+    fireEvent.click(deletes[0]);
+    await waitFor(() => expect(crmApi.deleteCustomerNote).toHaveBeenCalledWith('cust-1', 'note-mine'));
+  });
+
+  it('tag picker: shows vocabulary, replaces the set, refetches', async () => {
+    let tagsCall = 0;
+    crmApi.listCustomerTags.mockImplementation(async () => {
+      tagsCall += 1;
+      return tagsCall === 1
+        ? { data: [] }
+        : { data: [{ id: 'tag-2', shop_id: 'shop-1', name: 'Needs size help' }] };
+    });
+    render(<CustomerContextPanel conversation={conversation()} />);
+    fireEvent.click(await screen.findByTestId('tag-edit-open'));
+    const choice = await screen.findByTestId('tag-choice-tag-2');
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByTestId('tag-apply'));
+
+    await waitFor(() => expect(crmApi.setCustomerTags).toHaveBeenCalledWith('cust-1', ['tag-2']));
+    await waitFor(() => expect(screen.getByText('Needs size help')).toBeInTheDocument());
   });
 });

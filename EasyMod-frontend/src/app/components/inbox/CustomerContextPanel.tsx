@@ -16,7 +16,7 @@ import { ExternalLink, StickyNote, Tags, X } from "lucide-react";
 import { apiClient } from "@/api";
 import { getPilotStatus, getCustomer360 } from "@/api/domains/customer-intelligence";
 import { getOrders } from "@/api/domains/order";
-import { listCustomerNotes, listCustomerTags } from "@/api/domains/customer-crm";
+import { listCustomerNotes, listCustomerTags, createCustomerNote, deleteCustomerNote, listTagVocabulary, setCustomerTags } from "@/api/domains/customer-crm";
 import { authService } from "@/app/lib/auth";
 import type { Customer360Detail, CustomerState } from "@/api/types/customer-intelligence";
 import type { CustomerNote, CustomerTag } from "@/api/types/crm";
@@ -59,8 +59,98 @@ export default function CustomerContextPanel({ conversation, onClose, onConversa
   const [orders, setOrders] = useState<Section<Order[]>>({ status: "idle", data: null });
   const [notes, setNotes] = useState<Section<CustomerNote[]>>({ status: "idle", data: null });
   const [tags, setTags] = useState<Section<CustomerTag[]>>({ status: "idle", data: null });
+  const [vocabulary, setVocabulary] = useState<CustomerTag[]>([]);
+
+  // Notes + tags are re-pullable after a mutation. isStale is supplied by the
+  // owning effect so a late response for a PREVIOUS conversation is dropped.
+  const reloadNotes = (id: string, isStale: () => boolean) => {
+    setNotes({ status: "loading", data: null });
+    void listCustomerNotes(id, { limit: 3 })
+      .then((page) => { if (!isStale()) setNotes({ status: "ready", data: page.data }); })
+      .catch(() => { if (!isStale()) setNotes({ status: "error", data: null }); });
+  };
+  const reloadTags = (id: string, isStale: () => boolean) => {
+    setTags({ status: "loading", data: null });
+    void listCustomerTags(id)
+      .then((page) => { if (!isStale()) setTags({ status: "ready", data: page.data }); })
+      .catch(() => { if (!isStale()) setTags({ status: "error", data: null }); });
+  };
 
   const requestIdRef = useRef(0);
+
+  // Notes/tags mutation state (MW-V1 Phase 5/6).
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [tagEditOpen, setTagEditOpen] = useState(false);
+  const [draftTagIds, setDraftTagIds] = useState<string[]>([]);
+  const [crmBusy, setCrmBusy] = useState(false);
+  const [crmError, setCrmError] = useState<string | null>(null);
+
+  const authState = authService.getState();
+  const myUserId = authState.user?.id ?? null;
+  const privileged = ["owner", "admin"].includes(String(authState.currentShop?.role ?? "").toLowerCase());
+
+  // captures the CURRENT request generation so a mutation re-pull that lands
+  // after a conversation switch is discarded, exactly like the main effect.
+  const currentStale = () => {
+    const rid = requestIdRef.current;
+    return () => rid !== requestIdRef.current;
+  };
+
+  const crmMessage = (e: unknown, fallback: string) =>
+    (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || fallback;
+
+  const submitNote = async () => {
+    const body = noteDraft.trim();
+    if (!body || !customerId) return;
+    setCrmBusy(true); setCrmError(null);
+    try {
+      await createCustomerNote(customerId, body);
+      setNoteDraft(""); setNoteOpen(false);
+      reloadNotes(customerId, currentStale());
+    } catch (e) {
+      setCrmError(crmMessage(e, t("inbox.context.crmFailed")));
+    } finally {
+      setCrmBusy(false);
+    }
+  };
+
+  const removeNote = async (noteId: string) => {
+    if (!customerId) return;
+    setCrmBusy(true); setCrmError(null);
+    try {
+      await deleteCustomerNote(customerId, noteId);
+      reloadNotes(customerId, currentStale());
+    } catch (e) {
+      setCrmError(crmMessage(e, t("inbox.context.crmFailed")));
+    } finally {
+      setCrmBusy(false);
+    }
+  };
+
+  const openTagEdit = async () => {
+    if (tagEditOpen) { setTagEditOpen(false); return; }
+    setDraftTagIds((tags.data ?? []).map((tag) => tag.id));
+    setTagEditOpen(true);
+    if (!vocabulary.length) {
+      try { setVocabulary((await listTagVocabulary()).data ?? []); }
+      catch { setVocabulary([]); }
+    }
+  };
+
+  const applyTags = async () => {
+    if (!customerId) return;
+    setCrmBusy(true); setCrmError(null);
+    try {
+      await setCustomerTags(customerId, draftTagIds);
+      setTagEditOpen(false);
+      reloadTags(customerId, currentStale());
+    } catch (e) {
+      setCrmError(crmMessage(e, t("inbox.context.crmFailed")));
+    } finally {
+      setCrmBusy(false);
+    }
+  };
 
   useEffect(() => {
     const requestId = ++requestIdRef.current;
@@ -91,15 +181,10 @@ export default function CustomerContextPanel({ conversation, onClose, onConversa
         .then((rows) => { if (!stale() && !controller.signal.aborted) setOrders({ status: "ready", data: rows ?? [] }); })
         .catch(() => { if (!stale()) setOrders({ status: "error", data: null }); });
 
-      // CRM reads
-      setNotes({ status: "loading", data: null });
-      void listCustomerNotes(customerId, { limit: 3 })
-        .then((page) => { if (!stale() && !controller.signal.aborted) setNotes({ status: "ready", data: page.data }); })
-        .catch(() => { if (!stale()) setNotes({ status: "error", data: null }); });
-      setTags({ status: "loading", data: null });
-      void listCustomerTags(customerId)
-        .then((page) => { if (!stale() && !controller.signal.aborted) setTags({ status: "ready", data: page.data }); })
-        .catch(() => { if (!stale()) setTags({ status: "error", data: null }); });
+      // CRM reads (re-pullable after note/tag mutations)
+      reloadNotes(customerId, stale);
+      reloadTags(customerId, stale);
+      setVocabulary([]);
 
       // Gated insights: NOT fetched while the platform flag is off.
       if (enabled) {
@@ -215,35 +300,151 @@ export default function CustomerContextPanel({ conversation, onClose, onConversa
       )}
 
       {customerId && (
-        <PanelSection label={t("inbox.context.notes")} section={notes} empty={t("inbox.context.notesEmpty")}>
-          {(rows) => (
+        <section aria-label={t("inbox.context.notes")} className="border-t border-gray-100 pt-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 font-bn">
+              {t("inbox.context.notes")}
+            </h3>
+            <button
+              type="button"
+              data-testid="note-add-open"
+              onClick={() => setNoteOpen((o) => !o)}
+              aria-expanded={noteOpen}
+              className="text-xs font-medium text-blue-700 hover:underline font-bn"
+            >
+              {t("inbox.context.notesAdd")}
+            </button>
+          </div>
+          {noteOpen && (
+            <div className="mb-2">
+              <textarea
+                data-testid="note-composer"
+                value={noteDraft}
+                maxLength={2000}
+                rows={3}
+                aria-label={t("inbox.context.notes")}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 p-2 text-xs"
+              />
+              <button
+                type="button"
+                data-testid="note-save"
+                disabled={crmBusy || !noteDraft.trim()}
+                onClick={() => void submitNote()}
+                className="mt-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 font-bn"
+              >
+                {t("inbox.context.notesSave")}
+              </button>
+            </div>
+          )}
+          {notes.status === "loading" && <p className="text-xs text-gray-400 font-bn">{t("inbox.context.loading")}</p>}
+          {notes.status === "error" && <p className="text-xs text-gray-500 font-bn">{t("inbox.context.unavailable")}</p>}
+          {notes.status === "ready" && (notes.data?.length ?? 0) === 0 && (
+            <p className="text-xs text-gray-400 font-bn">{t("inbox.context.notesEmpty")}</p>
+          )}
+          {notes.status === "ready" && (notes.data ?? []).length > 0 && (
             <ul className="space-y-1.5">
-              {rows.map((n) => (
+              {notes.data!.map((n) => (
                 <li key={n.id} className="rounded-lg bg-gray-50 p-2 text-xs text-gray-700 border border-gray-200">
                   <p className="whitespace-pre-line font-bn">{n.body}</p>
-                  <p className="mt-1 text-[10px] text-gray-400 font-bn">
-                    <StickyNote className="mr-1 inline h-3 w-3" aria-hidden="true" />
-                    {n.author_name} · {n.created_at ? formatRelative(n.created_at, i18n.language) : ""}
+                  <p className="mt-1 flex items-center justify-between text-[10px] text-gray-400 font-bn">
+                    <span>
+                      <StickyNote className="mr-1 inline h-3 w-3" aria-hidden="true" />
+                      {n.author_name} · {n.created_at ? formatRelative(n.created_at, i18n.language) : ""}
+                    </span>
+                    {(String(n.author_id) === String(myUserId) || privileged) && (
+                      <button
+                        type="button"
+                        data-testid="note-delete"
+                        aria-label={`${t("inbox.context.noteDelete")} ${n.author_name ?? ""}`}
+                        disabled={crmBusy}
+                        onClick={() => void removeNote(n.id)}
+                        className="text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        {t("inbox.context.noteDelete")}
+                      </button>
+                    )}
                   </p>
                 </li>
               ))}
             </ul>
           )}
-        </PanelSection>
+        </section>
       )}
 
       {customerId && (
-        <PanelSection label={t("inbox.context.tags")} section={tags} empty={t("inbox.context.tagsEmpty")}>
-          {(rows) => (
+        <section aria-label={t("inbox.context.tags")} className="border-t border-gray-100 pt-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 font-bn">
+              {t("inbox.context.tags")}
+            </h3>
+            <button
+              type="button"
+              data-testid="tag-edit-open"
+              onClick={() => void openTagEdit()}
+              aria-expanded={tagEditOpen}
+              className="text-xs font-medium text-blue-700 hover:underline font-bn"
+            >
+              {t("inbox.context.tagsEdit")}
+            </button>
+          </div>
+          {tags.status === "ready" && (tags.data?.length ?? 0) === 0 && !tagEditOpen && (
+            <p className="text-xs text-gray-400 font-bn">{t("inbox.context.tagsEmpty")}</p>
+          )}
+          {tags.status === "ready" && (tags.data?.length ?? 0) > 0 && !tagEditOpen && (
             <div className="flex flex-wrap gap-1.5">
-              {rows.map((tag) => (
+              {tags.data!.map((tag) => (
                 <Badge key={tag.id} variant="secondary" className="text-[11px] font-bn">
                   <Tags className="mr-1 h-3 w-3" aria-hidden="true" />{tag.name}
                 </Badge>
               ))}
             </div>
           )}
-        </PanelSection>
+          {tagEditOpen && (
+            <div className="mt-1 space-y-1" data-testid="tag-editor">
+              {vocabulary.length === 0 && (
+                <p className="text-xs text-gray-400 font-bn">{t("inbox.context.tagsNoVocabulary")}</p>
+              )}
+              {vocabulary.map((tag) => {
+                const active = draftTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    data-testid={`tag-choice-${tag.id}`}
+                    aria-pressed={active}
+                    onClick={() => setDraftTagIds((prev) => (active ? prev.filter((x) => x !== tag.id) : [...prev, tag.id]))}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs font-bn ${
+                      active ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {tag.name}
+                    {typeof tag.usage_count === "number" ? ` · ${tag.usage_count}` : ""}
+                  </button>
+                );
+              })}
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  data-testid="tag-apply"
+                  disabled={crmBusy}
+                  onClick={() => void applyTags()}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 font-bn"
+                >
+                  {t("inbox.context.tagsApply")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTagEditOpen(false)}
+                  className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-700 font-bn"
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
+          )}
+          {crmError && <p role="alert" className="mt-1 text-xs text-red-700 font-bn">{crmError}</p>}
+        </section>
       )}
     </aside>
   );
