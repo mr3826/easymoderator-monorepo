@@ -1,0 +1,124 @@
+{
+  "project": "EasyModerator",
+  "milestone": "Merchant Workspace V1 Increment 2",
+  "architecture": "MODULAR_MONOLITH",
+  "date_utc": "2026-10-25",
+  "branch": "feat/merchant-workspace-v1-increment2",
+  "worktree": "D:\\easymod\\_wt-merchant-workspace-v1-increment2",
+  "source": {
+    "base_increment1_sha": "3d1bc0eb4988ce52fda9fcde9191c7d87e645139",
+    "pilot_v1_sha": "9f562aaf1559171c97902838a9bc5408283e2881",
+    "product_v1_3_sha": "f0f04e4ebc7af9771fdb433419d1f6340c5da156",
+    "main_sha": "07168f49066e4dc4a8e2a756621ac577a13c12bd",
+    "production_ancestor_sha": "2a8c1e2d0bef0f3ddc8dd767901d1228865c302c",
+    "ancestry_verified": true,
+    "frozen_candidate_sha": "a14fff7381830a73e3853609e98448cca0903188",
+    "commits_above_base": 20,
+    "linear_child_of_increment1": true
+  },
+  "phase1_integration_rehearsal": {
+    "worktree": "D:\\easymod\\_rehearsal-mw-v1-integration",
+    "branch": "rehearsal/mw-v1-integration",
+    "sha": "f32de36b",
+    "verdict": "PARTIAL",
+    "v6_action_first": "DEFER (owner rebase) — 30 FE behaviour failures incl. 27 Pilot+ inbox guarantees broken by conflict-free v6 helper files; backend 496/496 clean",
+    "orders_v2": "DEFER (superseded sibling of v6)",
+    "mobile": "CONTRACTS_ONLY (dirty/active worktree untouched; must re-sync /api/mobile/inbox reply contract)",
+    "pilot_customer_rto": "CONTENT_PORTED (create-time customer_id shop-integrity guard, commit 57c5ada3)",
+    "increment2_starts_from": "pure increment-1 tip (not the rehearsal commit)"
+  },
+  "capabilities": {
+    "customer_context_panel": {
+      "status": "COMPLETE",
+      "class": "CONNECT_EXISTING + EXTEND(read params)",
+      "identity": "conversation customer (always)",
+      "relationship_rto": "existing Customer360 authority, ONLY when customer_intelligence on; ZERO gated requests while off",
+      "operations": "existing order authority via customer_id filter (never name/phone)",
+      "deep_link": "/orders?orderId= (canonical); order->inbox /inbox?conversation= (canonical)",
+      "degradation": "per-section honest unavailable; per-conversation stale-request discard; no cross-customer cache"
+    },
+    "ownership_lifecycle": {
+      "status": "COMPLETE",
+      "class": "EXTEND existing canonical PATCH (no second task engine)",
+      "D1_force_http": "FIXED (validator was rejecting force)",
+      "D2_assignee_membership": "FIXED (active-member check, fail-closed)",
+      "D3_visibility": "FIXED (assignee_id/assignee{id,name}/resolution exposed; batched no-N+1)",
+      "D4_audit_and_sse": "FIXED (server CONVERSATION_OWNERSHIP_UPDATE audit; single service-emitted hitl_changed carrying owner; client-side dead audit removed)",
+      "conflict": "409 server reason shown verbatim; optimistic state rolled back; privileged-only force (staff inert)"
+    },
+    "crm_notes": {
+      "status": "COMPLETE",
+      "class": "MINIMAL_NEW (customer_notes, paranoid soft delete)",
+      "privacy": "staff-private; never outbound, never in AI prompt (customer-memory untouched), never in SSE; audits carry lengths/ids only"
+    },
+    "crm_tags": {
+      "status": "COMPLETE",
+      "class": "MINIMAL_NEW (customer_tag_definitions + idempotent assignments)",
+      "bounds": "40/shop, 15/customer, 30-char, case-insensitive unique; reserved derived-status blocklist; replace-set PUT; foreign-tag rejected before write"
+    },
+    "queue_views": {
+      "status": "COMPLETE",
+      "class": "EXTEND existing read model (no saved-view engine, no task store)",
+      "views": "attention/mine/unassigned/handoff/recovery/opportunities/review with server full-collection counts"
+    },
+    "ai_diagnostics_alignment": {
+      "status": "COMPLETE",
+      "class": "CONNECT (truthful policy-blocked copy; no misleading re-send; no invented cause/provider internals)",
+      "blacklist_dead_surface": "REMOVED (unmounted route, always-false flag; opt-out truth is messaging_consent)"
+    },
+    "storefront_compatibility": {
+      "status": "VERIFIED_CONTRACT",
+      "note": "all reads/writes keyed by shop-scoped internal ids; channel is an attribute not identity; no PSID stored in new tables; future storefront links resolve into the same customer authority"
+    }
+  },
+  "verification": {
+    "backend_units": { "suites": "313/313", "tests": "4214 passed, 2 skipped", "command": "npx jest --coverage=false --silent --testTimeout=30000" },
+    "real_stack_integration": { "suites": "30/30", "tests": "219/219", "command": "npm run test:backend:integration:docker", "new_suite": "mwv1-increment2.integration.test.js 13/13", "migrations_applied": ["20261025_003_customer_notes", "20261025_004_customer_tags"] },
+    "meta_shaped_e2e": { "suites": "2/2", "tests": "48/48", "live_meta_sends": 0 },
+    "frontend": { "vitest": "665/665", "tsc": "0 errors", "build": "success" },
+    "playwright_deterministic": { "spec": "mwv1-journeys.spec.ts", "chromium": "10/10", "firefox": "10/10", "axe_panel": "0 critical/serious" },
+    "playwright_regression": { "spec": "pilot-plus.spec.ts", "chromium": "10/10 (P+01..05 + increment-1 FE-01/03/08)" },
+    "live_founder_walkthrough": { "spec": "mwv1-live.spec.ts", "passed": "5/5", "screenshots": 5 },
+    "performance": { "customer_id_filter_vs_plain_list_ms": "40.5 vs 40.4 (~0 added, indexed, no N+1)", "notes_ms": 22.6, "tags_ms": 23.4, "queue_attention_ms": 45.1, "queue_unassigned_ms": 44.0, "order_context_ms": 24.7 },
+    "independent_review": "PENDING — see 10-independent-review.md"
+  },
+  "invariants_executable_evidence": {
+    "no_name_or_phone_association": "grep + integration same-name test",
+    "cross_shop_isolation": "integration notes/tags/assignee/order/conversation",
+    "flag_off_zero_gated_reads": "journey J9 + panel unit test",
+    "notes_never_outbound_or_prompt_or_sse": "unit serialize whitelist + audit content-free + integration",
+    "no_false_business_status": "journey J12 + deliveredValue label",
+    "conflict_authority_never_overwritten": "unit staff-409-no-force + owner-force + integration D1"
+  },
+  "regressions": { "pilot_plus": "NONE (10/10 journeys + 4214 backend + 48 meta-e2e)", "increment_1": "NONE (FE-01/03/08 journeys green)", "product_v1_3_grounding": "NONE (meta-e2e green)" },
+  "isolation": {
+    "pilot_worktree": "9f562aaf untouched",
+    "increment1_worktree": "3d1bc0eb untouched",
+    "product_v1_3_worktree": "untouched (active-owned, read-only observed)",
+    "other_agent_worktrees_touched": "NONE",
+    "other_agent_processes_stopped": "NONE",
+    "pushed": false, "merged": false, "deployed": false, "production_changed": false
+  },
+  "verdicts": {
+    "IMPLEMENTATION_COMPLETE": "YES",
+    "AUTOMATED_QA_PASS": "PASS",
+    "REAL_STACK_INTEGRATION_VERIFIED": "YES",
+    "PILOT_PLUS_COMPATIBILITY_VERIFIED": "YES",
+    "INCREMENT1_COMPATIBILITY_VERIFIED": "YES",
+    "SECURITY_VERIFIED": "YES",
+    "COMBINED_MULTI_WORKSTREAM_INTEGRATION": "PARTIAL (v6/orders-v2 deferred by design)",
+    "PILOT_COHORT_READY": "YES_FLAGS_OFF_PENDING_AUTHORIZATION",
+    "PRODUCTION_RELEASE_AUTHORIZED": "NO"
+  },
+  "verification_commands": [
+    "cd EasyMod-backend && npx jest --coverage=false --silent --testTimeout=30000",
+    "npm run test:backend:integration:docker",
+    "npm run test:backend:meta:e2e:docker",
+    "cd EasyMod-frontend && npx tsc --noEmit && npx vitest run && npm run build",
+    "cd EasyMod-frontend && npx playwright test mwv1-journeys pilot-plus --workers=1",
+    "MWV1_LIVE=1 PLAYWRIGHT_BASE_URL=http://localhost:5173 npx playwright test mwv1-live",
+    "node EasyMod-frontend/scripts/mwv1-perf.mjs"
+  ],
+  "paid_provider_calls_in_verification": 0,
+  "production_sends": 0
+}
