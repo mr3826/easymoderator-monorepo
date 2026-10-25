@@ -272,6 +272,26 @@ const terminalizeDuplicateSiblings = async (candidate, rows, transaction, actorI
     return dismissedSiblingMessageIds;
 };
 
+/**
+ * P+01: read-only projection of the AUTHORITATIVE live Sales Opportunity for
+ * the Inbox. Pilot-flag gated (fail-closed: any lookup error => no projection,
+ * never a failed inbox), reuses opportunity.service's canonical serializer so
+ * Inbox and Customer 360 can never disagree, and computes no second score.
+ */
+async function liveOpportunityMap(shopId, customerIds) {
+    const ids = [...new Set((customerIds || []).filter(Boolean))];
+    if (!ids.length) return new Map();
+    try {
+        const { isCustomerIntelligenceEnabled } = require('../pilot-features/pilot-features.service');
+        const enabled = await isCustomerIntelligenceEnabled(shopId);
+        if (!enabled) return new Map();
+        const { liveOpportunitiesForCustomers } = require('../customer-intelligence/opportunity.service');
+        return await liveOpportunitiesForCustomers(shopId, ids);
+    } catch (_) {
+        return new Map();
+    }
+}
+
 const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
     const metadata = normalizeObject(conversation?.metadata);
     const status = conversation?.status || metadata.status || 'active';
@@ -636,8 +656,7 @@ class ConversationService {
 
             const suggestionCounts = new Map();
             const messagesByConversation = new Map();
-            const conversationIds = conversations.rows.map((row) => row.id);
-            if (conversationIds.length > 0 && typeof Message.findAll === 'function') {
+            const conversationIds = conversations.rows.map((row) => row.id);            if (conversationIds.length > 0 && typeof Message.findAll === 'function') {
                 const candidates = await Message.findAll({
                     where: {
                         conversation_id: { [Op.in]: conversationIds },
@@ -672,19 +691,24 @@ class ConversationService {
                 }
             }
 
+            const opportunitiesByCustomer = await liveOpportunityMap(
+                shopId,
+                conversations.rows.map((row) => row.customer_id),
+            );
+
             return {
                 conversations: conversations.rows.map((row) => ({
                     ...this.mapConversation(row),
                     suggestionCount: suggestionCounts.get(row.id) || 0,
                     hasAiSuggestion: suggestionCounts.has(row.id),
+                    open_opportunity: opportunitiesByCustomer.get(row.customer_id) || null,
                     ...deriveWorkflowProjection(
                         row,
                         messagesByConversation.get(row.id) || [],
                         aiReplyMode,
                     ),
                 })),
-                ai_reply_mode: aiReplyMode,
-                pagination: {
+                ai_reply_mode: aiReplyMode,                pagination: {
                     total: conversations.count,
                     page,
                     limit,
@@ -742,9 +766,11 @@ class ConversationService {
                     })
                     : [],
             ]);
+            const opportunitiesByCustomer = await liveOpportunityMap(shopId, [conversation.customer_id]);
             return {
                 ...this.mapConversation(conversation),
                 ...deriveWorkflowProjection(conversation, messages || [], aiReplyMode),
+                open_opportunity: opportunitiesByCustomer.get(conversation.customer_id) || null,
             };
         } catch (error) {
             if (error instanceof AppError) throw error;
