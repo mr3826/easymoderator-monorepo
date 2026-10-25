@@ -10,7 +10,7 @@ const PaymentConfigEntity = require('../payment/payment-config.entity');
 const CustomerEntity = require('../customer/customer.entity');
 // P0-2: screenshot OCR verification is no longer wired into checkout —
 // payment truth comes only from merchant confirmation or verified webhooks.
-const { isNegatedMutation } = require('../ai/intent/stage2-rules');
+const { isNegatedMutation, isQuestionShaped } = require('../ai/intent/stage2-rules');
 const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
 
 const normalizeSessionChannel = (channel) => (
@@ -117,7 +117,9 @@ const OrderSession = sequelize.define('OrderSession', {
         defaultValue: null
     },
     status: {
-        type: DataTypes.ENUM('ACTIVE', 'COMPLETED', 'CANCELLED', 'ABANDONED'),
+        // P+04: SUSPENDED preserves step_data (cart + collected fields) when a
+        // human handoff or order-status interruption pauses the checkout.
+        type: DataTypes.ENUM('ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELLED', 'ABANDONED'),
         allowNull: false,
         defaultValue: 'ACTIVE'
     },
@@ -161,6 +163,14 @@ const OrderSession = sequelize.define('OrderSession', {
 });
 
 // Table is managed by migrations — no sync needed here
+
+// P+04: steps whose expected answer is identity data, never a question. A
+// question-shaped answer here is routed back as a deferral (the pipeline
+// answers it) instead of being stored as the field value. NOTES/ADD_MORE are
+// intentionally NOT guarded — any text is a legitimate free-form value there.
+const QUESTION_PROTECTED_STEPS = new Set([
+    'COLLECTING_NAME', 'COLLECTING_PHONE', 'COLLECTING_ADDRESS', 'COLLECTING_ZONE',
+]);
 
 // ─── Delivery zone config ─────────────────────────────────────────────────────
 const ZONE_KEYS = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
@@ -591,6 +601,18 @@ class OrderSessionService {
         let prompt = '';
         let completed = false;
         let createdOrder = null;
+
+        if (QUESTION_PROTECTED_STEPS.has(current_step) && isQuestionShaped(answer)) {
+            // Nothing is written; the bridge records awaiting_resume and the
+            // normal pipeline answers from grounded evidence, then re-asks.
+            return {
+                session_id: session.id,
+                prompt: this.generateStepPrompt(current_step, step_data, lang),
+                current_step,
+                step_data,
+                question_deferred: true,
+            };
+        }
 
         switch (current_step) {
             case 'SELECTING_PRODUCT': {
@@ -1364,8 +1386,10 @@ class OrderSessionService {
      * Cancel session
      */
     static async cancelSession(sessionId, shopId, mutationContext = {}) {
+        // A SUSPENDED (P+04) cart is still a live interruption and may be
+        // cancelled explicitly; it is the only way a suspended session ends.
         const session = await OrderSession.findOne({
-            where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' }
+            where: { id: sessionId, shop_id: shopId, status: { [Op.in]: ['ACTIVE', 'SUSPENDED'] } }
         });
 
         if (!session) {
@@ -1378,6 +1402,93 @@ class OrderSessionService {
         verifySessionMutationAuthorization(session, 'CANCEL_ORDER_SESSION', gateResult);
         await session.update({ status: 'CANCELLED' });
         return { success: true };
+    }
+
+    /**
+     * P+04: resumable (SUSPENDED) session lookup with the same TTL discipline
+     * as getActiveSession. Channel scope is mandatory — never cross Pages.
+     */
+    static async getResumableSession(shopId, customerChannelId, metaChannelId = null, customerId = null) {
+        const where = {
+            shop_id: shopId,
+            customer_channel_id: customerChannelId,
+            status: 'SUSPENDED',
+            ...(customerId ? { customer_id: customerId } : {}),
+            [Op.or]: [
+                { expires_at: { [Op.gt]: new Date() } },
+                { expires_at: { [Op.is]: null } },
+            ],
+        };
+        return OrderSession.findOne({
+            where: { ...where, meta_channel_id: metaChannelId || null },
+            order: [['last_activity_at', 'DESC']],
+        });
+    }
+
+    /**
+     * P+04: pause a checkout for a human handoff / sentiment interruption.
+     * Reversible state preservation (no data destroyed) — deliberately not an
+     * Action Gate mutation; the destructive sibling (cancel) remains gated.
+     */
+    static async suspendSession(sessionId, shopId, { reason = 'handoff', conversationId = null } = {}) {
+        const session = await OrderSession.findOne({
+            where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' },
+        });
+        if (!session) return { suspended: false };
+        const step_data = {
+            ...(session.step_data || {}),
+            suspended_reason: reason,
+            suspended_at: new Date().toISOString(),
+        };
+        await session.update({ status: 'SUSPENDED', step_data, last_activity_at: new Date() });
+        return { suspended: true, current_step: session.current_step, conversation_id: conversationId };
+    }
+
+    /**
+     * P+04: resume a suspended session — customer-driven (any new reply) or an
+     * explicit resume word. Returns the preserved step's re-ask prompt.
+     */
+    static async resumeSession(sessionId, shopId, { conversationId = null } = {}) {
+        const session = await OrderSession.findOne({
+            where: { id: sessionId, shop_id: shopId, status: 'SUSPENDED' },
+        });
+        if (!session) return { resumed: false };
+        const step_data = { ...(session.step_data || {}) };
+        delete step_data.suspended_reason;
+        delete step_data.suspended_at;
+        delete step_data.awaiting_resume;
+        await session.update({ status: 'ACTIVE', step_data, last_activity_at: new Date() });
+        return {
+            resumed: true,
+            current_step: session.current_step,
+            prompt: this.generateStepPrompt(session.current_step, step_data, step_data.language || 'bn'),
+        };
+    }
+
+    /**
+     * P+04: an informational question interrupted the current step. Remember
+     * exactly where the customer was and hand back a deterministic resume hint
+     * the worker appends after the grounded answer. No field is written, no
+     * status changes.
+     */
+    static async markAwaitingResume(sessionId, shopId, { step = null } = {}) {
+        const session = await OrderSession.findOne({
+            where: {
+                id: sessionId,
+                shop_id: shopId,
+                status: { [Op.in]: ['ACTIVE', 'SUSPENDED'] },
+            },
+        });
+        if (!session) return { deferred: false };
+        const resumeStep = step || session.current_step;
+        const step_data = { ...(session.step_data || {}), awaiting_resume: resumeStep };
+        await session.update({ step_data });
+        const lang = step_data.language || 'bn';
+        const reask = this.generateStepPrompt(resumeStep, step_data, lang);
+        const resume_hint = lang === 'en'
+            ? `\n\n(Once we're done with this — your order is still in progress: ${reask})`
+            : `\n\n(এই কথা শেষ হলে অর্ডার চালিয়ে নেব — এখন: ${reask})`;
+        return { deferred: true, resume_step: resumeStep, resume_hint };
     }
 
     // ─── Delivery helpers ─────────────────────────────────────────────────────

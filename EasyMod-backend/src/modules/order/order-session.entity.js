@@ -53,7 +53,7 @@ const OrderSession = sequelize.define('OrderSession', {
         comment: 'Product being ordered (name, variant, price, etc.)'
     },
     status: {
-        type: DataTypes.ENUM('ACTIVE', 'COMPLETED', 'CANCELLED', 'ABANDONED'),
+        type: DataTypes.ENUM('ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELLED', 'ABANDONED'),
         allowNull: false,
         defaultValue: 'ACTIVE'
     },

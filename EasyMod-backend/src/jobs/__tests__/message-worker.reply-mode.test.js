@@ -231,6 +231,28 @@ test('MANUAL business mode skips before any LLM or outbound policy work', async 
     expect(mockSendMessage).not.toHaveBeenCalled();
 });
 
+test('P+04: question-deferred turn appends the deterministic resume hint when storing the answer', async () => {
+    mockHandleOrderFlow.mockResolvedValue({
+        handled: false,
+        meta: {
+            order_session: 'question_deferred',
+            resume_step: 'COLLECTING_NAME',
+            resume_hint: '\n\n(We will continue your order after this: What is your name?)',
+        },
+    });
+
+    await processMessageJob(makeJob());
+
+    expect(mockStoreAIResponse.mock.calls[0][1])
+        .toBe('candidate response\n\n(We will continue your order after this: What is your name?)');
+});
+
+test('P+04: an ordinary (non-deferred) stored answer gets no resume suffix', async () => {
+    await processMessageJob(makeJob());
+
+    expect(mockStoreAIResponse.mock.calls[0][1]).toBe('candidate response');
+});
+
 test('invalid recovery turn start releases the inbound dedup key and retries', async () => {
     mockRecoveryStartTurn.mockResolvedValueOnce({
         turn: { trace_id: 'trace-1', turn_started_at: 'not-a-timestamp', state: 'RECEIVED' },

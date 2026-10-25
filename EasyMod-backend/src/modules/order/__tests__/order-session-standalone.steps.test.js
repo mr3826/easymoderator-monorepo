@@ -666,6 +666,42 @@ describe('self-MFS payment truth (P0-2)', () => {
     });
 });
 
+// P+04 belt: identity-capturing steps must refuse question-shaped answers
+// instead of storing "delivery charge koto?" as the customer's name, while
+// ordinary names/addresses/digits keep flowing through unchanged.
+describe('question-shape belt on capture steps (P+04)', () => {
+    test.each([
+        ['COLLECTING_NAME', 'delivery charge koto?'],
+        ['COLLECTING_NAME', 'আপনার নাম কি?'],
+        ['COLLECTING_PHONE', 'number ta ki apnar?'],
+        ['COLLECTING_ADDRESS', 'which area deliver covers?'],
+        ['COLLECTING_ZONE', 'কত charge?'],
+    ])('%s refuses to store question %s as field data', async (step, answer) => {
+        const session = makeSession({ current_step: step, step_data: { language: 'en' } });
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.question_deferred).toBe(true);
+        expect(res.current_step).toBe(step);
+        expect(session.update).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['COLLECTING_NAME', 'Rahim Uddin'],
+        ['COLLECTING_NAME', 'Karim'],
+        ['COLLECTING_PHONE', '01712345678'],
+        ['COLLECTING_ADDRESS', 'House 12, Road 5, Mirpur 10, Dhaka'],
+        ['COLLECTING_ZONE', '1'],
+    ])('%s still accepts plain answer %s', async (step, answer) => {
+        const session = makeSession({
+            current_step: step,
+            step_data: { language: 'en', enabled_gateways: ['cod'], delivery_charge: 60 },
+        });
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.question_deferred).toBeUndefined();
+    });
+});
+
 // Founder feedback 2026-06-13: infer the delivery zone from the typed address and
 // apply the charge automatically; only ask inside/outside Dhaka when it's unclear.
 describe('COLLECTING_ADDRESS → zone auto-detection', () => {

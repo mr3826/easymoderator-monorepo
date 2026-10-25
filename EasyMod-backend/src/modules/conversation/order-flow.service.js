@@ -41,13 +41,34 @@ const {
     classify,
 } = require('../ai/intent/stage2-rules');
 
-const ACTIVE_SESSION_TERMINAL_INTENTS = new Set([
+// P+04 interruption classes — a mid-checkout message is never "just an answer"
+// when it is clearly a question, a handoff request, or about a DIFFERENT order.
+const TERMINAL_CANCEL_INTENTS = new Set([
     'STOP_OPT_OUT',
+    'ORDER_SESSION_CANCEL',
+]);
+const HANDOFF_PAUSE_INTENTS = new Set([
     'HUMAN_HANDOFF_REQUEST',
     'SENTIMENT_HANDOFF',
-    'ORDER_POST_PURCHASE_REQUEST',
-    'ORDER_STATUS_LOOKUP',
 ]);
+const INFORMATIONAL_DEFER_INTENTS = new Set([
+    'DELIVERY_POLICY',
+    'DELIVERY_CHARGE',
+    'PAYMENT_POLICY',
+    'PAYMENT_METHODS',
+    'FAQ_KNOWLEDGE_QUESTION',
+    'PRODUCT_INQUIRY',
+    'PRODUCT_ATTRIBUTE',
+    'PRODUCT_AVAILABILITY',
+    'PRODUCT_PHOTO_LOOKUP',
+    'SELF_MFS_PAYMENT_VERIFICATION',
+]);
+// Truth about EXISTING orders must not destroy a NEW checkout in progress.
+const ORDER_TRUTH_DEFER_INTENTS = new Set([
+    'ORDER_STATUS_LOOKUP',
+    'ORDER_POST_PURCHASE_REQUEST',
+]);
+const RESUME_PHRASE = /^(?:continue|next|resume|back|chalu|chalao|agho[ui]n|এগিয়ে|আবার শুরু|ok(?:ay)?|yes|ha|হ্যাঁ|1)[\s!.]*$/i;
 
 // ── Intent detection ────────────────────────────────────────────────────────
 // Conservative on purpose: only DECISION-to-buy phrases, never mere interest
@@ -112,6 +133,15 @@ async function handleOrderFlow({
     metaChannelId = null,
 }) {
     // ── 1. Continue an active session ────────────────────────────────────────
+    const safeCancellationFailure = {
+        handled: true,
+        response: language === 'en'
+            ? 'I could not safely update that order yet. A team member will review it.'
+            : 'অর্ডারটি নিরাপদে আপডেট করা যায়নি। আমাদের টিম বিষয়টি দেখে দেবে।',
+        confidence: 1.0,
+        sourceReferences: null,
+        meta: { order_session: 'mutation_denied' },
+    };
     const customerId = await resolveCustomerId(shopId, platform, customerChannelId, metaChannelId);
     const active = metaChannelId
         ? await OrderSessionService.getActiveSession(shopId, customerChannelId, metaChannelId, customerId)
@@ -130,16 +160,6 @@ async function handleOrderFlow({
             } catch (_) {
                 return false;
             }
-        };
-
-        const safeCancellationFailure = {
-            handled: true,
-            response: language === 'en'
-                ? 'I could not safely update that order yet. A team member will review it.'
-                : 'অর্ডারটি নিরাপদে আপডেট করা যায়নি। আমাদের টিম বিষয়টি দেখে দেবে।',
-            confidence: 1.0,
-            sourceReferences: null,
-            meta: { order_session: 'mutation_denied' },
         };
 
         if (isNegatedCancel(message)) return {
@@ -167,9 +187,50 @@ async function handleOrderFlow({
         }
 
         const activeIntent = classify(message, { language });
-        if (ACTIVE_SESSION_TERMINAL_INTENTS.has(activeIntent.intentId)) {
+        const intentId = activeIntent.intentId;
+
+        // (a) Terminal: STOP / explicit session-cancel still terminate.
+        if (TERMINAL_CANCEL_INTENTS.has(intentId)) {
             if (!await cancelActiveSession()) return safeCancellationFailure;
-            return { handled: false, meta: { order_session: 'released_for_terminal_intent', intentId: activeIntent.intentId } };
+            return { handled: false, meta: { order_session: 'released_for_terminal_intent', intentId } };
+        }
+
+        // (b) Human support: PAUSE the cart (step_data preserved) and let the
+        // normal pipeline create/update the single authoritative handoff (HITL).
+        if (HANDOFF_PAUSE_INTENTS.has(intentId)) {
+            const susp = await Promise.resolve(OrderSessionService
+                .suspendSession(active.id, shopId, { reason: intentId, conversationId }))
+                .catch(() => ({ suspended: false }));
+            return {
+                handled: false,
+                meta: {
+                    order_session: susp?.suspended ? 'suspended_for_handoff' : 'handoff_release_only',
+                    intentId,
+                },
+            };
+        }
+
+        // (c) Informational / other-order questions: answer from evidence via
+        // the normal pipeline; the checkout step is NOT written and resumes
+        // after (deterministic hint from markAwaitingResume). Exception: in
+        // product-picker steps (SELECTING/ADDING/ADD_MORE) the machine is the
+        // right owner of such text (numbered picks, "আর লাগবে না", product
+        // searches) — deferring there would break legitimate answers.
+        const PICKER_STEPS = new Set(['SELECTING_PRODUCT', 'ADDING_PRODUCT', 'ADD_MORE']);
+        const deferrableNow = !PICKER_STEPS.has(active.current_step);
+        if (deferrableNow && (INFORMATIONAL_DEFER_INTENTS.has(intentId) || ORDER_TRUTH_DEFER_INTENTS.has(intentId))) {
+            const defer = await Promise.resolve(OrderSessionService
+                .markAwaitingResume(active.id, shopId, { step: active.current_step }))
+                .catch(() => ({ deferred: false }));
+            return {
+                handled: false,
+                meta: {
+                    order_session: 'question_deferred',
+                    intentId,
+                    resume_step: active.current_step,
+                    resume_hint: defer?.resume_hint || null,
+                },
+            };
         }
 
         if (isNegatedMutation(message)) {
@@ -208,6 +269,22 @@ async function handleOrderFlow({
                 meta: { order_session: 'mutation_denied' },
             };
         }
+        if (step && step.question_deferred) {
+            // Belt (step machine refused to store a question as field data):
+            // same deferral path so the pipeline answers and the step resumes.
+            const defer = await Promise.resolve(OrderSessionService
+                .markAwaitingResume(active.id, shopId, { step: step.current_step }))
+                .catch(() => ({ deferred: false }));
+            return {
+                handled: false,
+                meta: {
+                    order_session: 'question_deferred',
+                    intentId: 'question_shape_belt',
+                    resume_step: step.current_step,
+                    resume_hint: defer?.resume_hint || null,
+                },
+            };
+        }
         return {
             handled: true,
             response: step.prompt,
@@ -222,6 +299,111 @@ async function handleOrderFlow({
                 order: step.order || null,
             },
         };
+    }
+
+    // ── 1b. Resume a SUSPENDED session (P+04: human handoff / interruption) ──
+    // A suspended cart is preserved step_data. A brand-new explicit purchase
+    // request is allowed past it (below) — otherwise any reply would be forced
+    // back into the old checkout.
+    if (!hasPurchaseIntent(message)) {
+        const resumable = metaChannelId
+            ? await OrderSessionService.getResumableSession(shopId, customerChannelId, metaChannelId, customerId)
+            : customerId
+                ? await OrderSessionService.getResumableSession(shopId, customerChannelId, null, customerId)
+                : await OrderSessionService.getResumableSession(shopId, customerChannelId);
+        if (resumable) {
+            const suspendedIntent = classify(message, { language }).intentId;
+
+            if (suspendedIntent === 'STOP_OPT_OUT') {
+                // STOP stays terminal even while suspended — and is released to
+                // the pipeline like the ACTIVE path so opt-out handling owns the
+                // customer-facing confirmation.
+                try {
+                    await OrderSessionService.cancelSession(resumable.id, shopId, {
+                        conversationId, traceId, mutationsAllowed,
+                    });
+                    return { handled: false, meta: { order_session: 'released_for_terminal_intent', intentId: suspendedIntent } };
+                } catch (_) {
+                    return { ...safeCancellationFailure, meta: { order_session: 'cancel_denied' } };
+                }
+            }
+            if (isOrderCancel(message) || isNegatedPurchase(message)) {
+                try {
+                    await OrderSessionService.cancelSession(resumable.id, shopId, {
+                        conversationId, traceId, mutationsAllowed,
+                    });
+                    return { handled: true, response: cancelMessage(language), confidence: 1.0,
+                        sourceReferences: null, meta: { order_session: 'cancelled' } };
+                } catch (_) {
+                    return { ...safeCancellationFailure, meta: { order_session: 'cancel_denied' } };
+                }
+            }
+
+            const suspendedStep = resumable.current_step;
+            if (suspendedIntent === 'HUMAN_HANDOFF_REQUEST' || suspendedIntent === 'SENTIMENT_HANDOFF') {
+                return { handled: false, meta: { order_session: 'already_suspended', intentId: suspendedIntent } };
+            }
+            if (INFORMATIONAL_DEFER_INTENTS.has(suspendedIntent) || ORDER_TRUTH_DEFER_INTENTS.has(suspendedIntent)) {
+                const defer = await Promise.resolve(OrderSessionService
+                    .markAwaitingResume(resumable.id, shopId, { step: suspendedStep }))
+                    .catch(() => ({ deferred: false }));
+                return {
+                    handled: false,
+                    meta: {
+                        order_session: 'question_deferred',
+                        intentId: suspendedIntent,
+                        resume_step: suspendedStep,
+                        resume_hint: defer?.resume_hint || null,
+                    },
+                };
+            }
+
+            if (RESUME_PHRASE.test(String(message).trim())) {
+                const resumed = await Promise.resolve(OrderSessionService
+                    .resumeSession(resumable.id, shopId, { conversationId }))
+                    .catch(() => ({ resumed: false }));
+                if (resumed?.resumed) {
+                    return {
+                        handled: true,
+                        response: resumed.prompt,
+                        confidence: 1.0,
+                        sourceReferences: null,
+                        meta: { order_session: 'resumed', step: resumed.current_step },
+                    };
+                }
+            }
+
+            // Otherwise this reply IS the next answer of the preserved step:
+            // resume first (so processStep's ACTIVE filter accepts it), then
+            // feed the message to the machine unchanged.
+            await Promise.resolve(OrderSessionService.resumeSession(resumable.id, shopId, { conversationId })).catch(() => {});
+            const rawMessage = imageUrls.length ? { imageUrl: imageUrls[0] } : null;
+            const stepOptions = { mutationsAllowed };
+            if (conversationId) stepOptions.conversationId = conversationId;
+            if (traceId) stepOptions.traceId = traceId;
+            try {
+                const step = await OrderSessionService.processStep(
+                    resumable.id, shopId, message, rawMessage, stepOptions,
+                );
+                return {
+                    handled: true,
+                    response: step.prompt,
+                    confidence: 1.0,
+                    sourceReferences: null,
+                    meta: {
+                        order_session: 'continue',
+                        resumed_from_suspension: true,
+                        step: step.current_step,
+                        state: step.state || null,
+                        completed: !!step.completed,
+                        mutation_blocked: !!step.mutation_blocked,
+                        order: step.order || null,
+                    },
+                };
+            } catch (_) {
+                return safeCancellationFailure;
+            }
+        }
     }
 
     // ── 2. Start a session on clear purchase intent for an identified product ─

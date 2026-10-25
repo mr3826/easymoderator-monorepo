@@ -2517,7 +2517,18 @@ async function processMessageJob(job) {
         if (suggestionVisibility === SUGGESTION_VISIBILITY.HIDDEN_AUTO_PROCESSING) {
             lifecycleLogger.info('ai_suggestion_hidden_auto_processing', { shopId, conversationId, turnId });
         }
-        return ConversationStateService.storeAIResponse(conversationId, content, {
+        // P+04: when an informational question interrupted a checkout step, the
+        // grounded answer is followed by the DETERMINISTIC resume re-ask (fixed
+        // service text, no model content) so the customer's cart visibly
+        // continues right where it paused.
+        const resumeHint = orderFlow.meta?.order_session === 'question_deferred'
+            && typeof orderFlow.meta.resume_hint === 'string'
+            ? orderFlow.meta.resume_hint
+            : null;
+        const contentWithResume = resumeHint && String(content || '').trim()
+            ? `${content}${resumeHint}`
+            : content;
+        return ConversationStateService.storeAIResponse(conversationId, contentWithResume, {
             platform,
             confidence,
             automation_mode: aiSettings.automation_mode,
