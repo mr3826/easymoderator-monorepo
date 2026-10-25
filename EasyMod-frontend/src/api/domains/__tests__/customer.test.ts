@@ -104,23 +104,6 @@ describe('Customer Domain API', () => {
     });
   });
 
-  describe('blacklistCustomer', () => {
-    it('should blacklist customer', async () => {
-      (httpClient.post as any).mockResolvedValue({ data: {} });
-
-      await customer.blacklistCustomer('1', 'Spam behavior');
-
-      expect(httpClient.post).toHaveBeenCalledWith('/api/customer/1/blacklist', { reason: 'Spam behavior' });
-    });
-  });
-
-  describe('removeFromBlacklist', () => {
-    it('should remove from blacklist', async () => {
-      (httpClient.delete as any).mockResolvedValue({ data: {} });
-
-      await customer.removeFromBlacklist('1');
-
-      expect(httpClient.delete).toHaveBeenCalledWith('/api/customer/1/blacklist');
-    });
-  });
+  // MW-V1: blacklistCustomer/removeFromBlacklist tests REMOVED with the
+  // functions — they pinned calls to a route the backend never mounted.
 });

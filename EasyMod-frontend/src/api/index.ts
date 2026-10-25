@@ -128,8 +128,6 @@ export const apiClient = {
   getCustomer: customerDomain.getCustomer,
   createCustomer: customerDomain.createCustomer,
   updateCustomer: customerDomain.updateCustomer,
-  blacklistCustomer: customerDomain.blacklistCustomer,
-  removeFromBlacklist: customerDomain.removeFromBlacklist,
   deleteCustomer: customerDomain.deleteCustomer,
 
   // RTO Shield (cross-shop fraud network) methods

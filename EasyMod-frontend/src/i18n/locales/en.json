@@ -625,7 +625,8 @@
       "failed": "AI reply failed",
       "draftReady": "Draft ready for review",
       "humanReviewRequired": "Human review required",
-      "providerBlocked": "Automatic reply blocked. Send a fresh merchant reply after checking the channel."
+      "providerBlocked": "Automatic reply blocked. Send a fresh merchant reply after checking the channel.",
+      "policyBlocked": "Blocked by messaging rules — this reply was not sent. Check the conversation facts, then reply manually if it is still appropriate."
     },
     "upgradeForAI": "Upgrade for AI",
     "agentBanner": "You're replying yourself — AI is paused for this conversation.",

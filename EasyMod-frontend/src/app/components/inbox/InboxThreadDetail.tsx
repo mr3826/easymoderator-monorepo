@@ -469,6 +469,11 @@ export function InboxThreadDetail({
   const suggestionHeading = isDraftReview ? t("inbox.status.draftReady") : t("inbox.status.humanReviewRequired");
   const providerSendFailed = getDeliveryState(heldAiMsg || ({} as Message)) === "FAILED"
     || heldMeta?.held_reason === "provider_send_failed";
+  // MW-V1 §11.1: a policy-blocked candidate gets the SAME blocked treatment
+  // as a provider failure (no misleading re-send affordance) with its own
+  // truthful copy — the stored reason class only, never an invented cause.
+  const isPolicyBlocked = heldMeta?.held_reason === "policy_blocked";
+  const messagingBlocked = providerSendFailed || isPolicyBlocked;
 
   const transcriptMessages = messages.filter((message) => (
     message.is_transcript_message !== false
@@ -766,11 +771,11 @@ export function InboxThreadDetail({
             </p>
           )}
            <div className="flex flex-col sm:flex-row gap-2">
-             {providerSendFailed ? (
-               <p className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                 {t("inbox.status.providerBlocked")}
-               </p>
-             ) : (
+              {messagingBlocked ? (
+                <p className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 font-bn">
+                  {t(isPolicyBlocked && !providerSendFailed ? "inbox.status.policyBlocked" : "inbox.status.providerBlocked")}
+                </p>
+              ) : (
                <>
             <button
                onClick={() => handleUseAiSuggestion(false)}

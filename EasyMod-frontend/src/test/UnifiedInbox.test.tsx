@@ -871,6 +871,19 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     expect(screen.queryByText('AI Assistant')).not.toBeInTheDocument()
   })
 
+  // MW-V1 §11.1: a policy-blocked candidate is explained truthfully — the
+  // stored reason class only; no invented specifics, no provider internals.
+  it('explains a policy-blocked AI reply and routes the merchant to recovery', async () => {
+    renderWith({ ...baseConversation, ai_reply_mode: 'AUTO' }, [
+      customerMsg,
+      aiMsg({ delivery_state: 'HELD', delivered: false, held_reason: 'policy_blocked', suggestion_visibility: 'VISIBLE_HITL_REVIEW' }),
+    ])
+
+    expect(await screen.findByText(/messaging rules/i)).toBeInTheDocument()
+    expect(screen.queryByText(/window closed/i)).not.toBeInTheDocument() // never invents the specific reason
+    expect(screen.queryByText(/stack|token|secret|provider error id/i)).not.toBeInTheDocument()
+  })
+
   it('hides normal AUTO suggestions and keeps the processing status non-interactive', async () => {
     renderWith({ ...baseConversation, ai_reply_mode: 'AUTO' }, [
       customerMsg,

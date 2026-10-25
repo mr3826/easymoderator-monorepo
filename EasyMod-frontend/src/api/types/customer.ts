@@ -14,7 +14,6 @@ export interface Customer {
   created_at: string;
   updated_at: string;
   rto_risk?: 'high' | 'medium' | 'low';
-  blacklisted?: boolean;
   rto_count?: number;
 }
 
