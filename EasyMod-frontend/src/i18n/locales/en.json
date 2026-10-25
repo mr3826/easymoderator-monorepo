@@ -724,6 +724,16 @@
         "clear": "No delivery-risk flags",
         "verify": "Delivery-risk: verification advised",
         "block": "Delivery-risk: on a risk list"
+      },
+      "owner": {
+        "title": "Ownership",
+        "unclaimed": "No one has taken this yet",
+        "none": "No active owner",
+        "teammate": "a teammate",
+        "claim": "Claim this work",
+        "assign": "Assign to…",
+        "force": "Take over as manager",
+        "failed": "Could not update ownership"
       }
     },
     "actions": {

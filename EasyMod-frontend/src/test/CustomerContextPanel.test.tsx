@@ -14,8 +14,20 @@ const orderApi = vi.hoisted(() => ({ getOrders: vi.fn() }));
 const crmApi = vi.hoisted(() => ({
   listCustomerNotes: vi.fn(), listCustomerTags: vi.fn(), listTagVocabulary: vi.fn(),
 }));
+const barrel = vi.hoisted(() => ({
+  updateConversation: vi.fn(),
+  getShopAgents: vi.fn(async () => [
+    { id: 'staff-1', full_name: 'Nowrin Sultana', role: 'staff' },
+    { id: 'staff-2', full_name: 'Rafiul Karim', role: 'staff' },
+  ]),
+}));
+const authStub = vi.hoisted(() => ({
+  getState: vi.fn(() => ({ user: { id: 'staff-1' }, currentShop: { role: 'staff' } })),
+}));
 const navigate = vi.hoisted(() => vi.fn());
 
+vi.mock('@/api', () => ({ apiClient: barrel }));
+vi.mock('@/app/lib/auth', () => ({ authService: authStub }));
 vi.mock('@/api/domains/customer-intelligence', () => ciApi);
 vi.mock('@/api/domains/order', () => orderApi);
 vi.mock('@/api/domains/customer-crm', () => crmApi);
@@ -49,12 +61,14 @@ beforeAll(async () => { await i18n.changeLanguage('en'); });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authStub.getState.mockReturnValue({ user: { id: 'staff-1' }, currentShop: { role: 'staff' } } as never);
   ciApi.getPilotStatus.mockResolvedValue({ customer_intelligence: false, order_confidence_mode: 'off' });
   orderApi.getOrders.mockResolvedValue([
     { id: 'o9', orderNumber: 'ORD-1001', status: 'processing', total: 1490, customerName: 'Rina Akter', customerId: 'cust-1' },
   ]);
   crmApi.listCustomerNotes.mockResolvedValue({ data: [], total: 0 });
   crmApi.listCustomerTags.mockResolvedValue({ data: [] });
+  barrel.updateConversation.mockResolvedValue({ id: 'conv-1', hitl: true, assignee_id: 'staff-1', assignee: { id: 'staff-1', name: 'Nowrin Sultana' } });
 });
 
 describe('CustomerContextPanel', () => {
@@ -119,5 +133,74 @@ describe('CustomerContextPanel', () => {
     slow.resolve?.(detail360); // late arrival for the PREVIOUS conversation must not overwrite
     await new Promise((r) => setTimeout(r, 30));
     expect(screen.queryByText(/৳?8,?400|8400/)).not.toBeInTheDocument();
+  });
+
+  // ─── MW-V1 Phase 4: ownership controls in the panel ───────────────────────
+  const conflict = {
+    response: {
+      status: 409,
+      data: { error: { code: 'HUMAN_TAKEOVER_CONFLICT', message: 'This conversation is already assigned to another team member' } },
+    },
+  };
+
+  it('shows the current owner from the authoritative assignee fields', async () => {
+    render(
+      <CustomerContextPanel
+        conversation={conversation({
+          hitl: true,
+          assignee_id: 'staff-2',
+          assignee: { id: 'staff-2', name: 'Rafiul Karim' },
+        } as never)}
+      />,
+    );
+    expect(await screen.findByTestId('context-owner')).toHaveTextContent('Rafiul Karim');
+  });
+
+  it('unclaimed handoff: claim calls the canonical PATCH and bubbles the update', async () => {
+    const onChanged = vi.fn();
+    render(
+      <CustomerContextPanel
+        conversation={conversation({ hitl: true, assignee_id: null, assignee: null } as never)}
+        onConversationChanged={onChanged}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('context-claim'));
+    await waitFor(() => expect(barrel.updateConversation).toHaveBeenCalledWith('conv-1', { hitl: true }));
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ assignee_id: 'staff-1' }));
+    expect(screen.queryByTestId('context-force')).not.toBeInTheDocument();
+  });
+
+  it('already claimed by me: no claim button', async () => {
+    render(<CustomerContextPanel conversation={conversation({ hitl: true, assignee_id: 'staff-1' } as never)} />);
+    await screen.findByTestId('context-owner');
+    expect(screen.queryByTestId('context-claim')).not.toBeInTheDocument();
+  });
+
+  it('409 as staff: server reason shown, no escalation offered', async () => {
+    barrel.updateConversation.mockRejectedValue(conflict);
+    render(<CustomerContextPanel conversation={conversation({ hitl: true, assignee_id: 'staff-9' } as never)} />);
+    fireEvent.click(await screen.findByTestId('context-claim'));
+    expect(await screen.findByText(/already assigned to another team member/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('context-force')).not.toBeInTheDocument();
+    expect(barrel.updateConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 as owner: manager take-over offered and retries with force', async () => {
+    authStub.getState.mockReturnValue({ user: { id: 'owner-1' }, currentShop: { role: 'owner' } } as never);
+    barrel.updateConversation
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ id: 'conv-1', hitl: true, assignee_id: 'owner-1', assignee: { id: 'owner-1', name: 'Owner' } });
+    render(<CustomerContextPanel conversation={conversation({ hitl: true, assignee_id: 'staff-9' } as never)} />);
+    fireEvent.click(await screen.findByTestId('context-claim'));
+    fireEvent.click(await screen.findByTestId('context-force'));
+    await waitFor(() => expect(barrel.updateConversation).toHaveBeenCalledWith('conv-1', { hitl: true, force: true }));
+  });
+
+  it('assign picker lists active teammates and assigns by id', async () => {
+    render(<CustomerContextPanel conversation={conversation({ hitl: true, assignee_id: null, assignee: null } as never)} />);
+    fireEvent.click(await screen.findByTestId('context-assign-open'));
+    const option = await screen.findByText(/Rafiul Karim/, {}, { timeout: 2000 });
+    fireEvent.click(option);
+    await waitFor(() => expect(barrel.updateConversation).toHaveBeenCalledWith('conv-1', { assignee_id: 'staff-2' }));
   });
 });

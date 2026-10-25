@@ -621,14 +621,18 @@ export default function UnifiedInbox() {
         : previous);
     }, [aiReplyMode]),
 
-    onHitlChanged: useCallback(({ conversation_id, hitl, status, needs_merchant_reply: needsReply, needs_merchant_reply_reason: needsReason, ai_is_replying: aiIsReplying }: {
-      conversation_id: string;
-      hitl: boolean;
-      status?: Conversation["status"];
-      needs_merchant_reply?: boolean;
-      needs_merchant_reply_reason?: string | null;
-      ai_is_replying?: boolean;
-    }) => {
+      onHitlChanged: useCallback(({ conversation_id, hitl, status, needs_merchant_reply: needsReply, needs_merchant_reply_reason: needsReason, ai_is_replying: aiIsReplying, assignee_id: assigneeId, assignee: assigneeInfo }: {
+        conversation_id: string;
+        hitl: boolean;
+        status?: Conversation["status"];
+        needs_merchant_reply?: boolean;
+        needs_merchant_reply_reason?: string | null;
+        ai_is_replying?: boolean;
+        // MW-V1 D3/D4b: the ownership-carrying event source is now the service
+        // itself, so a teammate's claim/assign converges every open client.
+        assignee_id?: string | null;
+        assignee?: { id: string; name: string | null } | null;
+      }) => {
       refreshActionQueue();
       conversationProjectionRevisionRef.current[conversation_id] =
         (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
@@ -638,6 +642,8 @@ export default function UnifiedInbox() {
         ...(needsReply !== undefined ? { needs_merchant_reply: needsReply } : {}),
         ...(needsReason !== undefined ? { needs_merchant_reply_reason: needsReason } : {}),
         ...(aiIsReplying !== undefined ? { ai_is_replying: aiIsReplying } : {}),
+        ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
+        ...(assigneeInfo !== undefined ? { assignee: assigneeInfo } : {}),
       };
       setConversations((prev) =>
         prev.map((conv) => conv.id === conversation_id ? { ...conv, ...workflow } : conv)
@@ -920,14 +926,9 @@ export default function UnifiedInbox() {
         delete next[selectedConversation.id];
         return next;
       });
-      apiClient.createAuditLog({
-        action: newHITL ? "HUMAN_TAKEOVER" : "UPDATE",
-        resource_type: "CONVERSATION",
-        resource_id: selectedConversation.id,
-        old_values: { hitl: !newHITL },
-        new_values: { hitl: newHITL },
-        metadata: { channel: selectedConversation.channel },
-      }).catch(() => {});
+      // MW-V1 D4: the server writes the authoritative CONVERSATION_OWNERSHIP_UPDATE
+      // audit on this PATCH; the previously client-side createAuditLog call
+      // targeted a route that does not exist and is removed.
       toast.success(
         newHITL
           ? t("inbox.aiPaused")
@@ -952,6 +953,14 @@ export default function UnifiedInbox() {
     }
   };
 
+  // MW-V1: merge a panel-driven ownership change (canonical PATCH result) into
+  // both the thread list and the live conversation immediately.
+  const applyOwnershipUpdate = useCallback((updated: Conversation) => {
+    setConversations((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+    setSelectedConversation((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev));
+    refreshActionQueue();
+  }, [refreshActionQueue]);
+
   const handleResolveConversation = async () => {
     if (!selectedConversation) return;
     try {
@@ -973,21 +982,25 @@ export default function UnifiedInbox() {
       };
       setSelectedConversation(updated);
       setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      apiClient.createAuditLog({
-        action: "CONVERSATION_RESOLVED",
-        resource_type: "CONVERSATION",
-        resource_id: selectedConversation.id,
-        old_values: { status: selectedConversation.status },
-        new_values: { status: response.status, resolution_note: resolveNote },
-        metadata: { channel: selectedConversation.channel },
-      }).catch(() => {});
+      // MW-V1 D4: ownership/resolution transitions are audited SERVER-side.
       toast.success(response.status === "closed"
         ? t("inbox.conversationResolved")
         : t("inbox.conversationKeptOpen"));
       setShowResolveDialog(false);
       setResolveNote("");
-    } catch {
-      toast.error(t("inbox.errors.resolveFailed"));
+    } catch (error) {
+      // MW-V1: mirror the takeover path — surface the authoritative conflict
+      // reason (e.g. resolving over another owner's 409, or a newer customer
+      // inbound fence), never a fabricated success. Optimistic state is NOT
+      // applied on error (it only merges on the awaited response above).
+      const serverMessage = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message
+        || (typeof (error as Error)?.message === "string"
+          && (error as Error).message
+          && !/request failed|status code/i.test((error as Error).message)
+          ? (error as Error).message
+          : "");
+      toast.error(serverMessage || t("inbox.errors.resolveFailed"));
     } finally {
       setResolvingConversation(false);
     }
@@ -1256,7 +1269,7 @@ export default function UnifiedInbox() {
           {/* MW-V1: customer context — inline column on xl+, bottom sheet below. */}
           {contextOpen && (
             <div className="fixed inset-x-0 bottom-0 top-14 z-40 max-h-[72vh] overflow-y-auto bg-white shadow-2xl xl:static xl:z-auto xl:max-h-none xl:w-80 xl:shrink-0 xl:shadow-none">
-              <CustomerContextPanel conversation={selectedConversation} onClose={() => setContextOpen(false)} />
+              <CustomerContextPanel conversation={selectedConversation} onClose={() => setContextOpen(false)} onConversationChanged={applyOwnershipUpdate} />
             </div>
           )}
           </>

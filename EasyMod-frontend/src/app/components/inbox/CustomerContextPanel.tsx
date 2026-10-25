@@ -13,9 +13,11 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ExternalLink, StickyNote, Tags, X } from "lucide-react";
+import { apiClient } from "@/api";
 import { getPilotStatus, getCustomer360 } from "@/api/domains/customer-intelligence";
 import { getOrders } from "@/api/domains/order";
 import { listCustomerNotes, listCustomerTags } from "@/api/domains/customer-crm";
+import { authService } from "@/app/lib/auth";
 import type { Customer360Detail, CustomerState } from "@/api/types/customer-intelligence";
 import type { CustomerNote, CustomerTag } from "@/api/types/crm";
 import type { Conversation } from "@/api/types/conversation";
@@ -43,9 +45,11 @@ type Section<T> = { status: "idle" | "loading" | "ready" | "error"; data: T | nu
 interface Props {
   conversation: Conversation;
   onClose?: () => void;
+  /** Canonical PATCH result bubbled so the thread/list converge instantly. */
+  onConversationChanged?: (updated: Conversation) => void;
 }
 
-export default function CustomerContextPanel({ conversation, onClose }: Props) {
+export default function CustomerContextPanel({ conversation, onClose, onConversationChanged }: Props) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const customerId = conversation.customer_id ?? conversation.customer?.id ?? null;
@@ -154,6 +158,9 @@ export default function CustomerContextPanel({ conversation, onClose }: Props) {
         )}
       </section>
 
+      {/* Ownership — canonical PATCH claim/assign; server is the source of truth. */}
+      <OwnershipBlock conversation={conversation} onChanged={onConversationChanged} />
+
       {customerId && ciEnabled && (
         <PanelSection label={t("inbox.context.relationship")} section={relationship} empty={null}>
           {(d) => (
@@ -239,6 +246,137 @@ export default function CustomerContextPanel({ conversation, onClose }: Props) {
         </PanelSection>
       )}
     </aside>
+  );
+}
+
+interface AgentLike { id: string; full_name?: string; name?: string; role?: string | null }
+
+/**
+ * MW-V1 Phase 4: who owns this conversation, right now. Every action is the
+ * canonical PATCH (claim == takeover; assignment verified shop-side). On 409
+ * the SERVER reason is displayed verbatim and optimistic state is NOT applied;
+ * privileged members additionally get the manager take-over (force) retry —
+ * staff never see it, and the server enforces regardless.
+ */
+function OwnershipBlock({ conversation, onChanged }: {
+  conversation: Conversation;
+  onChanged?: (updated: Conversation) => void;
+}) {
+  const { t } = useTranslation();
+  const state = authService.getState();
+  const me = state.user?.id ?? null;
+  const role = String(state.currentShop?.role ?? "").toLowerCase();
+  const privileged = role === "owner" || role === "admin";
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [conflicted, setConflicted] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [agents, setAgents] = useState<AgentLike[] | null>(null);
+
+  const ownerName = conversation.assignee?.name || null;
+
+  const mutate = async (patch: Record<string, unknown>, force = false) => {
+    setBusy(true); setError(null); setConflicted(false);
+    try {
+      const updated = await apiClient.updateConversation(
+        conversation.id, force ? { ...patch, force: true } : patch,
+      );
+      onChanged?.(updated);
+      return true;
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: { code?: string; message?: string } } } };
+      const code = e?.response?.data?.error?.code;
+      const message = e?.response?.data?.error?.message;
+      if (code === "HUMAN_TAKEOVER_CONFLICT" || code === "HANDOFF_RESOLUTION_CONFLICT") setConflicted(true);
+      setError(message || t("inbox.context.owner.failed"));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openAssign = () => {
+    setAssignOpen((o) => !o);
+    if (!agents) {
+      void apiClient.getShopAgents()
+        .then((rows) => setAgents((rows ?? []) as unknown as AgentLike[]))
+        .catch(() => setAgents([]));
+    }
+  };
+
+  return (
+    <section aria-label={t("inbox.context.owner.title")} className="border-t border-gray-100 pt-3">
+      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 font-bn">
+        {t("inbox.context.owner.title")}
+      </h3>
+      <p className="text-xs text-gray-700 font-bn" data-testid="context-owner">
+        {conversation.assignee_id || ownerName
+          ? t("inbox.assignedTo", { name: ownerName || t("inbox.context.owner.teammate") })
+          : conversation.hitl
+            ? t("inbox.context.owner.unclaimed")
+            : t("inbox.context.owner.none")}
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {conversation.hitl && conversation.assignee_id !== me && (
+          <button
+            type="button"
+            data-testid="context-claim"
+            disabled={busy}
+            onClick={() => void mutate({ hitl: true })}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 font-bn"
+          >
+            {t("inbox.context.owner.claim")}
+          </button>
+        )}
+        <button
+          type="button"
+          data-testid="context-assign-open"
+          disabled={busy}
+          onClick={openAssign}
+          aria-expanded={assignOpen}
+          className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50 font-bn"
+        >
+          {t("inbox.context.owner.assign")}
+        </button>
+        {conflicted && privileged && (
+          <button
+            type="button"
+            data-testid="context-force"
+            disabled={busy}
+            onClick={() => void mutate({ hitl: true }, true)}
+            className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-200 disabled:opacity-50 font-bn"
+          >
+            {t("inbox.context.owner.force")}
+          </button>
+        )}
+      </div>
+
+      {assignOpen && (
+        <ul className="mt-2 space-y-1" data-testid="context-assign-list">
+          {(agents ?? []).map((a) => {
+            const displayName = a.full_name || a.name || a.id;
+            return (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  disabled={busy || String(conversation.assignee_id) === String(a.id)}
+                  onClick={() => void mutate({ assignee_id: a.id }).then((ok) => ok && setAssignOpen(false))}
+                  className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40 font-bn"
+                >
+                  {displayName}{a.role ? ` · ${a.role}` : ""}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-red-700 font-bn" data-testid="context-owner-error">{error}</p>
+      )}
+    </section>
   );
 }
 

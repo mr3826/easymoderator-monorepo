@@ -185,8 +185,8 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   messages?: Message[];
-  assignee_id?: string;
-  assignee?: { id: string; name: string; email?: string };
+  assignee_id?: string | null;
+  assignee?: { id: string; name: string | null; email?: string } | null;
   resolved_at?: string;
   resolution_note?: string;
 }
