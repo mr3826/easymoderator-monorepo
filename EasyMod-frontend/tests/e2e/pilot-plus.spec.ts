@@ -299,3 +299,86 @@ test.describe('mobile + a11y', () => {
         expect(blocking).toEqual([]);
     });
 });
+
+test.describe('MW-V1 increment 1 — safe composer macros (FE-01)', () => {
+    test('no business-claim fallback chips when the merchant has no templates', async ({ page }) => {
+        setupRoutes(page);
+        // Templates endpoint answers with the claim-free fallbacks only when
+        // the shop itself has none — the default catch-all returns [].
+        await loginAndGo(page);
+        await page.getByText('Rina Akter').first().click();
+        await page.getByRole('button', { name: /quick replies/i }).click();
+        await expect(page.getByText('Need Address')).toBeVisible();
+
+        for (const retired of ['Order Confirmed', 'Courier Update', 'Advance Payment',
+            'Out of Stock', 'Delivery Charge', 'Return Window', 'Cash on Delivery', 'Dispatch Today']) {
+            await expect(page.getByText(retired, { exact: true })).toHaveCount(0);
+        }
+        await page.screenshot({ path: '../docs/merchant-workspace-v1/screenshots/fe01-quick-replies-claim-free.png' });
+    });
+});
+
+test.describe('MW-V1 increment 1 — verified order→inbox link (FE-08)', () => {
+    test('order detail links chat by customer_id and deep-links to the inbox', async ({ page }) => {
+        setupRoutes(page);
+        const order = {
+            id: 'ord-1', order_number: 'ORD-1001',
+            customer_name: 'Rina Akter', customer_id: 'cust-1',
+            order_status: 'confirmed', total_amount: 1490, channel: 'messenger',
+            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            items: [{ product_name: 'Lawn Two Piece', quantity: 1, price: 1490 }],
+        };
+        // Registered AFTER setupRoutes so these win for the paths below.
+        await page.route((url: URL) => url.pathname === '/api/order', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [order] }) }));
+        await page.route((url: URL) => url.pathname === '/api/order/ord-1', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: order }) }));
+        // Verified association: conversation carrying the SAME customer_id.
+        await page.route((url: URL) => url.pathname === '/api/conversation'
+            && url.searchParams.get('customer_id') === 'cust-1', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+                success: true,
+                data: { conversations: [conversation({ customer_id: 'cust-1' })], ai_reply_mode: 'MANUAL',
+                    pagination: { total: 1, page: 1, pageSize: 1 } },
+            }) }));
+
+        await loginAndGo(page, '/orders');
+        await expect(page.getByText('ORD-1001')).toBeVisible();
+        await page.getByRole('button', { name: /view details/i }).first().click();
+
+        // Snippet comes from the verified conversation, never a name guess.
+        await expect(page.getByText('order ta confirm korte chai').last()).toBeVisible({ timeout: 10000 });
+        await page.screenshot({ path: '../docs/merchant-workspace-v1/screenshots/fe08-order-detail-linked.png' });
+
+        // Canonical inbox deep link (same contract as the action queue).
+        await page.getByRole('button', { name: /open conversation in inbox/i }).click();
+        await expect(page).toHaveURL(/\/inbox\?conversation=conv-1/);
+    });
+
+    test('unlinked (manual) order shows the honest unavailable state', async ({ page }) => {
+        setupRoutes(page);
+        const manual = {
+            id: 'ord-2', order_number: 'ORD-MANUAL-2',
+            customer_name: 'Walk-in Buyer', customer_id: null,
+            order_status: 'confirmed', total_amount: 500, channel: 'manual',
+            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            items: [],
+        };
+        await page.route((url: URL) => url.pathname === '/api/order', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [manual] }) }));
+        await page.route((url: URL) => url.pathname === '/api/order/ord-2', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: manual }) }));
+        let conversationListed = false;
+        await page.route((url: URL) => url.pathname === '/api/conversation'
+            && url.searchParams.has('customer_id'), (route) => {
+            conversationListed = true;
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { conversations: [], pagination: { total: 0, page: 1, pageSize: 1 } } }) });
+        });
+
+        await loginAndGo(page, '/orders');
+        await page.getByRole('button', { name: /view details/i }).first().click();
+        await expect(page.getByText('No chat snippet found.')).toBeVisible({ timeout: 10000 });
+        expect(conversationListed).toBe(false); // no association → no lookup at all
+        await page.screenshot({ path: '../docs/merchant-workspace-v1/screenshots/fe08-order-detail-unlinked.png' });
+    });
+});
