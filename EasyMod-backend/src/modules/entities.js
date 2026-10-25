@@ -36,6 +36,8 @@ const SupportTicket = require('./support/support-ticket.entity');
 const ResponseTemplate = require('./template/response-template.entity');
 const CustomerPreference = require('./customer/customer-preference.entity');
 const CustomerNote = require('./customer/customer-note.entity');
+const CustomerTag = require('./customer/customer-tag.entity');
+const CustomerTagAssignment = require('./customer/customer-tag-assignment.entity');
 const TrxIDLog = require('./payment/trx-id-log.entity');
 const PaymentTransaction = require('./billing/payment-transaction.entity');
 const OwnerNotification = require('./notification/owner-notification.entity');
@@ -443,6 +445,13 @@ CustomerNote.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
 Customer.hasMany(CustomerNote, { foreignKey: 'customer_id', as: 'notes' });
 Shop.hasMany(CustomerNote, { foreignKey: 'shop_id', as: 'customer_notes' });
 
+// MW-V1 CRM Lite: merchant tags (vocabulary + assignments)
+CustomerTag.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+CustomerTagAssignment.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+CustomerTagAssignment.belongsTo(CustomerTag, { foreignKey: 'tag_id', as: 'tag' });
+CustomerTagAssignment.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+Customer.hasMany(CustomerTagAssignment, { foreignKey: 'customer_id', as: 'tag_assignments' });
+
 // TrxIDLog — MFS payment screenshot audit trail
 TrxIDLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 TrxIDLog.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
@@ -616,6 +625,8 @@ module.exports = {
     ResponseTemplate,
     CustomerPreference,
     CustomerNote,
+    CustomerTag,
+    CustomerTagAssignment,
     TrxIDLog,
     PaymentTransaction,
     OwnerNotification,

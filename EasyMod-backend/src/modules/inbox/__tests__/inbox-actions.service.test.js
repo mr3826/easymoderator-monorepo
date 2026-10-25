@@ -161,3 +161,55 @@ test('the queue is capped and ordered by operational risk', async () => {
     expect(res.items.length).toBeLessThanOrEqual(50);
     expect(new Set(res.items.map((i) => i.bucket))).toEqual(new Set([ACTION_BUCKETS.NEEDS_HUMAN]));
 });
+
+// ─── MW-V1 Phase 6: server-backed views + counts ────────────────────────────
+test('counts.by_bucket reflects ALL collected work, not just the returned page', async () => {
+    E.Conversation.findAll.mockResolvedValue([
+        conv({ id: 'c1', hitl: true, assignee_id: null }),
+        conv({ id: 'c2', hitl: true, assignee_id: 'staff-9' }),
+        conv({ id: 'c3', hitl: true, assignee_id: 'staff-9' }),
+        conv({ id: 'c4', hitl: true, assignee_id: 'staff-8' }),
+    ]);
+    E.InboxDeliveryOutbox.findAll.mockResolvedValue([
+        { id: 'ob-1', conversation_id: 'c1', status: 'NEEDS_RECONCILIATION', updated_at: new Date(), metadata: {} },
+    ]);
+
+    const res = await getInboxActions('shop-1', { actorUserId: 'staff-9' });
+
+    expect(res.counts).toBeTruthy();
+    expect(res.counts.by_bucket[ACTION_BUCKETS.NEEDS_HUMAN]).toBe(4);
+    expect(res.counts.by_bucket[ACTION_BUCKETS.COMMITTED_WITHOUT_ACK]).toBe(1);
+    expect(res.counts.total).toBe(5);
+});
+
+test('views filter server-side; mine/unassigned/handoff/recovery agree with the items they count', async () => {
+    E.Conversation.findAll.mockResolvedValue([
+        conv({ id: 'c1', hitl: true, assignee_id: null }),
+        conv({ id: 'c2', hitl: true, assignee_id: 'staff-9' }),
+    ]);
+    E.InboxDeliveryOutbox.findAll.mockResolvedValue([
+        { id: 'ob-1', conversation_id: 'c1', status: 'NEEDS_RECONCILIATION', updated_at: new Date(), metadata: {} },
+    ]);
+
+    const mine = await getInboxActions('shop-1', { view: 'mine', actorUserId: 'staff-9' });
+    expect(mine.items.map((i) => i.item_key)).toEqual([`hitl:c2`]);
+    expect(mine.counts.views.mine).toBe(1);
+
+    const unassigned = await getInboxActions('shop-1', { view: 'unassigned' });
+    expect(unassigned.items.map((i) => i.item_key)).toEqual(['hitl:c1']);
+
+    const handoff = await getInboxActions('shop-1', { view: 'handoff' });
+    expect(handoff.items).toHaveLength(2);
+
+    const recovery = await getInboxActions('shop-1', { view: 'recovery' });
+    expect(recovery.items.every((i) => i.bucket === ACTION_BUCKETS.COMMITTED_WITHOUT_ACK)).toBe(true);
+
+    const attention = await getInboxActions('shop-1', { view: 'attention' });
+    expect(attention.items).toHaveLength(3);
+});
+
+test('unknown views fall back to attention rather than silently returning nothing', async () => {
+    const res = await getInboxActions('shop-1', { view: 'bogus' });
+    expect(res.counts.views).toHaveProperty('attention');
+    expect(res.items).toHaveLength(0); // base fixture: no open work
+});

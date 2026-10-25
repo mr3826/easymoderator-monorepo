@@ -26,8 +26,8 @@ const entities = () => require('../entities');
 const CONVERSATION_SCAN_CAP = 200;
 const QUEUE_CAP = 50;
 
-async function getInboxActions(shopId, { now = Date.now() } = {}) {
-    if (!shopId) return { items: [], generated_at: new Date(now).toISOString(), partial: true };
+async function getInboxActions(shopId, { now = Date.now(), view = 'attention', actorUserId = null } = {}) {
+    if (!shopId) return { items: [], generated_at: new Date(now).toISOString(), partial: true, counts: { by_bucket: {}, views: {}, total: 0, returned: 0 } };
     const E = entities();
     let partial = false;
     const items = [];
@@ -238,8 +238,29 @@ async function getInboxActions(shopId, { now = Date.now() } = {}) {
     } catch (_) { /* P+05 not installed yet or failing: bucket absent */ }
 
     items.sort(compareItems);
+
+    // MW-V1 Phase 6: built-in work views over the SAME recomputed read model
+    // (no saved-view engine, no task store). Counts come from the server-side
+    // full collection — never from the loaded page. 'mine' compares the
+    // authoritative owner id; unknown views fall back to 'attention'.
+    const VIEWS = {
+        attention: () => true,
+        mine: (i) => Boolean(i.owner) && String(i.owner) === String(actorUserId),
+        unassigned: (i) => i.bucket === ACTION_BUCKETS.NEEDS_HUMAN && !i.owner,
+        handoff: (i) => i.bucket === ACTION_BUCKETS.NEEDS_HUMAN,
+        recovery: (i) => i.bucket === ACTION_BUCKETS.COMMITTED_WITHOUT_ACK,
+        opportunities: (i) => i.bucket === ACTION_BUCKETS.PURCHASE_OPPORTUNITY,
+        review: (i) => i.bucket === ACTION_BUCKETS.DRAFT_RECOVERY || i.bucket === ACTION_BUCKETS.KNOWLEDGE_GAP,
+    };
+    const viewFn = Object.prototype.hasOwnProperty.call(VIEWS, view) ? VIEWS[view] : VIEWS.attention;
+    const byBucket = {};
+    for (const item of items) byBucket[item.bucket] = (byBucket[item.bucket] || 0) + 1;
+    const viewCounts = {};
+    for (const [name, fn] of Object.entries(VIEWS)) viewCounts[name] = items.filter(fn).length;
+    const selected = items.filter(viewFn);
+
     return {
-        items: items.slice(0, QUEUE_CAP).map((item) => ({
+        items: selected.slice(0, QUEUE_CAP).map((item) => ({
             ...item,
             since: item.since ? new Date(item.since).toISOString() : null,
             grounded_deadline: item.grounded_deadline
@@ -247,6 +268,12 @@ async function getInboxActions(shopId, { now = Date.now() } = {}) {
         })),
         generated_at: new Date(now).toISOString(),
         partial,
+        counts: {
+            by_bucket: byBucket,
+            views: viewCounts,
+            total: items.length,
+            returned: Math.min(selected.length, QUEUE_CAP),
+        },
     };
 }
 

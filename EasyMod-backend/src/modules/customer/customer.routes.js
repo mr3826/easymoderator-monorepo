@@ -85,6 +85,18 @@ router.get(
     customerController.getCustomers
 );
 
+// ─── MW-V1 CRM Lite: tag vocabulary (literal paths BEFORE '/:id') ────────────
+const customerTagsController = require('./customer-tags.controller');
+const customerTagsValidator = require('./customer-tags.validator');
+
+router.get('/tags', customerTagsController.listVocabulary);
+router.post('/tags', validate({ body: customerTagsValidator.tagName }), customerTagsController.createTag);
+router.patch('/tags/:tagId', validate({
+    params: customerTagsValidator.tagParams,
+    body: customerTagsValidator.tagName,
+}), customerTagsController.renameTag);
+router.delete('/tags/:tagId', validate({ params: customerTagsValidator.tagParams }), customerTagsController.deleteTag);
+
 router.get(
     '/:id',
     validate({ params: customerValidator.getCustomerById }),
@@ -172,6 +184,19 @@ router.delete(
     '/:id/notes/:noteId',
     validate({ params: customerNotesValidator.byNoteId }),
     customerNotesController.deleteNote
+);
+
+// MW-V1 CRM Lite: per-customer tag assignments (replace-set).
+router.get(
+    '/:id/tags',
+    validate({ params: customerNotesValidator.byId }),
+    customerTagsController.listCustomerTags
+);
+
+router.put(
+    '/:id/tags',
+    validate({ params: customerNotesValidator.byId, body: customerTagsValidator.assignment }),
+    customerTagsController.setCustomerTags
 );
 
 module.exports = router;

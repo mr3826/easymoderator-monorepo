@@ -28,7 +28,12 @@ router.get('/actions', async (req, res, next) => {
                 error: { code: 'FEATURE_DISABLED', message: 'Action queue is not enabled for this shop' },
             });
         }
-        const data = await actions.getInboxActions(shopId);
+        const data = await actions.getInboxActions(shopId, {
+            // MW-V1: server-backed built-in views; anything unknown falls back
+            // to 'attention' inside the service (no arbitrary filters).
+            view: typeof req.query.view === 'string' ? req.query.view : 'attention',
+            actorUserId: req.user?.userId || null,
+        });
         return res.json({ success: true, data });
     } catch (error) {
         return next(error);
