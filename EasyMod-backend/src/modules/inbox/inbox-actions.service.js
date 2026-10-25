@@ -142,9 +142,7 @@ async function getInboxActions(shopId, { now = Date.now() } = {}) {
         items.push({
             bucket: ACTION_BUCKETS.CUSTOMER_BLOCKED,
             item_key: `session:${s.id}`,
-            reason_code: suspended
-                ? ACTION_REASONS.CHECKOUT_WAITING_CUSTOMER
-                : ACTION_REASONS.CHECKOUT_WAITING_CUSTOMER,
+            reason_code: ACTION_REASONS.CHECKOUT_WAITING_CUSTOMER,
             source: { type: 'order_session', id: s.id },
             conversation_id: s.conversation_id || null,
             customer_id: s.customer_id || null,

@@ -184,6 +184,13 @@ async function resolveInteraction({
             return reject('INTERACTION_STALE_CONTEXT', 'bound session no longer live');
         }
         if (asString(session.id) !== asString(row.bound_entity_id)) return reject('INTERACTION_SCOPE_SESSION', 'session mismatch');
+        // A paused (SUSPENDED) session must not silently accept a CONFIRM:
+        // the step machine only executes ACTIVE sessions, so a confirm tap on
+        // a paused cart is honestly rejected as stale context (never a
+        // confusing rollback) — the resume proposal is the correct path.
+        if (session.status !== 'ACTIVE' && optionId === 'checkout.confirm') {
+            return reject('INTERACTION_STALE_CONTEXT', 'checkout is paused — resume first');
+        }
         if (row.bound_context_version && contextVersionFor(session) !== row.bound_context_version) {
             return reject('INTERACTION_STALE_CONTEXT', 'order state changed — fresh confirmation required');
         }

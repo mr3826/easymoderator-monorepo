@@ -656,7 +656,8 @@ class ConversationService {
 
             const suggestionCounts = new Map();
             const messagesByConversation = new Map();
-            const conversationIds = conversations.rows.map((row) => row.id);            if (conversationIds.length > 0 && typeof Message.findAll === 'function') {
+            const conversationIds = conversations.rows.map((row) => row.id);
+            if (conversationIds.length > 0 && typeof Message.findAll === 'function') {
                 const candidates = await Message.findAll({
                     where: {
                         conversation_id: { [Op.in]: conversationIds },
@@ -1424,7 +1425,9 @@ class ConversationService {
             const privileged = actor && ['owner', 'admin'].includes(String(actor.role || '').toLowerCase());
             const sameOwner = actor && conversation.assignee_id
                 && String(conversation.assignee_id) === String(actor.userId);
-            const forced = opts.force === true || actor?.force === true;
+            // A client-supplied force is only meaningful for privileged members;
+            // staff must never self-escalate over another owner's handoff (FlowGuard).
+            const forced = opts.force === true && privileged;
             if (actor && conversation.assignee_id && !sameOwner && !privileged && !forced) {
                 if (updates.hitl === true && conversation.hitl === true) {
                     const error = new Error('This conversation is already assigned to another team member');

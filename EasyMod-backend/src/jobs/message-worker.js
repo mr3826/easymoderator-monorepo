@@ -2368,6 +2368,18 @@ async function processMessageJob(job) {
         let payloadToResolve = tappedPayload && String(tappedPayload).startsWith('p1:')
             ? String(tappedPayload)
             : null;
+        // Rollback contract (docs 03 §12): flag OFF must disable ALL interaction
+        // execution — an in-flight SENT proposal must not act after a kill switch.
+        if (payloadToResolve) {
+            let choicesEnabled = false;
+            try {
+                const pilotFeatures = require('../modules/pilot-features/pilot-features.service');
+                choicesEnabled = await pilotFeatures.isInteractionChoicesEnabled(shopId);
+            } catch (_) { choicesEnabled = false; }
+            if (!choicesEnabled) {
+                return { skipped: true, reason: 'interactions_disabled', conversationId };
+            }
+        }
         if (!payloadToResolve && /^[1-9]$/.test(String(effMessage || '').trim())) {
             try {
                 const pilotFeatures = require('../modules/pilot-features/pilot-features.service');

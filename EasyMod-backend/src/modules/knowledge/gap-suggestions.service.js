@@ -65,11 +65,12 @@ async function groupExistingGaps(shopId, now) {
         const norm = normalizeQuestion(r.question);
         if (!norm) continue;
         const g = groups.get(norm) || {
-            norm, count: 0, maxId: 0,
+            norm, count: 0, maxId: 0, ids: [],
             firstSeen: r.created_at, lastSeen: r.created_at,
             display: String(r.question || '').trim().slice(0, 280),
         };
         g.count += 1;
+        g.ids.push(Number(r.id) || 0);
         g.maxId = Math.max(g.maxId, Number(r.id) || 0);
         if (r.created_at < g.firstSeen) g.firstSeen = r.created_at;
         if (r.created_at > g.lastSeen) g.lastSeen = r.created_at;
@@ -106,17 +107,17 @@ async function computeForShop(shopId, { now = Date.now() } = {}) {
             }
             continue;
         }
-        // Was it dismissed? Re-open only with NEW evidence past the cursor.
+        // Was it dismissed? Re-open only when THIS question gathered at least
+        // THRESHOLD genuinely new gap rows past the dismissal cursor — never
+        // because unrelated questions were asked elsewhere in the shop.
         const dismissed = await Model.findOne({
             where: { shop_id: shopId, norm_question: norm, status: 'DISMISSED' },
             order: [['dismissed_at', 'DESC']],
         });
         if (dismissed) {
-            const KnowledgeGap = gapModel();
-            const newCount = await KnowledgeGap.count({
-                where: { shop_id: shopId, id: { [Op.gt]: Number(dismissed.evidence_cursor) || 0 } },
-            });
-            if (newCount < THRESHOLD) continue;
+            const cursor = Number(dismissed.evidence_cursor) || 0;
+            const newForThisQuestion = g.ids.filter((id) => id > cursor).length;
+            if (newForThisQuestion < THRESHOLD) continue;
             await dismissed.update({
                 status: 'OPEN',
                 evidence_count: g.count,

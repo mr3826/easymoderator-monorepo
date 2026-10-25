@@ -96,14 +96,29 @@ describe('computeForShop grouping', () => {
             if (where.status === 'DISMISSED') return dismissed;
             return null;
         });
-        mockCount.mockResolvedValue(0); // nothing newer than cursor 5
 
         const res = await gaps.computeForShop('shop-1');
         expect(res.reopened).toBe(0);
         expect(dismissed.update).not.toHaveBeenCalled();
     });
 
-    test('dismissed group re-opens only with >= threshold NEW unanswered questions', async () => {
+    test('unrelated NEW questions elsewhere must NOT re-open a dismissed suggestion', async () => {
+        KnowledgeGap.findAll.mockResolvedValue(gapRows([
+            { id: 3, q: 'x' }, { id: 4, q: 'x' }, { id: 5, q: 'x' }, { id: 6, q: 'x' }, // 1 new past cursor 5
+            { id: 7, q: 'y' }, { id: 8, q: 'y' }, { id: 9, q: 'y' },                    // new OTHER question
+        ]));
+        const dismissed = { status: 'DISMISSED', norm_question: 'x', evidence_cursor: '5', update: jest.fn() };
+        mockFindOne.mockImplementation(async ({ where }) => (
+            where.status === 'DISMISSED' && where.norm_question === 'x' ? dismissed : null
+        ));
+
+        const res = await gaps.computeForShop('shop-1');
+        expect(res.reopened).toBe(0);
+        expect(dismissed.update).not.toHaveBeenCalled();
+        expect(res.created).toBe(1); // 'y' is a legitimately new recurring question
+    });
+
+    test('dismissed group re-opens only with >= threshold NEW rows FOR THE SAME QUESTION', async () => {
         KnowledgeGap.findAll.mockResolvedValue(gapRows([
             { id: 9, q: 'x' }, { id: 10, q: 'x' }, { id: 11, q: 'x' },
         ]));
@@ -112,7 +127,6 @@ describe('computeForShop grouping', () => {
             update: jest.fn().mockResolvedValue(undefined),
         };
         mockFindOne.mockImplementation(async ({ where }) => (where.status === 'DISMISSED' ? dismissed : null));
-        mockCount.mockResolvedValue(3);
 
         const res = await gaps.computeForShop('shop-1');
         expect(res.reopened).toBe(1);

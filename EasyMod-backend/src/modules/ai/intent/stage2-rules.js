@@ -187,7 +187,8 @@ const isQuestionShaped = (message) => {
     return QUESTION_BANGLA.some((marker) => text.includes(marker));
 };
 
-const isNegatedCancel = (message) => {    const text = normalizeForIntent(String(message || '').toLowerCase().trim());
+const isNegatedCancel = (message) => {
+    const text = normalizeForIntent(String(message || '').toLowerCase().trim());
     return /\b(?:don't|dont|do\s+not|no)\b.*\bcancel\b.*\b(?:order|session|checkout)?\b/i.test(text)
         || /\bcancel\b.*\b(?:no|not|na|না)\b/i.test(text)
         || /বাতিল.*(?:না|নাই|নেই)/i.test(text);

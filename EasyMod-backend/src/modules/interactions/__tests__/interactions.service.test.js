@@ -209,6 +209,23 @@ describe('resolveInteraction — authorization and single execution', () => {
         );
     });
 
+    test('confirm on a SUSPENDED (paused) session is rejected as stale, never executed', async () => {
+        Model.findByPk.mockResolvedValue(liveRow());
+        OrderSessionService.getSessionForInteraction.mockResolvedValue({
+            id: SID, shop_id: SHOP, status: 'SUSPENDED', current_step: 'ORDER_SUMMARY',
+            step_data: { confirmed_summary_hash: 'abc123' },
+        });
+        const res = await interactions.resolveInteraction({
+            payload: contract.buildPayload(IID, 'checkout.confirm'), ...scope, mutationsAllowed: true,
+        });
+        expect(res).toMatchObject({ resolved: false, code: 'INTERACTION_STALE_CONTEXT' });
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+        expect(Model.update).not.toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'EXECUTING' }),
+            expect.anything(),
+        );
+    });
+
     test('support.human handoff uses the authoritative escalateToHuman path', async () => {
         Model.findByPk.mockResolvedValue(liveRow({
             kind: 'CLARIFY_NEEDS', bound_entity_type: null, bound_entity_id: null, bound_context_version: null,

@@ -248,6 +248,14 @@ describe('handoff ownership enforcement (P+03)', () => {
         }));
     });
 
+    it('a staff force flag is IGNORED — force is privileged-only', async () => {
+        Conversation.findOne = jest.fn().mockResolvedValue(assignedOpen());
+        await expect(conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: true },
+            { actor: { userId: 'staff-other', role: 'staff' }, force: true },
+        )).rejects.toMatchObject({ code: 'HUMAN_TAKEOVER_CONFLICT', statusCode: 409 });
+    });
+
     it('a fresh (unassigned) handoff takeover simply claims it', async () => {
         const row = assignedOpen({ hitl: false, assignee_id: null });
         Conversation.findOne = jest.fn().mockResolvedValue(row);

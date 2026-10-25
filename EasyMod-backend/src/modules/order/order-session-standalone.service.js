@@ -1373,7 +1373,8 @@ class OrderSessionService {
     /**
      * Get session state
      */
-    static async getSessionState(sessionId, shopId) {        const session = await OrderSession.findOne({
+    static async getSessionState(sessionId, shopId) {
+        const session = await OrderSession.findOne({
             where: { id: sessionId, shop_id: shopId }
         });
 
@@ -1448,7 +1449,13 @@ class OrderSessionService {
             suspended_reason: reason,
             suspended_at: new Date().toISOString(),
         };
-        await session.update({ status: 'SUSPENDED', step_data, last_activity_at: new Date() });
+        // Conditional re-check inside the UPDATE closes the read->write race
+        // with a concurrent cancel/resume (same fence as the interaction claim).
+        const [updated] = await OrderSession.update(
+            { status: 'SUSPENDED', step_data, last_activity_at: new Date() },
+            { where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' } },
+        );
+        if (!updated) return { suspended: false };
         return { suspended: true, current_step: session.current_step, conversation_id: conversationId };
     }
 
@@ -1465,7 +1472,11 @@ class OrderSessionService {
         delete step_data.suspended_reason;
         delete step_data.suspended_at;
         delete step_data.awaiting_resume;
-        await session.update({ status: 'ACTIVE', step_data, last_activity_at: new Date() });
+        const [updated] = await OrderSession.update(
+            { status: 'ACTIVE', step_data, last_activity_at: new Date() },
+            { where: { id: sessionId, shop_id: shopId, status: 'SUSPENDED' } },
+        );
+        if (!updated) return { resumed: false };
         return {
             resumed: true,
             current_step: session.current_step,

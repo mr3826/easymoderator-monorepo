@@ -260,6 +260,17 @@ test('MANUAL business mode skips before any LLM or outbound policy work', async 
     expect(mockSendMessage).not.toHaveBeenCalled();
 });
 
+test('P+02: a tap with the interaction_choices flag OFF is a pure skip (kill switch)', async () => {
+    mockIsInteractionChoicesEnabled.mockResolvedValue(false);
+    mockMessageFindByPk.mockResolvedValue({ metadata: { quick_reply: { payload: 'p1:44444444-4444-4444-4444-444444444444:checkout.confirm' } } });
+
+    const result = await processMessageJob(makeJob({ message: '' }));
+
+    expect(result).toEqual(expect.objectContaining({ skipped: true, reason: 'interactions_disabled' }));
+    expect(mockResolveInteraction).not.toHaveBeenCalled();
+    expect(mockStoreAIResponse).not.toHaveBeenCalled();
+});
+
 test('P+04: question-deferred turn appends the deterministic resume hint when storing the answer', async () => {
     mockHandleOrderFlow.mockResolvedValue({
         handled: false,
