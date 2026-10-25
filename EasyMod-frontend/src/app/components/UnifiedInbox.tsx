@@ -932,8 +932,18 @@ export default function UnifiedInbox() {
           ? t("inbox.aiReEnabled")
           : t("inbox.mode.manual")
       );
-    } catch {
-      toast.error(t("inbox.errors.updateMode"));
+    } catch (error) {
+      // P+03: surface the server's authoritative conflict reason (e.g. takeover
+      // 409 "already assigned to another team member"); only fall back to the
+      // generic label when the API gave no message. Never fabricate success.
+      const serverMessage = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message
+        || (typeof (error as Error)?.message === "string"
+          && (error as Error).message
+          && !/request failed|status code/i.test((error as Error).message)
+          ? (error as Error).message
+          : "");
+      toast.error(serverMessage || t("inbox.errors.updateMode"));
     } finally {
       setTogglingHITL(false);
     }

@@ -141,7 +141,11 @@ export function ActionQueuePanel({ onSseRefresh }: ActionQueuePanelProps) {
         </button>
       </div>
 
-      <div className="max-h-56 overflow-y-auto px-4 md:px-8 pb-3">
+      <div
+        className="max-h-56 overflow-y-auto px-4 md:px-8 pb-3"
+        tabIndex={0}
+        aria-label={t("inbox.actions.title", { total: items.length })}
+      >
         {groups.map(({ bucket, bucketItems }) => (
           <div key={bucket} className="mt-1.5 first:mt-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
