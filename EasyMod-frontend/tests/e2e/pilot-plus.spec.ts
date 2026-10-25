@@ -97,6 +97,7 @@ function setupRoutes(page: any, opts: { hitlConflict?: boolean } = {}) {
         const url = new URL(route.request().url());
         const path = url.pathname;
         const method = route.request().method();
+        if (process.env.PW_DEBUG_MOCK) console.log('[MOCK]', method, path);
         const json = (status: number, body: unknown) =>
             route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -184,9 +185,15 @@ function setupRoutes(page: any, opts: { hitlConflict?: boolean } = {}) {
 async function loginAndGo(page: any, path = '/inbox') {
     await page.addInitScript(() => { try { localStorage.setItem('easymod_lang', 'en'); } catch { /* ignore */ } });
     await page.goto('/signin');
-    await page.fill('input[type="email"]', 'owner@shop.bd');
-    await page.fill('input[type="password"]', 'password123');
-    await page.click('button[type="submit"]');
+    // Role-based locators + waits: WebKit can outrun raw CSS fills before
+    // hydration resets controlled inputs (observed: empty email on submit).
+    const email = page.getByRole('textbox', { name: /email/i });
+    await email.waitFor({ state: 'visible' });
+    await email.pressSequentially('owner@shop.bd', { delay: 5 });
+    const password = page.getByRole('textbox', { name: /password/i });
+    await password.waitFor({ state: 'visible' });
+    await password.pressSequentially('password123', { delay: 5 });
+    await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL(/dashboard|inbox/);
     await page.goto(path);
     await page.waitForLoadState('networkidle');
