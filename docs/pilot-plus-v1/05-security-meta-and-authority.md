@@ -1,5 +1,9 @@
 # Pilot+ V1 — 05. Security, Meta Policy and Authority (threat model; security-reviewer + The Fool applied)
 
+> P0-3 mechanism note: final implementation enforces enabled-payment truth at WRITE time;
+> the AI hot path performs no PaymentConfig query (see 06 AMENDMENT LOG A1). All T-table
+> guarantees hold under that mechanism.
+
 Repository gates referenced: CONTRIBUTING-AI.md §1 (contract/authorization/evidence+tenant/verification);
 meta-safe-rules (corrected re: tags per Phase-3 commit 5); api-contract-rules shop-scoping;
 `.gitleaks.toml` + CI Security Scan; boundary security test precedent
