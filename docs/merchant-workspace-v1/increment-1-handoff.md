@@ -3,7 +3,8 @@
 **Date:** 2026-10-25
 **Branch:** `feat/merchant-workspace-v1-increment1` (worktree `D:\easymod\_wt-merchant-workspace-v1-increment1`)
 **Initial SHA:** `9f562aaf1559171c97902838a9bc5408283e2881` (Pilot+ V1 verified candidate — untouched, its worktree remains intact)
-**Final SHA:** see `git log --oneline 9f562aaf..HEAD` tip (docs commit below)
+**Final SHA:** `3c8d28a7e77000647bf7965c2e5f0665c26640a3` (review-fix commit; a
+trailing docs-only commit carries this final handoff update)
 **Scope authorization:** Gate-0 reconciliation items FE-01 (P0), FE-08 (P1), FE-03 (P1) from `D:\easymod\EasyModerator_Frontend_Backend_CRM_Gap_Audit_2026-10-25.md`.
 
 ## Commits
@@ -14,6 +15,7 @@
 | `3425a6d6` | FE-01 (P0) | Claim-free quick-reply fallbacks in the inbox composer |
 | `cbc3407a` | FE-08 (P1) | Verified `customer_id` order→conversation link + canonical deep link |
 | `01a622d0` | E2E | Playwright journeys ×3 + screenshots (chromium AND firefox 10/10) |
+| `3c8d28a7` | review | Close independent-review findings 1-3 (encode, signal-plumbing tests, linked-empty copy) |
 
 Changed files (all in `EasyMod-frontend/`, plus `docs/` evidence; **ZERO backend files** —
 `git diff --name-only 9f562aaf..HEAD -- EasyMod-backend` is empty):
@@ -68,7 +70,8 @@ Four minor findings; ALL ADDRESSED the same session (see fix commit):
 2. domain-level unit tests added for the new `signal` plumbing (present AND omitted-when-absent axios config);
 3. linked-but-empty conversation now reads "The linked conversation has no recent messages." instead of contradicting itself with "No chat snippet found." while also offering the open button (component test added);
 4. docs/memory committed alongside the increment (this file).
-Post-fix re-gates: tsc 0, vitest **647/647**, Playwright **10/10**.
+Post-fix re-gates: tsc 0, vitest **647/647**, Playwright **10/10** chromium AND
+**10/10 firefox** (both re-run against the final tree `3c8d28a7`, workers=1).
 
 ## Security / tenant-scope notes (FlowGuard pass)
 - FE-01 surface strictly SHRANK: static neutral strings into a textarea (React-escaped, plain-text send path); removed attack-of-misleading-content, added none.
@@ -77,7 +80,7 @@ Post-fix re-gates: tsc 0, vitest **647/647**, Playwright **10/10**.
 - i18n: removed keys have zero remaining references; no key used from untrusted data.
 
 ## Known limitations / not done (honest ledger)
-- Live full-stack founder preview could not be restarted this session: the machine's Docker Desktop Linux engine failed to come up after an OS reboot (`dockerDesktopLinuxEngine` pipe never created; WSL distros stopped). The increment is FE-only and its Playwright gate uses the repo-conventional route-mocked stack; the real-stack lab (identical backend bytes, seeded DB volume survives) will serve the new UI as soon as Docker Desktop is healthy: `powershell -File scripts\pilotplus-lab.ps1`.
+- Live full-stack founder preview could not be restarted this session: the machine's Docker Desktop Linux engine failed to come up after an OS reboot (`dockerDesktopLinuxEngine` pipe never created; WSL distros stopped). **Retried at 17:05Z — still down** (no app-side fault: the increment is FE-only and its Playwright gate uses the repo-conventional route-mocked stack; the real-stack lab (identical backend bytes, seeded DB volume survives) will serve the new UI as soon as Docker Desktop is healthy: `powershell -File scripts\pilotplus-lab.ps1`).
 - WebKit remains a pre-existing harness limitation (unchanged from Pilot+ gates).
 - Playwright cold-start flake observed on the brand-new worktree's first parallel batch (vite transform timeout); sequential runs 10/10 twice. CI's `retries: 2` already covers this class.
 - Template variables (`{{...}}` capability gap FE-10) and remaining CRM rows: NOT in this increment's authorized scope.
