@@ -2,18 +2,18 @@
   "_generatedBy": "EasyMod-backend/src/modules/auth/native/__tests__/native-auth.integration.test.js (re-run this suite to regenerate; do not hand-edit)",
   "_purpose": "ADR M-003 drift prevention. EasyMod-mobile/src/auth/native-auth-contract.test.ts loads this file and parses it with the PRODUCTION zod schemas from auth-client.ts. If either side's response shape drifts, one of the two suites fails immediately.",
   "_redaction": "accessToken/refreshToken/tempToken below are fixed, low-entropy placeholder strings, never the real signed JWTs this test run actually produced — see withPlaceholderTokens above for why. Every other field (shopId, user.*, sid, success, message) is the real value this Express app returned against a disposable, throwaway Postgres/Redis stack created for this test run.",
-  "capturedAt": "2026-10-25T23:54:46.709Z",
+  "capturedAt": "2026-10-26T03:42:24.270Z",
   "signin": {
     "success": true,
     "message": "Login successful",
     "data": {
       "accessToken": "test-fixture-signin-access-token-do-not-use",
       "refreshToken": "test-fixture-signin-refresh-token-do-not-use",
-      "sid": "78c4aaf2-d97f-4a2d-83c3-9dafe781cc39",
-      "shopId": "696e0d9a-d41a-443e-b887-96646afb1150",
+      "sid": "ff21ae06-f49d-401f-82f4-a40aecedc0d0",
+      "shopId": "092c0e0a-f221-4353-ad61-e2d800892126",
       "user": {
-        "id": "06266569-efc8-435c-b5e1-570b20164cee",
-        "email": "native-fixture-plain-c29177a4-2c0c-45c5-976b-aec089b46c62@example.test",
+        "id": "94b52b18-b4df-4722-ba75-6539caf2e592",
+        "email": "native-fixture-plain-f49d8ec8-f4a2-498c-804d-cee464e928c1@example.test",
         "full_name": "Native Auth fixture-plain",
         "phone": null,
         "profile_picture": null
@@ -26,10 +26,10 @@
     "data": {
       "accessToken": "test-fixture-refresh-access-token-do-not-use",
       "refreshToken": "test-fixture-refresh-refresh-token-do-not-use",
-      "shopId": "696e0d9a-d41a-443e-b887-96646afb1150",
+      "shopId": "092c0e0a-f221-4353-ad61-e2d800892126",
       "user": {
-        "id": "06266569-efc8-435c-b5e1-570b20164cee",
-        "email": "native-fixture-plain-c29177a4-2c0c-45c5-976b-aec089b46c62@example.test",
+        "id": "94b52b18-b4df-4722-ba75-6539caf2e592",
+        "email": "native-fixture-plain-f49d8ec8-f4a2-498c-804d-cee464e928c1@example.test",
         "full_name": "Native Auth fixture-plain",
         "phone": null,
         "profile_picture": null
@@ -50,11 +50,11 @@
     "data": {
       "accessToken": "test-fixture-2fa-verify-access-token-do-not-use",
       "refreshToken": "test-fixture-2fa-verify-refresh-token-do-not-use",
-      "sid": "80c401a2-dd12-4be7-8b76-965ce564e9e5",
-      "shopId": "69e1068b-c42a-4ce6-88ef-fbbd81263e10",
+      "sid": "c14dc579-ce0a-4316-9d4f-d3d111daa8a9",
+      "shopId": "9c33656f-a504-4677-9ae6-e3b91b648f70",
       "user": {
-        "id": "1c14f090-474b-4bbd-89f6-4cdf4000292d",
-        "email": "native-fixture-2fa-ef37d222-76be-4647-a884-6be77f35dfbd@example.test",
+        "id": "e7b41c28-ec53-4d97-9877-cb751055a3e5",
+        "email": "native-fixture-2fa-f7449e83-0264-4fc1-acbe-42dc30442d75@example.test",
         "full_name": "Native Auth fixture-2fa",
         "phone": null,
         "profile_picture": null

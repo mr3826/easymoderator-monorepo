@@ -1545,14 +1545,6 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         return synthesizeCourierResult(order, options.provider || order.delivery_provider, options.dispatchRecord);
     }
 
-    // A Draft is still under merchant review. Do not let manual, automatic, or
-    // AI booking paths create a courier label until the order is confirmed.
-    // Keep this after the already-booked return so idempotent reconciliation
-    // can still report a parcel that was actually booked earlier.
-    if (String(order.order_status || '').trim().toLowerCase() === 'draft') {
-        throw new AppError('Draft orders must be confirmed before courier booking', 409, 'DRAFT_ORDER_NOT_BOOKABLE');
-    }
-
     const provider = options.provider && options.provider !== 'active' ? String(options.provider) : null;
     const resolution = options.resolvedProvider || await resolveCourierProvider(shopId, {
         provider,
@@ -1613,7 +1605,17 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
     if (!confidenceGate.allowed) {
         const committedDispatch = await findCommittedDispatch(order, shopId);
         if (!committedDispatch) return markConfidenceHold(order, shopId, confidenceGate);
-        require('../pilot-features/pilot-metrics').increment('order_confidence.committed_reconcile_allowed');
+        require('../pilot-features/pilot-metrics').increment('order_confidence.committed_reconcile_allowed', shopId);
+    }
+
+    // V6 contract port (IC-V1): a Draft is under merchant review — no manual,
+    // automatic, or AI booking may create a courier label before confirmation.
+    // Ordered AFTER the already-booked idempotent return and AFTER the
+    // Order-Confidence gate so a confidence-held draft keeps answering with its
+    // richer ORDER_CONFIDENCE_HOLD + reasons contract; ordinary drafts of
+    // confidence-off shops land here.
+    if (String(order.order_status || '').trim().toLowerCase() === 'draft') {
+        throw new AppError('Draft orders must be confirmed before courier booking', 409, 'DRAFT_ORDER_NOT_BOOKABLE');
     }
 
     let dispatchRecord = null;

@@ -145,12 +145,17 @@ describe('bookForOrder × Order Confidence gate', () => {
         await expect(orderService.bookForOrder(draft, { shopId: 'shop-1' }))
             .rejects.toMatchObject({ status: 409, code: 'DRAFT_ORDER_NOT_BOOKABLE' });
 
-        expect(deliveryService.resolveAiDefaultProvider).not.toHaveBeenCalled();
-        expect(orderConfidence.checkBookingGate).not.toHaveBeenCalled();
+        // IC-V1 reconciliation: the gate runs AFTER Order-Confidence (not before,
+        // as in v6's original branch) so a confidence-HELD draft keeps answering
+        // with the richer ORDER_CONFIDENCE_HOLD contract (order-confidence
+        // integration suite pins that). The merchant-visible guarantee is
+        // unchanged: a draft can never book a courier.
+        expect(orderConfidence.checkBookingGate).toHaveBeenCalledWith(
+            draft, 'shop-1', { trigger: 'AUTO' },
+        );
         expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
         expect(draft.order_status).toBe('draft');
-        expect(draft.update).not.toHaveBeenCalled();
     });
 
     test('an already-booked order returns its parcel without consulting the gate', async () => {
