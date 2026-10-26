@@ -97,6 +97,7 @@ describe('P+01 inbox lead intelligence — same truth everywhere', () => {
 describe('P+02 interaction kernel — real database semantics', () => {
     test('tap resolves exactly once under concurrent double delivery', async () => {
         const shop = await fx.makeShop();
+        await enableFlag(shop.id, 'interaction_choices', true);
         const customer = await fx.makeCustomer(shop);
         const conversation = await fx.makeConversation(shop, customer);
         const proposal = await interactions.createProposal({
@@ -155,6 +156,7 @@ describe('P+02 interaction kernel — real database semantics', () => {
 
     test('confirm choice binds real session state: right hash executes the machine, repriced hash refuses', async () => {
         const shop = await fx.makeShop();
+        await enableFlag(shop.id, 'interaction_choices', true);
         const customer = await fx.makeCustomer(shop);
         const conversation = await fx.makeConversation(shop, customer);
         const session = await OrderSession.create({

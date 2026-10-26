@@ -637,6 +637,23 @@ test('P+02: a bare-number reply resolves only via the numbered equivalence path'
     expect(mockHandleOrderFlow).not.toHaveBeenCalled();
 });
 
+test('P+02: a resolver-observed flag revocation suppresses the in-flight reply', async () => {
+    mockIsInteractionChoicesEnabled.mockResolvedValueOnce(true);
+    mockFindNumberedLivePayload.mockResolvedValue(
+        'p1:55555555-5555-5555-5555-555555555555:checkout.resume',
+    );
+    mockResolveInteraction.mockResolvedValue({ resolved: false, code: 'INTERACTION_CHOICES_DISABLED' });
+
+    const result = await processMessageJob(makeJob({ message: '2' }));
+
+    expect(mockIsInteractionChoicesEnabled).toHaveBeenCalledTimes(1);
+    expect(mockIsInteractionChoicesEnabled).toHaveBeenCalledWith('shop-1');
+    expect(mockResolveInteraction).toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ skipped: true, reason: 'interactions_disabled' }));
+    expect(mockStoreAIResponse).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+});
+
 test('P+02: forged/unknown payload tap gets an honest fallback, not a silent drop', async () => {
     mockMessageFindByPk.mockResolvedValue({ metadata: { quick_reply: { payload: TAP } } });
     mockResolveInteraction.mockResolvedValue({ resolved: false, code: 'INTERACTION_UNKNOWN' });

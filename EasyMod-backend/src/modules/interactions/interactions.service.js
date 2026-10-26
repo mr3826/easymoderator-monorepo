@@ -10,7 +10,7 @@
  *   - resolve re-loads and re-checks: shop, customer channel, meta channel,
  *     conversation, option membership, expiry, live status, bound business
  *     context version — any mismatch rejects with no side effect;
- *   - single execution via conditional status CAS (GENERATED|SENT -> EXECUTING),
+ *   - single execution via conditional status CAS (SENT -> EXECUTING),
  *     the same fence style as draft approve; expiry self-heals any row stranded
  *     in EXECUTING by a crash (resolve rejects expired rows),
  *   - every operation re-enters the EXISTING typed-equivalent code path
@@ -177,6 +177,8 @@ async function resolveInteraction({
         await Model.update({ status: 'EXPIRED', updated_at: nowIso() }, { where: { id: row.id, status: contract.LIVE_STATUSES }}).catch(() => {});
         return reject('INTERACTION_EXPIRED', 'choice expired');
     }
+    if (row.status === 'GENERATED') return reject('INTERACTION_NOT_SENT', 'choice has not been delivered');
+    if (row.status !== 'SENT') return reject('INTERACTION_ALREADY_HANDLED', 'already handled');
 
     // Bound business state must still be the exact thing the customer saw.
     if (row.bound_entity_type === 'order_session') {
@@ -198,14 +200,33 @@ async function resolveInteraction({
         }
     }
 
-    // Exactly-once claim: live -> EXECUTING.
+    // Exactly-once claim: delivered SENT -> EXECUTING.
     const [claimed] = await Model.update(
         { status: 'EXECUTING', resolution: { option_id: optionId, claimed_at: nowIso() }, updated_at: nowIso() },
-        { where: { id: row.id, status: ['GENERATED', 'SENT'] }, returning: false },
+        { where: { id: row.id, status: 'SENT' }, returning: false },
     );
     if (!claimed) {
         // Replayed tap (double webhook / second click): no-op, no side effect.
         return reject('INTERACTION_ALREADY_HANDLED', 'already handled');
+    }
+
+    // The worker checks this flag before looking up a choice, but that result
+    // can become stale while the proposal is being loaded and claimed. Re-read
+    // it at the authoritative dispatch boundary so a concurrent rollback does
+    // not execute an already in-flight choice.
+    let choicesEnabled = false;
+    try {
+        const PilotFeatures = require('../pilot-features/pilot-features.service');
+        choicesEnabled = await PilotFeatures.isInteractionChoicesEnabled(shopId);
+    } catch (_) {
+        choicesEnabled = false;
+    }
+    if (!choicesEnabled) {
+        await Model.update(
+            { status: 'SENT', resolution: null, updated_at: nowIso() },
+            { where: { id: row.id, status: 'EXECUTING' } },
+        ).catch(() => {});
+        return reject('INTERACTION_CHOICES_DISABLED', 'interaction choices disabled');
     }
 
     try {
@@ -327,7 +348,7 @@ async function dispatch({
 }
 
 /**
- * Free-text numbered equivalence ("2") against a live proposal — the D5
+ * Free-text numbered equivalence ("2") against a delivered proposal — the D5
  * collision rule: NEVER consulted when the proposal binds to a capture step
  * (COLLECTING_*), where digits are legitimate field answers (quantity, zone).
  * Returns null when no live proposal may answer a bare number.
@@ -340,7 +361,7 @@ async function findNumberedLivePayload({ shopId, conversationId, number }) {
         where: {
             shop_id: shopId,
             conversation_id: conversationId,
-            status: ['GENERATED', 'SENT'],
+            status: 'SENT',
             expires_at: { [require('sequelize').Op.gt]: new Date() },
         },
         order: [['updated_at', 'DESC']],

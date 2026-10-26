@@ -2413,6 +2413,9 @@ async function processMessageJob(job) {
                 if (!outcome.resolved && outcome.code === 'INTERACTION_ALREADY_HANDLED') {
                     return { skipped: true, reason: 'interaction_replay', conversationId };
                 }
+                if (!outcome.resolved && outcome.code === 'INTERACTION_CHOICES_DISABLED') {
+                    return { skipped: true, reason: 'interactions_disabled', conversationId };
+                }
                 orderFlow = outcome.resolved ? {
                     handled: true,
                     response: outcome.response,

@@ -18,6 +18,7 @@ jest.mock('../../../utils/structured-logger', () => ({
 }));
 jest.mock('../interaction.entity', () => ({
     findByPk: jest.fn(),
+    findAll: jest.fn(),
     update: jest.fn(),
     create: jest.fn(),
 }));
@@ -33,10 +34,14 @@ jest.mock('../../order/order-session-standalone.service', () => ({
 jest.mock('../../conversation/human-handoff.service', () => ({
     escalateToHuman: jest.fn(),
 }));
+jest.mock('../../pilot-features/pilot-features.service', () => ({
+    isInteractionChoicesEnabled: jest.fn(),
+}));
 
 const Model = require('../interaction.entity');
 const OrderSessionService = require('../../order/order-session-standalone.service');
 const { escalateToHuman } = require('../../conversation/human-handoff.service');
+const PilotFeatures = require('../../pilot-features/pilot-features.service');
 const interactions = require('../interactions.service');
 const contract = require('../interaction.contract');
 
@@ -78,6 +83,7 @@ const scope = {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    PilotFeatures.isInteractionChoicesEnabled.mockResolvedValue(true);
     Model.update.mockResolvedValue([1]);
     OrderSessionService.getSessionForInteraction.mockResolvedValue({
         id: SID, shop_id: SHOP, status: 'ACTIVE', current_step: 'ORDER_SUMMARY',
@@ -153,6 +159,49 @@ describe('resolveInteraction — authorization and single execution', () => {
             payload: contract.buildPayload(IID, 'checkout.confirm'), ...scope,
         });
         expect(res.code).toBe('INTERACTION_EXPIRED');
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test('a GENERATED choice cannot be resolved before its message is delivered', async () => {
+        Model.findByPk.mockResolvedValue(liveRow({ status: 'GENERATED' }));
+        const res = await interactions.resolveInteraction({
+            payload: contract.buildPayload(IID, 'checkout.confirm'), ...scope,
+        });
+        expect(res).toEqual(expect.objectContaining({ resolved: false, code: 'INTERACTION_NOT_SENT' }));
+        expect(Model.update).not.toHaveBeenCalled();
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test('a previously consumed choice is classified as a replay no-op', async () => {
+        Model.findByPk.mockResolvedValue(liveRow({ status: 'CONSUMED' }));
+        const res = await interactions.resolveInteraction({
+            payload: contract.buildPayload(IID, 'checkout.confirm'), ...scope,
+        });
+        expect(res).toEqual(expect.objectContaining({ resolved: false, code: 'INTERACTION_ALREADY_HANDLED' }));
+        expect(Model.update).not.toHaveBeenCalled();
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test('a per-shop kill switch turned off before dispatch blocks an in-flight choice', async () => {
+        Model.findByPk.mockResolvedValue(liveRow());
+        PilotFeatures.isInteractionChoicesEnabled
+            .mockResolvedValueOnce(true)
+            .mockResolvedValueOnce(false);
+
+        // The worker's preflight sees ON; the authoritative resolver sees the
+        // revocation after the proposal has been claimed.
+        expect(await PilotFeatures.isInteractionChoicesEnabled(SHOP)).toBe(true);
+
+        const res = await interactions.resolveInteraction({
+            payload: contract.buildPayload(IID, 'checkout.confirm'), ...scope,
+        });
+
+        expect(res).toEqual(expect.objectContaining({ resolved: false, code: 'INTERACTION_CHOICES_DISABLED' }));
+        expect(Model.update).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'SENT' }),
+            expect.objectContaining({ where: expect.objectContaining({ id: IID, status: 'EXECUTING' }) }),
+        );
+        expect(PilotFeatures.isInteractionChoicesEnabled).toHaveBeenCalledTimes(2);
         expect(OrderSessionService.processStep).not.toHaveBeenCalled();
     });
 
@@ -256,6 +305,33 @@ describe('resolveInteraction — authorization and single execution', () => {
         });
         expect(res.response).toBe('ঠিকানা দিন');
         expect(OrderSessionService.resumeSession).toHaveBeenCalled();
+    });
+});
+
+describe('numbered choice resolution', () => {
+    test('a bare number cannot select a GENERATED proposal before delivery', async () => {
+        Model.findAll.mockImplementation(({ where }) => Promise.resolve(
+            where.status === 'SENT' ? [] : [liveRow({ status: 'GENERATED' })],
+        ));
+
+        const payload = await interactions.findNumberedLivePayload({
+            shopId: SHOP, conversationId: CONV, number: '2',
+        });
+
+        expect(payload).toBeNull();
+        expect(Model.findAll).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ status: 'SENT' }),
+        }));
+    });
+
+    test('a bare number selects a SENT proposal option', async () => {
+        Model.findAll.mockResolvedValue([liveRow()]);
+
+        const payload = await interactions.findNumberedLivePayload({
+            shopId: SHOP, conversationId: CONV, number: '2',
+        });
+
+        expect(payload).toBe(contract.buildPayload(IID, 'checkout.confirm'));
     });
 });
 
