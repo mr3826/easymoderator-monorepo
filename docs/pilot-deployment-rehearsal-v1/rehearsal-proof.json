@@ -92,11 +92,9 @@
   },
   "providerDecision": {
     "recommendation": "KEEP_CURRENT_PROVIDER_CONFIGURATION",
-    "openaiKeyPresent": true,
     "openaiBillingVerified": false,
     "openaiModel": "gpt-4.1-mini",
     "openaiModelStatus": "DEPRECATED_SHUTDOWN_2027-01-14",
-    "geminiKeyPresent": true,
     "geminiPaidTierVerified": false,
     "geminiPrimary": "gemini-3.1-flash-lite",
     "geminiPrimaryStatus": "STABLE_EARLIEST_SHUTDOWN_2027-05-07",
@@ -113,5 +111,42 @@
     "D6": "ACCEPT_OR_DEFER_V6_PHASE_D_DEBT; PRESERVE_INBOX_GUARANTEES",
     "D7": "KEEP_WEBHOOK_AUTO_BOOKING_OFF; MANUAL_DISPATCH"
   },
-  "finalEvidenceCommit": "See final local Git HEAD reported in handoff; evidence commit is documentation-only after rehearsal code SHA."
+  "credentialInventory": {
+    "openaiRequestedAlias": "EM_OPENAI_KEY",
+    "openaiRequestedAliasPresent": true,
+    "openaiRequestedAliasScopes": [
+      "WINDOWS_USER"
+    ],
+    "openaiSourceContractVariables": [
+      "OPENAI_API_KEY"
+    ],
+    "openaiSourceContractCredentialAvailability": "UNKNOWN_FOR_REAL_ENV_KEY",
+    "geminiRequestedAlias": "EM_GEMINI_KEY",
+    "geminiRequestedAliasPresent": true,
+    "geminiRequestedAliasScopes": [
+      "WINDOWS_PROCESS",
+      "WINDOWS_USER"
+    ],
+    "geminiSourceContractVariables": [
+      "EM-GEMINI-KEY",
+      "GEMINI_API_KEY"
+    ],
+    "geminiSourceContractCredentialAvailability": "UNKNOWN_FOR_REAL_ENV_KEY",
+    "credentialValuesRead": false,
+    "credentialValuesPrinted": false,
+    "openaiRequestedAliasMappedToSourceContract": false,
+    "openaiLiveCredentialPassedToRehearsal": false,
+    "openaiSyntheticPlaceholderPresent": false,
+    "geminiRequestedAliasMappedToSourceContract": false,
+    "geminiLiveCredentialPassedToRehearsal": false,
+    "geminiSyntheticPlaceholderPresent": true,
+    "realCredentialValuesInjected": false
+  },
+  "packageConsistencyAudit": {
+    "reviewedCommitBeforeCorrections": "0da680a3c59b0583c6b77e932e19da95a3ecaa80",
+    "reviewer": "FlowGuard",
+    "scope": "READ_ONLY_SOURCE_AND_PACKAGE_CONSISTENCY_NOT_RUNTIME_ATTESTATION",
+    "disposition": "THREE_DOCUMENTATION_CORRECTIONS_APPLIED"
+  },
+  "initialEvidencePackageCommit": "0da680a3c59b0583c6b77e932e19da95a3ecaa80"
 }

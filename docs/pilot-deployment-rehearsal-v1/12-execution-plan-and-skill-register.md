@@ -64,7 +64,7 @@ No project-local `SKILL.md` files were found in the frozen source or persona-con
 
 ## Current status
 
-Planning and source pin reconciliation are recorded. Deployment, flag, migration, recovery, owner-decision and independent-attestation gates remain pending fresh execution.
+Initial pre-execution snapshot only: planning and source pin reconciliation were recorded; the final results are in the Final execution status table below, which supersedes this snapshot.
 
 ## Final execution status (2026-10-27)
 
