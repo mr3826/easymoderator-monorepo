@@ -1,10 +1,9 @@
 # IC-V1 05 — Founder Handoff: Unified Merchant Workspace, Integration Candidate V1
 
-**Candidate:** round-2 freeze (post-review hardening committed on this branch; the exact
-sha is pinned in `ic-merchant-workspace-v1-proof.json` by the immediately following
-docs-only pin commit), branch
+**Candidate:** round-2 freeze `0386207ccba51738fce142e1e348931d940d7606` on branch
 `integration-candidate/merchant-workspace-v1`, worktree
-`D:\easymod\_wt-ic-merchant-workspace-v1`. Nothing pushed, merged, or deployed.
+`D:\easymod\_wt-ic-merchant-workspace-v1` (sha bound by this docs pin commit).
+Nothing pushed, merged, or deployed.
 
 ## What this milestone decided (no feature work)
 
