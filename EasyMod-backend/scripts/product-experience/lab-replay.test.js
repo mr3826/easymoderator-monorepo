@@ -159,9 +159,12 @@ const sourceReplayMediaFor = attachmentIds => ({
 const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const BANGLADESH_CONTACT_PATTERN = /(?:\+?880\s*|0|০)(?:1[3-9]|১[৩-৯])[\p{Nd}Xx\s().-]{7,9}/u;
 const containsContactInStringValues = (value, fieldName = '') => {
-    if (/sha256$/i.test(fieldName)) return false;
+    // Provenance identifier fields (hex digests, git revisions) can contain
+    // digit sequences that coincidentally match the phone heuristic; they are
+    // machine identifiers, never user content. All CONTENT fields remain scanned.
+    if (/(?:sha256|revision|hash)$/i.test(fieldName)) return false;
     if (typeof value === 'string') return BANGLADESH_CONTACT_PATTERN.test(value);
-    if (Array.isArray(value)) return value.some(item => containsContactInStringValues(item));
+    if (Array.isArray(value)) return value.some(item => containsContactInStringValues(item, fieldName));
     if (value && typeof value === 'object') return Object.entries(value).some(([key, item]) => containsContactInStringValues(item, key));
     return false;
 };
