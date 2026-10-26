@@ -12,8 +12,8 @@
     "main_sha": "07168f49066e4dc4a8e2a756621ac577a13c12bd",
     "production_ancestor_sha": "2a8c1e2d0bef0f3ddc8dd767901d1228865c302c",
     "ancestry_verified": true,
-    "frozen_candidate_sha": "a14fff7381830a73e3853609e98448cca0903188 (reviewed) -> ce45e081 (review fixes) -> final docs freeze; see git log",
-    "commits_above_base": 22,
+    "frozen_candidate_sha": "reviewed a14fff73 -> fixes ce45e081 -> review docs e618d964 -> this final commit",
+    "commits_above_base": "25 (code+docs+evidence; self-referential +1 for this file's own commit)",
     "linear_child_of_increment1": true
   },
   "phase1_integration_rehearsal": {
