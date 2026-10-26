@@ -62,9 +62,9 @@ unchanged from before.
 
 ## Review artifacts
 
-`docs/ic-merchant-workspace-v1/00…05` + `ic-merchant-workspace-v1-proof.json`;
-independent adversarial review appended as doc 04 when the reviewer's session
-(`ses_e8969255fffe…`) returns.
+`docs/ic-merchant-workspace-v1/00…06` + `ic-merchant-workspace-v1-proof.json`;
+independent adversarial reviews recorded as doc 04 rounds 1–3; the pilot release-readiness
+GO/NO-GO and owner decision package is doc 06.
 
 ## Running this candidate locally (not started for you this session)
 

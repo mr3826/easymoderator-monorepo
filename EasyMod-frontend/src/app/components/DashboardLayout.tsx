@@ -217,8 +217,11 @@ export default function DashboardLayout() {
 
         {/* ─── Sticky AppBar ─────────────────────────────────────────── */}
         <header className="sticky top-0 z-20 h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-4 shrink-0">
-          {/* Page title */}
-          <h1 className="text-sm font-semibold text-gray-800 flex-1 truncate">{pageTitle}</h1>
+          {/* Page title. Deliberately not a heading: every page renders its own
+              <h1> in <main>; an <h1> here duplicated the document heading and
+              made heading-based locators ambiguous (customer-intelligence
+              journeys, release-readiness sweep). */}
+          <p className="text-sm font-semibold text-gray-800 flex-1 truncate">{pageTitle}</p>
 
           {/* Notifications */}
           <InAppNotificationCenter />

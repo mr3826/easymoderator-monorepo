@@ -188,15 +188,15 @@ const Order = sequelize.define('Order', {
         { fields: ['order_number'], unique: true },
         { fields: ['customer_id'] },
         {
-            // IC-V1 review F4: DB-level backstop for create-order idempotency.
-            // The advisory-xact-lock + in-transaction recheck in order.service
-            // no-ops on non-postgres dialects; this partial unique index makes
-            // a duplicated committed (shop_id, idempotency_key) impossible in
-            // any dialect that supports partial indexes. Mirrored by migration
-            // 20261026_001_order_idempotency_unique (existing databases).
+            // IC-V1 review F4, reconciled by the production-shaped migration
+            // dry-run: the canonical DB-level backstop for create-order
+            // idempotency (advisory locks no-op on non-postgres dialects) is
+            // the partial unique index created by migration 20261026_001 /
+            // 20260611_001 — declared here so sync/drift state matches every
+            // real catalog instead of duplicating the index under another name.
             unique: true,
             fields: ['shop_id', 'idempotency_key'],
-            name: 'idx_orders_shop_idempotency_unique',
+            name: 'idx_orders_shop_idempotency',
             where: { idempotency_key: { [Op.not]: null } },
         }
     ]

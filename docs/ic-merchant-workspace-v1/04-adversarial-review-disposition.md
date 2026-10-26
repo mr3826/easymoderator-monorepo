@@ -96,3 +96,31 @@ backend units 317/317 suites, 4271 passed, 2 skipped · integration (disposable 
 new migration applied) 32/32 suites, 225/225 · meta-e2e 2/2, 48/48 · frontend 78 files, 692/692 ·
 tsc 0 · build:all success · battery chromium 20/20 + firefox 20/20 (--workers=1) ·
 git diff --check clean.
+
+---
+
+## Round 3 — pilot-release-readiness milestone (owner-directed release engineering)
+
+Not a feature review; results are in doc 06. Material outcomes:
+
+- **Production-shaped migration dry-run found and fixed a real defect:** the round-2 F4
+  fix created a second unique index over columns that migration `20260611_001` had already
+  uniquely indexed since June (constraint existed in every real catalog; the reviewer's
+  "indexed non-unique" premise was inaccurate). `20261026_001` was rewritten as a
+  reconciliation migration (drop draft artifact, verify/recreate the canonical
+  `idx_orders_shop_idempotency`, keep the loud duplicate refusal, never touch the June
+  object on `down`); the Order entity now declares the canonical index name so model↔DB
+  state agrees; spec rewritten to pin the reconciled semantics; repeatable gate added as
+  `npm run test:backend:migration-dryrun` (6 phases on disposable Postgres, PASS).
+- **Feature-flag matrix** (`production-defaults-matrix.test.js`, 7 pins) now covers every
+  R2-F1/F2/F10 production-default path, including the previously untested
+  webhook-`automation_disabled` and granular per-sub-flag enablement/revocation.
+- **Browser reconciliation complete:** 22 → 13 → 0. Root causes fixed at the right layer —
+  ActionQueuePanel degrade-not-crash (product), `/api/inbox/actions` mock + allowlist
+  (spec), task-first heading copy (spec), AppBar duplicate-`h1` → `<p>` (product,
+  semantic; unambiguates the customer-intelligence strict-mode locator). Full chromium
+  sweep at the milestone tip: 105 passed / 0 failed / 6 intentional skips; firefox
+  battery 20/20 after the layout change.
+- Milestone gate battery: backend units **318/318, 4,281 passed, 2 skipped** (paid-Gemini
+  env gates, inventoried); integration **32/32, 225/225** on the reconciled chain;
+  meta-e2e **48/48**; FE **692/692**; tsc 0; build:all ok; dry-run PASS.

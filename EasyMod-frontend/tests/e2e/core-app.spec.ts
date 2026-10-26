@@ -139,6 +139,9 @@ test('sign in flow reaches dashboard with mocked backend', async ({ page }) => {
   await page.locator('button[type="submit"]').click();
 
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole('main').getByRole('heading', { name: 'Business Health' })).toBeVisible();
-  await expect(page.getByText("Today's Sales")).toBeVisible();
+  // Task-first Pulse design (IC-V1): the legacy "Business Health" heading was
+  // deliberately renamed; the same surface is now "Today's work" with an
+  // "Orders today" overview metric (pinned in the vitest Dashboard suites).
+  await expect(page.getByRole('main').getByRole('heading', { name: "Today's work" })).toBeVisible();
+  await expect(page.getByText('Orders today')).toBeVisible();
 });
