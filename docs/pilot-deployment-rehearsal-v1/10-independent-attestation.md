@@ -41,3 +41,5 @@ The code review supports the narrow SENT-only interaction correction, and source
 ## Independent package/source consistency audit
 
 FlowGuard reviewed the committed package and source at 0da680a3c59b0583c6b77e932e19da95a3ecaa80, read-only. The reviewer found three documentation inconsistencies: an initial status snapshot said all gates remained pending despite the final status table; the proof JSON did not identify the reviewed package commit; and key-presence booleans did not distinguish requested environment-alias presence from source-contract credential availability. These are corrected in the follow-up documentation commit. The proof JSON records the audited pre-correction commit and audit scope. No runtime verification was performed by this review, and the overall independent release attestation remains NO_GO.
+
+FlowGuard rechecked all three corrections at HEAD 8f3589686e609ba4492fc0242d0e6094fb1a2919 and confirmed them; no remaining contradiction was found among those package claims. The check did not run services, tests, or provider calls and does not upgrade the release attestation.

@@ -146,7 +146,13 @@
     "reviewedCommitBeforeCorrections": "0da680a3c59b0583c6b77e932e19da95a3ecaa80",
     "reviewer": "FlowGuard",
     "scope": "READ_ONLY_SOURCE_AND_PACKAGE_CONSISTENCY_NOT_RUNTIME_ATTESTATION",
-    "disposition": "THREE_DOCUMENTATION_CORRECTIONS_APPLIED"
+    "disposition": "THREE_DOCUMENTATION_CORRECTIONS_APPLIED",
+    "correctionVerification": {
+      "reviewedCommit": "8f3589686e609ba4492fc0242d0e6094fb1a2919",
+      "status": "PASS",
+      "scope": "THREE_DOCUMENTATION_CORRECTIONS_ONLY",
+      "runtimeAttestation": "NOT_PERFORMED"
+    }
   },
   "initialEvidencePackageCommit": "0da680a3c59b0583c6b77e932e19da95a3ecaa80"
 }
