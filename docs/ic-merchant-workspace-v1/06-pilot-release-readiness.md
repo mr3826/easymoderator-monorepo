@@ -138,12 +138,14 @@ integration suites — no drift.
 - Required in production render (validator already enforces one of): `SENTRY_DSN` +
   (`SLACK_ALERT_WEBHOOK_URL`); ops-alert fanout covers Action Gate audit failures and
   committed-but-unaudited markers (`result_unaudited`, `action_audit_unavailable`).
-- New queries the candidate makes observable (audit `audit_logs.action`):
-  `ai.action_gate.authorized|denied|exception|result_recorded` — alert on: any `authorized`
-  row while flags are OFF (authority regression), `exception` rate > 0 sustained, and
+- New queries the candidate makes observable (audit `audit_logs.action` — the gate emits
+  exactly these action names): `ai.action_gate.authorized`, `ai.action_gate.denied`,
+  `ai.action_gate.result_recorded`, plus the read-path audit rows — alert on: any `authorized`
+  row while flags are OFF (authority regression), `denied` rate with reasonCode
+  `runtime_kill_switch_enabled` while flags are ON (stale rollout), and
   `courier booking blocked automation_disabled` volume (tells you the flag is OFF when
   merchants expect bookings).
-- Watch the inbox delivery reconciler for `INDETERMINATE` dispatch backlog (runbook §3).
+- Watch the inbox delivery reconciler for `INDETERMINATE` dispatch backlog (runbook §4).
 - Decision needed: which Slack channel(s) receive ops-alerts, and who owns the dashboards.
 
 **D-4 — Kill-switch playbook (three levels, all already tested).**
@@ -201,6 +203,25 @@ integration suites — no drift.
   the correct layer; no browser test remains red or silently excluded.
 - Journey battery re-run after the AppBar `<h1>` reconciliation: firefox **20/20**
   (`--workers=1`); chromium coverage is contained in the 105-test full sweep above.
+- Harness observation (independent verifier, 2026-10-26): one firefox run showed a
+  transient 30s sign-in hydration timeout in `pilot-plus.spec.ts:276`; the single test
+  retried green in 32s and the full battery re-ran 20/20. Owner follow-up: raise the
+  sign-in locator timeout if it recurs — timing flake, not an artifact defect.
+
+## 8b. Independent verification attestation
+
+Fresh-context verifier `ses_e8619c9a0ffeNF7AJB5xuP1Ov7` re-ran EVERY gate itself at tip
+`c164a042` (backend units 318/318 suites, 4,281 passed, 2 skipped — skips identified as
+the LAB_GEMINI env gates; integration 32/32, 225/225; meta-e2e 2/2, 48/48; production-shaped
+dry-run PASS 6/6 incl. observed loud duplicate refusal; frontend 78/692; tsc 0; build ok;
+full chromium sweep 105/0/6; firefox battery 20/20 after one transient harness-level
+sign-in flake green on retry), verified freeze integrity (fsck, no upstream/remote ref,
+docs-only pin delta, clean siblings, excluded PE artifacts), traced all 10 code-level
+safety spot-checks at source (authority helpers, flag map, mint-signature result audit,
+fail-closed branches, renderer strict-false, entity↔migration index parity), and
+cross-checked the owner-doc package. Verdict: **INDEPENDENT-VERIFICATION: GO** — pilot
+deployable with flags off; two D-3 citation overstatements found in this report were
+corrected in this finalization; no claim/behavior discrepancy remained.
 
 ## 9. GO / NO-GO
 
