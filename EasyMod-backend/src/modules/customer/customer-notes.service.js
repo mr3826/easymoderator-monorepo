@@ -1,11 +1,8 @@
 'use strict';
 
-const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
 const { Op } = require('sequelize');
 const { CustomerNote, Customer, UserShop, AuditLog } = require('../entities');
-
-const logger = createLogger('customer-notes');
 
 const MAX_BODY = 2000;
 const MAX_PAGE = 100;
@@ -33,21 +30,35 @@ const serialize = (note) => ({
     updated_at: note.updated_at ?? note.updatedAt ?? null,
 });
 
-const audit = (action, shopId, actor, note, extra = {}) => {
-    if (typeof AuditLog?.create !== 'function') return;
-    AuditLog.create({
-        user_id: actor?.userId || null,
-        shop_id: shopId,
-        action,
-        resource_type: 'customer_note',
-        resource_id: note?.id || null,
-        metadata: {
-            customer_id: note?.customer_id || null,
-            // Content discipline: length only, NEVER the body text.
-            body_length: typeof note?.body === 'string' ? note.body.length : null,
-            ...extra,
-        },
-    }).catch((error) => logger.warn('customer_note audit write failed', { error: error.message }));
+const audit = async (action, shopId, actor, note, extra = {}, transaction) => {
+    if (typeof AuditLog?.create !== 'function') {
+        fail('Customer note audit storage unavailable', 'NOTE_AUDIT_UNAVAILABLE', 503);
+    }
+    try {
+        await AuditLog.create({
+            user_id: actor?.userId || null,
+            shop_id: shopId,
+            action,
+            resource_type: 'customer_note',
+            resource_id: note?.id || null,
+            metadata: {
+                customer_id: note?.customer_id || null,
+                // Content discipline: length only, NEVER the body text.
+                body_length: typeof note?.body === 'string' ? note.body.length : null,
+                ...extra,
+            },
+        }, transaction ? { transaction } : {});
+    } catch (_) {
+        fail('Customer note audit write failed', 'NOTE_AUDIT_FAILED', 503);
+    }
+};
+
+const withNoteAuditTransaction = async (callback) => {
+    const sequelize = CustomerNote?.sequelize;
+    if (!sequelize || typeof sequelize.transaction !== 'function') {
+        fail('Customer note transaction unavailable', 'NOTE_TRANSACTION_UNAVAILABLE', 503);
+    }
+    return sequelize.transaction(callback);
 };
 
 const requireBody = (raw) => {
@@ -75,15 +86,17 @@ async function createNote({ shopId, customerId, body }, actor) {
         : null;
     if (!customer) fail('Customer not found', 'CUSTOMER_NOT_FOUND', 404);
 
-    const created = await CustomerNote.create({
-        shop_id: shopId,
-        customer_id: customerId,
-        body: trimmed,
-        author_id: actor.userId || null,
-        author_name: actor.name || actor.email || 'Team member',
+    return withNoteAuditTransaction(async (transaction) => {
+        const created = await CustomerNote.create({
+            shop_id: shopId,
+            customer_id: customerId,
+            body: trimmed,
+            author_id: actor.userId || null,
+            author_name: actor.name || actor.email || 'Team member',
+        }, { transaction });
+        await audit('CREATE', shopId, actor, created, {}, transaction);
+        return serialize(created);
     });
-    audit('CREATE', shopId, actor, created);
-    return serialize(created);
 }
 
 async function listNotes({ shopId, customerId, limit, before }, actor) {
@@ -103,8 +116,8 @@ async function listNotes({ shopId, customerId, limit, before }, actor) {
     return { data: (rows || []).map(serialize), total: total || 0 };
 }
 
-async function loadOwnedNote(shopId, noteId) {
-    const found = await CustomerNote.findOne({ where: { id: noteId, shop_id: shopId } });
+async function loadOwnedNote(shopId, noteId, transaction) {
+    const found = await CustomerNote.findOne({ where: { id: noteId, shop_id: shopId }, transaction });
     if (!found) fail('Note not found', 'NOTE_NOT_FOUND', 404);
     return found;
 }
@@ -114,25 +127,29 @@ const privileged = (actor) => ['owner', 'admin'].includes(String(actor?.role || 
 async function updateNote({ shopId, noteId, body }, actor) {
     const trimmed = requireBody(body);
     await requireActiveMembership(shopId, actor);
-    const existing = await loadOwnedNote(shopId, noteId);
-    if (String(existing.author_id) !== String(actor.userId) && !privileged(actor)) {
-        fail('Only the note author (or an owner/admin) can edit a note', 'NOTE_NOT_AUTHOR', 403);
-    }
-    const previousLength = existing.body?.length || 0;
-    await existing.update({ body: trimmed });
-    audit('UPDATE', shopId, actor, existing, { previous_length: previousLength });
-    return serialize(existing);
+    return withNoteAuditTransaction(async (transaction) => {
+        const existing = await loadOwnedNote(shopId, noteId, transaction);
+        if (String(existing.author_id) !== String(actor.userId) && !privileged(actor)) {
+            fail('Only the note author (or an owner/admin) can edit a note', 'NOTE_NOT_AUTHOR', 403);
+        }
+        const previousLength = existing.body?.length || 0;
+        await existing.update({ body: trimmed }, { transaction });
+        await audit('UPDATE', shopId, actor, existing, { previous_length: previousLength }, transaction);
+        return serialize(existing);
+    });
 }
 
 async function deleteNote({ shopId, noteId }, actor) {
     await requireActiveMembership(shopId, actor);
-    const existing = await loadOwnedNote(shopId, noteId);
-    if (String(existing.author_id) !== String(actor.userId) && !privileged(actor)) {
-        fail('Only the note author (or an owner/admin) can delete a note', 'NOTE_NOT_AUTHOR', 403);
-    }
-    await existing.destroy(); // paranoid: soft delete, retention-visible
-    audit('DELETE', shopId, actor, existing);
-    return { id: existing.id, deleted: true };
+    return withNoteAuditTransaction(async (transaction) => {
+        const existing = await loadOwnedNote(shopId, noteId, transaction);
+        if (String(existing.author_id) !== String(actor.userId) && !privileged(actor)) {
+            fail('Only the note author (or an owner/admin) can delete a note', 'NOTE_NOT_AUTHOR', 403);
+        }
+        await existing.destroy({ transaction }); // paranoid: soft delete, retention-visible
+        await audit('DELETE', shopId, actor, existing, {}, transaction);
+        return { id: existing.id, deleted: true };
+    });
 }
 
 module.exports = { createNote, listNotes, updateNote, deleteNote, serialize, MAX_BODY };

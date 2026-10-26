@@ -13,6 +13,7 @@ const {
 } = require('../contracts/authorization.contract');
 const { isEvidenceSnapshotFresh } = require('../contracts/evidence.contract');
 const { writeActionGateAudit } = require('./action-gate-audit.service');
+const { isDomainAgentActionEnabled } = require('../../../config/ai-runtime-flags');
 
 const MAX_DOMAIN_HOPS_PER_TURN = 2;
 
@@ -22,6 +23,7 @@ const CHECK_NAMES = Object.freeze([
     'tenant_records_match',
     'agent_identity_registered',
     'capability_registry_allows',
+    'runtime_kill_switch_enabled',
     'domain_transition_allowed',
     'domain_hop_limit',
     'action_schema_valid',
@@ -105,6 +107,7 @@ const evaluateChecks = (action, context, now) => {
             && capability.agents.includes(action?.requestedByAgent)
             && MUTATING_ACTION_TYPES.includes(action?.actionType)
     ));
+    check('runtime_kill_switch_enabled', isDomainAgentActionEnabled(action?.actionType));
     const currentDomain = context.currentDomain || action?.domain;
     check('domain_transition_allowed', Boolean(
         capability && capability.domain === action?.domain
@@ -144,6 +147,8 @@ const authorize = async (action, context = {}) => {
     const gateDecisionId = crypto.randomUUID();
     const { checkResults, reasonCode } = evaluateChecks(action, context, now);
     const passed = !reasonCode;
+    const issuedAt = passed ? now.toISOString() : null;
+    const expiresAt = passed ? new Date(now.getTime() + AUTHORIZATION_TTL_MS).toISOString() : null;
     const baseRecord = {
         actionId: action?.actionId || gateDecisionId,
         actionType: action?.actionType || null,
@@ -154,7 +159,11 @@ const authorize = async (action, context = {}) => {
         evidenceSnapshotHash: action?.evidenceSnapshotHash || null,
         payload: action?.payload || null,
         traceId: context.traceId || null,
+        taskId: context.taskId || null,
+        conversationId: action?.conversationId || context.conversationId || context.tenant?.conversationId || null,
         gateDecisionId,
+        issuedAt,
+        expiresAt,
         decision: passed ? 'AUTHORIZED' : 'DENIED',
         checkResults,
         reasonCode,
@@ -165,14 +174,16 @@ const authorize = async (action, context = {}) => {
     await auditDecision(baseRecord);
     if (!passed) return { authorized: false, gateDecisionId, checkResults, reasonCode };
 
-    const issuedAt = now.toISOString();
-    const expiresAt = new Date(now.getTime() + AUTHORIZATION_TTL_MS).toISOString();
     const authorization = {
         contractVersion: '1.0',
         authorizationId: crypto.randomUUID(),
+        actionId: action.actionId,
         actionType: action.actionType,
         shopId: action.shopId,
         actorAgent: action.requestedByAgent,
+        taskId: context.taskId || null,
+        conversationId: action.conversationId || context.conversationId || context.tenant?.conversationId || null,
+        traceId: context.traceId || null,
         idempotencyKey: action.idempotencyKey,
         evidenceSnapshotHash: action.evidenceSnapshotHash,
         issuedAt,
@@ -181,6 +192,59 @@ const authorize = async (action, context = {}) => {
     };
     authorization.signature = sign(authorization);
     return { authorized: true, authorization, gateDecisionId, checkResults, reasonCode: null };
+};
+
+const sanitizeActionOutcome = (value = {}) => ({
+    success: value.success === true,
+    state: typeof value.state === 'string' ? value.state.slice(0, 48) : 'unknown',
+    code: typeof value.code === 'string' ? value.code.slice(0, 64) : null,
+    resourceId: typeof value.resourceId === 'string' ? value.resourceId : null,
+});
+
+const recordActionGateOutcome = async ({ authorization, mutationResult, outboundResult }) => {
+    if (!isAuthorizationShapeValid(authorization)) {
+        return { recorded: false, reasonCode: 'authorization_invalid' };
+    }
+    // IC-V1 review F7: only a mint that this gate actually signed may append
+    // a RESULT_RECORDED row. Shape validity alone would let any caller that
+    // can reach the service fabricate outcome audits. TTL is deliberately not
+    // enforced here — the mutation may legitimately commit just after expiry;
+    // the mint-time and service-boundary signature checks govern authority.
+    let signatureValid = false;
+    try {
+        signatureValid = constantTimeEqual(authorization.signature, sign(authorization));
+    } catch {
+        signatureValid = false;
+    }
+    if (!signatureValid) return { recorded: false, reasonCode: 'authorization_signature_invalid' };
+    const capability = CAPABILITIES[authorization.actionType];
+    if (!capability) return { recorded: false, reasonCode: 'action_capability_unknown' };
+    const idempotencyKey = crypto.createHash('sha256')
+        .update(`${authorization.gateDecisionId}:result`, 'utf8')
+        .digest('hex');
+
+    await auditDecision({
+        actionId: authorization.actionId || authorization.authorizationId,
+        actionType: authorization.actionType,
+        requestedByAgent: authorization.actorAgent,
+        domain: capability.domain,
+        shopId: authorization.shopId,
+        idempotencyKey,
+        evidenceSnapshotHash: authorization.evidenceSnapshotHash,
+        payload: { outcome: true },
+        traceId: authorization.traceId || null,
+        taskId: authorization.taskId || null,
+        conversationId: authorization.conversationId || null,
+        gateDecisionId: authorization.gateDecisionId,
+        issuedAt: authorization.issuedAt,
+        expiresAt: authorization.expiresAt,
+        decision: 'RESULT_RECORDED',
+        checkResults: {},
+        reasonCode: mutationResult?.success === false ? mutationResult.code || 'mutation_failed' : null,
+        mutationResult: sanitizeActionOutcome(mutationResult),
+        outboundResult: sanitizeActionOutcome(outboundResult),
+    });
+    return { recorded: true };
 };
 
 /**
@@ -193,6 +257,7 @@ const verifyAuthorization = (authorization, expected = {}) => {
     if (!isAuthorizationShapeValid(authorization)) return false;
     const expiresAt = Date.parse(authorization.expiresAt);
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+    if (!isDomainAgentActionEnabled(authorization.actionType)) return false;
     if (expected.actionType && authorization.actionType !== expected.actionType) return false;
     if (expected.shopId && authorization.shopId !== expected.shopId) return false;
     if (expected.idempotencyKey && authorization.idempotencyKey !== expected.idempotencyKey) return false;
@@ -210,6 +275,7 @@ module.exports = {
     LEGAL_TRANSITIONS,
     MAX_DOMAIN_HOPS_PER_TURN,
     authorize,
+    recordActionGateOutcome,
     evaluateChecks,
     verifyAuthorization,
     _private: { getSecret },

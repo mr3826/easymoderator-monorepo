@@ -135,9 +135,13 @@ export function ActionQueuePanel({ onSseRefresh }: ActionQueuePanelProps) {
     void refresh(next);
   };
 
-  const items = result && !result.featureDisabled ? result.data.items : [];
-  const counts = result && !result.featureDisabled ? result.data.counts : undefined;
-  if (!result || result.featureDisabled) return null;
+  // Malformed or legacy-shaped payloads (proxy pages, partial rollouts,
+  // server bugs) must degrade the strip, not white-screen the whole inbox
+  // through the app's error boundary.
+  const payload = result && !result.featureDisabled ? result.data : null;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const counts = payload && typeof payload.counts === 'object' ? payload.counts : undefined;
+  if (!result || result.featureDisabled || !payload) return null;
   if (items.length === 0 && !(counts && counts.total > 0)) return null;
 
   // Server already sorts bucket asc → oldest fact first; group for display

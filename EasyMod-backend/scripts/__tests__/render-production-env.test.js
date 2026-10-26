@@ -327,6 +327,11 @@ describe('image-understanding switches are settable in production', () => {
         expect(env.AI_PHOTO_MATCH_ENABLED).toBe('true');   // customer photos: on
         expect(env.AI_VISION_ENABLED).toBe('false');       // merchant images: off
         expect(env.GROWTH_OS_ENABLED).toBe('false');
+        expect(env.DOMAIN_AGENT_RUNTIME_ENABLED).toBe('false');
+        expect(env.AI_ORDER_MUTATIONS_ENABLED).toBe('false');
+        expect(env.AI_COURIER_BOOKING_ENABLED).toBe('false');
+        expect(env.AI_PAYMENT_ACCEPTANCE_ENABLED).toBe('false');
+        expect(env.AI_SUPPORT_CASE_ENABLED).toBe('false');
     });
 
     test('AI_PHOTO_MATCH_ENABLED=false actually reaches .env.prod', () => {
@@ -337,6 +342,27 @@ describe('image-understanding switches are settable in production', () => {
     test('vision can be turned on deliberately', () => {
         const env = buildRenderedEnv(validSource({ AI_VISION_ENABLED: 'true' }));
         expect(env.AI_VISION_ENABLED).toBe('true');
+    });
+
+    test('AI commerce kill switches are settable only by explicit literal flags', () => {
+        const env = buildRenderedEnv(validSource({
+            DOMAIN_AGENT_RUNTIME_ENABLED: 'true',
+            AI_ORDER_MUTATIONS_ENABLED: 'true',
+            AI_COURIER_BOOKING_ENABLED: 'true',
+            AI_PAYMENT_ACCEPTANCE_ENABLED: 'true',
+            AI_SUPPORT_CASE_ENABLED: 'true',
+        }));
+        expect(env).toMatchObject({
+            DOMAIN_AGENT_RUNTIME_ENABLED: 'true',
+            AI_ORDER_MUTATIONS_ENABLED: 'true',
+            AI_COURIER_BOOKING_ENABLED: 'true',
+            AI_PAYMENT_ACCEPTANCE_ENABLED: 'true',
+            AI_SUPPORT_CASE_ENABLED: 'true',
+        });
+        expect(() => buildRenderedEnv(validSource({ AI_ORDER_MUTATIONS_ENABLED: 'TRUE' })))
+            .toThrow(/AI_ORDER_MUTATIONS_ENABLED/);
+        expect(() => buildRenderedEnv(validSource({ AI_PAYMENT_ACCEPTANCE_ENABLED: 'yes' })))
+            .toThrow(/AI_PAYMENT_ACCEPTANCE_ENABLED/);
     });
 });
 

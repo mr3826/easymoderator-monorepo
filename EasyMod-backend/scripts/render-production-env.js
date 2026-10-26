@@ -202,6 +202,11 @@ function buildRenderedEnv(source = process.env) {
         // enabled by the production operator. A missing repository variable
         // must not turn on a new internal surface during an unrelated deploy.
         GROWTH_OS_ENABLED: strictBooleanFlag(source.GROWTH_OS_ENABLED, 'GROWTH_OS_ENABLED', 'false'),
+        DOMAIN_AGENT_RUNTIME_ENABLED: strictBooleanFlag(source.DOMAIN_AGENT_RUNTIME_ENABLED, 'DOMAIN_AGENT_RUNTIME_ENABLED', 'false'),
+        AI_ORDER_MUTATIONS_ENABLED: strictBooleanFlag(source.AI_ORDER_MUTATIONS_ENABLED, 'AI_ORDER_MUTATIONS_ENABLED', 'false'),
+        AI_COURIER_BOOKING_ENABLED: strictBooleanFlag(source.AI_COURIER_BOOKING_ENABLED, 'AI_COURIER_BOOKING_ENABLED', 'false'),
+        AI_PAYMENT_ACCEPTANCE_ENABLED: strictBooleanFlag(source.AI_PAYMENT_ACCEPTANCE_ENABLED, 'AI_PAYMENT_ACCEPTANCE_ENABLED', 'false'),
+        AI_SUPPORT_CASE_ENABLED: strictBooleanFlag(source.AI_SUPPORT_CASE_ENABLED, 'AI_SUPPORT_CASE_ENABLED', 'false'),
         // Mobile API (ADR M-010): /api/auth/native/*, /api/mobile/* and every
         // native (sid) token. Off unless the MOBILE_API_ENABLED repository
         // variable is exactly "true"; rollback is setting it back to "false"

@@ -1,16 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import UnifiedInbox from '@/app/components/UnifiedInbox'
 import { apiClient } from '@/api'
 import { useInboxSSE } from '@/app/lib/useInboxSSE'
+import { getOrders } from '@/api/domains/order'
 import { toast } from 'sonner'
+
+const routerState = vi.hoisted(() => ({
+  location: { pathname: '/', search: '', hash: '', state: null },
+  navigate: vi.fn(),
+}))
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
   return {
     ...actual,
-    useLocation: () => ({ pathname: '/', search: '', hash: '', state: null }),
-    useNavigate: () => vi.fn(),
+    useLocation: () => routerState.location,
+    useNavigate: () => routerState.navigate,
     useParams: () => ({}),
   }
 })
@@ -1449,7 +1456,7 @@ describe('MW-V1 customer-context mount', () => {
 
   it('toggle opens the panel; gated 360 read stays untouched when flag is off', async () => {
     const ci = await import('@/api/domains/customer-intelligence')
-    render(<UnifiedInbox />)
+    render(<MemoryRouter><UnifiedInbox /></MemoryRouter>)
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
     })
@@ -1464,5 +1471,394 @@ describe('MW-V1 customer-context mount', () => {
 
     fireEvent.click(screen.getByTestId('context-close'))
     await waitFor(() => expect(screen.queryByTestId('customer-context-panel')).not.toBeInTheDocument())
+  })
+})
+
+describe('UnifiedInbox integration contracts', () => {
+  const pageSize = 50
+  const conversation = (id: string, overrides: Record<string, unknown> = {}) => ({
+    ...baseConversation,
+    id,
+    customer_id: `customer-${id}`,
+    customer: { id: `customer-${id}`, name: id === 'conv-1' ? 'Alice' : 'Bob' },
+    ...overrides,
+  })
+  const pageResult = (data: any[], page: number, total = 51) => ({
+    data,
+    page,
+    pageSize,
+    total,
+    ai_reply_mode: 'MANUAL',
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    routerState.location.search = ''
+    routerState.navigate.mockClear()
+    ;(apiClient.getResponseTemplates as any).mockReset().mockResolvedValue([])
+    ;(apiClient.getShopAgents as any).mockReset().mockResolvedValue([])
+    ;(apiClient.markConversationRead as any).mockReset().mockResolvedValue({ ...baseConversation, unreadCount: 0 })
+    ;(apiClient.getMessages as any).mockReset().mockResolvedValue({ messages: [], pagination: { page: 1, totalPages: 1 } })
+    ;(apiClient.getConversations as any).mockReset().mockResolvedValue(pageResult([conversation('conv-1')], 1))
+    ;(getOrders as any).mockReset().mockResolvedValue([])
+    ;(apiClient.createMessage as any).mockReset().mockResolvedValue({})
+  })
+
+  it('loads the next server page and points the URL at its selected conversation', async () => {
+    const firstPage = conversation('conv-1')
+    const secondPage = conversation('conv-2')
+    ;(apiClient.getConversations as any).mockImplementation(async ({ page = 1 }: { page?: number }) => (
+      pageResult(page === 1 ? [firstPage] : [secondPage], page)
+    ))
+
+    render(<UnifiedInbox />)
+    await screen.findByText('Alice', { selector: 'h3' })
+    fireEvent.click(await screen.findByRole('button', { name: /Next page/i }))
+
+    await screen.findByText('Bob', { selector: 'h3' })
+    expect(apiClient.getConversations).toHaveBeenLastCalledWith({ page: 2, limit: pageSize })
+    expect(screen.getByText(/Page 2 of 2/i)).toBeInTheDocument()
+    expect(routerState.navigate).toHaveBeenLastCalledWith(
+      { search: '?page=2&conversation=conv-2' },
+      { replace: true },
+    )
+  })
+
+  it('clamps an out-of-range deep-linked page to the last page', async () => {
+    routerState.location.search = '?source=customer&page=99'
+    const lastPage = conversation('conv-2')
+    ;(apiClient.getConversations as any).mockImplementation(async ({ page = 1 }: { page?: number }) => (
+      page === 99 ? pageResult([], 99) : pageResult([lastPage], page)
+    ))
+
+    render(<UnifiedInbox />)
+
+    await screen.findByText('Bob', { selector: 'h3' })
+    expect(apiClient.getConversations).toHaveBeenNthCalledWith(1, { page: 99, limit: pageSize })
+    expect(apiClient.getConversations).toHaveBeenNthCalledWith(2, { page: 2, limit: pageSize })
+    expect(screen.getByText(/Page 2 of 2/i)).toBeInTheDocument()
+    expect(routerState.navigate).toHaveBeenLastCalledWith(
+      { search: '?source=customer&page=2&conversation=conv-2' },
+      { replace: true },
+    )
+  })
+
+  it('restores the URL filter and preserves it when a conversation is selected by keyboard', async () => {
+    routerState.location.search = '?source=customer-profile&tab=needs_review'
+    const needsReply = conversation('conv-1', {
+      needs_merchant_reply: true,
+      needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED',
+    })
+    ;(apiClient.getConversations as any).mockResolvedValue(pageResult([needsReply], 1, 1))
+
+    render(<UnifiedInbox />)
+    const row = await screen.findByRole('button', { name: /Alice/i })
+    expect(screen.getByRole('button', { name: /Needs your reply/i })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.keyDown(row, { key: 'Enter' })
+
+    expect(routerState.navigate).toHaveBeenLastCalledWith(
+      { search: '?source=customer-profile&tab=needs_review&conversation=conv-1' },
+      { replace: true },
+    )
+  })
+
+  it('resets to page one once when a page-local filter changes and avoids duplicate pending loads', async () => {
+    let resolveFirstPage!: (value: ReturnType<typeof pageResult>) => void
+    const firstPage = conversation('conv-1')
+    const secondPage = conversation('conv-2')
+    ;(apiClient.getConversations as any)
+      .mockResolvedValueOnce(pageResult([firstPage], 1))
+      .mockResolvedValueOnce(pageResult([secondPage], 2))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstPage = resolve }))
+
+    render(<UnifiedInbox />)
+    await screen.findByText('Alice', { selector: 'h3' })
+    fireEvent.click(await screen.findByRole('button', { name: /Next page/i }))
+    await screen.findByText('Bob', { selector: 'h3' })
+    fireEvent.click(screen.getByRole('button', { name: /Needs your reply/i }))
+    await waitFor(() => expect(apiClient.getConversations).toHaveBeenCalledTimes(3))
+    fireEvent.change(screen.getByPlaceholderText(/search customers/i), { target: { value: 'alice' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Done/i }))
+    expect(apiClient.getConversations).toHaveBeenCalledTimes(3)
+
+    resolveFirstPage(pageResult([firstPage], 1))
+    await waitFor(() => expect(screen.getByText(/Page 1 of 2/i)).toBeInTheDocument())
+  })
+
+  it('refreshes the requested page after SSE reconnect while a page transition is pending', async () => {
+    const firstPage = conversation('conv-1')
+    const secondPage = conversation('conv-2')
+    ;(apiClient.getConversations as any).mockImplementation(async ({ page = 1 }: { page?: number }) => (
+      pageResult(page === 1 ? [firstPage] : [secondPage], page)
+    ))
+
+    render(<UnifiedInbox />)
+    await screen.findByText('Alice', { selector: 'h3' })
+    act(() => latestSSECallbacks().onSSEOnline?.())
+    fireEvent.click(await screen.findByRole('button', { name: /Next page/i }))
+    await screen.findByText('Bob', { selector: 'h3' })
+    act(() => latestSSECallbacks().onSSEOnline?.())
+
+    await waitFor(() => {
+      expect(apiClient.getConversations).toHaveBeenLastCalledWith({ page: 2, limit: pageSize })
+    })
+    expect(apiClient.getConversations).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the prior page visible and exposes an accessible retry when paging fails', async () => {
+    const firstPage = conversation('conv-1')
+    const secondPage = conversation('conv-2')
+    ;(apiClient.getConversations as any)
+      .mockResolvedValueOnce(pageResult([firstPage], 1))
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockResolvedValueOnce(pageResult([secondPage], 2))
+
+    render(<UnifiedInbox />)
+    await screen.findByText('Alice', { selector: 'h3' })
+    fireEvent.click(await screen.findByRole('button', { name: /Next page/i }))
+
+    const error = await screen.findByRole('alert')
+    expect(error).toHaveTextContent(/load conversations/i)
+    expect(screen.getByText('Alice', { selector: 'h3' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }))
+
+    await screen.findByText('Bob', { selector: 'h3' })
+    expect(apiClient.getConversations).toHaveBeenLastCalledWith({ page: 2, limit: pageSize })
+  })
+
+  it('announces an empty search and filter result and explains it is page-local', async () => {
+    const noReply = conversation('conv-1')
+    ;(apiClient.getConversations as any).mockResolvedValue(pageResult([noReply], 1))
+
+    render(<UnifiedInbox />)
+    await screen.findByText('Alice', { selector: 'h3' })
+    fireEvent.change(screen.getByPlaceholderText(/search customers/i), { target: { value: 'nobody' } })
+    fireEvent.click(screen.getByRole('button', { name: /Needs your reply/i }))
+
+    expect(screen.getByRole('status')).toHaveTextContent(/search and filter/i)
+    expect(screen.getByText(/apply only to this page/i)).toBeInTheDocument()
+  })
+
+  it('does not clear a provider-confirmed AI reply status during a language refresh', async () => {
+    const { default: i18n } = await import('@/i18n')
+    const autoConversation = conversation('conv-1', { ai_is_replying: false })
+    const confirmedAiReply = {
+      id: 'ai-confirmed',
+      conversation_id: 'conv-1',
+      content: 'The catalog is ready.',
+      sender: 'ai',
+      message_type: 'text',
+      delivery_state: 'SENT',
+      provider_message_id: 'provider-1',
+      metadata: { delivery_state: 'SENT', delivery_status: 'sent', provider_message_id: 'provider-1' },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    const earlierCustomerMessage = {
+      id: 'customer-before-ai', conversation_id: 'conv-1', content: 'Is this in stock?', sender: 'customer',
+      message_type: 'text', created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date(Date.now() - 60_000).toISOString(),
+    }
+    ;(apiClient.getConversations as any).mockResolvedValue({ ...pageResult([autoConversation], 1, 1), ai_reply_mode: 'AUTO' })
+    ;(apiClient.getMessages as any).mockResolvedValue({ messages: [earlierCustomerMessage, confirmedAiReply], pagination: { page: 1, totalPages: 1 } })
+
+    render(<UnifiedInbox />)
+    expect(await screen.findByTestId('inbox-reply-status')).toHaveTextContent(/AI reply sent/i)
+    await act(async () => { await i18n.changeLanguage('bn') })
+
+    expect(await screen.findByTestId('inbox-reply-status')).toBeInTheDocument()
+    await act(async () => { await i18n.changeLanguage('en') })
+  })
+
+  it('does not carry an AI reply status to another conversation', async () => {
+    const autoConversation = conversation('conv-1', { ai_is_replying: false, ai_reply_mode: 'AUTO' })
+    const otherConversation = conversation('conv-2', { ai_is_replying: false, ai_reply_mode: 'AUTO' })
+    const confirmedAiReply = {
+      id: 'ai-confirmed', conversation_id: 'conv-1', content: 'Confirmed', sender: 'ai', message_type: 'text',
+      delivery_state: 'SENT', provider_message_id: 'provider-1',
+      metadata: { delivery_state: 'SENT', delivery_status: 'sent', provider_message_id: 'provider-1' },
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }
+    const earlierCustomerMessage = {
+      id: 'customer-before-ai', conversation_id: 'conv-1', content: 'Is this in stock?', sender: 'customer',
+      message_type: 'text', created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date(Date.now() - 60_000).toISOString(),
+    }
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      ...pageResult([autoConversation, otherConversation], 1, 2),
+      ai_reply_mode: 'AUTO',
+    })
+    ;(apiClient.getMessages as any).mockImplementation(async (conversationId: string) => ({
+      messages: conversationId === 'conv-1' ? [earlierCustomerMessage, confirmedAiReply] : [],
+      pagination: { page: 1, totalPages: 1 },
+    }))
+
+    render(<UnifiedInbox />)
+    expect(await screen.findByTestId('inbox-reply-status')).toHaveTextContent(/AI reply sent/i)
+    fireEvent.click(await screen.findByRole('button', { name: /Bob/i }))
+
+    await waitFor(() => expect(screen.queryByTestId('inbox-reply-status')).not.toBeInTheDocument())
+  })
+
+  it('does not let an older conversation refresh overwrite a newer AI mode event', async () => {
+    const current = conversation('conv-1', { ai_is_replying: false })
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      ...pageResult([current], 1, 1), ai_reply_mode: 'MANUAL',
+    })
+    render(<UnifiedInbox />)
+    await screen.findByText('Alice', { selector: 'h3' })
+    act(() => latestSSECallbacks().onSSEOnline?.())
+
+    let resolveOlderRefresh!: (value: ReturnType<typeof pageResult> & { ai_reply_mode: string }) => void
+    ;(apiClient.getConversations as any).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveOlderRefresh = resolve;
+    }))
+    act(() => latestSSECallbacks().onSSEOnline?.())
+    await waitFor(() => expect(apiClient.getConversations).toHaveBeenCalledTimes(2))
+    act(() => latestSSECallbacks().onAiReplyModeChanged?.({ mode: 'AUTO' }))
+    expect(await screen.findByText(/AUTO/i)).toBeInTheDocument()
+
+    resolveOlderRefresh({ ...pageResult([current], 1, 1), ai_reply_mode: 'MANUAL' })
+    await waitFor(() => expect(screen.getByText(/AUTO/i)).toBeInTheDocument())
+  })
+
+  it('keeps tablet Inbox in one-pane mode until a conversation is opened', async () => {
+    const previousWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 768 })
+    ;(apiClient.getMessages as any).mockResolvedValue({
+      messages: [{ id: 'unread', conversation_id: 'conv-1', sender: 'customer', content: 'Please help', created_at: new Date().toISOString() }],
+      pagination: { page: 1, totalPages: 1 },
+    })
+
+    try {
+      const { container } = render(<UnifiedInbox />)
+      await screen.findByRole('button', { name: /Alice/i })
+      const workbench = container.querySelector('.mw-inbox-workbench')
+      const conversationList = workbench?.children[0]
+      const conversationDetail = workbench?.children[1]
+      expect(conversationList?.className).toContain('lg:w-80')
+      expect(conversationList?.className).toContain('lg:flex')
+      expect(conversationDetail?.className).toContain('lg:flex')
+      expect(apiClient.markConversationRead).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: /Alice/i }))
+      await screen.findByText('Please help')
+      await waitFor(() => expect(apiClient.markConversationRead).toHaveBeenCalledWith('conv-1', 'unread'))
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })
+    }
+  })
+
+  it('opens the exact linked customer profile in a narrow context sheet without inventing an order link', async () => {
+    const previousWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    const linked = conversation('conv-1', {
+      customer_id: 'cust-exact',
+      customer: { id: 'cust-exact', name: 'Alice' },
+    })
+    ;(apiClient.getConversations as any).mockResolvedValue(pageResult([linked], 1, 1))
+
+    try {
+      render(<MemoryRouter><UnifiedInbox /></MemoryRouter>)
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/i }))
+      fireEvent.click(await screen.findByTestId('context-toggle'))
+
+      const panel = await screen.findByTestId('customer-context-panel')
+      const profileLink = within(panel).getByRole('link', { name: /View customer profile/i })
+      expect(profileLink).toHaveAttribute('href', '/customers?customerId=cust-exact')
+      expect(getOrders).toHaveBeenCalledWith({ customer_id: 'cust-exact', limit: 3 })
+      expect(within(panel).queryByTestId('context-order-row')).not.toBeInTheDocument()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })
+    }
+  })
+
+  it('does not infer customer or order links for an unlinked conversation', async () => {
+    const previousWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    const unlinked = conversation('conv-1', { customer_id: null, customer: null, title: 'Unlinked thread' })
+    ;(apiClient.getConversations as any).mockResolvedValue(pageResult([unlinked], 1, 1))
+
+    try {
+      render(<MemoryRouter><UnifiedInbox /></MemoryRouter>)
+      fireEvent.click(await screen.findByRole('button', { name: /Unlinked thread/i }))
+      fireEvent.click(await screen.findByTestId('context-toggle'))
+
+      const panel = await screen.findByTestId('customer-context-panel')
+      expect(within(panel).getByTestId('context-no-link')).toBeInTheDocument()
+      expect(within(panel).queryByRole('link', { name: /View customer profile/i })).not.toBeInTheDocument()
+      expect(within(panel).queryByTestId('context-order-row')).not.toBeInTheDocument()
+      expect(getOrders).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })
+    }
+  })
+
+  it('keeps the reply task open and shows no success toast before provider confirmation', async () => {
+    const needsReply = conversation('conv-1', {
+      needs_merchant_reply: true,
+      needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED',
+    })
+    ;(apiClient.getConversations as any).mockResolvedValue(pageResult([needsReply], 1, 1))
+    ;(apiClient.createMessage as any).mockResolvedValue({
+      id: 'msg-pending', conversation_id: 'conv-1', sender: 'agent', content: 'A reply waiting for confirmation',
+      message_type: 'text', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    })
+
+    render(<UnifiedInbox />)
+    fireEvent.change(await screen.findByPlaceholderText(/Type your reply here/i), {
+      target: { value: 'A reply waiting for confirmation' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+
+    await waitFor(() => expect(apiClient.createMessage).toHaveBeenCalled())
+    expect(screen.getByRole('button', { name: /Alice/i })).toHaveTextContent(/Needs reply/i)
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('offers the next reply task only after provider-confirmed delivery', async () => {
+    const first = conversation('conv-1', { needs_merchant_reply: true, needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED' })
+    const next = conversation('conv-2', { needs_merchant_reply: true, needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED' })
+    ;(apiClient.getConversations as any).mockResolvedValue(pageResult([first, next], 1, 2))
+    ;(apiClient.createMessage as any).mockResolvedValue({
+      id: 'msg-confirmed', conversation_id: 'conv-1', sender: 'agent', content: 'Confirmed reply', message_type: 'text',
+      delivery_state: 'SENT', provider_message_id: 'provider-message-1',
+      metadata: { delivery_state: 'SENT', provider_message_id: 'provider-message-1' },
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    })
+
+    render(<UnifiedInbox />)
+    fireEvent.change(await screen.findByPlaceholderText(/Type your reply here/i), { target: { value: 'A verified reply' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    const options = (toast.success as any).mock.calls.at(-1)?.[1]
+    expect(options?.action?.label).toMatch(/Open next reply task/i)
+    act(() => options?.action?.onClick())
+    expect(routerState.navigate).toHaveBeenLastCalledWith({ search: '?conversation=conv-2' }, { replace: true })
+  })
+
+  it('reuses the send idempotency key when retrying the same draft after a lost response', async () => {
+    ;(apiClient.createMessage as any)
+      .mockRejectedValueOnce(new Error('Network response was lost'))
+      .mockResolvedValueOnce({
+        id: 'msg-replayed', conversation_id: 'conv-1', sender: 'agent', content: 'Same request',
+        message_type: 'text', delivery_state: 'SEND_PENDING',
+        metadata: { delivery_status: 'pending' },
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      })
+
+    render(<UnifiedInbox />)
+    const composer = await screen.findByPlaceholderText(/Type your reply here/i)
+    fireEvent.change(composer, { target: { value: 'Same request' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+    await waitFor(() => expect(apiClient.createMessage).toHaveBeenCalledTimes(1))
+    const firstKey = (apiClient.createMessage as any).mock.calls[0][2].idempotencyKey
+
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+    await waitFor(() => expect(apiClient.createMessage).toHaveBeenCalledTimes(2))
+    const retryKey = (apiClient.createMessage as any).mock.calls[1][2].idempotencyKey
+
+    expect(retryKey).toBe(firstKey)
   })
 })

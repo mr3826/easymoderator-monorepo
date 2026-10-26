@@ -34,6 +34,7 @@ jest.mock('src/modules/ai/vision-policy.service', () => ({
     photoMatchEnabled: () => false,
     stripImageBlocks: () => [],
 }));
+jest.mock('src/modules/ai/action-gate', () => ({ recordReadAction: jest.fn(async () => ({ recorded: true })) }));
 jest.mock('src/modules/knowledge/knowledge.service', () => ({ incrementFaqHit: jest.fn() }));
 jest.mock('src/modules/product/product-search.service', () => ({
     searchByAttributes: jest.fn(),

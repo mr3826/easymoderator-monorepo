@@ -74,6 +74,25 @@ describe('ActionQueuePanel (P+03)', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('degrades — not throws — on malformed or legacy-shaped payloads', async () => {
+    // IC-V1 browser sweep root cause: an envelope without a shaped `data`
+    // object (proxy HTML, partial rollout, legacy mock catch-all) used to
+    // crash items.length on undefined and white-screen the whole inbox.
+    for (const malformed of [
+      { featureDisabled: false, data: [] },
+      { featureDisabled: false, data: null },
+      { featureDisabled: false },
+      { featureDisabled: false, data: { items: 'oops' } },
+    ]) {
+      inboxApi.getInboxActions.mockClear();
+      inboxApi.getInboxActions.mockResolvedValue(malformed);
+      const { container, unmount } = render(<ActionQueuePanel />);
+      await waitFor(() => expect(inboxApi.getInboxActions).toHaveBeenCalledTimes(1));
+      expect(container).toBeEmptyDOMElement();
+      unmount();
+    }
+  });
+
   it('groups items in operational-risk bucket order with reason labels, and shows the deadline only when grounded', async () => {
     // Deliberately out of bucket order: server risk-ordering is bucket asc,
     // and only the CUSTOMER_BLOCKED item carries a grounded deadline.

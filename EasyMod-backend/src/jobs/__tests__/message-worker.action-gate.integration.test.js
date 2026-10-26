@@ -263,13 +263,21 @@ describe('real message-worker Action Gate traversal', () => {
         await driveToSummary();
         const previousNodeEnv = process.env.NODE_ENV;
         const previousSecret = process.env.AI_ACTION_GATE_SECRET;
+        const previousDomainRuntime = process.env.DOMAIN_AGENT_RUNTIME_ENABLED;
+        const previousOrderMutations = process.env.AI_ORDER_MUTATIONS_ENABLED;
         try {
             process.env.NODE_ENV = 'production';
+            process.env.DOMAIN_AGENT_RUNTIME_ENABLED = 'true';
+            process.env.AI_ORDER_MUTATIONS_ENABLED = 'true';
             delete process.env.AI_ACTION_GATE_SECRET;
             await runInbound('YES');
         } finally {
             process.env.NODE_ENV = previousNodeEnv;
             process.env.AI_ACTION_GATE_SECRET = previousSecret;
+            if (previousDomainRuntime === undefined) delete process.env.DOMAIN_AGENT_RUNTIME_ENABLED;
+            else process.env.DOMAIN_AGENT_RUNTIME_ENABLED = previousDomainRuntime;
+            if (previousOrderMutations === undefined) delete process.env.AI_ORDER_MUTATIONS_ENABLED;
+            else process.env.AI_ORDER_MUTATIONS_ENABLED = previousOrderMutations;
         }
 
         expect(await Order.count({ where: { shop_id: IDS.shopA } })).toBe(0);

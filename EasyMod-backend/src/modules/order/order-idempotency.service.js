@@ -5,12 +5,12 @@
  * Kept outside order.service so Action Gate can perform the same read without
  * importing a mutation service.
  */
-const findOrderByIdempotencyKey = async (shopId, idempotencyKey) => {
+const findOrderByIdempotencyKey = async (shopId, idempotencyKey, { transaction } = {}) => {
     if (!shopId || !idempotencyKey) return null;
     try {
         const { Order } = require('../entities');
         if (Order && typeof Order.findOne === 'function') {
-            return Order.findOne({ where: { shop_id: shopId, idempotency_key: idempotencyKey } });
+            return Order.findOne({ where: { shop_id: shopId, idempotency_key: idempotencyKey }, transaction });
         }
     } catch (_) {
         // Some isolated unit seams intentionally do not load the entity graph.
@@ -18,7 +18,7 @@ const findOrderByIdempotencyKey = async (shopId, idempotencyKey) => {
     try {
         const Order = require('./order.entity');
         if (Order && typeof Order.findOne === 'function') {
-            return Order.findOne({ where: { shop_id: shopId, idempotency_key: idempotencyKey } });
+            return Order.findOne({ where: { shop_id: shopId, idempotency_key: idempotencyKey }, transaction });
         }
     } catch (_) {
         // An unavailable read model is not a committed order; the Action Gate

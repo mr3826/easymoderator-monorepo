@@ -53,3 +53,27 @@ Closed findings F1-F10 per doc 04; re-verification on the FIXED tree:
 - integration real-stack: mwv1 suite now 15 specs incl. HTTP 409 DRAFT_ORDER_NOT_BOOKABLE pin; order-confidence integration 17/17 unchanged;
 - **true-stack browser certification (F5 fix):** founder preview now runs the IC tree (backend :3000 + vite :5173); pilot-plus-walkthrough 3/3 live; dev-cookie CSRF round-trip proven via real browser login; order_status=draft filter + draft-booking 409 + zero-mutation proven over HTTP from an authenticated browser session against the IC backend.
 - FINAL battery after fixes (this commit): backend 313/313 (4221 passed, clean env); integration 30/30 (221/221 incl. HTTP draft pin); meta-e2e 48/48; FE 665/665 + tsc 0; Playwright pilot-plus+mwv1-journeys 20/20 chromium AND 20/20 firefox via the now-committed `npm run test:e2e:chromium`/`test:e2e:firefox` scripts (one initial firefox run failed at dev-server startup contention; green on clean re-run).
+
+## Round-2 authorization/hardening battery (adversarial review round 2 -> final freeze)
+
+Post-review findings R2-F1..R2-F10 closed/dispositioned per doc 04; re-verification on the
+FINAL tree (Node 20.20.2; lab .env PRESENT throughout — see note 1 revision):
+
+| Gate | Command | Result |
+|---|---|---|
+| Backend units (full, incl. test-discovery) | `npm run test:backend` (jest --runInBand --coverage=false --silent) | **317/317 suites; 4,271 passed, 2 skipped** |
+| Real-stack integration | `npm run test:backend:integration:docker` | **32/32 suites; 225/225** — disposable Postgres applied the new `20261026_001_order_idempotency_unique` migration; courier-race/ownership/confidence suites now use `kind:'test'` authority fixtures |
+| Meta-shaped E2E | `npm run test:backend:meta:e2e:docker` | **2/2 suites; 48/48** — zero live sends |
+| Frontend units | `npm run test:frontend` | **78 files; 692/692** (incl. ActionQueuePanel degrade-not-crash pin) |
+| TypeScript / build | `tsc --noEmit` / `npm run build:all` | **0 / success** |
+| Browser battery | `npx playwright test pilot-plus mwv1-journeys --workers=1` | **chromium 20/20; firefox 20/20** |
+| Full legacy e2e sweep | `npx playwright test --browser=chromium` | 83 passed / 22 failed / 6 skipped — ALL 22 in 5 legacy files pinning pre-Pilot+ markup, each root-caused as baseline-reproducible (doc 04 round-2); owner debt, not candidate regressions |
+
+1. **Revised:** the totp lab-.env interplay (original note 1) is fixed at the test level
+   (service instance reused instead of jest.resetModules+re-require, which re-ran dotenv);
+   this round's full battery ran WITH the lab .env present and is green.
+2. Parallel Playwright (default workers) intermittently hits 30s load timeouts on this
+   machine under suite contention; `--workers=1` is the reliable procedure for the battery.
+3. WebKit (installed, 2248): dev-stack `__Host-` CSRF cookie/CORS limitation on
+   http://localhost — every test fails at login identically; production is same-origin.
+   Never previously battery-green; documented as environment limitation in doc 04.

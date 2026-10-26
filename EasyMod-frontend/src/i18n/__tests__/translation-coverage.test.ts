@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import * as ts from 'typescript';
 import en from '../locales/en.json';
 import bn from '../locales/bn.json';
+import i18n from '../index';
 
 /**
  * i18next is configured without a missing-key handler, so an unknown key renders
@@ -24,17 +26,67 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 const hasKey = (obj: unknown, key: string): boolean =>
   key.split('.').reduce<any>((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj) !== undefined;
 
-// Matches t('some.key') and t('some.key', 'Default text').
-const T_CALL = /\bt\(\s*['"]([\w.]+)['"]/g;
+const keyPattern = /^[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)+$/;
+const translationFiles = sourceFiles(SRC);
+const variableInitializers = new Map<string, Array<{ initializer: ts.Expression; file: string }>>();
+const parsedFiles = new Map<string, ts.SourceFile>();
+
+for (const file of translationFiles) {
+  const src = fs.readFileSync(file, 'utf8');
+  const source = ts.createSourceFile(
+    file,
+    src,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  parsedFiles.set(file, source);
+  const collectVariables = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.initializer) {
+      const entries = variableInitializers.get(node.name.text) ?? [];
+      entries.push({ initializer: node.initializer, file });
+      variableInitializers.set(node.name.text, entries);
+    }
+    ts.forEachChild(node, collectVariables);
+  };
+  collectVariables(source);
+}
 
 const usedKeys = (() => {
   const found = new Map<string, string>();
-  for (const file of sourceFiles(SRC)) {
-    const src = fs.readFileSync(file, 'utf8');
-    let m: RegExpExecArray | null;
-    while ((m = T_CALL.exec(src))) {
-      if (!found.has(m[1])) found.set(m[1], path.relative(SRC, file).replace(/\\/g, '/'));
+  const addKey = (key: string, file: string) => {
+    if (!found.has(key)) found.set(key, path.relative(SRC, file).replace(/\\/g, '/'));
+  };
+  const collectDynamicKeys = (node: ts.Node, seen: Set<ts.Expression>) => {
+    if (ts.isStringLiteralLike(node)) {
+      if (keyPattern.test(node.text)) addKey(node.text, node.getSourceFile().fileName);
+      return;
     }
+    if (ts.isIdentifier(node)) {
+      for (const declaration of variableInitializers.get(node.text) ?? []) {
+        if (seen.has(declaration.initializer)) continue;
+        seen.add(declaration.initializer);
+        collectDynamicKeys(declaration.initializer, seen);
+      }
+    }
+    ts.forEachChild(node, (child) => collectDynamicKeys(child, seen));
+  };
+
+  for (const [file, source] of parsedFiles) {
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)
+        && ts.isIdentifier(node.expression)
+        && node.expression.text === 't'
+        && node.arguments[0]) {
+        const argument = node.arguments[0];
+        if (ts.isStringLiteralLike(argument)) addKey(argument.text, file);
+        else collectDynamicKeys(argument, new Set());
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
   }
   return found;
 })();
@@ -56,5 +108,24 @@ describe('translation coverage', () => {
       .filter(([key]) => !hasKey(bn, key))
       .map(([key, file]) => `${key} (${file})`);
     expect(missing).toEqual([]);
+  });
+
+  it('keeps the document language synchronized with the selected UI language', async () => {
+    const previousLanguage = i18n.language;
+    const previousStoredLanguage = window.localStorage.getItem('easymod_lang');
+    const languageDetector = i18n.services.languageDetector as any;
+    const previousCacheLanguage = languageDetector?.cacheUserLanguage;
+    if (languageDetector) languageDetector.cacheUserLanguage = () => {};
+    try {
+      await i18n.changeLanguage('en');
+      expect(document.documentElement.lang).toBe('en');
+      await i18n.changeLanguage('bn');
+      expect(document.documentElement.lang).toBe('bn');
+    } finally {
+      if (languageDetector && previousCacheLanguage) languageDetector.cacheUserLanguage = previousCacheLanguage;
+      await i18n.changeLanguage(previousLanguage);
+      if (previousStoredLanguage === null) window.localStorage.removeItem('easymod_lang');
+      else window.localStorage.setItem('easymod_lang', previousStoredLanguage);
+    }
   });
 });

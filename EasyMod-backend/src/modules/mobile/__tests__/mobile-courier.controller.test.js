@@ -210,7 +210,9 @@ describe('mobile Courier & Problem Center controller', () => {
                         order_number: 'ORD-777',
                         customer_name: 'Tanvir Ahmed',
                         customer_phone: '01711223344',
-                        total_amount: 1500,
+                        total: 1500,
+                        payment_method: 'cod',
+                        payment_status: 'pending',
                         delivery_provider: 'steadfast',
                         delivery_consignment_id: 'CS-777',
                         delivery_tracking_code: 'TRK-777',
@@ -246,6 +248,7 @@ describe('mobile Courier & Problem Center controller', () => {
                             customer_name: 'Tanvir Ahmed',
                             customer_phone: '01711223344',
                             total_amount: 1500,
+                            cod_amount: 1500,
                             delivery_status: 'failed_delivery',
                             problem_reason: 'Customer unreachable after 3 attempts',
                         }),
@@ -270,7 +273,9 @@ describe('mobile Courier & Problem Center controller', () => {
                 order_number: 'ORD-555',
                 customer_name: 'Rafiqul Islam',
                 customer_phone: '01811223344',
-                total_amount: 2200,
+                total: 2200,
+                payment_method: 'cash_on_delivery',
+                payment_status: 'pending',
                 delivery_provider: 'pathao',
                 delivery_consignment_id: 'CN-555',
                 delivery_tracking_code: 'PT-555',
@@ -303,12 +308,71 @@ describe('mobile Courier & Problem Center controller', () => {
                     provider: 'pathao',
                     tracking_number: 'PT-555',
                     current_status: 'in_transit',
+                    total_amount: 2200,
+                    cod_amount: 2200,
                     status_history: expect.arrayContaining([
                         expect.objectContaining({ status: 'booked' }),
                         expect.objectContaining({ status: 'in_transit' }),
                     ]),
-                    cod_derived_note: expect.stringContaining('Order-derived expectation'),
+                    cod_derived_note: expect.stringContaining('recorded payment method'),
                 }),
+            }));
+        });
+
+        test('does not invent a booked history or COD amount without persisted delivery/payment facts', async () => {
+            const res = response();
+            Order.findOne.mockResolvedValue({
+                id: 'ord-unbooked',
+                shop_id: 'shop-1',
+                order_number: 'ORD-UNBOOKED',
+                total: 2200,
+                payment_method: 'bkash',
+                payment_status: 'pending',
+                delivery_status: null,
+                delivery_provider: null,
+                delivery_consignment_id: null,
+                delivery_tracking_code: null,
+            });
+            DeliveryTracking.findOne.mockResolvedValue(null);
+
+            await controller.getDeliveryTracking({
+                params: { orderId: 'ord-unbooked' },
+                shop: { id: 'shop-1' },
+            }, res, jest.fn());
+
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+                data: expect.objectContaining({
+                    current_status: 'not_booked',
+                    status_history: [],
+                    total_amount: 2200,
+                    cod_amount: 0,
+                }),
+            }));
+        });
+
+        test('returns no expected COD amount when the recorded method is unknown', async () => {
+            const res = response();
+            Order.findOne.mockResolvedValue({
+                id: 'ord-unknown-payment',
+                shop_id: 'shop-1',
+                order_number: 'ORD-UNKNOWN',
+                total: 2200,
+                payment_method: null,
+                payment_status: 'pending',
+                delivery_status: 'booked',
+            });
+            DeliveryTracking.findOne.mockResolvedValue({
+                current_status: 'booked',
+                status_history: [{ status: 'booked', timestamp: new Date().toISOString() }],
+            });
+
+            await controller.getDeliveryTracking({
+                params: { orderId: 'ord-unknown-payment' },
+                shop: { id: 'shop-1' },
+            }, res, jest.fn());
+
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+                data: expect.objectContaining({ total_amount: 2200, cod_amount: null }),
             }));
         });
 

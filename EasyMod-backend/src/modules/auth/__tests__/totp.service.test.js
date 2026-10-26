@@ -131,12 +131,9 @@ describe('TOTP Service Security', () => {
             delete process.env.JWT_ACCESS_SECRET;
 
             try {
-                // getEncryptionKey() is called lazily, at first use — importing
-                // the module never touched it, so the old `expect(require(...))`
-                // could not have thrown no matter which secrets were unset.
-                jest.resetModules();
-                const service = require('src/modules/auth/totp.service');
-                await expect(service.generateTotpSecret('user-1'))
+                // The service reads the key lazily; reuse its existing instance
+                // so module reload does not run dotenv and repopulate the secrets.
+                await expect(totpService.generateTotpSecret('user-1'))
                     .rejects.toThrow(/required for TOTP encryption/);
             } finally {
                 // Restore in a finally: a bare assignment after the assertion is
@@ -146,7 +143,6 @@ describe('TOTP Service Security', () => {
                     if (v === undefined) delete process.env[k];
                     else process.env[k] = v;
                 });
-                jest.resetModules();
             }
         });
     });

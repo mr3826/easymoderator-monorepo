@@ -33,11 +33,25 @@ jest.mock('../../../utils/structured-logger', () => ({
 const E = require('../../entities');
 const tags = require('../customer-tags.service');
 
+const tagTransaction = { rollback: jest.fn() };
 const actor = { userId: 'owner-1', role: 'owner', shopId: 'shop-1' };
 const staff = { userId: 'staff-1', role: 'staff', shopId: 'shop-1' };
 
 beforeEach(() => {
     jest.clearAllMocks();
+    const sequelize = {
+        fn: jest.fn(),
+        transaction: jest.fn(async (callback) => {
+            try {
+                return await callback(tagTransaction);
+            } catch (error) {
+                tagTransaction.rollback();
+                throw error;
+            }
+        }),
+    };
+    E.CustomerTag.sequelize = sequelize;
+    E.CustomerTagAssignment.sequelize = sequelize;
     E.UserShop.findOne.mockResolvedValue({ user_id: 'owner-1', is_active: true });
     E.Customer.findOne.mockResolvedValue({ id: 'cust-1', shop_id: 'shop-1' });
     E.CustomerTag.findAll.mockResolvedValue([]);
@@ -70,6 +84,15 @@ describe('vocabulary', () => {
         E.CustomerTag.count.mockResolvedValue(40);
         await expect(tags.createTag({ shopId: 'shop-1', name: 'New tag' }, actor))
             .rejects.toMatchObject({ code: 'TAG_LIMIT' });
+    });
+
+    it('rolls back tag creation when its audit record cannot be persisted', async () => {
+        E.CustomerTag.count.mockResolvedValue(0);
+        E.AuditLog.create.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        await expect(tags.createTag({ shopId: 'shop-1', name: 'New tag' }, actor))
+            .rejects.toMatchObject({ code: 'TAG_AUDIT_FAILED', status: 503 });
+        expect(tagTransaction.rollback).toHaveBeenCalledTimes(1);
     });
 
     it('shop-scoped: list carries shop_id and never leaks others', async () => {

@@ -40,7 +40,11 @@ const mockLlmChat = jest.fn(async () => ({
     text: 'The price is ৳9,999 and delivery is guaranteed tomorrow.',
     provider: 'fake-test-provider',
 }));
-const mockRecordReadAction = jest.fn(async () => ({ recorded: false }));
+// IC-V1 review F1: render-production-env ships DOMAIN_AGENT_RUNTIME_ENABLED=
+// 'false', so the real evaluator returns this failure in production. The
+// router treats it as a policy state and keeps the legacy product path —
+// replay must model the shipped default, not a runtime-on environment.
+const mockRecordReadAction = jest.fn(async () => ({ recorded: false, reasonCode: 'domain_agent_runtime_disabled' }));
 const mockFaqHit = jest.fn();
 const mockPhotoMatch = jest.fn(() => false);
 const mockStripImages = jest.fn(messages => messages.map(message => {

@@ -70,6 +70,51 @@ describe('read-only Action Gate envelope', () => {
         expect(mockAuditCreate).toHaveBeenCalledTimes(1);
     });
 
+    test('allows a shop- and conversation-bound product catalog read without a customer identity', async () => {
+        const result = await recordReadAction({
+            actionType: 'READ_PRODUCT',
+            tenant: { shopId: TENANT.shopId, conversationId: TENANT.conversationId },
+            traceId: 'trace-product-1',
+            evidenceSnapshot: withEvidenceSnapshot({
+                shopId: TENANT.shopId,
+                conversationId: TENANT.conversationId,
+                productIds: ['product-1'],
+            }),
+            payload: { productIds: ['product-1'], resultCount: 1 },
+        });
+
+        expect(result).toEqual({ recorded: true, reasonCode: null });
+        expect(result).not.toHaveProperty('authorization');
+        expect(mockAuditCreate).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'ai.action_gate.recorded',
+            shop_id: TENANT.shopId,
+            metadata: expect.objectContaining({ actionType: 'READ_PRODUCT' }),
+        }));
+    });
+
+    test('fails closed when the Domain Agent runtime kill switch is disabled', async () => {
+        const previous = process.env.DOMAIN_AGENT_RUNTIME_ENABLED;
+        process.env.DOMAIN_AGENT_RUNTIME_ENABLED = 'false';
+        try {
+            const result = await recordReadAction({
+                actionType: 'READ_PRODUCT',
+                tenant: { shopId: TENANT.shopId, conversationId: TENANT.conversationId },
+                traceId: 'trace-product-disabled',
+                evidenceSnapshot: withEvidenceSnapshot({
+                    shopId: TENANT.shopId,
+                    conversationId: TENANT.conversationId,
+                    productIds: ['product-1'],
+                }),
+                payload: { productIds: ['product-1'] },
+            });
+
+            expect(result).toEqual({ recorded: false, reasonCode: 'domain_agent_runtime_disabled' });
+        } finally {
+            if (previous === undefined) delete process.env.DOMAIN_AGENT_RUNTIME_ENABLED;
+            else process.env.DOMAIN_AGENT_RUNTIME_ENABLED = previous;
+        }
+    });
+
     test('records one valid read and never returns an authorization object', async () => {
         const result = await recordReadAction({
             actionType: 'READ_ORDER_STATUS', tenant: TENANT, traceId: 'trace-1', evidenceSnapshot: evidence(),

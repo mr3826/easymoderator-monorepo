@@ -138,11 +138,14 @@ export async function getOrder(orderId: string): Promise<Order> {
  * ```
  */
 export async function createOrder(
-  order: CreateOrderPayload
+  order: CreateOrderPayload,
+  idempotencyKey?: string,
 ): Promise<Order> {
   // The manual-order form already sends a snake_case payload the create validator
   // expects, so only the response is normalised back into the app's Order shape.
-  const response: AxiosResponse<ApiResponse<Order>> = await httpClient.post('/api/order', order);
+  const response: AxiosResponse<ApiResponse<Order>> = idempotencyKey
+    ? await httpClient.post('/api/order', order, { headers: { 'Idempotency-Key': idempotencyKey } })
+    : await httpClient.post('/api/order', order);
   return normalizeOrder(response.data.data);
 }
 

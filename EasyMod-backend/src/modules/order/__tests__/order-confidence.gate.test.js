@@ -7,7 +7,7 @@
  * pins how bookForOrder reacts to each gate result.
  */
 
-const mockOrder = { update: jest.fn().mockResolvedValue([1]) };
+const mockOrder = { findOne: jest.fn(), update: jest.fn().mockResolvedValue([1]) };
 const mockCourierDispatch = { findOrCreate: jest.fn(), update: jest.fn(), findOne: jest.fn() };
 
 jest.mock('../../entities', () => ({
@@ -38,6 +38,7 @@ const orderService = require('../order.service');
 const deliveryService = require('../../delivery/delivery.service');
 const merchantNotificationService = require('../../notification/merchant-notification.service');
 const orderConfidence = require('../../order-confidence/order-confidence.service');
+const { sequelize } = require('../../../utils/database/database-setup');
 
 const makeOrder = (overrides = {}) => ({
     id: 'order-1',
@@ -63,6 +64,16 @@ const HELD = {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    sequelize.transaction.mockImplementation(async (callback) => {
+        const transaction = { LOCK: { UPDATE: 'UPDATE' }, rollback: jest.fn(), commit: jest.fn() };
+        try {
+            return typeof callback === 'function' ? await callback(transaction) : transaction;
+        } catch (error) {
+            await transaction.rollback();
+            throw error;
+        }
+    });
+    mockOrder.findOne.mockResolvedValue(makeOrder());
     deliveryService.resolveAiDefaultProvider.mockResolvedValue({ blocked: false, provider: 'pathao', pickup: null });
     deliveryService.createDeliveryOrder.mockResolvedValue({
         provider: 'pathao', consignment_id: 'CN-1', tracking_code: 'TRK-1', status: 'pending',
@@ -76,7 +87,9 @@ describe('bookForOrder × Order Confidence gate', () => {
     test('a held order never creates a dispatch claim and never reaches the provider', async () => {
         orderConfidence.checkBookingGate.mockResolvedValue(HELD);
 
-        const result = await orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        const result = await orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
 
         expect(result).toEqual(expect.objectContaining({
             blocked: true,
@@ -103,7 +116,9 @@ describe('bookForOrder × Order Confidence gate', () => {
     test('the gate runs before the claim and receives the trigger', async () => {
         orderConfidence.checkBookingGate.mockResolvedValue({ allowed: true, mode: 'enforce', decision: 'READY' });
 
-        const result = await orderService.bookForOrder(makeOrder(), { shopId: 'shop-1', trigger: 'MANUAL' });
+        const result = await orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', trigger: 'MANUAL', mutationAuthority: { kind: 'test' },
+        });
 
         expect(orderConfidence.checkBookingGate).toHaveBeenCalledWith(
             expect.objectContaining({ id: 'order-1' }), 'shop-1', { trigger: 'MANUAL' },
@@ -118,7 +133,9 @@ describe('bookForOrder × Order Confidence gate', () => {
 
     test('automatic callers default to trigger AUTO', async () => {
         orderConfidence.checkBookingGate.mockResolvedValue({ allowed: true, mode: 'off' });
-        await orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        await orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
         expect(orderConfidence.checkBookingGate).toHaveBeenCalledWith(expect.anything(), 'shop-1', { trigger: 'AUTO' });
     });
 
@@ -142,7 +159,9 @@ describe('bookForOrder × Order Confidence gate', () => {
         orderConfidence.checkBookingGate.mockResolvedValue(decision);
         const draft = makeOrder({ order_status: 'draft' });
 
-        await expect(orderService.bookForOrder(draft, { shopId: 'shop-1' }))
+        await expect(orderService.bookForOrder(draft, {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        }))
             .rejects.toMatchObject({ status: 409, code: 'DRAFT_ORDER_NOT_BOOKABLE' });
 
         // IC-V1 reconciliation: the gate runs AFTER Order-Confidence (not before,
@@ -158,6 +177,23 @@ describe('bookForOrder × Order Confidence gate', () => {
         expect(draft.order_status).toBe('draft');
     });
 
+    test('rechecks persisted order status under a row lock before courier claim', async () => {
+        orderConfidence.checkBookingGate.mockResolvedValue({ allowed: true, mode: 'off' });
+        mockOrder.findOne.mockResolvedValue(makeOrder({ order_status: 'draft' }));
+
+        await expect(orderService.bookForOrder(makeOrder({ order_status: 'confirmed' }), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        }))
+            .rejects.toMatchObject({ status: 409, code: 'DRAFT_ORDER_NOT_BOOKABLE' });
+
+        expect(mockOrder.findOne).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'order-1', shop_id: 'shop-1' },
+            lock: 'UPDATE',
+        }));
+        expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+    });
+
     // IC-V1 review F1: an unconfigured shop must never see the draft mutated or
     // notified by a booking attempt — DRAFT_ORDER_NOT_BOOKABLE answers BEFORE
     // any COURIER_SETUP_REQUIRED marking.
@@ -166,7 +202,9 @@ describe('bookForOrder × Order Confidence gate', () => {
         deliveryService.resolveAiDefaultProvider.mockResolvedValue({ blocked: true });
         const draft = makeOrder({ order_status: 'draft' });
 
-        await expect(orderService.bookForOrder(draft, { shopId: 'shop-1' }))
+        await expect(orderService.bookForOrder(draft, {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        }))
             .rejects.toMatchObject({ status: 409, code: 'DRAFT_ORDER_NOT_BOOKABLE' });
 
         expect(draft.update).not.toHaveBeenCalled();
@@ -206,7 +244,9 @@ describe('bookForOrder × Order Confidence gate', () => {
             allowed: false, mode: 'enforce', engineFailure: true, decision: null,
             reasons: [{ code: 'ENGINE_UNAVAILABLE', severity: 'VERIFY' }],
         });
-        const result = await orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        const result = await orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
         expect(result).toEqual(expect.objectContaining({ status: 'confidence_hold', engine_failure: true }));
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
     });

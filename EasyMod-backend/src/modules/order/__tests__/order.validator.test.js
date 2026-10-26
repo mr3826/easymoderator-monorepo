@@ -27,6 +27,17 @@ describe('order.validator', () => {
       expect(result.error).toBeUndefined();
       expect(result.value).toMatchObject({ order_status: 'draft', page: 1, limit: 100 });
     });
+
+    it('accepts the delivered status filter for the orders workspace', () => {
+      const result = orderValidator.getOrders.query.validate({
+        order_status: 'delivered',
+        page: '1',
+        limit: '100'
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.value).toMatchObject({ order_status: 'delivered', page: 1, limit: 100 });
+    });
   });
 
   describe('updateOrder', () => {

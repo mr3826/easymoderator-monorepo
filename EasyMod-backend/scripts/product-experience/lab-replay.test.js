@@ -50,7 +50,10 @@ const mockGetByIds = jest.fn(async (ids, shopId) => {
     if (shopId !== mockExpectedShopId) { mockTenantViolations += 1; return []; }
     return mockCatalog.filter(product => product.shop_id === shopId && ids.map(String).includes(String(product.id)));
 });
-const mockRecordReadAction = jest.fn(async () => ({ recorded: false }));
+// IC-V1 review F1: production default renders DOMAIN_AGENT_RUNTIME_ENABLED=
+// 'false' — replay models the shipped default (audited reads off, legacy
+// product answers continue), not a runtime-on environment.
+const mockRecordReadAction = jest.fn(async () => ({ recorded: false, reasonCode: 'domain_agent_runtime_disabled' }));
 const mockPhotoMatch = jest.fn(() => false);
 const mockStripImages = jest.fn(messages => messages.map(message => {
     if (!Array.isArray(message.content)) return message;

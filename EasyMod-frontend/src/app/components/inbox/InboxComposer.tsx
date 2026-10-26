@@ -88,6 +88,19 @@ export function InboxComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickReplyRef = useRef<HTMLDivElement>(null);
   const isSendingRef = useRef(false);
+  const attachmentIdentityRef = useRef(new WeakMap<File, string>());
+  const retryIdempotencyKeysRef = useRef(new Map<string, string>());
+
+  const identityForAttachment = (file: File) => {
+    let identity = attachmentIdentityRef.current.get(file);
+    if (!identity) {
+      identity = typeof globalThis.crypto?.randomUUID === "function"
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      attachmentIdentityRef.current.set(file, identity);
+    }
+    return identity;
+  };
 
   const filteredQuickTemplates = quickReplyTemplates.filter((template) => {
     const query = quickSearch.trim().toLowerCase();
@@ -156,15 +169,30 @@ export function InboxComposer({
       }
 
       setSendPhase("sending");
-      const idempotencyKey = typeof globalThis.crypto?.randomUUID === "function"
+      const draftFingerprint = JSON.stringify([
+        selectedConversation.id,
+        content,
+        messageType,
+        selectedAttachment ? identityForAttachment(selectedAttachment) : null,
+      ]);
+      let idempotencyKey = retryIdempotencyKeysRef.current.get(draftFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = typeof globalThis.crypto?.randomUUID === "function"
         ? globalThis.crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        retryIdempotencyKeysRef.current.set(draftFingerprint, idempotencyKey);
+        if (retryIdempotencyKeysRef.current.size > 10) {
+          const oldest = retryIdempotencyKeysRef.current.keys().next().value;
+          if (oldest) retryIdempotencyKeysRef.current.delete(oldest);
+        }
+      }
       const message = await apiClient.createMessage(selectedConversation.id, {
         content,
         sender: "agent",
         message_type: messageType,
         ...(metadata ? { metadata } : {}),
       }, { idempotencyKey });
+      retryIdempotencyKeysRef.current.delete(draftFingerprint);
       onMessageSent(message);
       setEditingMessage("");
       handleAttachmentClear();

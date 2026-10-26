@@ -234,6 +234,19 @@ export default function CustomerContextPanel({ conversation, onClose, onConversa
               {conversation.metaChannel?.displayName ? ` · ${conversation.metaChannel.displayName}` : ""}
               {conversation.updated_at ? ` · ${formatRelative(conversation.updated_at, i18n.language)}` : ""}
             </p>
+            {customerId && (
+              <a
+                href={`/customers?customerId=${encodeURIComponent(customerId)}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(`/customers?customerId=${encodeURIComponent(customerId)}`);
+                }}
+                className="mt-1 inline-flex min-h-8 items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+              >
+                {t("inbox.context.viewProfile")}
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            )}
           </div>
         </div>
         {!customerId && (

@@ -117,6 +117,12 @@ class PaymentWebhookController {
                         transactionId: trxID,
                         amount,
                         order: paymentOrder,
+                        mutationAuthority: {
+                            kind: 'system',
+                            source: 'payment_webhook',
+                            signatureVerified: req.webhookSignatureVerified === true,
+                            eventId: req.webhookEventId || String(paymentID || trxID || merchantInvoiceNumber || ''),
+                        },
                     });
                 } catch (processingError) {
                     // A claimed callback must remain retryable if fulfillment
@@ -250,6 +256,7 @@ class PaymentWebhookController {
                     shopId: order.shop_id,
                     requireAiDefault: true,
                     throwOnError: false,
+                    mutationAuthority: paymentInfo.mutationAuthority,
                     stepData: {
                         name: order.customer_name,
                         phone: order.customer_phone,

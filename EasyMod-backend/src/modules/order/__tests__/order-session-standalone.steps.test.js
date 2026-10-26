@@ -39,6 +39,7 @@ jest.mock('../../ai/action-gate', () => ({
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
 const productSearch = require('../../product/product-search.service');
+const { authorize } = require('../../ai/action-gate');
 const { issueInvoiceForOrder } = require('../../invoice/chat-invoice.service');
 const ShopEntity = require('../../shop/shop.entity');
 const PaymentConfigEntity = require('../../payment/payment-config.entity');
@@ -274,12 +275,13 @@ describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
         );
     });
 
-    test('fails open (advances) when the stock lookup throws', async () => {
+    test('stays on quantity collection when the stock lookup is unavailable', async () => {
         productSearch.checkStock.mockRejectedValue(new Error('db down'));
         const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'bn' } });
         const res = await OrderSessionService.handleCurrentStep(session, '2', null);
 
-        expect(res.current_step).toBe('ADD_MORE');
+        expect(res.current_step).toBe('COLLECTING_QUANTITY');
+        expect(res.prompt).toContain('স্টক এখন যাচাই করা যাচ্ছে না');
     });
 });
 
@@ -525,6 +527,37 @@ describe('multi-item order: summary, create, invoice', () => {
         const [, optsArg] = issueInvoiceForOrder.mock.calls[0];
         expect(optsArg.items).toHaveLength(2);
         expect(optsArg.items[1]).toEqual(expect.objectContaining({ name: 'Silk Dupatta', quantity: 2, total: 1000 }));
+    });
+
+    test('requires a fresh customer confirmation when tracked stock changes but remains available', async () => {
+        productSearch.checkStock.mockResolvedValue({
+            available: true,
+            product: { id: 'prod-1', track_quantity: true, quantity: 8, price: 1650 },
+        });
+        authorize.mockResolvedValueOnce({ authorized: false, reasonCode: 'material_state_revalidated' });
+        const session = makeSession({
+            current_step: 'ORDER_SUMMARY',
+            product_info: { id: 'prod-1', name: 'Azal Lawn Two Piece', price: 1650, quantity: 1, track_quantity: true, stock_snapshot: 10 },
+            step_data: {
+                language: 'en',
+                name: 'Evan',
+                phone: '01886895874',
+                address: 'Mirpur, Dhaka',
+                delivery_charge: 60,
+                payment_method: 'cod',
+                cart: [{ product_id: 'prod-1', name: 'Azal Lawn Two Piece', price: 1650, quantity: 1, track_quantity: true, stock_snapshot: 10 }],
+            },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null, { conversationId: 'conv-1' });
+
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(res.mutation_blocked).toBe(true);
+        expect(res.prompt).toMatch(/stock availability changed/i);
+        expect(res.step_data.cart[0].stock_snapshot).toBe(8);
+        expect(authorize.mock.calls[0][1].materialStateRevalidated).toBe(false);
+        expect(authorize.mock.calls[0][1].customerConfirmationValid).toBe(false);
+        expect(createOrderInternal).not.toHaveBeenCalled();
     });
 
     test('confirmation appends the shop closing message (thank-you + social links)', async () => {

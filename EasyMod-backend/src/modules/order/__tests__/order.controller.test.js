@@ -64,6 +64,28 @@ describe('Order Controller', () => {
             });
         });
 
+        it('passes a validated Idempotency-Key through to the order service', async () => {
+            const order = { id: 'order-replay' };
+            mockReq.body = { customer_name: 'Test Customer', items: [] };
+            mockReq.get = jest.fn().mockReturnValue('manual-order-1');
+            orderService.createOrder.mockResolvedValue(order);
+
+            await orderController.createOrder(mockReq, mockRes, mockNext);
+
+            expect(orderService.createOrder).toHaveBeenCalledWith(
+                'user-1', 'shop-1', mockReq.body, 'manual-order-1'
+            );
+        });
+
+        it('rejects an unsafe Idempotency-Key before order creation', async () => {
+            mockReq.get = jest.fn().mockReturnValue('unsafe key');
+
+            await orderController.createOrder(mockReq, mockRes, mockNext);
+
+            expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ status: 400 }));
+            expect(orderService.createOrder).not.toHaveBeenCalled();
+        });
+
         it('should return 400 when no shop selected', async () => {
             mockReq.user.shopId = null;
 
@@ -86,6 +108,21 @@ describe('Order Controller', () => {
             await orderController.createOrder(mockReq, mockRes, mockNext);
 
             expect(mockNext).toHaveBeenCalledWith(error);
+        });
+    });
+
+    describe('createOrderRest', () => {
+        it('passes the idempotency key on the REST create route', async () => {
+            const order = { id: 'order-rest' };
+            mockReq.get = jest.fn().mockReturnValue('rest-key-1');
+            orderService.createOrder.mockResolvedValue(order);
+
+            await orderController.createOrderRest(mockReq, mockRes, mockNext);
+
+            expect(orderService.createOrder).toHaveBeenCalledWith(
+                'user-1', 'shop-1', mockReq.body, 'rest-key-1'
+            );
+            expect(mockRes.status).toHaveBeenCalledWith(201);
         });
     });
 

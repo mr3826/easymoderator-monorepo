@@ -137,6 +137,17 @@ describe('Order Domain API', () => {
       expect(httpClient.post).toHaveBeenCalledWith('/api/order', orderData);
       expect(result.id).toBe('3');
     });
+
+    it('sends an optional idempotency key as an HTTP header', async () => {
+      const orderData = { customer_name: 'Rahim', items: [] };
+      (httpClient.post as any).mockResolvedValue({ data: { data: { id: 'order-1' } } });
+
+      await order.createOrder(orderData as any, 'same-request-key');
+
+      expect(httpClient.post).toHaveBeenCalledWith('/api/order', orderData, {
+        headers: { 'Idempotency-Key': 'same-request-key' },
+      });
+    });
   });
 
   describe('updateOrder', () => {

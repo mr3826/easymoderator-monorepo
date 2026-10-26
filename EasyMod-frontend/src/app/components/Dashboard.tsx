@@ -1,73 +1,102 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, CheckCircle2, Clock4, Loader2, MessageCircle, Truck, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, Loader2, MessageCircle, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
+import type { DashboardMetrics, DashboardQueue } from "@/api/types/dashboard";
+import type { Conversation } from "@/api/types/conversation";
+import type { Order } from "@/api/types/order";
 import FirstTimeSetupDashboard from "./FirstTimeSetupDashboard";
 import { useSetupStatus } from "@/app/lib/useSetupStatus";
 import { authService } from "../lib/auth";
 import { getErrorMessage } from "@shared/lib/http/errors";
 
 const SETUP_DASHBOARD_ENABLED = import.meta.env.VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD !== "false";
+const REPLY_PAGE_SIZE = 100;
+const DRAFT_PAGE_SIZE = 100;
+const EXCEPTION_SAMPLE_LIMIT = 10;
+const WORK_ITEMS_PER_GROUP = 2;
 
-type CashPosition = {
-  inTransit: { amount: number; count: number };
-  atRisk:    { amount: number; count: number; windowDays: number };
-};
+type CashPosition = NonNullable<DashboardMetrics["cashPosition"]>;
+type AtRiskOrder = DashboardQueue["at_risk_orders"][number];
 
 type PulseData = {
-  todaySales: number;
-  confirmedOrders: number;
-  missedReplies: number;
-  assistantReplies: number;
-  needsAttention: number;
-  atRiskCount: number;
-  lastFiveOrders: Awaited<ReturnType<typeof apiClient.getOrders>>;
+  ordersToday: number | null;
+  replyTasks: Conversation[] | null;
+  replyTaskCoverageComplete: boolean;
+  draftOrders: Order[] | null;
+  draftCoverageComplete: boolean;
+  atRiskOrders: AtRiskOrder[] | null;
+  exceptionCoverageComplete: boolean;
+  lastFiveOrders: Order[] | null;
   cashPosition: CashPosition | null;
+};
+
+type WorkItem = {
+  id: string;
+  kind: "reply" | "draft" | "exception";
+  title: string;
+  detail: string;
+  to: string;
+  sortAt: number;
+  icon: typeof MessageCircle;
+  action: string;
 };
 
 type CashPositionCardProps = {
   label: string;
   subLabel: string;
-  countLabel: string;
-  amount: number;
+  data: { amount: number; count: number } | null;
   icon: typeof Truck;
-  accent: "neutral" | "warning";
-  onClick: () => void;
   formatCurrency: (v: number) => string;
+  formatCount: (v: number) => string;
+  t: (key: string, options?: Record<string, unknown>) => string;
 };
 
-function CashPositionCard({ label, subLabel, countLabel, amount, icon: Icon, accent, onClick, formatCurrency }: CashPositionCardProps) {
-  const accentClass = accent === "warning"
-    ? "bg-red-50 border-red-200"
-    : "bg-card border-border";
+function CashPositionCard({ label, subLabel, data, icon: Icon, formatCurrency, formatCount, t }: CashPositionCardProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`${accentClass} min-h-[112px] rounded-2xl border p-4 text-left`}
-    >
+    <section className="min-h-[112px] rounded-2xl border border-border bg-card p-4">
       <div className="mb-2 flex items-center justify-between">
-        <Icon className="h-5 w-5 text-gray-700" />
+        <Icon className="h-5 w-5 text-gray-700" aria-hidden="true" />
         <span className="text-xs font-medium text-muted-foreground">{subLabel}</span>
       </div>
-      <p className="text-2xl font-black text-foreground md:text-3xl">{formatCurrency(amount)}</p>
-      <p className="mt-1 text-sm font-semibold text-muted-foreground">
-        {label} · {countLabel}
-      </p>
-    </button>
+      <h3 className="text-sm font-semibold text-muted-foreground">{label}</h3>
+      {data ? (
+        <>
+          <p className="text-2xl font-black text-foreground md:text-3xl">{formatCurrency(data.amount)}</p>
+          <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            {t("dashboard.pulse.cashPosition.ordersUnit", { count: formatCount(data.count) })}
+          </p>
+        </>
+      ) : (
+        <p className="mt-2 text-lg font-semibold text-muted-foreground">{t("dashboard.pulse.cashPosition.unavailable")}</p>
+      )}
+    </section>
   );
 }
 
+const countOrNull = (value: unknown): number | null => (
+  typeof value === "number" && Number.isFinite(value) ? value : null
+);
+
+const validDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+};
+
+const orderLabel = (order: Order) => order.orderNumber || order.id.slice(0, 8);
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [pulseData, setPulseData] = useState<PulseData | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const [failedSourceNames, setFailedSourceNames] = useState<string[]>([]);
+  const requestSequenceRef = useRef(0);
   const setupStorageKeyPrefix = `easymod:business-setup:${authService.getCurrentShopId() || 'default'}`;
   const completionDismissedKey = `${setupStorageKeyPrefix}:complete-dismissed`;
   const [setupCompletionDismissed, setSetupCompletionDismissed] = useState(() => {
@@ -86,91 +115,112 @@ export default function Dashboard() {
     setSetupCompletionDismissed(window.localStorage.getItem(completionDismissedKey) === '1');
   }, [completionDismissedKey]);
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("bn-BD", {
+  const locale = i18n?.language === "bn" ? "bn-BD" : "en-BD";
+  const formatCurrency = useCallback((value: number) =>
+    new Intl.NumberFormat(locale, {
       style: "currency",
       currency: "BDT",
       maximumFractionDigits: 0,
-    }).format(Number.isFinite(value) ? value : 0);
+    }).format(Number.isFinite(value) ? value : 0), [locale]);
+  const formatCount = useCallback((value: number) => new Intl.NumberFormat(locale).format(value), [locale]);
 
   const formatOrderStatus = (status: string) => {
     switch (status) {
       case "confirmed":
       case "completed":
         return { label: t("dashboard.pulse.status.confirmed"), className: "text-green-700 bg-green-50" };
+      case "draft":
+        return { label: t("dashboard.pulse.status.draft"), className: "text-gray-700 bg-gray-100" };
+      case "delivered":
+        return { label: t("dashboard.pulse.status.delivered"), className: "text-green-700 bg-green-50" };
+      case "returned":
+        return { label: t("dashboard.pulse.status.returned"), className: "text-red-700 bg-red-50" };
       case "cancelled":
         return { label: t("dashboard.pulse.status.cancelled"), className: "text-red-600 bg-red-50" };
       case "processing":
+      case "pending":
         return { label: t("dashboard.pulse.status.processing"), className: "text-orange-600 bg-orange-50" };
+      case "finalized":
+        return { label: t("dashboard.pulse.status.finalized"), className: "text-blue-700 bg-blue-50" };
       default:
-        return { label: t("dashboard.pulse.status.paymentPending"), className: "text-orange-600 bg-orange-50" };
+        return { label: t("dashboard.pulse.status.unknown"), className: "text-gray-600 bg-gray-100" };
     }
   };
 
   const refreshPulse = useCallback(async (isInitialLoad = false) => {
+    const requestSequence = ++requestSequenceRef.current;
+    if (isInitialLoad) setIsLoading(true);
+    setError(null);
+
     try {
-      if (isInitialLoad) {
-        setIsLoading(true);
-      }
-      setError(null);
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      const [metricsResult, queueResult, ordersResult] = await Promise.allSettled([
+      const [metricsResult, queueResult, draftsResult, conversationsResult, latestOrdersResult] = await Promise.allSettled([
         apiClient.getDashboardMetrics(),
         apiClient.getDashboardQueue(),
-        apiClient.getOrders({
-          start_date: new Date().toISOString().slice(0, 10),
-          end_date: new Date().toISOString().slice(0, 10),
-          limit: 5,
-        }),
+        apiClient.getOrders({ order_status: "draft", page: 1, limit: DRAFT_PAGE_SIZE }),
+        apiClient.getConversations({ page: 1, limit: REPLY_PAGE_SIZE }),
+        apiClient.getOrders({ page: 1, limit: 5 }),
       ]);
 
-      if (metricsResult.status === 'rejected') {
-        console.error('Failed to load dashboard metrics:', metricsResult.reason);
-      }
-      if (queueResult.status === 'rejected') {
-        console.error('Failed to load dashboard queue:', queueResult.reason);
-      }
+      if (requestSequence !== requestSequenceRef.current) return;
 
-      if (metricsResult.status === 'rejected' && queueResult.status === 'rejected' && ordersResult.status === 'rejected') {
+      if (metricsResult.status === "rejected") console.error("Failed to load dashboard overview:", metricsResult.reason);
+      if (queueResult.status === "rejected") console.error("Failed to load dashboard action counts:", queueResult.reason);
+      if (draftsResult.status === "rejected") console.error("Failed to load Draft orders:", draftsResult.reason);
+      if (conversationsResult.status === "rejected") console.error("Failed to load reply tasks:", conversationsResult.reason);
+      if (latestOrdersResult.status === "rejected") console.error("Failed to load recent orders:", latestOrdersResult.reason);
+
+      const results = [metricsResult, queueResult, draftsResult, conversationsResult, latestOrdersResult];
+      const failedSources = [
+        [metricsResult, "dashboard.pulse.sourceNames.overview"],
+        [queueResult, "dashboard.pulse.sourceNames.actionCounts"],
+        [draftsResult, "dashboard.pulse.sourceNames.drafts"],
+        [conversationsResult, "dashboard.pulse.sourceNames.replies"],
+        [latestOrdersResult, "dashboard.pulse.sourceNames.recentOrders"],
+      ] as const;
+      const nextFailedSources = failedSources
+        .filter(([result]) => result.status === "rejected")
+        .map(([, key]) => t(key));
+      setFailedSourceNames(nextFailedSources);
+
+      if (results.every((result) => result.status === "rejected")) {
+        setPulseData(null);
         setError(t("dashboard.pulse.errorMsg"));
+        setLastUpdatedAt(null);
         return;
       }
 
-      const failCount = [metricsResult, queueResult, ordersResult].filter(r => r.status === 'rejected').length;
-      if (!isInitialLoad && failCount > 0) {
-        toast.warning(t("dashboard.pulse.partialFail"));
+      if (!isInitialLoad && nextFailedSources.length > 0) {
+        toast.warning(t("dashboard.pulse.partialFail", { sources: nextFailedSources.join(", ") }));
       }
 
       const metrics = metricsResult.status === 'fulfilled' ? metricsResult.value : null;
       const queue = queueResult.status === 'fulfilled' ? queueResult.value : null;
-      const todayOrders = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
-
-      const todaySales = todayOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
-      const confirmedOrders = todayOrders.filter(
-        (order) => order.status === "confirmed" || order.status === "completed",
-      ).length;
+      const drafts = draftsResult.status === "fulfilled" ? draftsResult.value : null;
+      const conversationPage = conversationsResult.status === "fulfilled" ? conversationsResult.value : null;
+      const atRiskOrders = Array.isArray(queue?.at_risk_orders) ? queue.at_risk_orders : null;
 
       setPulseData({
-        todaySales,
-        confirmedOrders,
-        missedReplies: queue?.unread_count || 0,
-        assistantReplies: metrics?.analytics?.llm_calls || 0,
-        needsAttention: (queue?.unread_count || 0) + (queue?.pending_payment_count || 0),
-        atRiskCount: queue?.at_risk_orders?.length || 0,
-        lastFiveOrders: todayOrders,
+        ordersToday: countOrNull(metrics?.metrics?.ordersToday),
+        replyTasks: conversationPage
+          ? conversationPage.data.filter((conversation) => conversation.needs_merchant_reply === true)
+          : null,
+        replyTaskCoverageComplete: conversationPage
+          ? conversationPage.page === 1 && conversationPage.total <= conversationPage.data.length
+          : false,
+        draftOrders: drafts,
+        draftCoverageComplete: drafts !== null && drafts.length < DRAFT_PAGE_SIZE,
+        atRiskOrders,
+        exceptionCoverageComplete: atRiskOrders !== null && atRiskOrders.length < EXCEPTION_SAMPLE_LIMIT,
+        lastFiveOrders: latestOrdersResult.status === "fulfilled" ? latestOrdersResult.value : null,
         cashPosition: metrics?.cashPosition ?? null,
       });
       setLastUpdatedAt(new Date());
     } catch (loadError: unknown) {
+      if (requestSequence !== requestSequenceRef.current) return;
       const e = loadError as { response?: { data?: { error?: { message?: string } } } };
       setError(getErrorMessage(e, t("dashboard.pulse.errorMsg")));
     } finally {
-      if (isInitialLoad) {
-        setIsLoading(false);
-      }
+      if (requestSequence === requestSequenceRef.current) setIsLoading(false);
     }
   }, [t]);
 
@@ -184,8 +234,7 @@ export default function Dashboard() {
     const timer = window.setInterval(() => refreshPulse(false), 60000);
     return () => {
       window.clearInterval(timer);
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
+      requestSequenceRef.current += 1;
     };
   }, [refreshPulse, setupCompletionDismissed, setupError, setupStatus?.isComplete]);
 
@@ -196,31 +245,14 @@ export default function Dashboard() {
     setSetupCompletionDismissed(true);
   };
 
-  const cards = useMemo(() => {
-    if (!pulseData) {
-      return [];
-    }
-    return [
-      {
-        label: t("dashboard.pulse.cards.todaySales"),
-        value: formatCurrency(pulseData.todaySales),
-        icon: Wallet,
-        className: "bg-card border border-border",
-      },
-      {
-        label: t("dashboard.pulse.cards.confirmedOrders"),
-        value: t("dashboard.pulse.cards.confirmedOrdersUnit", { count: pulseData.confirmedOrders }),
-        icon: CheckCircle2,
-        className: "bg-card border border-border",
-      },
-      {
-        label: t("dashboard.pulse.cards.missedReplies"),
-        value: t("dashboard.pulse.cards.missedRepliesUnit", { count: pulseData.missedReplies }),
-        icon: Clock4,
-        className: "bg-red-50 border border-red-200",
-      },
-    ];
-  }, [pulseData, t]);
+  const formatTime = useMemo(() => {
+    if (!lastUpdatedAt) return "";
+    return new Intl.DateTimeFormat(locale, {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "Asia/Dhaka",
+    }).format(lastUpdatedAt);
+  }, [lastUpdatedAt, locale]);
 
   if (SETUP_DASHBOARD_ENABLED && isSetupLoading && !setupStatus && !setupError) {
     return (
@@ -281,6 +313,93 @@ export default function Dashboard() {
     return null;
   }
 
+  const workItems: WorkItem[] = [];
+  for (const conversation of pulseData.replyTasks ?? []) {
+    const reason = conversation.needs_merchant_reply_reason;
+    const detail = reason === "CUSTOMER_UNANSWERED"
+      ? t("dashboard.pulse.replyTasks.reasons.CUSTOMER_UNANSWERED")
+      : reason === "PROVIDER_SEND_FAILED"
+        ? t("dashboard.pulse.replyTasks.reasons.PROVIDER_SEND_FAILED")
+        : reason === "HITL_REQUIRED"
+          ? t("dashboard.pulse.replyTasks.reasons.HITL_REQUIRED")
+          : reason === "ORDER_CONFIDENCE_HOLD"
+            ? t("dashboard.pulse.replyTasks.reasons.ORDER_CONFIDENCE_HOLD")
+            : t("dashboard.pulse.replyTasks.reasons.default");
+    workItems.push({
+      id: `reply-${conversation.id}`,
+      kind: "reply",
+      title: conversation.customer?.name || t("inbox.unknownCustomer"),
+      detail,
+      to: `/inbox?conversation=${encodeURIComponent(conversation.id)}`,
+      sortAt: validDate(conversation.updated_at)?.getTime() ?? 0,
+      icon: MessageCircle,
+      action: t("dashboard.pulse.replyTasks.open"),
+    });
+  }
+  for (const order of pulseData.draftOrders ?? []) {
+    workItems.push({
+      id: `draft-${order.id}`,
+      kind: "draft",
+      title: orderLabel(order),
+      detail: t("dashboard.pulse.work.draftDetail", { customer: order.customerName || t("inbox.unknownCustomer") }),
+      to: `/orders?orderId=${encodeURIComponent(order.id)}`,
+      sortAt: validDate(order.updatedAt)?.getTime() ?? validDate(order.createdAt)?.getTime() ?? 0,
+      icon: FileText,
+      action: t("dashboard.pulse.work.reviewDraft"),
+    });
+  }
+  for (const order of pulseData.atRiskOrders ?? []) {
+    const status = String(order.status || "").toLowerCase();
+    workItems.push({
+      id: `exception-${order.id}`,
+      kind: "exception",
+      title: order.customer_name || order.id,
+      detail: [status, order.tracking_id].filter(Boolean).join(" · ") || t("dashboard.pulse.status.unknown"),
+      to: `/orders?orderId=${encodeURIComponent(order.id)}`,
+      sortAt: 0,
+      icon: AlertTriangle,
+      action: t("dashboard.pulse.attention.reviewOrder"),
+    });
+  }
+
+  const hasAllWorkSources = pulseData.replyTasks !== null
+    && pulseData.replyTaskCoverageComplete
+    && pulseData.draftOrders !== null
+    && pulseData.draftCoverageComplete
+    && pulseData.atRiskOrders !== null
+    && pulseData.exceptionCoverageComplete;
+  const caughtUp = hasAllWorkSources && workItems.length === 0;
+  const workGroups = ([
+    {
+      kind: "reply" as const,
+      title: t("dashboard.pulse.work.groups.replies"),
+      to: "/inbox?tab=needs_review",
+      action: t("dashboard.pulse.replyTasks.viewFullInbox"),
+    },
+    {
+      kind: "draft" as const,
+      title: t("dashboard.pulse.work.groups.drafts"),
+      to: "/orders",
+      action: t("dashboard.pulse.work.openOrders"),
+    },
+    {
+      kind: "exception" as const,
+      title: t("dashboard.pulse.work.groups.exceptions"),
+      to: "/orders",
+      action: t("dashboard.pulse.work.openOrders"),
+    },
+  ]).map((group) => {
+    const items = workItems
+      .filter((item) => item.kind === group.kind)
+      .sort((left, right) => right.sortAt - left.sortAt);
+    return {
+      ...group,
+      items,
+      visibleItems: items.slice(0, WORK_ITEMS_PER_GROUP),
+      hiddenCount: Math.max(0, items.length - WORK_ITEMS_PER_GROUP),
+    };
+  }).filter((group) => group.items.length > 0);
+
   return (
     <div className="min-h-full bg-background p-4 md:p-6">
       <div className="mb-4 flex items-end justify-between">
@@ -296,92 +415,114 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        {cards.map((card, index) => {
-          const Icon = card.icon;
-          const isMissCard = index === 2;
+      {failedSourceNames.length > 0 && (
+        <section role="status" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <span>{t("dashboard.pulse.partialFail", { sources: failedSourceNames.join(", ") })}</span>
+          <button type="button" onClick={() => refreshPulse(false)} className="min-h-10 font-semibold underline">
+            {t("dashboard.pulse.retry")}
+          </button>
+        </section>
+      )}
 
-          return (
-            <button
-              key={card.label}
-              onClick={() => {
-                if (isMissCard) {
-                  navigate("/inbox?tab=needs_review");
-                }
-              }}
-              className={`${card.className} min-h-[112px] rounded-2xl p-4 text-left ${isMissCard ? "cursor-pointer" : "cursor-default"}`}
-              type="button"
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <Icon className="h-5 w-5 text-gray-700" />
-                {isMissCard && <span className="text-xs font-bold text-red-700">{t("dashboard.pulse.cards.viewMissed")}</span>}
-              </div>
-              <p className="text-2xl font-black text-foreground md:text-3xl">{card.value}</p>
-              <p className="mt-1 text-sm font-semibold text-muted-foreground">{card.label}</p>
-            </button>
-          );
-        })}
-      </section>
+      {caughtUp ? (
+        <p role="status" className="mb-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-900">
+          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+          {t("dashboard.pulse.work.caughtUp")}
+        </p>
+      ) : (
+        <section className="mb-4 rounded-2xl border border-border bg-card p-4" aria-labelledby="dashboard-work-heading">
+          <div className="mb-3">
+            <h2 id="dashboard-work-heading" className="text-base font-bold text-card-foreground">
+              {t("dashboard.pulse.work.title")}
+            </h2>
+            <p className="text-sm text-muted-foreground">{t("dashboard.pulse.work.subtitle")}</p>
+          </div>
 
-      <section className="mb-4">
-        <div className="mb-2 flex items-end justify-between">
-          <h2 className="text-base font-bold text-foreground">{t("dashboard.pulse.cashPosition.title")}</h2>
-          <span className="text-xs font-medium text-muted-foreground">{t("dashboard.pulse.cashPosition.subtitle")}</span>
+          {workGroups.length > 0 ? (
+            <div className="space-y-4">
+              {workGroups.map((group) => (
+                <section key={group.kind} aria-labelledby={`dashboard-work-${group.kind}`}>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 id={`dashboard-work-${group.kind}`} className="text-sm font-semibold text-foreground">{group.title}</h3>
+                    <button type="button" onClick={() => navigate(group.to)} className="min-h-10 text-xs font-semibold text-blue-700 hover:underline">
+                      {group.action}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {group.visibleItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => navigate(item.to)}
+                          className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-border bg-background p-3 text-left hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                        >
+                          <Icon className="h-5 w-5 shrink-0 text-blue-700" aria-hidden="true" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-foreground">{item.title}</span>
+                            <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
+                          </span>
+                          <span className="shrink-0 text-xs font-semibold text-blue-700">{item.action}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {group.hiddenCount > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="note">
+                      <span>{t("dashboard.pulse.work.moreInGroup", { count: group.hiddenCount })}</span>
+                      <button type="button" className="font-semibold text-blue-700 hover:underline" onClick={() => navigate(group.items[WORK_ITEMS_PER_GROUP].to)}>
+                        {t(group.kind === "reply" ? "dashboard.pulse.work.openNextConversation" : "dashboard.pulse.work.reviewNextOrder")}
+                      </button>
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+              {t("dashboard.pulse.work.partialEmpty")}
+            </p>
+          )}
+
+          {!hasAllWorkSources && (
+            <p role="note" className="mt-3 text-xs text-muted-foreground">{t("dashboard.pulse.work.coverageNote")}</p>
+          )}
+        </section>
+      )}
+
+      <section className="mb-4 rounded-2xl border border-border bg-card p-4" aria-labelledby="dashboard-overview-heading">
+        <div className="mb-3">
+          <h2 id="dashboard-overview-heading" className="text-base font-bold text-card-foreground">{t("dashboard.pulse.overview.title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("dashboard.pulse.overview.subtitle")}</p>
         </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <article className="min-h-[112px] rounded-2xl border border-border bg-background p-4">
+            <p className="text-sm font-semibold text-muted-foreground">{t("dashboard.pulse.overview.ordersToday")}</p>
+            <p className="mt-2 text-2xl font-black text-foreground md:text-3xl">
+              {pulseData.ordersToday === null ? t("dashboard.pulse.cashPosition.unavailable") : formatCount(pulseData.ordersToday)}
+            </p>
+          </article>
           <CashPositionCard
             label={t("dashboard.pulse.cashPosition.inTransit")}
             subLabel={t("dashboard.pulse.cashPosition.inTransitSub")}
-            countLabel={t("dashboard.pulse.cashPosition.ordersUnit", { count: pulseData.cashPosition?.inTransit.count ?? 0 })}
-            amount={pulseData.cashPosition?.inTransit.amount ?? 0}
+            data={pulseData.cashPosition?.inTransit ?? null}
             icon={Truck}
-            accent="neutral"
-            onClick={() => navigate("/orders")}
             formatCurrency={formatCurrency}
+            formatCount={formatCount}
+            t={t}
           />
           <CashPositionCard
             label={t("dashboard.pulse.cashPosition.atRisk")}
             subLabel={t("dashboard.pulse.cashPosition.atRiskSub", { days: pulseData.cashPosition?.atRisk.windowDays ?? 30 })}
-            countLabel={t("dashboard.pulse.cashPosition.ordersUnit", { count: pulseData.cashPosition?.atRisk.count ?? 0 })}
-            amount={pulseData.cashPosition?.atRisk.amount ?? 0}
+            data={pulseData.cashPosition?.atRisk ?? null}
             icon={AlertTriangle}
-            accent="warning"
-            onClick={() => navigate("/orders")}
             formatCurrency={formatCurrency}
+            formatCount={formatCount}
+            t={t}
           />
         </div>
       </section>
-
-      <section className="mb-4 rounded-2xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <MessageCircle className="h-5 w-5 text-green-600" />
-          <h2 className="text-base font-bold text-card-foreground">{t("dashboard.pulse.botActivity.title")}</h2>
-        </div>
-        <div className="grid gap-2 md:grid-cols-2">
-          <div className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">
-            {t("dashboard.pulse.botActivity.botReplied", { count: pulseData.assistantReplies })}
-          </div>
-          <button
-            onClick={() => navigate("/inbox?tab=needs_review")}
-            className="min-h-12 rounded-xl bg-amber-50 p-3 text-left text-sm font-semibold text-amber-800"
-            type="button"
-          >
-            {t("dashboard.pulse.botActivity.needsAttention", { count: pulseData.needsAttention })}
-          </button>
-        </div>
-      </section>
-
-      {pulseData.atRiskCount > 0 && (
-        <section className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-          <button
-            onClick={() => navigate("/orders")}
-            type="button"
-            className="w-full text-left text-sm font-bold text-red-800"
-          >
-            {t("dashboard.pulse.atRisk", { count: pulseData.atRiskCount })}
-          </button>
-        </section>
-      )}
 
       <section className="rounded-2xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -395,19 +536,23 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {pulseData.lastFiveOrders.length === 0 ? (
+        {pulseData.lastFiveOrders === null ? (
+          <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+            {t("dashboard.pulse.cashPosition.unavailable")}
+          </p>
+        ) : pulseData.lastFiveOrders.length === 0 ? (
           <p className="rounded-xl bg-gray-50 p-4 text-sm font-medium text-gray-600">{t("dashboard.pulse.latestOrders.empty")}</p>
         ) : (
           <div className="space-y-2">
             {pulseData.lastFiveOrders.map((order) => {
               const firstItem = order.items[0];
-              const status = formatOrderStatus(order.status);
+                const status = formatOrderStatus(order.status);
 
-              return (
-                <button
-                  key={order.id}
-                  onClick={() => navigate("/orders")}
-                  type="button"
+                return (
+                  <button
+                    key={order.id}
+                    onClick={() => navigate(`/orders?orderId=${encodeURIComponent(order.id)}`)}
+                    type="button"
                   className="w-full rounded-xl border border-border bg-card p-3 text-left"
                 >
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -427,9 +572,10 @@ export default function Dashboard() {
           </div>
         )}
 
+        <p className="mt-3 text-xs font-medium text-muted-foreground">{t("dashboard.pulse.latestOrders.valueNote")}</p>
         <p className="mt-3 text-xs font-medium text-muted-foreground">
           {t("dashboard.pulse.liveUpdate")}
-          {lastUpdatedAt ? ` ${t("dashboard.pulse.lastUpdated", { time: lastUpdatedAt.toLocaleTimeString("bn-BD") })}` : ""}
+          {formatTime ? ` ${t("dashboard.pulse.lastUpdated", { time: formatTime })}` : ""}
         </p>
       </section>
     </div>

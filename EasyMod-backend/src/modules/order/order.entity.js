@@ -1,4 +1,4 @@
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 
 const Order = sequelize.define('Order', {
@@ -186,7 +186,19 @@ const Order = sequelize.define('Order', {
         { fields: ['shop_id', 'order_status'] },
         { fields: ['shop_id', 'created_at'] },
         { fields: ['order_number'], unique: true },
-        { fields: ['customer_id'] }
+        { fields: ['customer_id'] },
+        {
+            // IC-V1 review F4: DB-level backstop for create-order idempotency.
+            // The advisory-xact-lock + in-transaction recheck in order.service
+            // no-ops on non-postgres dialects; this partial unique index makes
+            // a duplicated committed (shop_id, idempotency_key) impossible in
+            // any dialect that supports partial indexes. Mirrored by migration
+            // 20261026_001_order_idempotency_unique (existing databases).
+            unique: true,
+            fields: ['shop_id', 'idempotency_key'],
+            name: 'idx_orders_shop_idempotency_unique',
+            where: { idempotency_key: { [Op.not]: null } },
+        }
     ]
 });
 

@@ -1,18 +1,21 @@
 'use strict';
 
-const mockOrder = {};
+const mockOrder = { findOne: jest.fn(), update: jest.fn() };
 const mockCourierDispatch = {
     findOrCreate: jest.fn(),
     update: jest.fn(),
     findOne: jest.fn(),
 };
+const mockUserShop = { findOne: jest.fn() };
+const mockAuditLog = { create: jest.fn() };
 
 jest.mock('../../entities', () => ({
     Order: mockOrder,
     OrderItem: {},
     Product: {},
     Customer: {},
-    UserShop: {},
+    UserShop: mockUserShop,
+    AuditLog: mockAuditLog,
     OrderReturn: {},
     CourierDispatch: mockCourierDispatch,
 }));
@@ -44,6 +47,7 @@ const orderService = require('../order.service');
 const deliveryService = require('../../delivery/delivery.service');
 const sessionService = require('../order-session-standalone.service');
 const merchantNotificationService = require('../../notification/merchant-notification.service');
+const { sequelize } = require('../../../utils/database/database-setup');
 
 const makeOrder = () => {
     const order = {
@@ -71,6 +75,19 @@ const makeOrder = () => {
 describe('canonical courier booking', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockOrder.findOne.mockResolvedValue(makeOrder());
+        mockOrder.update.mockResolvedValue([1]);
+        mockUserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true, role: 'staff' });
+        mockAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+        sequelize.transaction.mockImplementation(async (callback) => {
+            const transaction = { LOCK: { UPDATE: 'UPDATE' }, rollback: jest.fn(), commit: jest.fn() };
+            try {
+                return typeof callback === 'function' ? await callback(transaction) : transaction;
+            } catch (error) {
+                await transaction.rollback();
+                throw error;
+            }
+        });
         deliveryService.resolveAiDefaultProvider.mockResolvedValue({
             blocked: false,
             provider: 'pathao',
@@ -94,6 +111,8 @@ describe('canonical courier booking', () => {
 
         const result = await orderService.bookForOrder(order, {
             shopId: 'shop-1',
+            trigger: 'MANUAL',
+            mutationAuthority: { kind: 'human', userId: 'user-1' },
         });
 
         expect(deliveryService.resolveAiDefaultProvider).toHaveBeenCalledWith('shop-1');
@@ -121,13 +140,48 @@ describe('canonical courier booking', () => {
         );
         expect(deliveryService.createDeliveryOrder.mock.calls[0][1]).not.toHaveProperty('delivery_area');
         expect(deliveryService.createDeliveryOrder.mock.calls[0][1]).not.toHaveProperty('delivery_area_id');
-        expect(sessionService.persistDeliveryResult).toHaveBeenCalledWith(order, expect.objectContaining({
+        expect(mockAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'COURIER_BOOKING_AUTHORIZED',
+            user_id: 'user-1',
+            shop_id: 'shop-1',
+            resource_id: order.id,
+            metadata: expect.objectContaining({ authority_type: 'human', source: 'merchant_ui' }),
+        }));
+        expect(sessionService.persistDeliveryResult).toHaveBeenCalledWith(expect.objectContaining({ id: order.id }), expect.objectContaining({
             provider: 'pathao',
             tracking_code: 'TRK-1',
         }));
         expect(result).toEqual(expect.objectContaining({ tracking_code: 'TRK-1' }));
         expect(order.order_status).toBe('confirmed');
         expect(order.fulfillment_status).toBe('unfulfilled');
+    });
+
+    it('rejects an untrusted production courier mutation without provider or dispatch side effects', async () => {
+        const previousNodeEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'production';
+        const order = makeOrder();
+        try {
+            await expect(orderService.bookForOrder(order, { shopId: 'shop-1' }))
+                .rejects.toMatchObject({ status: 403, code: 'COURIER_AUTHORITY_REQUIRED' });
+            expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
+            expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+        } finally {
+            process.env.NODE_ENV = previousNodeEnv;
+        }
+    });
+
+    it('rejects a human courier mutation without an active shop membership', async () => {
+        const order = makeOrder();
+        mockUserShop.findOne.mockResolvedValue(null);
+
+        await expect(orderService.bookForOrder(order, {
+            shopId: 'shop-1',
+            trigger: 'MANUAL',
+            mutationAuthority: { kind: 'human', userId: 'user-foreign' },
+        })).rejects.toMatchObject({ status: 403 });
+
+        expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
     });
 
     it('rejects a courier booking request scoped to another shop', async () => {
@@ -150,6 +204,7 @@ describe('canonical courier booking', () => {
         const result = await orderService.bookForOrder(order, {
             shopId: 'shop-1',
             skipClaim: true,
+            mutationAuthority: { kind: 'test' },
         });
 
         expect(result).toMatchObject({
@@ -161,6 +216,7 @@ describe('canonical courier booking', () => {
 
     it('marks setup required without claiming or calling a provider when readiness blocks booking', async () => {
         const order = makeOrder();
+        mockOrder.findOne.mockResolvedValue(order);
         deliveryService.resolveAiDefaultProvider.mockResolvedValue({
             blocked: true,
             provider: 'pathao',
@@ -171,6 +227,7 @@ describe('canonical courier booking', () => {
         const result = await orderService.bookForOrder(order, {
             shopId: 'shop-1',
             requireAiDefault: true,
+            mutationAuthority: { kind: 'test' },
         });
 
         expect(result).toMatchObject({
@@ -181,7 +238,10 @@ describe('canonical courier booking', () => {
         });
         expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
-        expect(order.update).toHaveBeenCalledWith({ delivery_status: 'courier_setup_required' });
+        expect(order.update).toHaveBeenCalledWith(
+            { delivery_status: 'courier_setup_required' },
+            { transaction: expect.anything() },
+        );
         expect(order.order_status).toBe('confirmed');
         expect(order.fulfillment_status).toBe('unfulfilled');
         expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
@@ -207,6 +267,7 @@ describe('canonical courier booking', () => {
         const result = await orderService.bookForOrder(order, {
             shopId: 'shop-1',
             throwOnError: false,
+            mutationAuthority: { kind: 'test' },
         });
 
         expect(result).toMatchObject({
@@ -249,10 +310,14 @@ describe('canonical courier booking', () => {
             return providerResult;
         });
 
-        const winnerPromise = orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        const winnerPromise = orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
         await providerReady;
 
-        const loserResult = await orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        const loserResult = await orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
         expect(loserResult).toMatchObject({
             blocked: true,
             reason: 'existing_courier_dispatch_claim',
@@ -311,9 +376,13 @@ describe('canonical courier booking', () => {
             return providerResult;
         });
 
-        const winnerPromise = orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        const winnerPromise = orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
         await providerReady;
-        const loserPromise = orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        const loserPromise = orderService.bookForOrder(makeOrder(), {
+            shopId: 'shop-1', mutationAuthority: { kind: 'test' },
+        });
         await loserObserved;
 
         releaseProvider({

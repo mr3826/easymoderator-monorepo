@@ -471,7 +471,7 @@ const route = async ({
     }
 
     if (ROUTER_DISABLED) {
-        return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, imageUrls, replyContext, evaluationClient, now });
+        return _callLlm({ shopId, message, history, conversationId, traceId, language, systemPrompt, preferredProvider, imageUrls, replyContext, evaluationClient, now });
     }
 
     // ------------------------------------------------------------------
@@ -675,7 +675,7 @@ const route = async ({
     // ------------------------------------------------------------------
     // Stage 3: Full LLM call with context
     // ------------------------------------------------------------------
-    return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls, replyContext, evaluationClient, now });
+    return _callLlm({ shopId, message, history, conversationId, traceId, language, systemPrompt, preferredProvider, cacheKey, imageUrls, replyContext, evaluationClient, now });
 };
 
 /**
@@ -848,7 +848,7 @@ const _mergeVectorProductCandidates = async (candidates, productIds, shopId) => 
     }
 };
 
-const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [], replyContext = null, evaluationClient = null, now = new Date() }) => {
+const _callLlm = async ({ shopId, message, history, conversationId, traceId = null, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [], replyContext = null, evaluationClient = null, now = new Date() }) => {
     const routeClockMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
     const contextClockMs = Number.isFinite(routeClockMs) ? routeClockMs : Date.now();
     const currentOperatingContextHash = hashOperatingContext(operatingContextFromPrompt(systemPrompt));
@@ -898,6 +898,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     let knowledge = { snippets: '', references: [], productIds: [], knowledgeIds: [] };
     let groundingQuery = message;
     let attributeFollowUp = false;
+    let productReadAttempted = false;
     const activeContextProductIds = !imageUrls.length && shopId
         ? grounding.contextProductIds(history, { now: contextClockMs })
         : [];
@@ -926,6 +927,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             .filter(Boolean).join(' ') || captionText;
 
         if (shopId && (attrs || (captionText && shouldSearchProducts(captionText)))) {
+            productReadAttempted = true;
             searchOutcome = await _findProductCandidates({
                 shopId,
                 category: attrs?.category,
@@ -995,6 +997,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             && (grounding.isMediaRequest(message)
                 || (shouldSearchProducts(message) && CONTEXT_PRODUCT_QUESTION.test(message)));
         const useContextProducts = attributeFollowUp || contextProductFollowUp;
+        productReadAttempted = Boolean(shopId && (useContextProducts || shouldSearchProducts(message)));
 
         // Product search and knowledge retrieval are independent reads — running
         // them together keeps the added grounding work off the critical path.
@@ -1018,6 +1021,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         : { products: searchOutcome.products, failed: false };
     const candidates = candidateResult.products;
     const retrievalFailed = Boolean(searchOutcome.failed || candidateResult.failed);
+    productReadAttempted = productReadAttempted || knowledge.productIds.length > 0;
 
     const contextProductFollowUp = Boolean(!imageUrls.length
         && shopId
@@ -1087,7 +1091,67 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     evidence.knowledgeIds = knowledge.knowledgeIds;
     evidence.knowledgeSnapshots = knowledge.knowledgeSnapshots || [];
     evidence.knowledgeFound = Boolean(knowledge.snippets);
+    evidence.conversationId = conversationId || null;
     Object.assign(evidence, withEvidenceSnapshot(evidence));
+
+    if (productReadAttempted) {
+        let readResult;
+        try {
+            readResult = await recordReadAction({
+                actionType: 'READ_PRODUCT',
+                tenant: {
+                    shopId,
+                    channelId: 'unknown',
+                    platform: 'UNKNOWN',
+                    conversationId,
+                },
+                traceId: traceId || `product-read:${conversationId || 'unbound'}:${evidence.snapshotHash}`,
+                evidenceSnapshot: evidence,
+                payload: {
+                    productIds: [...new Set([
+                        ...evidence.verifiedProducts,
+                        ...evidence.relatedProducts,
+                    ].map((product) => String(product.id)))].slice(0, 20),
+                    productStatus: evidence.productStatus,
+                    retrievalFailed,
+                },
+            });
+        } catch (readError) {
+            readResult = { recorded: false, reasonCode: 'audit_unavailable' };
+        }
+
+        // F1 (adversarial review round 2): the runtime flag being OFF is the
+        // documented PRODUCTION DEFAULT (render-production-env renders
+        // DOMAIN_AGENT_RUNTIME_ENABLED='false'), and the evaluator reports
+        // that as recorded:false / domain_agent_runtime_disabled. That is a
+        // policy state, not an audit-integrity failure — the audited-read
+        // surface simply does not exist while the runtime is off, so the
+        // legacy product reply must continue. Every OTHER recorded:false
+        // reason (audit unavailable, stale evidence, tenant mismatch, bad
+        // contract) stays fail-closed with the handoff below.
+        if (!readResult?.recorded && readResult?.reasonCode !== 'domain_agent_runtime_disabled') {
+            const safeEvidence = {
+                ...evidence,
+                productStatus: grounding.ProductEvidenceStatus.RETRIEVAL_FAILED,
+                verifiedProducts: [],
+                relatedProducts: [],
+                unmatchedTerms: [],
+                mediaStatus: grounding.MediaStatus.NO_PRODUCT,
+                mediaUrl: null,
+                mediaProductId: null,
+                allowedUrls: [],
+            };
+            const isBangla = /^(bn|bangla)/i.test(String(language || ''));
+            return {
+                response: isBangla
+                    ? 'পণ্যের তথ্য এখন যাচাই করা যাচ্ছে না। একজন বিক্রেতা আপনাকে সাহায্য করতে পারবেন।'
+                    : 'I cannot verify catalog details right now. A shop team member can help.',
+                confidence: 0,
+                source: 'product_read_audit_handoff',
+                grounding: safeEvidence,
+            };
+        }
+    }
 
     const contextEligibleProductIds = new Set(evidence.verifiedProducts.map(product => String(product.id)));
     for (const product of [...evidence.verifiedProducts, ...evidence.relatedProducts]) {

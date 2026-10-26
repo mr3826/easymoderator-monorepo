@@ -1,19 +1,12 @@
-jest.mock('../../delivery/delivery.service', () => ({
-    createDeliveryOrder: jest.fn()
-}));
+jest.mock('../order.service', () => ({ bookForOrder: jest.fn() }));
 
 jest.mock('../../entities', () => ({
-    Order: {
-        findOne: jest.fn()
-    },
-    CourierDispatch: {
-        findOrCreate: jest.fn()
-    }
+    Order: { findOne: jest.fn() },
 }));
 
 const orderController = require('../order.controller');
-const deliveryService = require('../../delivery/delivery.service');
-const { Order, CourierDispatch } = require('../../entities');
+const orderService = require('../order.service');
+const { Order } = require('../../entities');
 
 describe('orderController.bookCourier', () => {
     let req;
@@ -47,11 +40,7 @@ describe('orderController.bookCourier', () => {
         };
         next = jest.fn();
         Order.findOne.mockResolvedValue(order);
-        CourierDispatch.findOrCreate.mockResolvedValue([{
-            status: 'PENDING',
-            update: jest.fn().mockResolvedValue(undefined),
-        }, true]);
-        deliveryService.createDeliveryOrder.mockResolvedValue({
+        orderService.bookForOrder.mockResolvedValue({
             provider: 'pathao',
             consignment_id: 'CN-1',
             tracking_code: 'TRK-1'
@@ -64,16 +53,12 @@ describe('orderController.bookCourier', () => {
         expect(Order.findOne).toHaveBeenCalledWith({
             where: { id: 'order-1', shop_id: 'authenticated-shop' }
         });
-        expect(deliveryService.createDeliveryOrder).toHaveBeenCalledWith(
-            'authenticated-shop',
-            expect.objectContaining({
-                order_number: 'ORDER-1',
-                recipient_name: 'Launch Buyer',
-                recipient_phone: '01700000000',
-                cod_amount: 1200
-            }),
-            'pathao'
-        );
+        expect(orderService.bookForOrder).toHaveBeenCalledWith(order, expect.objectContaining({
+            shopId: 'authenticated-shop',
+            provider: 'pathao',
+            trigger: 'MANUAL',
+            mutationAuthority: { kind: 'human', userId: 'user-1' },
+        }));
         expect(next).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
             success: true

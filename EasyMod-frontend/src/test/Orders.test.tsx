@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Orders from '@/app/components/Orders'
 import type { Order } from '@/api/types/order'
@@ -57,6 +57,73 @@ describe('Orders', () => {
     await waitFor(() => {
       expect(screen.getByText('Orders')).toBeInTheDocument()
     })
+  })
+
+  it('explains Draft stock reservation and separates it from payment and delivery truth', async () => {
+    render(<MemoryRouter><Orders /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: /create order/i }))
+
+    expect(await screen.findByText(/draft.*tracked stock.*cancel/i)).toBeInTheDocument()
+    expect(screen.getByText(/payment and delivery are not confirmed/i)).toBeInTheDocument()
+  })
+
+  it('requests delivered orders from the server when that status filter is selected', async () => {
+    const { apiClient } = await import('@/api')
+    vi.mocked(apiClient.getOrders).mockResolvedValue([normalizedOrder({ status: 'delivered' })])
+
+    render(<MemoryRouter><Orders /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: /delivered/i }))
+
+    await waitFor(() => {
+      expect(apiClient.getOrders).toHaveBeenLastCalledWith(expect.objectContaining({ order_status: 'delivered' }))
+    })
+  })
+})
+
+describe('manual order idempotency', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    navigate.mockReset()
+  })
+
+  it('reuses the idempotency key when the same manual-order payload is retried', async () => {
+    const { apiClient } = await import('@/api')
+    vi.mocked(apiClient.getOrders).mockResolvedValue([])
+    vi.mocked(apiClient.getProducts).mockResolvedValue([{
+      id: 'p1', name: 'Test Product', sku: 'SKU-1', price: 500, track_quantity: true,
+      quantity: 8, low_stock_threshold: 2,
+    } as any])
+    vi.mocked(apiClient.createOrder)
+      .mockRejectedValueOnce(new Error('Network response was lost'))
+      .mockResolvedValueOnce(normalizedOrder({ id: 'order-1', status: 'draft' }))
+
+    render(<MemoryRouter><Orders /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: /create order/i }))
+    const heading = await screen.findByRole('heading', { name: /create manual order/i })
+    const modal = heading.parentElement?.parentElement
+    if (!modal) throw new Error('Manual order modal was not rendered')
+    const modalQueries = within(modal)
+
+    fireEvent.change(modalQueries.getByPlaceholderText(/enter customer name/i), { target: { value: 'Rahim' } })
+    fireEvent.change(modalQueries.getByLabelText(/phone\/mobile number/i), { target: { value: '01712345678' } })
+    const selects = modalQueries.getAllByRole('combobox')
+    fireEvent.change(selects[1], { target: { value: 'dhaka' } })
+    fireEvent.change(selects[2], { target: { value: 'dhaka_city' } })
+    fireEvent.change(selects[3], { target: { value: 'Mirpur' } })
+    fireEvent.change(modalQueries.getByPlaceholderText(/house \/ road \/ area/i), { target: { value: 'Road 1' } })
+    fireEvent.change(modalQueries.getByPlaceholderText(/search and add products/i), { target: { value: 'Test Product' } })
+    fireEvent.click(await modalQueries.findByRole('button', { name: /Test Product/i }))
+
+    const createButton = modalQueries.getByRole('button', { name: /^Create Order$/i })
+    fireEvent.click(createButton)
+    await waitFor(() => expect(apiClient.createOrder).toHaveBeenCalledTimes(1))
+    const firstKey = (apiClient.createOrder as any).mock.calls[0][1]
+
+    fireEvent.click(createButton)
+    await waitFor(() => expect(apiClient.createOrder).toHaveBeenCalledTimes(2))
+    const retryKey = (apiClient.createOrder as any).mock.calls[1][1]
+
+    expect(retryKey).toBe(firstKey)
   })
 })
 

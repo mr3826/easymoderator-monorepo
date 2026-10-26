@@ -42,12 +42,12 @@ const statusOf = (record) => String(record?.status || '').toUpperCase();
  * order that already has a claim is observed (not created) here, the same
  * way a same-provider retry always has been.
  */
-const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, provider, idempotencyKey }) => {
+const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, provider, idempotencyKey, transaction }) => {
     const model = getCourierDispatchModel(suppliedModel);
     if (!model) return { state: 'unavailable', provider, record: null, ownerToken: null, idempotencyKey };
 
     const ownerToken = crypto.randomUUID();
-    const [record, created] = await model.findOrCreate({
+    const findOrCreateOptions = {
         where: { shop_id: shopId, order_id: orderId },
         defaults: {
             provider,
@@ -55,7 +55,9 @@ const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, pro
             status: 'PENDING',
             dispatch_owner_token: ownerToken,
         },
-    });
+    };
+    if (transaction) findOrCreateOptions.transaction = transaction;
+    const [record, created] = await model.findOrCreate(findOrCreateOptions);
 
     if (created) {
         // Lightweight test doubles do not apply Sequelize defaults. Keeping the
@@ -83,7 +85,7 @@ const claimCourierDispatch = async ({ model: suppliedModel, shopId, orderId, pro
                 idempotency_key: idempotencyKey,
                 error: null,
             },
-            { where: { id: record.id, status: 'FAILED' } },
+            { where: { id: record.id, status: 'FAILED' }, ...(transaction ? { transaction } : {}) },
         );
         if (updated > 0) {
             Object.assign(record, {

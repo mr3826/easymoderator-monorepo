@@ -112,7 +112,7 @@ class OrderValidator {
             end_date: Joi.date().iso().optional().messages({
                 'date.format': 'End date must be a valid ISO 8601 date'
             }),
-            order_status: Joi.string().valid('draft', 'confirmed', 'processing', 'completed', 'cancelled').optional().messages({
+            order_status: Joi.string().valid('draft', 'confirmed', 'processing', 'completed', 'cancelled', 'delivered').optional().messages({
                 'any.only': 'Invalid order status'
             }),
             payment_status: Joi.string().valid('pending', 'paid', 'unpaid', 'refunded', 'partially_paid').optional(),

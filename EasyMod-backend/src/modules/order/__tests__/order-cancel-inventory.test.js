@@ -5,7 +5,7 @@
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const mockTransaction = { commit: jest.fn(), rollback: jest.fn() };
+const mockTransaction = { LOCK: { UPDATE: 'UPDATE' }, commit: jest.fn(), rollback: jest.fn() };
 
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
@@ -86,6 +86,7 @@ jest.mock('../../entities', () => ({
         create: jest.fn(),
         findAll: jest.fn()
     },
+    CourierDispatch: { findOne: jest.fn(), findOrCreate: jest.fn(), update: jest.fn() },
     Invoice: { create: jest.fn(), findOne: jest.fn() },
     Subscription: { findOne: jest.fn() },
     PartnerBillingAdjustment: { create: jest.fn(), findOne: jest.fn() }
@@ -125,7 +126,7 @@ jest.mock('../../../jobs/queue-manager', () => ({
 const orderService = require('../order.service');
 const returnService = require('../return.service');
 const {
-    Order, OrderItem, Product, UserShop, OrderReturn, Invoice, Subscription, PartnerBillingAdjustment
+    Order, OrderItem, Product, UserShop, OrderReturn, Invoice, Subscription, PartnerBillingAdjustment, CourierDispatch
 } = require('../../entities');
 const { AppError } = require('../../../utils/AppError');
 const stockGuard = require('../../product/stock-status-guard.service');
@@ -138,16 +139,13 @@ describe('Order Cancel → Inventory Sync', () => {
         order = makeOrder();
         Order.findOne.mockResolvedValue(order);
         UserShop.findOne.mockResolvedValue({ id: 'us-1', is_active: true });
+        CourierDispatch.findOne.mockResolvedValue(null);
         PartnerBillingAdjustment.findOne.mockResolvedValue(null);
         OrderItem.findAll.mockResolvedValue(mockOrderItems);
-        // The restore path looks products up shop-scoped —
-        // Product.findOne({ where: { id, shop_id } }) — not by primary key.
-        // Mocking findByPk left findOne returning undefined, so
-        // `product?.track_quantity` was falsy and nothing was ever restored.
-        Product.findOne.mockImplementation(({ where } = {}) => {
-            if (where?.id === 'prod-1') return Promise.resolve(mockProduct);
-            return Promise.resolve({ ...mockProduct, id: where?.id, track_quantity: false });
-        });
+        Product.findAll.mockResolvedValue([
+            mockProduct,
+            { ...mockProduct, id: 'prod-2', track_quantity: false },
+        ]);
     });
 
     // The service restores through the INSTANCE returned by Product.findOne
@@ -160,6 +158,30 @@ describe('Order Cancel → Inventory Sync', () => {
             'quantity',
             expect.objectContaining({ by: 2 })
         );
+        expect(Product.findAll).toHaveBeenCalledWith(expect.objectContaining({
+            order: [['id', 'ASC']],
+            lock: 'UPDATE',
+            transaction: mockTransaction,
+        }));
+    });
+
+    it('locks the shop-scoped order row before cancellation and inventory restoration', async () => {
+        await orderService.cancelOrder('user-1', 'shop-1', 'order-1');
+        expect(Order.findOne).toHaveBeenCalledWith({
+            where: { id: 'order-1', shop_id: 'shop-1' },
+            transaction: mockTransaction,
+            lock: 'UPDATE',
+        });
+    });
+
+    it('does not cancel or restore stock while a courier dispatch is active', async () => {
+        CourierDispatch.findOne.mockResolvedValue({ id: 'dispatch-1', status: 'PENDING' });
+
+        await expect(orderService.cancelOrder('user-1', 'shop-1', 'order-1'))
+            .rejects.toMatchObject({ status: 409, code: 'COURIER_DISPATCH_ACTIVE' });
+
+        expect(order.update).not.toHaveBeenCalled();
+        expect(Product.findAll).not.toHaveBeenCalled();
     });
 
     it('does NOT restore stock for non-tracked items', async () => {
@@ -188,11 +210,10 @@ describe('Order Cancel → Inventory Sync', () => {
         ).rejects.toMatchObject({ status: 404 });
     });
 
-    it('throws 400 when order is already cancelled', async () => {
+    it('rejects a repeated cancel request without restoring stock again', async () => {
         Order.findOne.mockResolvedValue(makeOrder({ order_status: 'cancelled' }));
-        await expect(
-            orderService.cancelOrder('user-1', 'shop-1', 'order-1')
-        ).rejects.toMatchObject({ status: 400 });
+        await expect(orderService.cancelOrder('user-1', 'shop-1', 'order-1')).rejects.toMatchObject({ status: 400 });
+        expect(mockProduct.increment).not.toHaveBeenCalled();
     });
 
     it('does not increment stock when order has no items', async () => {

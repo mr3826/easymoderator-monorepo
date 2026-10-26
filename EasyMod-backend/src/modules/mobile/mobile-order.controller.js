@@ -302,6 +302,18 @@ const createManualOrder = asyncHandler(async (req, res) => {
         throw new AppError('Customer phone number is required', 400, 'VALIDATION_ERROR');
     }
 
+    const allowedInitialStatuses = ['draft', 'confirmed'];
+    if (req.body?.order_status && !allowedInitialStatuses.includes(req.body.order_status)) {
+        throw new AppError('Manual orders can only start as Draft or Confirmed', 400, 'INVALID_INITIAL_ORDER_STATUS');
+    }
+    const requestedOrderStatus = req.body?.is_draft ? 'draft' : (req.body?.order_status || 'confirmed');
+    if (req.body?.payment_status && req.body.payment_status !== 'pending') {
+        throw new AppError('Payment must be verified through the payment workflow', 400, 'PAYMENT_VERIFICATION_REQUIRED');
+    }
+    if (req.body?.fulfillment_status && req.body.fulfillment_status !== 'pending') {
+        throw new AppError('Fulfillment status must be set by the delivery workflow', 400, 'INVALID_INITIAL_FULFILLMENT_STATUS');
+    }
+
     let customerId = req.body?.customer_id || null;
     let customerName = req.body?.customer_name ? String(req.body.customer_name).trim().slice(0, 100) : null;
 
@@ -321,8 +333,9 @@ const createManualOrder = asyncHandler(async (req, res) => {
         customer_phone: customerPhone,
         shipping_address: req.body?.delivery_address || req.body?.shipping_address || null,
         channel: 'mobile_manual',
-        order_status: req.body?.is_draft ? 'draft' : (req.body?.order_status || 'confirmed'),
-        payment_status: req.body?.payment_status || 'pending',
+        order_status: requestedOrderStatus,
+        payment_status: 'pending',
+        fulfillment_status: 'pending',
         payment_method: req.body?.payment_method || 'cod',
         items: items.map((it) => ({
             product_id: it.product_id || it.id,

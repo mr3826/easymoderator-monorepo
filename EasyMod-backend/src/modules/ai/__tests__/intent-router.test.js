@@ -16,6 +16,7 @@
 process.env.NODE_ENV = 'test';
 
 const mockGetGeneration = jest.fn();
+const mockRecordReadAction = jest.fn(async () => ({ recorded: true }));
 const mockIntentEntries = new Map();
 const mockSetIntentEntry = jest.fn(async (key, _ttl, value) => {
     mockIntentEntries.set(key, value);
@@ -35,19 +36,25 @@ jest.mock('src/utils/shop-settings-cache', () => ({
 jest.mock('src/modules/ai/llm.service', () => ({ chat: jest.fn() }));
 jest.mock('src/modules/ai/bert-client.service', () => ({ classify: jest.fn(async () => null) }));
 jest.mock('src/modules/ai/gemini-cache.service', () => ({ getOrCreate: jest.fn(async () => null) }));
-jest.mock('src/modules/ai/action-gate', () => ({ recordReadAction: jest.fn(async () => ({ recorded: false })) }));
+jest.doMock(require.resolve('../action-gate'), () => ({ recordReadAction: (...args) => mockRecordReadAction(...args) }));
 jest.mock('src/modules/knowledge/knowledge.service', () => ({ incrementFaqHit: jest.fn() }));
 jest.mock('src/modules/product/product-search.service', () => ({
     searchByAttributes: jest.fn(),
     getProductsByIds: jest.fn(),
 }));
 jest.mock('src/modules/rag/rag.service', () => ({ queryData: jest.fn() }));
-jest.mock('src/modules/entities', () => ({
+jest.mock('../../entities', () => ({
     Order: { findOne: jest.fn(async () => null) },
     FaqResponse: { findAll: jest.fn(async () => []), findOne: jest.fn(async () => null) },
 }));
 
-const { route, buildSystemPrompt } = require('src/modules/ai/intent-router.service');
+jest.resetModules();
+const { route: routeIntent, buildSystemPrompt } = require('src/modules/ai/intent-router.service');
+const route = (params = {}) => routeIntent({
+    conversationId: 'test-conversation-1',
+    traceId: 'test-trace-1',
+    ...params,
+});
 const llm = require('src/modules/ai/llm.service');
 const productSearch = require('src/modules/product/product-search.service');
 const rag = require('src/modules/rag/rag.service');
@@ -68,6 +75,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockIntentEntries.clear();
     mockGetGeneration.mockResolvedValue(0);
+    mockRecordReadAction.mockReset().mockResolvedValue({ recorded: true });
     llm.chat.mockResolvedValue({ text: 'ok', provider: 'gemini' });
     rag.queryData.mockResolvedValue({ results: [] });
     productSearch.searchByAttributes.mockResolvedValue([]);
@@ -135,6 +143,45 @@ describe('B — Bengali product-intent gate', () => {
         expect(result.source).toBe('grounding_product_presentation');
         expect(result.response).toContain('৳1,200');
         expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('records a tenant-bound READ_PRODUCT before returning grounded catalog facts', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p-read-1', shop_id: SHOP, name: 'Cotton Panjabi', price: 1200 }]);
+
+        await route({ shopId: SHOP, message: 'What is the Cotton Panjabi price?', systemPrompt: 'BASE' });
+
+        expect(mockRecordReadAction).toHaveBeenCalledWith(expect.objectContaining({
+            actionType: 'READ_PRODUCT',
+            tenant: expect.objectContaining({ shopId: SHOP, conversationId: 'test-conversation-1' }),
+            traceId: 'test-trace-1',
+            evidenceSnapshot: expect.objectContaining({ shopId: SHOP, conversationId: 'test-conversation-1', snapshotHash: expect.any(String) }),
+            payload: expect.objectContaining({ productIds: ['p-read-1'] }),
+        }));
+    });
+
+    test('fails closed when a product read cannot be audited', async () => {
+        mockRecordReadAction.mockResolvedValueOnce({ recorded: false, reasonCode: 'audit_unavailable' });
+        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p-private', shop_id: SHOP, name: 'Private catalog item', price: 1200 }]);
+
+        const result = await route({ shopId: SHOP, message: 'What is the Private catalog item price?', systemPrompt: 'BASE' });
+
+        expect(result.source).toBe('product_read_audit_handoff');
+        expect(result.grounding.verifiedProducts).toEqual([]);
+        expect(result.response).not.toContain('Private catalog item');
+        expect(result.response).not.toContain('1,200');
+    });
+
+    test('runtime-disabled is a policy state, not an audit failure — the grounded answer continues', async () => {
+        // IC-V1 review F1: render-production-env ships DOMAIN_AGENT_RUNTIME_ENABLED=
+        // 'false', so this recorded:false is what EVERY production product read
+        // returns today. Handing off on it would break the live bot at deploy.
+        mockRecordReadAction.mockResolvedValueOnce({ recorded: false, reasonCode: 'domain_agent_runtime_disabled' });
+        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p-default-1', shop_id: SHOP, name: 'Cotton Panjabi', price: 1200 }]);
+
+        const result = await route({ shopId: SHOP, message: 'What is the Cotton Panjabi price?', systemPrompt: 'BASE' });
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('৳1,200');
     });
 
     test('a Bengali greeting and availability question verifies the matching catalog stock options', async () => {

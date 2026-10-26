@@ -3,6 +3,15 @@ const returnService = require('./return.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 
+const getIdempotencyKey = (req) => {
+    const value = req.get?.('Idempotency-Key') ?? req.headers?.['idempotency-key'];
+    if (value === undefined) return null;
+    if (typeof value !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(value)) {
+        throw new AppError('Idempotency-Key must contain 1-128 safe characters', 400);
+    }
+    return value;
+};
+
 /**
  * Create a new order (legacy)
  */
@@ -19,11 +28,10 @@ const createOrder = async (req, res, next) => {
             });
         }
 
-        const order = await orderService.createOrder(
-            req.user.userId,
-            shopId,
-            req.body // Already validated by Joi
-        );
+        const idempotencyKey = getIdempotencyKey(req);
+        const order = idempotencyKey
+            ? await orderService.createOrder(req.user.userId, shopId, req.body, idempotencyKey)
+            : await orderService.createOrder(req.user.userId, shopId, req.body);
 
         res.status(201).json({
             success: true,
@@ -404,11 +412,10 @@ const createOrderRest = async (req, res, next) => {
             });
         }
 
-        const order = await orderService.createOrder(
-            req.user.userId,
-            shopId,
-            req.body // Already validated
-        );
+        const idempotencyKey = getIdempotencyKey(req);
+        const order = idempotencyKey
+            ? await orderService.createOrder(req.user.userId, shopId, req.body, idempotencyKey)
+            : await orderService.createOrder(req.user.userId, shopId, req.body);
 
         res.status(201).json({
             success: true,
@@ -697,6 +704,7 @@ const bookCourier = async (req, res, next) => {
             provider: provider || null,
             requireAiDefault: !provider,
             trigger: 'MANUAL',
+            mutationAuthority: { kind: 'human', userId: req.user?.userId || req.user?.id },
             overrides: {
                 // These fields remain accepted for the legacy endpoint, but the
                 // canonical helper prefers persisted order values over them.

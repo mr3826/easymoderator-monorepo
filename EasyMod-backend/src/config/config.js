@@ -4,6 +4,7 @@
 require('dotenv').config();
 
 const { normalizeRenderedEnvironment } = require('./rendered-env');
+const { isRuntimeFlagEnabled } = require('./ai-runtime-flags');
 
 // Docker's --env-file parser can preserve the literal JSON quote delimiters
 // emitted by older production renderers. Decode that legacy representation
@@ -31,6 +32,9 @@ module.exports = {
     bodySizeLimit: process.env.BODY_SIZE_LIMIT || '35mb',
     allowSelfSignedTls: process.env.ALLOW_SELF_SIGNED_TLS === 'true',
     growthOsEnabled: process.env.GROWTH_OS_ENABLED === 'true',
+    domainAgentRuntimeEnabled: isRuntimeFlagEnabled('DOMAIN_AGENT_RUNTIME_ENABLED'),
+    aiOrderMutationsEnabled: isRuntimeFlagEnabled('AI_ORDER_MUTATIONS_ENABLED'),
+    aiCourierBookingEnabled: isRuntimeFlagEnabled('AI_COURIER_BOOKING_ENABLED'),
     // ADR M-010: five independent mobile-program flags, same pattern as
     // growthOsEnabled above — boolean, read once at config load, default
     // false when the env var is absent or anything other than the literal

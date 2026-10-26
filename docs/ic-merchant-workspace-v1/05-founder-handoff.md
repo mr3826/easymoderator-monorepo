@@ -1,6 +1,8 @@
 # IC-V1 05 — Founder Handoff: Unified Merchant Workspace, Integration Candidate V1
 
-**Candidate:** `17fce2f9` (docs tip) / code `a513a4ce`, branch
+**Candidate:** round-2 freeze (post-review hardening committed on this branch; the exact
+sha is pinned in `ic-merchant-workspace-v1-proof.json` by the immediately following
+docs-only pin commit), branch
 `integration-candidate/merchant-workspace-v1`, worktree
 `D:\easymod\_wt-ic-merchant-workspace-v1`. Nothing pushed, merged, or deployed.
 
@@ -20,11 +22,35 @@
    delivery-state contracts are a safe superset (hardened tag rules, draft-booking 409);
    the branch's `POST /products/images` is catalogued as their pending upstream
    contribution. Re-sync asks listed in doc 02.
-4. **Combined release verification: green.** Backend 313/313 (4219), real-stack
-   integration 30/30 (220), Meta-shaped E2E 48/48 zero live sends, FE 665/665 + tsc 0 +
-   build, Playwright 20/20 on chromium AND firefox. Full accounting + two honest caveats
-   in doc 03 (lab .env/totp interplay; a PE privacy-heuristic false positive on commit
-   hashes, fixed narrowly and flagged for the PE owner).
+4. **Combined release verification: green (round-2 battery).** Backend 317/317 (4,271
+   passed, 2 skipped), real-stack integration 32/32 (225, incl. the new
+   `20261026_001_order_idempotency_unique` migration applying on disposable Postgres),
+   Meta-shaped E2E 48/48 zero live sends, FE 78 files / 692 + tsc 0 + build,
+   Playwright battery 20/20 chromium AND 20/20 firefox (`--workers=1`; parallel runs
+   flake on 30s load timeouts under machine contention — single-worker is the procedure).
+   Full accounting in doc 03; the five legacy spec files that pin pre-Pilot+ markup are
+   catalogued as test debt in doc 04's round-2 section (all 22 failures verified to
+   reproduce at baseline; 14 of 19 legacy files pass). WebKit dev-stack limitation
+   (`__Host-` CSRF cookie on http://localhost) documented there; never part of any
+   green battery record.
+
+## Round-2 hardening (adversarial review `ses_e86d829c…`, GO verdict, all findings closed/dispositioned)
+
+- Production-default safety: the audited-product-read handoff no longer fires when the
+  domain-agent runtime is disabled (that was a customer-visible breakage of every live
+  bot product answer at deploy — R2-F1). Replay harnesses now model the shipped defaults.
+- Fail-closed kill switches: every mutating action type maps to an explicit flag;
+  new production flags `AI_PAYMENT_ACCEPTANCE_ENABLED` and `AI_SUPPORT_CASE_ENABLED`
+  (rendered `'false'` by default — add them to the deploy `.env` source like the other
+  three). Unknown types deny (R2-F2).
+- Committed-order/audit resilience + DB-level order idempotency unique index (R2-F3/F4).
+  **Migration rollout note:** `20261026_001` deliberately refuses to apply over
+  pre-existing duplicate `(shop_id, idempotency_key)` rows — reconcile before enabling.
+- Payment-webhook auto-courier booking now requires `AI_COURIER_BOOKING_ENABLED=true`;
+  with the rendered default `'false'` webhooks confirm payments without booking and
+  dispatch stays manual until the operator opts in (R2-F10, AGENT_ACTION_POLICY §11).
+- Mobile AI-pause rollback, result-audit signature enforcement, action-queue degrade-
+  not-crash hardening, and smaller fixes — full table in doc 04.
 
 ## What the founder gets
 
@@ -48,5 +74,5 @@ cd D:\easymod\_wt-ic-merchant-workspace-v1
 powershell -File scripts\pilotplus-lab.ps1        # containers, migrate, seed, FE+BE preview
 # founder login/creds + journeys: docs/merchant-workspace-v1/increment-2/11-founder-handoff.md
 ```
-(The live founder preview from increment-2 is still running from its own tree; this IC
-tree is byte-equivalent for the merchant UI plus v6 contract hardening.)
+(The founder preview currently running on :5173/:3000 serves THIS IC tree — re-hosted
+during round-1 certification; refresh the page to pick up round-2 changes.)

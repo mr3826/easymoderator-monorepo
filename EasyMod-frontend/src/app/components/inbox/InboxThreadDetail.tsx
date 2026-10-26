@@ -549,14 +549,14 @@ export function InboxThreadDetail({
 
   return (
     <div
-      className={`flex-1 flex flex-col bg-gray-50 ${mobilePanelOpen ? "flex" : "hidden"} md:flex`}
+      className={`flex-1 flex flex-col bg-gray-50 ${mobilePanelOpen ? "flex" : "hidden"} lg:flex`}
     >
       {/* Conversation Header */}
       <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 shrink-0">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
-              className="md:hidden p-1 -ml-1 text-gray-500 hover:text-gray-700"
+              className="lg:hidden p-1 -ml-1 text-gray-500 hover:text-gray-700"
               onClick={onMobileBack}
               aria-label="Back to conversations"
             >

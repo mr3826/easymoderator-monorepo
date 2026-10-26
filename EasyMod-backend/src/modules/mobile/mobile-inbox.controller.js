@@ -175,26 +175,60 @@ const replyConversation = asyncHandler(async (req, res) => {
         });
     }
 
+    const messageRecord = typeof message?.toJSON === 'function' ? message.toJSON() : message;
+    const deliverySent = delivery?.sent === true;
+    const deliveryState = messageRecord?.delivery_state
+        || messageRecord?.metadata?.delivery_state
+        || (deliverySent ? 'SENT' : 'SEND_PENDING');
+    const providerMessageId = messageRecord?.provider_message_id
+        || messageRecord?.metadata?.provider_message_id
+        || delivery?.provider_message_id
+        || null;
+    const responseMessage = {
+        ...messageRecord,
+        delivery_state: deliveryState,
+        provider_message_id: providerMessageId,
+    };
+
     if (AuditLog && typeof AuditLog.create === 'function' && !idempotencyReplay) {
         const auditHash = crypto.createHash('sha256')
-            .update(['INBOX_MESSAGE_SENT', shopId, conversationId, message?.id || 'msg', req.user?.id || 'mobile'].join('|'))
+            .update(['INBOX_MESSAGE_DELIVERY', shopId, conversationId, message?.id || 'msg', req.user?.id || 'mobile'].join('|'))
             .digest('hex');
+        const auditAction = deliverySent
+            ? 'INBOX_MESSAGE_SENT'
+            : deliveryState === 'FAILED'
+                ? 'INBOX_MESSAGE_DELIVERY_FAILED'
+                : deliveryState === 'HELD'
+                    ? 'INBOX_MESSAGE_HELD'
+                    : 'INBOX_MESSAGE_QUEUED';
         await AuditLog.create({
             user_id: req.user?.id || req.user?.userId || null,
             shop_id: shopId,
-            action: 'INBOX_MESSAGE_SENT',
+            action: auditAction,
             resource_type: 'conversation_message',
             resource_id: message?.id || null,
             idempotency_key: auditHash,
             metadata: {
                 conversation_id: conversationId,
                 source: 'MOBILE',
-                delivery_sent: delivery?.sent ?? null,
+                delivery_sent: deliverySent,
+                delivery_state: deliveryState,
+                provider_confirmed: deliverySent && Boolean(providerMessageId),
+                delivery_reason_code: delivery?.reason_code || delivery?.reasonCode || null,
             },
         }).catch((err) => console.warn('Mobile inbox audit log failed:', err.message));
     }
 
-    sendSuccess(res, { message }, 201);
+    sendSuccess(res, {
+        message: responseMessage,
+        delivery: {
+            persisted: true,
+            sent: deliverySent,
+            state: deliveryState,
+            provider_confirmed: deliverySent && Boolean(providerMessageId),
+            provider_message_id: providerMessageId,
+        },
+    }, 201);
 });
 
 /**
@@ -215,17 +249,66 @@ const setAiMode = asyncHandler(async (req, res) => {
         throw new AppError('Mode must be "pause" or "resume"', 400, 'VALIDATION_ERROR');
     }
 
+    const pauseKey = `ai:pause:${conversationId}`;
     if (mode === 'pause') {
-        if (cacheRedis && typeof cacheRedis.setex === 'function') {
-            await Promise.resolve(cacheRedis.setex(`ai:pause:${conversationId}`, 1800, '1')).catch(() => {});
-        }
-        if (typeof conversationService.holdPendingAiCandidates === 'function') {
-            await Promise.resolve(conversationService.holdPendingAiCandidates(conversationId, shopId, 'human_paused')).catch(() => {});
+        try {
+            if (!cacheRedis || typeof cacheRedis.setex !== 'function') throw new Error('Pause storage unavailable');
+            const result = await cacheRedis.setex(pauseKey, 1800, '1');
+            if (result !== 'OK') throw new Error('Pause state was not persisted');
+            if (typeof conversationService.holdPendingAiCandidates !== 'function') {
+                throw new Error('Pending AI candidate hold is unavailable');
+            }
+            await conversationService.holdPendingAiCandidates(conversationId, shopId, 'human_paused');
+        } catch {
+            throw new AppError('Unable to safely pause AI for this conversation', 503, 'AI_MODE_UNAVAILABLE');
         }
     } else {
-        if (cacheRedis && typeof cacheRedis.del === 'function') {
-            await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
+        try {
+            if (!cacheRedis || typeof cacheRedis.del !== 'function') throw new Error('Pause storage unavailable');
+            await cacheRedis.del(pauseKey);
+        } catch {
+            throw new AppError('Unable to safely resume AI for this conversation', 503, 'AI_MODE_UNAVAILABLE');
         }
+    }
+
+    if (AuditLog && typeof AuditLog.create === 'function') {
+        const auditHash = crypto.createHash('sha256')
+            .update(['AI_MODE_TOGGLED', shopId, conversationId, mode, Date.now()].join('|'))
+            .digest('hex');
+        try {
+            await AuditLog.create({
+                user_id: req.user?.id || req.user?.userId || null,
+                shop_id: shopId,
+                action: mode === 'pause' ? 'AI_PAUSED' : 'AI_RESUMED',
+                resource_type: 'conversation',
+                resource_id: conversationId,
+                idempotency_key: auditHash,
+                metadata: {
+                    conversation_id: conversationId,
+                    source: 'MOBILE',
+                    ai_mode: mode === 'pause' ? 'paused' : 'ai_active',
+                },
+            });
+        } catch {
+            if (mode === 'resume' && cacheRedis && typeof cacheRedis.setex === 'function') {
+                await Promise.resolve(cacheRedis.setex(pauseKey, 1800, '1')).catch(() => {});
+            }
+            // IC-V1 review F9: symmetric rollback — a pause whose audit failed
+            // must not leave AI silently paused while the merchant was told it
+            // could not be. Cleared state is re-assertable by pausing again.
+            if (mode === 'pause' && cacheRedis && typeof cacheRedis.del === 'function') {
+                await Promise.resolve(cacheRedis.del(pauseKey)).catch(() => {});
+            }
+            throw new AppError('Unable to audit the AI mode change', 503, 'AI_MODE_AUDIT_UNAVAILABLE');
+        }
+    } else {
+        if (mode === 'resume' && cacheRedis && typeof cacheRedis.setex === 'function') {
+            await Promise.resolve(cacheRedis.setex(pauseKey, 1800, '1')).catch(() => {});
+        }
+        if (mode === 'pause' && cacheRedis && typeof cacheRedis.del === 'function') {
+            await Promise.resolve(cacheRedis.del(pauseKey)).catch(() => {});
+        }
+        throw new AppError('AI mode audit storage is unavailable', 503, 'AI_MODE_AUDIT_UNAVAILABLE');
     }
 
     if (sseManager && typeof sseManager.emit === 'function') {
@@ -233,25 +316,6 @@ const setAiMode = asyncHandler(async (req, res) => {
             conversation_id: conversationId,
             ai_paused: mode === 'pause',
         });
-    }
-
-    if (AuditLog && typeof AuditLog.create === 'function') {
-        const auditHash = crypto.createHash('sha256')
-            .update(['AI_MODE_TOGGLED', shopId, conversationId, mode, Date.now()].join('|'))
-            .digest('hex');
-        await AuditLog.create({
-            user_id: req.user?.id || req.user?.userId || null,
-            shop_id: shopId,
-            action: mode === 'pause' ? 'AI_PAUSED' : 'AI_RESUMED',
-            resource_type: 'conversation',
-            resource_id: conversationId,
-            idempotency_key: auditHash,
-            metadata: {
-                conversation_id: conversationId,
-                source: 'MOBILE',
-                ai_mode: mode === 'pause' ? 'paused' : 'ai_active',
-            },
-        }).catch((err) => console.warn('Mobile AI mode audit log failed:', err.message));
     }
 
     sendSuccess(res, {

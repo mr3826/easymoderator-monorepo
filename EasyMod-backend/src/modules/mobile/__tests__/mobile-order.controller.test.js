@@ -276,6 +276,8 @@ describe('mobile Quick Manual Order creation contract', () => {
                 shipping_address: 'Dhanmondi, Dhaka',
                 channel: 'mobile_manual',
                 order_status: 'confirmed',
+                payment_status: 'pending',
+                fulfillment_status: 'pending',
                 items: [{ product_id: 'prod-1', quantity: 2, price: 600 }],
                 delivery_fee: 60,
             }),
@@ -287,6 +289,24 @@ describe('mobile Quick Manual Order creation contract', () => {
             resource_id: 'ord-created-1',
         }));
         expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    test('rejects client-supplied paid or delivered states on manual order creation', async () => {
+        const next = jest.fn();
+        await controller.createManualOrder({
+            body: {
+                customer_phone: '01911000000',
+                items: [{ product_id: 'prod-1', quantity: 1 }],
+                order_status: 'delivered',
+                payment_status: 'paid',
+                fulfillment_status: 'delivered',
+            },
+            user: { userId: 'user-a' },
+            shop: { id: 'shop-a' },
+        }, response(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 400 }));
+        expect(orderService.createOrder).not.toHaveBeenCalled();
     });
 
     test('rejects manual order creation when items list is missing or empty', async () => {

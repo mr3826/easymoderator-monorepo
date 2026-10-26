@@ -5,14 +5,11 @@
 // idempotent rows; DERIVED statuses are blocklisted from becoming manual
 // knobs. Nothing here reads message content — tags are merchant-entered.
 
-const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
 const { Op } = require('sequelize');
 const {
     CustomerTag, CustomerTagAssignment, Customer, UserShop, AuditLog,
 } = require('../entities');
-
-const logger = createLogger('customer-tags');
 
 const MAX_TAG_LENGTH = 30;
 const MAX_TAGS_PER_SHOP = 40;
@@ -45,16 +42,30 @@ async function requireActiveMembership(shopId, actor) {
     if (!member) fail('You do not have access to this shop', 'FORBIDDEN', 403);
 }
 
-const audit = (action, shopId, actor, extra) => {
-    if (typeof AuditLog?.create !== 'function') return;
-    AuditLog.create({
-        user_id: actor?.userId || null,
-        shop_id: shopId,
-        action,
-        resource_type: 'customer_tags',
-        resource_id: extra?.customer_id || extra?.tag_id || null,
-        metadata: extra,
-    }).catch((error) => logger.warn('customer_tags audit write failed', { error: error.message }));
+const audit = async (action, shopId, actor, extra, transaction) => {
+    if (typeof AuditLog?.create !== 'function') {
+        fail('Customer tag audit storage unavailable', 'TAG_AUDIT_UNAVAILABLE', 503);
+    }
+    try {
+        await AuditLog.create({
+            user_id: actor?.userId || null,
+            shop_id: shopId,
+            action,
+            resource_type: 'customer_tags',
+            resource_id: extra?.customer_id || extra?.tag_id || null,
+            metadata: extra,
+        }, transaction ? { transaction } : {});
+    } catch (_) {
+        fail('Customer tag audit write failed', 'TAG_AUDIT_FAILED', 503);
+    }
+};
+
+const withTagAuditTransaction = async (callback) => {
+    const sequelize = CustomerTag?.sequelize || CustomerTagAssignment?.sequelize;
+    if (!sequelize || typeof sequelize.transaction !== 'function') {
+        fail('Customer tag transaction unavailable', 'TAG_TRANSACTION_UNAVAILABLE', 503);
+    }
+    return sequelize.transaction(callback);
 };
 
 async function listTags({ shopId }, actor) {
@@ -93,32 +104,38 @@ async function createTag({ shopId, name }, actor) {
     if (existing) return serializeTag(existing); // idempotent vocabulary
     const count = await CustomerTag.count({ where: { shop_id: shopId } });
     if (count >= MAX_TAGS_PER_SHOP) fail(`Shop tag vocabulary is limited to ${MAX_TAGS_PER_SHOP}`, 'TAG_LIMIT', 409);
-    const created = await CustomerTag.create({
-        shop_id: shopId, name: normalized, name_lower: nameLower, created_by: actor.userId || null,
+    return withTagAuditTransaction(async (transaction) => {
+        const created = await CustomerTag.create({
+            shop_id: shopId, name: normalized, name_lower: nameLower, created_by: actor.userId || null,
+        }, { transaction });
+        await audit('CREATE', shopId, actor, { tag_id: created.id, name: normalized }, transaction);
+        return serializeTag(created);
     });
-    audit('CREATE', shopId, actor, { tag_id: created.id, name: normalized });
-    return serializeTag(created);
 }
 
 async function renameTag({ shopId, tagId, name }, actor) {
     if (!privileged(actor)) fail('Only owner/admin can rename the shop tag vocabulary', 'TAG_PRIVILEGE_REQUIRED', 403);
     const normalized = normalizeName(name);
     await requireActiveMembership(shopId, actor);
-    const found = await CustomerTag.findOne({ where: { id: tagId, shop_id: shopId } });
-    if (!found) fail('Tag not found', 'TAG_NOT_FOUND', 404);
-    await found.update({ name: normalized, name_lower: normalized.toLowerCase() });
-    audit('UPDATE', shopId, actor, { tag_id: tagId, name: normalized });
-    return serializeTag(found);
+    return withTagAuditTransaction(async (transaction) => {
+        const found = await CustomerTag.findOne({ where: { id: tagId, shop_id: shopId }, transaction });
+        if (!found) fail('Tag not found', 'TAG_NOT_FOUND', 404);
+        await found.update({ name: normalized, name_lower: normalized.toLowerCase() }, { transaction });
+        await audit('UPDATE', shopId, actor, { tag_id: tagId, name: normalized }, transaction);
+        return serializeTag(found);
+    });
 }
 
 async function deleteTag({ shopId, tagId }, actor) {
     if (!privileged(actor)) fail('Only owner/admin can delete vocabulary entries', 'TAG_PRIVILEGE_REQUIRED', 403);
     await requireActiveMembership(shopId, actor);
-    const found = await CustomerTag.findOne({ where: { id: tagId, shop_id: shopId } });
-    if (!found) fail('Tag not found', 'TAG_NOT_FOUND', 404);
-    await found.destroy(); // cascades assignments
-    audit('DELETE', shopId, actor, { tag_id: tagId, name: found.name });
-    return { id: tagId, deleted: true };
+    return withTagAuditTransaction(async (transaction) => {
+        const found = await CustomerTag.findOne({ where: { id: tagId, shop_id: shopId }, transaction });
+        if (!found) fail('Tag not found', 'TAG_NOT_FOUND', 404);
+        await found.destroy({ transaction }); // cascades assignments
+        await audit('DELETE', shopId, actor, { tag_id: tagId, name: found.name }, transaction);
+        return { id: tagId, deleted: true };
+    });
 }
 
 async function listCustomerTags({ shopId, customerId }, actor) {
@@ -154,8 +171,7 @@ async function setCustomerTags({ shopId, customerId, tagIds }, actor) {
     // Atomic replace-set: a failure between clear and insert must not silently
     // wipe the customer's tags. Falls back to un-transacted only when the model
     // exposes no transaction (unit-mock path).
-    const sequelize = CustomerTagAssignment.sequelize;
-    const apply = async (tx) => {
+    return withTagAuditTransaction(async (tx) => {
         const opts = tx ? { transaction: tx } : {};
         await CustomerTagAssignment.destroy({ where: { shop_id: shopId, customer_id: customerId }, ...opts });
         if (defs.length) {
@@ -164,11 +180,9 @@ async function setCustomerTags({ shopId, customerId, tagIds }, actor) {
                 { ignoreDuplicates: true, ...opts },
             );
         }
-    };
-    if (typeof sequelize?.transaction === 'function') await sequelize.transaction(apply);
-    else await apply(null);
-    audit('UPDATE', shopId, actor, { customer_id: customerId, tag_ids: defs.map((d) => d.id) });
-    return { data: defs.map(serializeTag) };
+        await audit('UPDATE', shopId, actor, { customer_id: customerId, tag_ids: defs.map((d) => d.id) }, tx);
+        return { data: defs.map(serializeTag) };
+    });
 }
 
 module.exports = {

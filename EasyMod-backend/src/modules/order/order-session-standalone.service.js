@@ -12,6 +12,11 @@ const CustomerEntity = require('../customer/customer.entity');
 // payment truth comes only from merchant confirmation or verified webhooks.
 const { isNegatedMutation, isQuestionShaped } = require('../ai/intent/stage2-rules');
 const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
+const finiteNumberOrNull = (value) => (
+    value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+        ? Number(value)
+        : null
+);
 
 const normalizeSessionChannel = (channel) => (
     channel === 'facebook' ? 'messenger' : (channel || 'messenger')
@@ -527,6 +532,10 @@ class OrderSessionService {
                     ...product_info,
                     price:    stockCheck.product.price,
                     quantity: stockCheck.product.quantity,
+                    stock_snapshot: stockCheck.product.track_quantity === true
+                        ? finiteNumberOrNull(stockCheck.product.quantity)
+                        : null,
+                    track_quantity: stockCheck.product.track_quantity === true,
                     in_stock: stockCheck.product.in_stock
                 };
             }
@@ -638,6 +647,10 @@ class OrderSessionService {
                         if (stockCheck.product) {
                             chosen.price    = stockCheck.product.price;
                             chosen.quantity = stockCheck.product.quantity;
+                            chosen.stock_snapshot = stockCheck.product.track_quantity === true
+                                ? finiteNumberOrNull(stockCheck.product.quantity)
+                                : null;
+                            chosen.track_quantity = stockCheck.product.track_quantity === true;
                             chosen.in_stock = stockCheck.product.in_stock;
                         }
                     }
@@ -676,23 +689,42 @@ class OrderSessionService {
                     // walk the customer through name/phone/address only to fail at order
                     // creation with a scary generic error. checkStock without a quantity
                     // defaulted to 1, so "I want 3" of a 2-in-stock item sailed through.
-                    // Fail-open: a stock-lookup error must never block a real order.
                     const prod = session.product_info || {};
+                    let quantityStockCheck = null;
                     if (prod.id) {
-                        const stock = await productSearch.checkStock(prod.id, session.shop_id, qty)
-                            .catch(() => ({ available: true }));
-                        if (!stock.available && typeof stock.quantity === 'number') {
-                            // Not enough units — tell them how many remain and re-ask. Stay on step.
+                        try {
+                            quantityStockCheck = await productSearch.checkStock(prod.id, session.shop_id, qty);
+                        } catch (_) {
                             prompt = pickLang(lang,
-                                `দুঃখিত, এই মুহূর্তে স্টকে আছে ${stock.quantity}টি। কয়টা নিতে চান?`,
-                                `Sorry, only ${stock.quantity} in stock right now. How many would you like?`);
+                                'দুঃখিত, স্টক এখন যাচাই করা যাচ্ছে না। একটু পরে আবার চেষ্টা করুন বা একজন বিক্রেতার সাহায্য নিন।',
+                                'I cannot verify stock right now. Please try again shortly or ask a shop team member.');
+                            break;
+                        }
+                        if (!quantityStockCheck.available) {
+                            // Not enough units — tell them how many remain and re-ask. Stay on step.
+                            prompt = typeof quantityStockCheck.quantity === 'number'
+                                ? pickLang(lang,
+                                    `দুঃখিত, এই মুহূর্তে স্টকে আছে ${quantityStockCheck.quantity}টি। কয়টা নিতে চান?`,
+                                    `Sorry, only ${quantityStockCheck.quantity} in stock right now. How many would you like?`)
+                                : pickLang(lang,
+                                    'দুঃখিত, এই পণ্যটি এখন অর্ডার করা যাচ্ছে না। একজন বিক্রেতার সাহায্য নিন।',
+                                    'Sorry, this product is not available to order right now. A shop team member can help.');
                             break;
                         }
                     }
                     // Quantity lives on product_info so the (last-configured) item
                     // is always available; the cart is the source of truth for the
                     // full multi-product order.
-                    const pi = { ...prod, quantity: qty };
+                    const currentStock = quantityStockCheck?.product?.quantity;
+                    const pi = {
+                        ...prod,
+                        quantity: qty,
+                        track_quantity: quantityStockCheck?.product?.track_quantity === true || prod.track_quantity === true,
+                        stock_snapshot: quantityStockCheck?.product?.track_quantity === true
+                            && finiteNumberOrNull(currentStock) !== null
+                            ? finiteNumberOrNull(currentStock)
+                            : (prod.stock_snapshot ?? null),
+                    };
                     await session.update({ product_info: pi });
                     session.product_info = pi;
 
@@ -703,6 +735,8 @@ class OrderSessionService {
                         name_bn: pi.name_bn || null,
                         price: pi.price,
                         quantity: qty,
+                        track_quantity: pi.track_quantity === true,
+                        stock_snapshot: pi.track_quantity === true ? pi.stock_snapshot ?? null : null,
                     };
                     const cartGate = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
                         orderSessionId: session.id,
@@ -944,6 +978,7 @@ class OrderSessionService {
                     // Re-check stock for EVERY line in the cart before committing.
                     const cart = OrderSessionService.getCartItems(session, step_data);
                     let priceChanged = false;
+                    let stockChanged = false;
                     for (const item of cart) {
                         if (!item.product_id) continue;
                         const stockCheck = await productSearch.checkStock(item.product_id, session.shop_id, item.quantity || 1);
@@ -958,6 +993,15 @@ class OrderSessionService {
                                 cancelled: true
                             };
                         }
+                        const liveQuantity = finiteNumberOrNull(stockCheck.product?.quantity ?? stockCheck.quantity);
+                        const isTracked = stockCheck.product?.track_quantity === true || item.track_quantity === true;
+                        if (isTracked) {
+                            const quotedQuantity = finiteNumberOrNull(item.stock_snapshot);
+                            if (quotedQuantity === null || liveQuantity === null || quotedQuantity !== liveQuantity) {
+                                stockChanged = true;
+                            }
+                            if (liveQuantity !== null) item.stock_snapshot = liveQuantity;
+                        }
                         if (stockCheck.product?.price != null
                             && Number(stockCheck.product.price) !== Number(item.price)) {
                             item.price = stockCheck.product.price;
@@ -965,7 +1009,7 @@ class OrderSessionService {
                         }
                     }
 
-                    if (priceChanged) step_data.cart = cart;
+                    if (priceChanged || stockChanged) step_data.cart = cart;
 
                     const {
                         createProposedAction,
@@ -977,7 +1021,7 @@ class OrderSessionService {
                     const { findOrderByIdempotencyKey } = require('./order-idempotency.service');
                     const { getMutationBudgetState } = require('../ai/cost.service');
                     const { Conversation } = require('../conversation/conversation.entity');
-                    const freshSummaryHash = priceChanged
+                    const freshSummaryHash = priceChanged || stockChanged
                         ? hashSummary(this.buildContractOrderSummary(session, step_data))
                         : confirmedSummaryHash;
                     const summaryEvidence = withEvidenceSnapshot({
@@ -1009,9 +1053,10 @@ class OrderSessionService {
                             && matchingConversation.shop_id === session.shop_id
                             && matchingConversation.customer_id === session.customer_id
                     );
-                    const materialStateRevalidated = !priceChanged;
+                    const materialStateRevalidated = !priceChanged && !stockChanged;
                     const customerConfirmationValid = Boolean(
                         !priceChanged
+                            && !stockChanged
                             && orderConfirmation
                             && confirmedSummaryHash === step_data.confirmed_summary_hash
                     );
@@ -1032,6 +1077,7 @@ class OrderSessionService {
                     });
                     const gateResult = await authorize(orderAction, {
                         traceId: traceId || conversationId || session.id,
+                        taskId: session.id,
                         tenant: {
                             shopId: session.shop_id,
                             channelId: session.channel,
@@ -1051,7 +1097,7 @@ class OrderSessionService {
                         costBudgetAvailable: budgetState.available,
                     });
                     if (!gateResult.authorized) {
-                        const confirmationInvalidated = priceChanged
+                        const confirmationInvalidated = priceChanged || stockChanged
                             || gateResult.reasonCode === 'material_state_revalidated'
                             || gateResult.reasonCode === 'customer_confirmation_valid';
                         return {
@@ -1060,10 +1106,18 @@ class OrderSessionService {
                                 pickLang(
                                     lang,
                                     confirmationInvalidated
-                                        ? 'দাম বা অর্ডারের তথ্য পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                        ? priceChanged && stockChanged
+                                            ? 'দাম ও স্টকের অবস্থা পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                            : stockChanged
+                                                ? 'স্টকের অবস্থা পরিবর্তিত হয়েছে, তবে চাওয়া পরিমাণ এখনো পাওয়া যাচ্ছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                                : 'দাম পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
                                         : 'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
                                     confirmationInvalidated
-                                        ? 'The order changed. Please confirm the new summary before placing it.'
+                                        ? priceChanged && stockChanged
+                                            ? 'Price and stock availability changed. Please confirm the updated order before placing it.'
+                                            : stockChanged
+                                                ? 'Stock availability changed, but your requested quantity is still available. Please confirm the updated order before placing it.'
+                                                : 'The price changed. Please confirm the updated order before placing it.'
                                         : 'A team member will confirm this order.'
                                 ),
                             current_step: 'ORDER_SUMMARY',
@@ -1247,6 +1301,7 @@ class OrderSessionService {
                                 ? { authorized: false, reasonCode: 'idempotency_committed' }
                                 : await authorize(courierAction, {
                                 traceId: traceId || conversationId || session.id,
+                                taskId: session.id,
                                 tenant: {
                                     shopId: session.shop_id,
                                     channelId: session.channel,
@@ -1782,7 +1837,10 @@ class OrderSessionService {
             idempotency_key: idempotencyKey,
         };
 
-        return createOrderInternal(session.shop_id, orderData, idempotencyKey);
+        return createOrderInternal(session.shop_id, orderData, idempotencyKey, {
+            authorization,
+            evidenceSnapshotHash,
+        });
     }
 
     // ─── Customer enrichment ──────────────────────────────────────────────────
@@ -2340,6 +2398,8 @@ class OrderSessionService {
                 name_bn: p.name_bn || null,
                 price: p.price,
                 quantity: p.quantity || 1,
+                track_quantity: p.track_quantity === true,
+                stock_snapshot: p.track_quantity === true ? p.stock_snapshot ?? null : null,
             }];
         }
         return [];
@@ -2473,7 +2533,17 @@ class OrderSessionService {
 
         if (products.length === 1) {
             const p = products[0];
-            const stock = await productSearch.checkStock(p.id, session.shop_id).catch(() => ({ available: true }));
+            let stock;
+            try {
+                stock = await productSearch.checkStock(p.id, session.shop_id);
+            } catch (_) {
+                return {
+                    nextStep: 'ADDING_PRODUCT',
+                    prompt: pickLang(lang,
+                        'স্টক এখন যাচাই করা যাচ্ছে না। একটু পরে আবার চেষ্টা করুন বা একজন বিক্রেতার সাহায্য নিন।',
+                        'I cannot verify stock right now. Please try again shortly or ask a shop team member.'),
+                };
+            }
             if (!stock.available) {
                 return {
                     nextStep: 'ADDING_PRODUCT',
@@ -2486,6 +2556,10 @@ class OrderSessionService {
                 name_bn: p.name_bn || null,
                 price: stock.product?.price ?? p.price,
                 quantity: 1,
+                track_quantity: stock.product?.track_quantity === true || p.track_quantity === true,
+                stock_snapshot: stock.product?.track_quantity === true
+                    ? finiteNumberOrNull(stock.product.quantity)
+                    : (p.track_quantity === true ? finiteNumberOrNull(p.quantity) : null),
             };
             await session.update({ product_info: pi });
             session.product_info = pi;
@@ -2571,7 +2645,17 @@ class OrderSessionService {
             const { products, wasFallback } = await OrderSessionService.identifyProduct(session.shop_id, query, null);
             if (wasFallback || products.length !== 1) { unresolved.push(query); continue; }
             const p = products[0];
-            const stock = await productSearch.checkStock(p.id, session.shop_id, quantity).catch(() => ({ available: true }));
+            let stock;
+            try {
+                stock = await productSearch.checkStock(p.id, session.shop_id, quantity);
+            } catch (_) {
+                return {
+                    nextStep: 'ADD_MORE',
+                    prompt: pickLang(lang,
+                        'স্টক যাচাই করা যাচ্ছে না, তাই এই পণ্যটি কার্টে যোগ করা হয়নি। একটু পরে আবার চেষ্টা করুন।',
+                        `I could not verify stock, so "${p.name}" was not added. Please try again shortly.`),
+                };
+            }
             if (!stock.available) { unresolved.push(query); continue; }
             const item = {
                 product_id: p.id,
@@ -2579,6 +2663,10 @@ class OrderSessionService {
                 name_bn: p.name_bn || null,
                 price: stock.product?.price ?? p.price,
                 quantity,
+                track_quantity: stock.product?.track_quantity === true || p.track_quantity === true,
+                stock_snapshot: stock.product?.track_quantity === true
+                    ? finiteNumberOrNull(stock.product.quantity)
+                    : (p.track_quantity === true ? finiteNumberOrNull(p.stock_snapshot) : null),
             };
             const cartGate = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
                 orderSessionId: session.id,
@@ -2721,6 +2809,7 @@ class OrderSessionService {
             variantId: item.variant_id || null,
             quantity: item.quantity || 1,
             unitPrice: item.price || 0,
+            stockSnapshot: item.track_quantity === true ? finiteNumberOrNull(item.stock_snapshot) : null,
             lineTotal: (item.price || 0) * (item.quantity || 1),
         }));
         return {

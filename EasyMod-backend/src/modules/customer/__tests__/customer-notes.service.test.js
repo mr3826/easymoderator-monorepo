@@ -37,9 +37,20 @@ const notes = require('../customer-notes.service');
 
 const actor = { userId: 'staff-1', role: 'staff', shopId: 'shop-1' };
 const owner = { userId: 'owner-1', role: 'owner', shopId: 'shop-1' };
+const noteTransaction = { rollback: jest.fn() };
 
 beforeEach(() => {
     jest.clearAllMocks();
+    E.CustomerNote.sequelize = {
+        transaction: jest.fn(async (callback) => {
+            try {
+                return await callback(noteTransaction);
+            } catch (error) {
+                noteTransaction.rollback();
+                throw error;
+            }
+        }),
+    };
     E.Customer.findOne.mockResolvedValue({ id: 'cust-1', shop_id: 'shop-1' });
     E.UserShop.findOne.mockResolvedValue({ user_id: actor.userId, is_active: true });
     E.AuditLog.create.mockResolvedValue({});
@@ -82,6 +93,15 @@ describe('create', () => {
         // PII/content discipline: audit references ids + length, never the body text
         expect(JSON.stringify(audit)).not.toContain('size confirmation');
         expect(audit.metadata.body_length).toBe(43);
+    });
+
+    it('rolls back a note mutation when its audit record cannot be persisted', async () => {
+        E.CustomerNote.create.mockResolvedValue(note());
+        E.AuditLog.create.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        await expect(notes.createNote({ shopId: 'shop-1', customerId: 'cust-1', body: 'private note' }, actor))
+            .rejects.toMatchObject({ code: 'NOTE_AUDIT_FAILED', status: 503 });
+        expect(noteTransaction.rollback).toHaveBeenCalledTimes(1);
     });
 });
 
