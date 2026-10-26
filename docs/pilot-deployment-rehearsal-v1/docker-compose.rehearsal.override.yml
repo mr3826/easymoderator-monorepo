@@ -1,0 +1,67 @@
+# Local-only overlay for the frozen production Compose topology.
+# Invoke with --project-name easymod-pilot-rehearsal-v1 and the documented
+# synthetic .env.pilot-rehearsal file. It binds only loopback and denies runtime
+# egress on the project's private network.
+networks:
+  internal:
+    internal: true
+
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:54580:80"
+      - "127.0.0.1:54543:443"
+    volumes: !override
+      - ./docs/pilot-deployment-rehearsal-v1/Caddyfile.rehearsal:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  backend:
+    image: easymod-pilot/backend:714be007
+    build:
+      context: ./EasyMod-backend
+      args:
+        GIT_SHA: 714be0072b6c8a8bba181dbe814e284c3b342ffe
+        BUILD_TIME: "2026-10-27T00:00:00Z"
+    env_file: !override
+      - .env.pilot-rehearsal
+    environment:
+      AI_PHOTO_MATCH_ENABLED: "false"
+      AI_VISION_ENABLED: "false"
+      TELEGRAM_ENABLED: "false"
+
+  worker:
+    image: easymod-pilot/backend:714be007
+    build:
+      context: ./EasyMod-backend
+      args:
+        GIT_SHA: 714be0072b6c8a8bba181dbe814e284c3b342ffe
+        BUILD_TIME: "2026-10-27T00:00:00Z"
+    env_file: !override
+      - .env.pilot-rehearsal
+
+  frontend:
+    image: easymod-pilot/frontend:714be007
+    build:
+      context: ./EasyMod-frontend
+      args:
+        VITE_API_BASE_URL: https://localhost:54543/api
+        VITE_APP_URL: https://localhost:54543
+        VITE_MARKETING_URL: https://localhost:54543
+        VITE_META_APP_ID: "0000000000000000"
+        VITE_ENV: rehearsal
+        VITE_SENTRY_DSN: ""
+        VITE_BKASH_ENABLED: "false"
+        VITE_BKASH_SANDBOX: "false"
+
+  growth-frontend:
+    image: easymod-pilot/growth-frontend:714be007
+    build:
+      context: ./EasyMod-growth
+      args:
+        VITE_API_BASE_URL: https://localhost:54543/api
+        VITE_ENV: rehearsal
+        VITE_BUILD_SHA: 714be0072b6c8a8bba181dbe814e284c3b342ffe
+
+  postgres:
+    env_file: !override []

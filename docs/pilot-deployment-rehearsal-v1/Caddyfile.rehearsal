@@ -1,0 +1,14 @@
+localhost {
+	tls internal
+	encode gzip zstd
+	@api path /api/* /health /health/* /uploads/* /webhooks/*
+	handle @api {
+		reverse_proxy backend:3000
+	}
+	@growth path /growth /growth/*
+	handle @growth {
+		uri strip_prefix /growth
+		reverse_proxy growth-frontend:8080
+	}
+	reverse_proxy frontend:8080
+}

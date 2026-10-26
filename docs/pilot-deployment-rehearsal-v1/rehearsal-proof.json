@@ -1,0 +1,117 @@
+{
+  "project": "EasyModerator",
+  "milestone": "Pilot Deployment Rehearsal V1",
+  "date": "2026-10-27",
+  "frozenSource": {
+    "worktree": "D:\\easymod\\_wt-ic-merchant-workspace-v1",
+    "codeSha": "c164a0422046cd91313564817c00002e91d48463",
+    "documentationSha": "d5dbd21620a0b25b6c57763c2214a95c811c2fbb",
+    "codeIsAncestorOfDocumentation": true,
+    "gitObjectConnectivity": "PASS",
+    "originalTrackedState": "CLEAN",
+    "originalUntrackedArtifactsPreserved": 84
+  },
+  "rehearsal": {
+    "branch": "rehearsal/pilot-deployment-v1",
+    "worktree": "D:\\easymod\\_rehearsal-pilot-deployment-v1",
+    "codeSha": "714be0072b6c8a8bba181dbe814e284c3b342ffe",
+    "changes": [
+      "SENT-only resolution for numbered pilot interaction choices and resolver-side per-shop feature recheck",
+      "Standalone frontend lockfile synchronized with declared axe-core dependencies"
+    ],
+    "composeConfig": "PASS",
+    "imageDigests": "NOT_AVAILABLE",
+    "stackStarted": false,
+    "productionChanged": false,
+    "pushed": false,
+    "merged": false,
+    "deployed": false
+  },
+  "statuses": {
+    "deploymentEquivalence": "PARTIAL",
+    "deploymentRehearsal": "PARTIAL",
+    "productionDefaultFlags": "PARTIAL_RUNTIME_NOT_RUN",
+    "backgroundMutationDenial": "PARTIAL_SOURCE_TESTS_ONLY",
+    "killSwitchRehearsal": "PARTIAL_SOURCE_TESTS_ONLY",
+    "migrationDryRun": "BLOCKED",
+    "failureRecovery": "NOT_RUN",
+    "rollbackFeasibility": "PARTIAL_SOURCE_PROCEDURE_ONLY",
+    "monitoringVerified": "NOT_RUN",
+    "independentAttestation": "NO_GO",
+    "productionReleaseVerdict": "NO_GO_PENDING_OWNER_AUTHORIZATION"
+  },
+  "tests": {
+    "backendSecurity": {
+      "status": "PASS",
+      "suites": 58,
+      "testsPassed": 812,
+      "exitCode": 0
+    },
+    "interactionAndWorkerFocused": {
+      "status": "PASS",
+      "testsPassed": 47,
+      "exitCode": 0
+    },
+    "frontendUnit": {
+      "status": "PASS",
+      "files": 78,
+      "testsPassed": 692,
+      "exitCode": 0
+    },
+    "frontendBuild": {
+      "status": "PASS",
+      "bundler": "Vite 7.3.6",
+      "modulesTransformed": 2758,
+      "warning": "React vendor chunk 549.55 kB"
+    },
+    "backendBuild": {
+      "status": "PASS",
+      "check": "node --check server.js",
+      "exitCode": 0
+    },
+    "standaloneFrontendNpmCiDryRun": {
+      "status": "PASS_AFTER_LOCKFILE_FIX",
+      "packagesResolved": 450,
+      "exitCode": 0
+    },
+    "postgresRedisIntegration": "BLOCKED_DOCKER",
+    "metaShapedE2e": "NOT_RUN",
+    "playwright": "NOT_RUN",
+    "migrationDryRun": "BLOCKED_DOCKER"
+  },
+  "environment": {
+    "docker": "SNAPSHOT_IO_ERROR_AND_READ_ONLY_METADATA_STORE",
+    "systemDriveFreeBytes": 0,
+    "userDataDeleted": false,
+    "otherServicesStopped": false,
+    "providerCalls": 0,
+    "observedProviderSpend": 0,
+    "authorizedInferenceBudgetVerified": false,
+    "credentialsPrinted": false,
+    "realCustomerDataUsed": false
+  },
+  "providerDecision": {
+    "recommendation": "KEEP_CURRENT_PROVIDER_CONFIGURATION",
+    "openaiKeyPresent": true,
+    "openaiBillingVerified": false,
+    "openaiModel": "gpt-4.1-mini",
+    "openaiModelStatus": "DEPRECATED_SHUTDOWN_2027-01-14",
+    "geminiKeyPresent": true,
+    "geminiPaidTierVerified": false,
+    "geminiPrimary": "gemini-3.1-flash-lite",
+    "geminiPrimaryStatus": "STABLE_EARLIEST_SHUTDOWN_2027-05-07",
+    "geminiPreviewFallback": "gemini-3.1-pro-preview",
+    "legacyGeminiVoiceModel": "gemini-1.5-flash_SHUT_DOWN_2025-09-29",
+    "legacyGeminiTierModel": "gemini-2.0-flash_SHUT_DOWN_2026-06-01"
+  },
+  "ownerDecisions": {
+    "D1": "PROPOSE_3_TO_5_BD_MESSENGER_SHOPS; OWNER_SELECTION_REQUIRED",
+    "D2": "NO_NEW_GRAPH_SCOPES; HUMAN_AGENT_AND_COMPLIANCE_CONFIRMATION_REQUIRED",
+    "D3": "ALERT_CHANNEL_AND_OPERATOR_REQUIRED; ALERT_NOT_VERIFIED",
+    "D4": "KEEP_SWITCHES_OFF; NAME_OPERATOR_AND_SECOND_APPROVER",
+    "D5": "MOBILE_UPLOAD_ROUTE_ABSENT; KEEP_MOBILE_API_OFF",
+    "D6": "ACCEPT_OR_DEFER_V6_PHASE_D_DEBT; PRESERVE_INBOX_GUARANTEES",
+    "D7": "KEEP_WEBHOOK_AUTO_BOOKING_OFF; MANUAL_DISPATCH"
+  },
+  "finalEvidenceCommit": "See final local Git HEAD reported in handoff; evidence commit is documentation-only after rehearsal code SHA."
+}

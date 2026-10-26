@@ -1,0 +1,38 @@
+# 00 — Source and environment
+
+Date: 2026-10-27 (Asia/Dhaka)
+
+## Frozen source
+
+| Item | Verified value |
+|---|---|
+| Original worktree | D:\easymod\_wt-ic-merchant-workspace-v1 |
+| Frozen code tip | c164a0422046cd91313564817c00002e91d48463 |
+| Frozen documentation tip | d5dbd21620a0b25b6c57763c2214a95c811c2fbb |
+| Source relationship | c164a042 is an ancestor of d5dbd216 |
+| Documentation-only pin | The d5dbd216 delta changes the pilot readiness document and its proof JSON only |
+| Rehearsal branch base | d5dbd216 |
+| Rehearsal branch | rehearsal/pilot-deployment-v1 |
+| Rehearsal worktree | D:\easymod\_rehearsal-pilot-deployment-v1 |
+| Rehearsal code SHA | 714be0072b6c8a8bba181dbe814e284c3b342ffe |
+
+The frozen checkout had no tracked modifications. It contained 84 pre-existing untracked Product Experience artifacts; their names and contents were preserved in place. Git object connectivity verification exited 0 with no integrity errors. No push or shared-branch merge occurred.
+
+The readiness report at d5dbd216 includes a stale statement that the candidate stays at d79332fd. The verified source pins are c164a042 for code and d5dbd216 for the documentation pin. This discrepancy is recorded rather than silently treated as a matching SHA.
+
+## Rehearsal source changes
+
+The isolated branch contains two source commits after the frozen documentation tip:
+
+- 3e7ce558fbb9cd445b5200c0b3eab9ce5f2b7148 — require a delivered interaction choice before a typed-number reply can resolve it; recheck the per-shop interaction flag at resolution and suppress the worker fallback/send if it was revoked.
+- 714be0072b6c8a8bba181dbe814e284c3b342ffe — synchronize the standalone frontend lockfile with package.json. The production Docker build context is EasyMod-frontend, and the child lockfile had omitted @axe-core/playwright and axe-core.
+
+The first change is a small policy-boundary correction supported by focused service/worker tests and independent code review. The second follows a reproduced standalone npm ci failure; a standalone lockfile dry-run passed after the correction. The package lock change does not update application behavior.
+
+## Host and service inventory
+
+At the start of the rehearsal, existing Postgres/Redis containers and the original Vite process were inventoried and left running. Rehearsal ports 54580 and 54543 were selected for loopback-only binding. No other worktree or owner process was stopped or changed.
+
+During the later build attempt, Docker reported snapshot I/O errors and a read-only containerd metadata database. The only container stopped was this task's temporary Node 20 lockfile diagnostic container; Docker could not remove its dead metadata because the store was read-only. Existing services were left as found. The C: volume reported 0 bytes free; D: had ample capacity. A fresh reviewer thread could not be created because the Codex thread store reported insufficient disk space. No user files were deleted to recover space.
+
+The rehearsal environment used synthetic database/authentication/provider placeholders only. Credential values were not printed or committed. No real provider key was injected into Compose, no provider API was called, and no merchant or customer data was used.
