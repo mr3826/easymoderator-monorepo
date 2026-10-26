@@ -772,6 +772,21 @@ const bookCourier = async (req, res, next) => {
             }
         });
     } catch (error) {
+        // IC-V1 (review F2): the service throws structured AppErrors (409
+        // DRAFT_ORDER_NOT_BOOKABLE, 403 TENANT_MISMATCH, 400 VALIDATION_ERROR)
+        // that must reach merchants with their declared code/status; unstructured
+        // failures keep the historical COURIER_BOOKING_FAILED wrap untouched.
+        const declared = Number(error.statusCode || error.status);
+        if (Number.isInteger(declared) && declared >= 400 && declared < 500) {
+            return res.status(declared).json({
+                success: false,
+                error: {
+                    code: error.code || 'COURIER_BOOKING_REJECTED',
+                    message: error.message,
+                    ...(Array.isArray(error.details?.reasons) ? { reasons: error.details.reasons } : {}),
+                },
+            });
+        }
         const statusCode = error.message?.includes('No active delivery') ? 400 : 500;
         res.status(statusCode).json({
             success: false,

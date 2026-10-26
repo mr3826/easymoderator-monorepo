@@ -5,22 +5,23 @@
   "branch": "integration-candidate/merchant-workspace-v1",
   "worktree": "D:\\easymod\\_wt-ic-merchant-workspace-v1",
   "base": { "increment2_final": "434a8cfcdb492038e3c1bf61c091f68b6095a36a", "increment1_canonical": "3d1bc0eb4988ce52fda9fcde9191c7d87e645139", "pilot_plus": "9f562aaf1559171c97902838a9bc5408283e2881", "main": "07168f49066e4dc4a8e2a756621ac577a13c12bd", "production": "2a8c1e2d0bef0f3ddc8dd767901d1228865c302c" },
-  "frozen_candidate_sha": "17fce2f9f5a67c0d751efcfc7ac2a3e92ebbb4dd",
-  "code_tip_sha": "a513a4ce",
+  "frozen_candidate_sha": "reviewed 17fce2f9/a513a4ce -> APPROVED_WITH_FINDINGS (0 blocker) -> post-review hardening round closes F1-F10 (draft guard at every pre-write point, controller 4xx pass-through, HTTP-level integration pin, true-stack browser certification, doc corrections, committed firefox/chromium scripts, evidence paths gitignored) -> FINAL refreeze: see git tip after this commit",
+  "code_tip_sha": "post-hardening tip (git rev-parse HEAD at freeze)",
   "sha_erratum": "mission-text 3d1bc0eb...9191c7d8d645139 resolves to no git object; canonical is ...9191c7d87e645139 (git-rev-parse verified)",
   "commits": { "65c99f43": "v6 contract port (booking gate, order_status filter, dev CSRF cookie, toast opt-out) + v6 specs", "2a4760bb": "reconcile draft gate after ADR-0007 confidence gate; docs 00-01", "a513a4ce": "PE tooling guard: exclude provenance hex fields from contact heuristic (flagged to PE owner)", "17fce2f9": "docs 02-03" },
   "integration_rehearsal": "PARTIAL->resolved by contract port + owner packages (docs/ic-merchant-workspace-v1/01,02)",
-  "v6_action_first": { "contract": "PORTED+GREEN", "ux_line": "DEFERRED with 28-test owner acceptance list", "rehearsal_worktree": "D:\\easymod\\_rehearsal-mw-v1-integration @ f32de36b (disposable, never pushed)" },
+  "v6_action_first": { "contract": "PORTED+GREEN", "ux_line": "DEFERRED with 30-test owner acceptance list (27 UnifiedInbox + 1 Dashboard + 2 i18n)", "rehearsal_worktree": "D:\\easymod\\_rehearsal-mw-v1-integration @ f32de36b (disposable, never pushed)" },
   "mobile": { "worktree_touched": false, "contracts": "compatible superset; retired-tag 422, draft-booking 409, reply shapes unchanged", "pending_upstream": ["POST /api/mobile/products/images + idempotency middleware"], "proof": "IC mobile integration suites green in 30/30 battery" },
   "gates": {
     "backend_units": "313/313 suites, 4219 passed, 2 skipped (clean env; no local .env)",
-    "real_stack_integration": "30/30 suites, 220/220 (disposable compose Postgres+Redis)",
+    "real_stack_integration": "30/30 suites, 221/221 incl. HTTP-level draft 409 pin (post-review)",
     "meta_shaped_e2e": "2/2 suites, 48/48, zero live sends/paid calls",
     "frontend_units": "77 files, 665/665", "typescript": "0", "build": "success",
     "playwright": "pilot-plus + mwv1-journeys: chromium 20/20, firefox 20/20 (one firefox J1 battery-contention flake, green isolated+re-run)",
     "environment_notes": "totp.service.test.js fails only when a gitignored lab .env is present (documented F1 interplay); lab-replay contact-guard false positive on commit-hash provenance fixed in a513a4ce"
   },
-  "independent_review": "DISPATCHED (session ses_e8969255fffe against frozen 17fce2f9/code a513a4ce); verdict appended as doc 04",
+  "independent_review": "APPROVED_WITH_FINDINGS (ses_e8969255fffe; 0 blocker/0 major; 5 med + 4 low + 2 info; ALL closed or dispositioned — see docs/ic-merchant-workspace-v1/04-adversarial-review-disposition.md)",
+  "true_stack_browser": "pilot-plus-walkthrough 3/3 against IC backend (dev-CSRF round trip in real browser); draft 409 + order_status filter + no-mutation proven over HTTP in authenticated browser session; founder preview now serves this IC tree",
   "isolation": { "pilot_plus": "9f562aaf clean untouched", "increment1": "3d1bc0eb clean untouched", "increment2": "434a8cfc clean untouched", "mobile_worktree": "dirty-26 active, READ-ONLY via git objects", "v6_orders_branches": "untouched", "pushed": false, "merged": false, "deployed": false, "production_changed": false },
   "verdicts": { "COMBINED_CANDIDATE_VERIFICATION": "PASS (all gates, this session)", "LOST_FUNCTIONALITY": "NONE detected", "DUPLICATE_AUTHORITIES": "NONE", "PILOT_RELEASE_READY": "YES_FLAGS_OFF_PENDING_AUTHORIZATION", "PRODUCTION_RELEASE_AUTHORIZED": "NO" }
 }

@@ -334,6 +334,32 @@ describe('tag vocabulary + assignments', () => {
     });
 });
 
+// ─── IC-V1: v6 contract port over real HTTP (review F2) ─────────────────────
+describe('draft courier-booking rejection over HTTP', () => {
+    it('409 DRAFT_ORDER_NOT_BOOKABLE and the draft is left completely unmutated', async () => {
+        const shop = await fx.makeShop();
+        const owner = await fx.makeMember(shop, 'owner');
+        const order = await fx.makeOrder(shop, {
+            order_status: 'draft',
+            customer_name: 'Draft Proof',
+            customer_phone: '01710000009',
+            delivery_address: 'House 9 Test Road Dhaka',
+        });
+
+        const res = await request(app)
+            .post(`/api/order/${order.id}/book-courier`)
+            .set(auth(owner, shop.id))
+            .send({});
+        expect(res.status).toBe(409);
+        expect(res.body.error).toMatchObject({ code: 'DRAFT_ORDER_NOT_BOOKABLE' });
+
+        await order.reload();
+        expect(order.order_status).toBe('draft');
+        // F1 guarantee at the transport level: no setup/hold marking, no notification side effect
+        expect(String(order.delivery_status || '')).not.toMatch(/setup_required|confidence_hold/);
+    });
+});
+
 describe('action queue server counts + views', () => {
     it('counts and views come from the server, not the page', async () => {
         const shop = await fx.makeShop();

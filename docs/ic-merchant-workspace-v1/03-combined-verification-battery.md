@@ -45,3 +45,11 @@ PRODUCTION_CHANGED=NO; PUSHED=NO; MERGED=NO
 ```
 
 Next: freeze → independent adversarial review (doc 04) → founder package (doc 05 + proof.json).
+
+## Post-review hardening round (adversarial review 17fce2f9/a513a4ce -> this commit)
+
+Closed findings F1-F10 per doc 04; re-verification on the FIXED tree:
+- order module + confidence + CRM units: 57/57 suites 811 green (incl. 3 new draft-guard specs);
+- integration real-stack: mwv1 suite now 15 specs incl. HTTP 409 DRAFT_ORDER_NOT_BOOKABLE pin; order-confidence integration 17/17 unchanged;
+- **true-stack browser certification (F5 fix):** founder preview now runs the IC tree (backend :3000 + vite :5173); pilot-plus-walkthrough 3/3 live; dev-cookie CSRF round-trip proven via real browser login; order_status=draft filter + draft-booking 409 + zero-mutation proven over HTTP from an authenticated browser session against the IC backend.
+- FINAL battery after fixes (this commit): backend 313/313 (4221 passed, clean env); integration 30/30 (221/221 incl. HTTP draft pin); meta-e2e 48/48; FE 665/665 + tsc 0; Playwright pilot-plus+mwv1-journeys 20/20 chromium AND 20/20 firefox via the now-committed `npm run test:e2e:chromium`/`test:e2e:firefox` scripts (one initial firefox run failed at dev-server startup contention; green on clean re-run).

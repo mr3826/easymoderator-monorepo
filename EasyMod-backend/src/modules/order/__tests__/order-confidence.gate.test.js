@@ -158,6 +158,40 @@ describe('bookForOrder × Order Confidence gate', () => {
         expect(draft.order_status).toBe('draft');
     });
 
+    // IC-V1 review F1: an unconfigured shop must never see the draft mutated or
+    // notified by a booking attempt — DRAFT_ORDER_NOT_BOOKABLE answers BEFORE
+    // any COURIER_SETUP_REQUIRED marking.
+    test('a Draft in a shop without courier setup is rejected without marking or notifying', async () => {
+        orderConfidence.checkBookingGate.mockResolvedValue({ allowed: true, mode: 'off' });
+        deliveryService.resolveAiDefaultProvider.mockResolvedValue({ blocked: true });
+        const draft = makeOrder({ order_status: 'draft' });
+
+        await expect(orderService.bookForOrder(draft, { shopId: 'shop-1' }))
+            .rejects.toMatchObject({ status: 409, code: 'DRAFT_ORDER_NOT_BOOKABLE' });
+
+        expect(draft.update).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).not.toHaveBeenCalled();
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+    });
+
+    // IC-V1 review F2: a legacy draft whose dispatch already COMMITTED must
+    // remain reconcilable (the parcel was really booked).
+    test('a Draft with a COMMITTED dispatch still reconciles its real parcel', async () => {
+        orderConfidence.checkBookingGate.mockResolvedValue({ allowed: true, mode: 'off' });
+        mockCourierDispatch.findOne.mockResolvedValue({
+            id: 'd-old', status: 'COMMITTED', provider: 'pathao',
+            consignment_id: 'CN-OLD', tracking_code: 'TRK-OLD',
+        });
+        const draft = makeOrder({ order_status: 'draft' });
+
+        const result = await orderService.bookForOrder(draft, { shopId: 'shop-1' });
+
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+        expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
+        expect(draft.update).not.toHaveBeenCalled();
+        expect(result).toBeTruthy();
+    });
+
     test('an already-booked order returns its parcel without consulting the gate', async () => {
         const result = await orderService.bookForOrder(
             makeOrder({ delivery_consignment_id: 'CN-OLD', delivery_tracking_code: 'TRK-OLD', delivery_provider: 'pathao' }),

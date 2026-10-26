@@ -1545,12 +1545,31 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         return synthesizeCourierResult(order, options.provider || order.delivery_provider, options.dispatchRecord);
     }
 
+    // V6 contract port (IC-V1), reconciled for review findings F1/F2:
+    // a DRAFT is under merchant review — no booking path may mutate or notify it
+    // (COURIER_SETUP_REQUIRED marking included). The guard throws BEFORE any
+    // side-effecting branch; the only exception is a draft whose dispatch row is
+    // already COMMITTED (parcel really booked before this rule existed), which
+    // must remain reconcilable. Confidence-HELD drafts still answer with the
+    // richer ORDER_CONFIDENCE_HOLD contract (checked earlier in this flow).
+    const draftBookingGuard = async () => {
+        if (String(order.order_status || '').trim().toLowerCase() !== 'draft') return null;
+        const committed = await findCommittedDispatch(order, shopId);
+        if (committed) {
+            require('../pilot-features/pilot-metrics').increment('order_confidence.committed_reconcile_allowed', shopId);
+            return synthesizeCourierResult(order, committed.provider || order.delivery_provider, committed);
+        }
+        throw new AppError('Draft orders must be confirmed before courier booking', 409, 'DRAFT_ORDER_NOT_BOOKABLE');
+    };
+
     const provider = options.provider && options.provider !== 'active' ? String(options.provider) : null;
     const resolution = options.resolvedProvider || await resolveCourierProvider(shopId, {
         provider,
         requireAiDefault: options.requireAiDefault !== false && !provider,
     });
     if (!resolution || resolution.blocked || !resolution.provider || resolution.provider === 'active') {
+        const draftReconcile = await draftBookingGuard();
+        if (draftReconcile) return draftReconcile;
         return markCourierSetupRequired(order, shopId, resolution || blockedCourierResolution('AI_DEFAULT_NOT_CONFIGURED'));
     }
 
@@ -1565,6 +1584,8 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         ['delivery_address', orderData.delivery_address],
     ].filter(([, value]) => !String(value || '').trim()).map(([key]) => key);
     if (missingOrderData.length) {
+        const draftReconcile = await draftBookingGuard();
+        if (draftReconcile) return draftReconcile;
         return markCourierSetupRequired(order, shopId, {
             provider: resolution.provider,
             reason: 'COURIER_ORDER_DATA_INCOMPLETE',
@@ -1608,15 +1629,11 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         require('../pilot-features/pilot-metrics').increment('order_confidence.committed_reconcile_allowed', shopId);
     }
 
-    // V6 contract port (IC-V1): a Draft is under merchant review — no manual,
-    // automatic, or AI booking may create a courier label before confirmation.
-    // Ordered AFTER the already-booked idempotent return and AFTER the
-    // Order-Confidence gate so a confidence-held draft keeps answering with its
-    // richer ORDER_CONFIDENCE_HOLD + reasons contract; ordinary drafts of
-    // confidence-off shops land here.
-    if (String(order.order_status || '').trim().toLowerCase() === 'draft') {
-        throw new AppError('Draft orders must be confirmed before courier booking', 409, 'DRAFT_ORDER_NOT_BOOKABLE');
-    }
+    // V6 contract port (IC-V1): runs AFTER the already-booked return and AFTER the
+    // Order-Confidence gate (held drafts keep the ORDER_CONFIDENCE_HOLD contract);
+    // throws unless the draft has a COMMITTED dispatch to reconcile (then returns it).
+    const draftReconcile = await draftBookingGuard();
+    if (draftReconcile) return draftReconcile;
 
     let dispatchRecord = null;
     let dispatchOwnerToken = null;

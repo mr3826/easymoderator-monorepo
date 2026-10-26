@@ -11,7 +11,7 @@ The v6 worktree itself was NEVER touched.
 |---|---|---|
 | Backend service/API layer | auto-merged, **496/496** order+conversation unit tests green; tsc 0; vite build green | safe subset → ported (below) |
 | FE `src/api` + `src/shared` contract plumbing | auto-merged clean and coherent | ported (below) |
-| FE UX shell (Dashboard action-first, layouts, http-client ordering, new screens) | **merged WITHOUT conflicts yet broke 28 named Pilot+/increment-1 behaviors + i18n coverage** | NOT ported — owner rebase required |
+| FE UX shell (Dashboard action-first, layouts, http-client ordering, new screens) | **merged WITHOUT conflicts yet broke 30 named behaviors (27 UnifiedInbox + 1 Dashboard + 2 i18n-coverage guards)** | NOT ported — owner rebase required |
 
 ## Ported into IC at `65c99f43` (contract-only, each with its v6 tests)
 
@@ -29,14 +29,14 @@ full combined battery per doc 03.
 
 Rebase `feature/merchant-journey-v6-action-first` **onto** the IC branch and make ALL of the
 following green without editing the assertions (they encode Pilot+/increment guarantees).
-Captured from the rehearsal merge (vitest, canonical file list):
+Captured from the rehearsal merge (vitest, canonical file list). **Base caveat (review F3):** the rehearsal was T=increment-1 (3d1bc0eb) + v6; the owner now rebases onto the IC, so the failure set is expected to shift (increment-2 features like the context panel add new guarantees to keep). Counts verified independently by the adversarial reviewer: 30 failed / 43 passed on the three files:
 
 **i18n coverage guard (2):** `defines every t() key used in source in en.json`, `… in bn.json`
 — v6 components added keys; union both locale files.
 
 **Dashboard (1):** `renders the business overview and labels order totals accurately`.
 
-**UnifiedInbox (25):** URL-selected-conversation return from customer profile; paging beyond
+**UnifiedInbox (27):** URL-selected-conversation return from customer profile; paging beyond
 50; SSE-reconnect page preservation; out-of-range page clamp; failed-page retry (not
 previously-accepted reload); filter/search resets to page 1; no duplicate pending page-one
 request; filter-tab deep-link restore; empty-search+filter announcement; empty-filter

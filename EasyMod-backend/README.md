@@ -337,7 +337,7 @@ For a fully self-contained local run, set `START_EMBEDDED_WORKERS=true` to run t
 
 ## Environment Variables
 
-Copy `.env.example` (the authoritative list) to `.env`. In local development, the CSRF double-submit cookie is host-only and named `easymod.csrf-token` so browsers accept it on HTTP localhost. Staging and production keep the `__Host-easymod.csrf-token` cookie name and exact origin checks. Authentication stays enabled in development; use local synthetic data for UX review, not production merchant data.
+Copy `.env.example` (the authoritative list) to `.env`. In local development, the CSRF double-submit cookie is host-only and named `easymod.csrf-token` so browsers accept it on HTTP localhost. Staging and production keep the library default `__Host-psifi.x-csrf-token` name (set `NODE_ENV` explicitly — an unset value defaults to `development`). Authentication stays enabled in development; use local synthetic data for UX review, not production merchant data.
 
 Highlights:
 

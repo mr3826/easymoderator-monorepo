@@ -14,7 +14,7 @@
    global-toast opt-out) are ported with their specs and reconciled against ADR-0007
    (a confidence-held draft still answers `ORDER_CONFIDENCE_HOLD`; plain drafts 409
    `DRAFT_ORDER_NOT_BOOKABLE`). v6's action-first shell is NOT merged — the rehearsal
-   proved it silently breaks 27 Pilot+ inbox guarantees + i18n; doc 01 is the v6 owner's
+   proved it silently breaks 30 named behaviors (27 Pilot+/inbox guarantees, 1 Dashboard, 2 i18n guards); doc 01 is the v6 owner's
    rebase acceptance list (the failing test names).
 3. **Mobile: verified compatible, worktree untouched.** Reply/handoff/assignment/
    delivery-state contracts are a safe superset (hardened tag rules, draft-booking 409);

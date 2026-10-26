@@ -1,14 +1,14 @@
 # IC-V1 02 — Mobile API Contract Compatibility
 
 **Method:** entirely read-only git archaeology (`git show`/`git diff <tree-ish>`) — the
-`_wt-mobile-app` worktree (dirty, active, 23-file WIP) was never touched or spawned.
+`_wt-mobile-app` worktree (dirty, active, 26-file WIP) was never touched or spawned.
 Fork point: `b4995115` (merge-base of `feature/mobile-app` @ `939de5dc` and the IC line).
 
 ## Who changed what since the fork
 
 | Side | Mobile-module changes | Character |
 |---|---|---|
-| IC line (our ancestors: Pilot+ → increment-2) | `mobile-inbox.controller.js` +38/-19 only | **hardened reply contract** |
+| IC line (our ancestors: Pilot+ → increment-2) | `mobile-inbox.controller.js` +32/−6 only (its test +65/−12) | **hardened reply contract** |
 | Mobile branch | `mobile-product.controller.js` (photo-draft/quick-update rework + `POST /products/images` upload), `mobile-order.controller.js` +82, `mobile-courier.controller.js` +38, `mobile.routes.js` +6 (idempotencyMiddleware on product mutations), e2e fixtures +333, `native-auth.service.js` +6 | new product/order/courier behaviour + tests |
 
 ## Contract-by-contract status on the IC candidate
@@ -19,7 +19,7 @@ Fork point: `b4995115` (merge-base of `feature/mobile-app` @ `939de5dc` and the 
 | `GET /api/mobile/inbox/conversations(/:id)(/messages)`, `POST …/ai-mode` | unchanged since fork (only the reply path hardened) | compatible |
 | `GET /api/mobile/attention`, `GET /api/mobile/today` | unchanged | compatible |
 | `GET/POST /api/mobile/orders…`, confirm/cancel/manual/draft | IC line unchanged since fork; mobile branch has its own +82 | IC serves the fork contract; branch's additions are mobile-side contributions pending upstreaming |
-| `POST /api/mobile/orders/:id/book-courier` | unchanged route + **NEW v6-port guard: a DRAFT order 409s `DRAFT_ORDER_NOT_BOOKABLE`** (and held drafts keep `ORDER_CONFIDENCE_HOLD`) | Mobile flow confirms before booking ⇒ compatible; any client offering book-on-draft now gets an explicit 409 — intended |
+| `POST /api/mobile/orders/:id/book-courier` | unchanged route + **NEW v6-port guard, reconciled per doc 04: any DRAFT 409s `DRAFT_ORDER_NOT_BOOKABLE` at every pre-write point without marking or notifying the draft; confidence-HELD drafts keep the richer `ORDER_CONFIDENCE_HOLD` contract** | Mobile flow confirms before booking ⇒ compatible; full 409 taxonomy pinned by unit + real-HTTP integration specs in doc 04 |
 | `PATCH /api/mobile/products/:id/quick-update`, `POST /api/mobile/products/photo-draft` | **already present in IC routes** (L72-73) | compatible |
 | `POST /api/mobile/products/images` | **absent in IC** (mobile branch only, `uploadProductImage` + idempotency middleware) | **DEFERRED to mobile owner** — IC client never calls it; when the branch lands upstream, IC gains it additively |
 

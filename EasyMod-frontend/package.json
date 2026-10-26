@@ -9,6 +9,8 @@
     "test": "vitest",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:chromium": "playwright test --reporter=line",
+    "test:e2e:firefox": "playwright test --browser=firefox --reporter=line",
     "test:all": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {

@@ -314,7 +314,7 @@ test.describe('MW-V1 increment 1 — safe composer macros (FE-01)', () => {
             'Out of Stock', 'Delivery Charge', 'Return Window', 'Cash on Delivery', 'Dispatch Today']) {
             await expect(page.getByText(retired, { exact: true })).toHaveCount(0);
         }
-        await page.screenshot({ path: '../docs/merchant-workspace-v1/screenshots/fe01-quick-replies-claim-free.png' });
+        await page.screenshot({ path: '../test-results/pw-evidence/fe01-quick-replies-claim-free.png' });
     });
 });
 
@@ -348,7 +348,7 @@ test.describe('MW-V1 increment 1 — verified order→inbox link (FE-08)', () =>
 
         // Snippet comes from the verified conversation, never a name guess.
         await expect(page.getByText('order ta confirm korte chai').last()).toBeVisible({ timeout: 10000 });
-        await page.screenshot({ path: '../docs/merchant-workspace-v1/screenshots/fe08-order-detail-linked.png' });
+        await page.screenshot({ path: '../test-results/pw-evidence/fe08-order-detail-linked.png' });
 
         // Canonical inbox deep link (same contract as the action queue).
         await page.getByRole('button', { name: /open conversation in inbox/i }).click();
@@ -379,6 +379,6 @@ test.describe('MW-V1 increment 1 — verified order→inbox link (FE-08)', () =>
         await page.getByRole('button', { name: /view details/i }).first().click();
         await expect(page.getByText('No chat snippet found.')).toBeVisible({ timeout: 10000 });
         expect(conversationListed).toBe(false); // no association → no lookup at all
-        await page.screenshot({ path: '../docs/merchant-workspace-v1/screenshots/fe08-order-detail-unlinked.png' });
+        await page.screenshot({ path: '../test-results/pw-evidence/fe08-order-detail-unlinked.png' });
     });
 });
