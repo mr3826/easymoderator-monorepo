@@ -88,7 +88,11 @@
     "observedProviderSpend": 0,
     "authorizedInferenceBudgetVerified": false,
     "credentialsPrinted": false,
-    "realCustomerDataUsed": false
+    "realCustomerDataUsed": false,
+    "activeDockerContext": "desktop-linux",
+    "defaultDockerContextEndpoint": "npipe:////./pipe/docker_engine",
+    "defaultDockerContextInfoProbe": "NO_OUTPUT_AFTER_30_SECONDS_INTERRUPTED",
+    "alternativeContainerAndDatabaseExecutablesInPath": []
   },
   "providerDecision": {
     "recommendation": "KEEP_CURRENT_PROVIDER_CONFIGURATION",

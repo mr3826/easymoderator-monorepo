@@ -82,3 +82,5 @@ Initial pre-execution snapshot only: planning and source pin reconciliation were
 | Independent final attestation | NO_GO | Narrow independent code review completed; fresh final verifier unavailable because disk was full; runtime gates remain blocked |
 
 The mandatory documentation package is in this directory. No production settings were changed, no real provider call occurred, no merchant data was used, and no push or merge was performed.
+
+Follow-up host check: C: remained at 0 free bytes. The Docker default context info probe had no response after 30 seconds; the command was interrupted. No alternate container/Postgres/Redis runtime was available in PATH, so the runtime gates remain blocked.

@@ -34,3 +34,7 @@ The host reported C: free space as 0 bytes. The exact cause of the Docker storag
 - Migration startup sequencing, clean shutdown, or restart with pending work.
 
 A future run must first recover Docker storage and host free space, then repeat all blocked gates against the pinned code SHA 714be0072b6c8a8bba181dbe814e284c3b342ffe.
+
+## Follow-up runtime availability probe
+
+With C: still at 0 free bytes, the read-only Docker default-context info probe produced no output for 30 seconds and was interrupted. The context endpoint differs from desktop-linux, but it did not provide an independent working daemon. No alternate container or local Postgres/Redis server executable was present in PATH. No daemon, container, or existing service was restarted or stopped by this probe.
