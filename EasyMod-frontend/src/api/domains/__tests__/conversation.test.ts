@@ -147,7 +147,11 @@ describe('Conversation Domain API', () => {
 
       const result = await conversation.createMessage('c1', msg);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/api/conversation/c1/messages', msg);
+      expect(httpClient.post).toHaveBeenCalledWith(
+        '/api/conversation/c1/messages',
+        msg,
+        { __skipGlobalErrorToast: true },
+      );
       expect(result.id).toBe('m2');
     });
 
@@ -160,7 +164,7 @@ describe('Conversation Domain API', () => {
       expect(httpClient.post).toHaveBeenCalledWith(
         '/api/conversation/c1/messages',
         msg,
-        { headers: { 'Idempotency-Key': 'send-key-12345' } },
+        { headers: { 'Idempotency-Key': 'send-key-12345' }, __skipGlobalErrorToast: true },
       );
     });
   });

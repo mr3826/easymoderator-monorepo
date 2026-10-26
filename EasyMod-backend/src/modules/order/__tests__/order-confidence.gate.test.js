@@ -135,6 +135,24 @@ describe('bookForOrder × Order Confidence gate', () => {
         expect(mockOrder.update).not.toHaveBeenCalledWith({ delivery_status: 'confidence_hold' }, expect.anything());
     });
 
+    test.each([
+        ['confidence mode off', { allowed: true, mode: 'off' }],
+        ['verified in enforce mode', { allowed: true, mode: 'enforce', decision: 'READY' }],
+    ])('a Draft order cannot reach courier booking with %s', async (_label, decision) => {
+        orderConfidence.checkBookingGate.mockResolvedValue(decision);
+        const draft = makeOrder({ order_status: 'draft' });
+
+        await expect(orderService.bookForOrder(draft, { shopId: 'shop-1' }))
+            .rejects.toMatchObject({ status: 409, code: 'DRAFT_ORDER_NOT_BOOKABLE' });
+
+        expect(deliveryService.resolveAiDefaultProvider).not.toHaveBeenCalled();
+        expect(orderConfidence.checkBookingGate).not.toHaveBeenCalled();
+        expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+        expect(draft.order_status).toBe('draft');
+        expect(draft.update).not.toHaveBeenCalled();
+    });
+
     test('an already-booked order returns its parcel without consulting the gate', async () => {
         const result = await orderService.bookForOrder(
             makeOrder({ delivery_consignment_id: 'CN-OLD', delivery_tracking_code: 'TRK-OLD', delivery_provider: 'pathao' }),

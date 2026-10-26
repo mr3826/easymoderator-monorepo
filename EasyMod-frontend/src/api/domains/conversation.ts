@@ -114,9 +114,9 @@ export async function createMessage(
     ? await httpClient.post(
       `/api/conversation/${conversationId}/messages`,
       message,
-      { headers: { 'Idempotency-Key': options.idempotencyKey } },
+      { headers: { 'Idempotency-Key': options.idempotencyKey }, __skipGlobalErrorToast: true },
     )
-    : await httpClient.post(`/api/conversation/${conversationId}/messages`, message);
+    : await httpClient.post(`/api/conversation/${conversationId}/messages`, message, { __skipGlobalErrorToast: true });
   return response.data.data;
 }
 

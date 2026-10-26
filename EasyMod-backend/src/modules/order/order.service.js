@@ -1545,6 +1545,14 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         return synthesizeCourierResult(order, options.provider || order.delivery_provider, options.dispatchRecord);
     }
 
+    // A Draft is still under merchant review. Do not let manual, automatic, or
+    // AI booking paths create a courier label until the order is confirmed.
+    // Keep this after the already-booked return so idempotent reconciliation
+    // can still report a parcel that was actually booked earlier.
+    if (String(order.order_status || '').trim().toLowerCase() === 'draft') {
+        throw new AppError('Draft orders must be confirmed before courier booking', 409, 'DRAFT_ORDER_NOT_BOOKABLE');
+    }
+
     const provider = options.provider && options.provider !== 'active' ? String(options.provider) : null;
     const resolution = options.resolvedProvider || await resolveCourierProvider(shopId, {
         provider,

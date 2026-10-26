@@ -1,7 +1,8 @@
 const orderValidator = require('../order.validator');
 
 describe('order.validator', () => {
-  describe('getOrders — MW-V1 customer association', () => {
+  describe('getOrders', () => {
+    // MW-V1: verified customer association.
     it('accepts a uuid customer_id filter', () => {
       const { error } = orderValidator.getOrders.query.validate({
         customer_id: '550e8400-e29b-41d4-a716-446655440000',
@@ -13,6 +14,18 @@ describe('order.validator', () => {
     it('rejects a non-uuid customer_id (no name-shaped identity smuggling)', () => {
       const { error } = orderValidator.getOrders.query.validate({ customer_id: 'Rahim Uddin' });
       expect(error).toBeDefined();
+    });
+
+    // V6 contract port: Draft status filter used by Home.
+    it('accepts the Draft status filter used by Home', () => {
+      const result = orderValidator.getOrders.query.validate({
+        order_status: 'draft',
+        page: '1',
+        limit: '100'
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.value).toMatchObject({ order_status: 'draft', page: 1, limit: 100 });
     });
   });
 

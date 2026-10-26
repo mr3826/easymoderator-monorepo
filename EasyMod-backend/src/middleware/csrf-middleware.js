@@ -172,9 +172,20 @@ const isNativeCsrfExempt = (
     return typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
 };
 
+// The library's default cookie name starts with `__Host-`, which browsers
+// reject unless the cookie is Secure. Local HTTP development deliberately
+// uses secure=false, so use a host-only development name there. Deployed
+// environments keep the library default and its production security contract.
+const getCsrfCookieName = (environment = config.env) => (
+    String(environment || '').trim().toLowerCase() === 'development'
+        ? 'easymod.csrf-token'
+        : undefined
+);
+
 // Enhanced CSRF configuration with better error handling
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.csrfSecret,
+    cookieName: getCsrfCookieName(config.env),
     getSessionIdentifier: (req) => {
         // Prefer express-session ID (stable across requests in the same session)
         if (req.sessionID) return req.sessionID;
@@ -360,6 +371,7 @@ module.exports = {
     csrfTokenHandler,
     csrfProtectionMiddleware,
     csrfDebugHandler,
+    getCsrfCookieName,
     isTrustedAuthOrigin,
     isNativeCsrfExempt,
 };

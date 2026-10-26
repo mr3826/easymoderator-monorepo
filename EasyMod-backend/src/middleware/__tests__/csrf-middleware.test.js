@@ -5,6 +5,7 @@ const {
     isTrustedAuthOrigin,
     isNativeCsrfExempt,
     csrfProtectionMiddleware,
+    getCsrfCookieName,
 } = require('../csrf-middleware');
 
 const originalCorsOrigins = process.env.CORS_ORIGINS;
@@ -18,6 +19,18 @@ beforeAll(() => {
 afterAll(() => {
     if (originalCorsOrigins === undefined) delete process.env.CORS_ORIGINS;
     else process.env.CORS_ORIGINS = originalCorsOrigins;
+});
+
+describe('CSRF cookie name by environment', () => {
+    test('uses an HTTP-compatible host-only cookie name in local development', () => {
+        expect(getCsrfCookieName('development')).toBe('easymod.csrf-token');
+    });
+
+    test('leaves the deployed __Host cookie default unchanged', () => {
+        expect(getCsrfCookieName('production')).toBeUndefined();
+        expect(getCsrfCookieName('staging')).toBeUndefined();
+        expect(getCsrfCookieName('test')).toBeUndefined();
+    });
 });
 
 describe('authentication origin binding', () => {
