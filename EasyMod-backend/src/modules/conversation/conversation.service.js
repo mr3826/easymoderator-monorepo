@@ -1558,8 +1558,9 @@ class ConversationService {
             await conversation.update(fields, ...(transaction ? [{ transaction }] : []));
 
             // MW-V1 D4: ownership/workflow transitions are audited where they
-            // actually happen (server-side, non-fatal, idempotency-keyed — the
-            // same discipline as the inbox lifecycle audit).
+            // actually happen (server-side, non-fatal). The idempotency_key is a
+            // correlation hash (audit_logs.idempotency_key is a non-unique index,
+            // so this records, it does not dedup).
             const afterOwnership = {
                 assignee_id: conversation.assignee_id ?? null,
                 hitl: conversation.hitl === true,
@@ -1760,17 +1761,12 @@ class ConversationService {
                     const conversationId = target?.id || target;
                     const deliveryLock = await acquireBulkDeliveryLock(conversationId);
                     try {
-                        const updatedConversation = await this.updateConversation(conversationId, shopId, { status: 'closed' });
+                        // MW-V1 D4b: updateConversation is now the single
+                        // ownership-event source (it emits hitl_changed with the
+                        // assignee); the previous per-item emit here double-fired.
+                        await this.updateConversation(conversationId, shopId, { status: 'closed' });
                         updatedConversationIds.push(conversationId);
                         await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
-                        sseManager.emit(shopId, 'hitl_changed', {
-                            conversation_id: conversationId,
-                            hitl: updatedConversation.hitl,
-                            status: updatedConversation.status,
-                            needs_merchant_reply: updatedConversation.needs_merchant_reply,
-                            needs_merchant_reply_reason: updatedConversation.needs_merchant_reply_reason,
-                            ai_is_replying: updatedConversation.ai_is_replying,
-                        });
                     } finally {
                         await releaseBulkDeliveryLock(deliveryLock, conversationId);
                     }

@@ -223,12 +223,12 @@ describe('CustomerContextPanel', () => {
 
   // ─── MW-V1 Phase 5/6: notes + tags editing ────────────────────────────────
   it('note composer: writes via the crm domain, refetches, and never auto-sends', async () => {
-    let listCall = 0;
-    crmApi.listCustomerNotes.mockImplementation(async () => {
-      listCall += 1;
-      return listCall === 1
-        ? { data: [], total: 0 }
-        : { data: [{ id: 'note-new', shop_id: 'shop-1', customer_id: 'cust-1', body: 'morning calls preferred', author_id: 'staff-1', author_name: 'Nowrin Sultana', created_at: '2026-10-25T10:00:00Z', updated_at: '2026-10-25T10:00:00Z' }], total: 1 };
+    const notes: Array<Record<string, unknown>> = [];
+    crmApi.listCustomerNotes.mockImplementation(async () => ({ data: notes, total: notes.length }));
+    crmApi.createCustomerNote.mockImplementation(async (_id: string, body: string) => {
+      const note = { id: 'note-new', shop_id: 'shop-1', customer_id: 'cust-1', body, author_id: 'staff-1', author_name: 'Nowrin Sultana', created_at: '2026-10-25T10:00:00Z', updated_at: '2026-10-25T10:00:00Z' };
+      notes.push(note);
+      return note;
     });
     render(<CustomerContextPanel conversation={conversation()} />);
     fireEvent.click(await screen.findByTestId('note-add-open'));

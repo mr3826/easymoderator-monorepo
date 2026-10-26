@@ -234,6 +234,29 @@ describe('notes lifecycle (real rows + content-free audit)', () => {
             .send({ body: 'x'.repeat(2001) });
         expect(big.status).toBe(400);
     });
+
+    // F5: the ?before= cursor is real-Postgres tested (not just mock-verified).
+    it('paginates older notes with the before cursor', async () => {
+        const { sequelize } = require('../../../utils/database/database-setup');
+        const writer = await author();
+        const n1 = await CustomerNote.create({ shop_id: shop.id, customer_id: customer.id, body: 'older note', author_id: writer.id, author_name: 'W' });
+        const n2 = await CustomerNote.create({ shop_id: shop.id, customer_id: customer.id, body: 'newer note', author_id: writer.id, author_name: 'W' });
+        const old = new Date(Date.now() - 5 * 86400_000).toISOString();
+        const recent = new Date(Date.now() - 86400_000).toISOString();
+        await sequelize.query('UPDATE customer_notes SET created_at = :at WHERE id = :id', { replacements: { at: old, id: n1.id } });
+        await sequelize.query('UPDATE customer_notes SET created_at = :at WHERE id = :id', { replacements: { at: recent, id: n2.id } });
+
+        const all = await request(app).get(`/api/customer/${customer.id}/notes`).set(auth(writer, shop.id));
+        expect(all.body.data.total).toBe(2);
+        expect(all.body.data.data[0].body).toBe('newer note'); // newest first
+
+        const before = await request(app)
+            .get(`/api/customer/${customer.id}/notes?before=${encodeURIComponent(recent)}`)
+            .set(auth(writer, shop.id));
+        expect(before.status).toBe(200);
+        const bodies = before.body.data.data.map((n) => n.body);
+        expect(bodies).toEqual(['older note']); // strictly older than the cursor
+    });
 });
 
 describe('tag vocabulary + assignments', () => {

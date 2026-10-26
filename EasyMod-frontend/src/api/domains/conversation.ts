@@ -13,7 +13,6 @@ import type {
   VoiceTranscriptionResponse,
 } from '../types/conversation';
 import { normalizeAiReplyMode } from '../types/conversation';
-import type { AuditLog } from '../types/audit';
 import type { AxiosResponse } from 'axios';
 
 interface ConversationListBody {
@@ -212,20 +211,10 @@ export async function deleteTemplate(templateId: string): Promise<void> {
   await httpClient.delete(`/api/templates/${templateId}`);
 }
 
-// Audit Logs
-export async function createAuditLog(log: {
-  action: string;
-  resource_type: string;
-  resource_id: string;
-  old_values?: unknown;
-  new_values?: unknown;
-  metadata?: unknown;
-}): Promise<AuditLog> {
-  const response: AxiosResponse<ApiResponse<AuditLog>> = await httpClient.post(
-    '/api/audit',
-    log
-  );
-  return response.data.data;
-}
+// MW-V1: the former createAuditLog() helper POSTed /api/audit — a route the
+// backend never mounted (audit.routes.js exposes only GET /logs, GET
+// /resource/:type/:id, POST /cleanup). Ownership/CRM changes are now audited
+// SERVER-side (see conversation.service CONVERSATION_OWNERSHIP_UPDATE), so the
+// client-side write helper is removed rather than kept as a silent no-op.
 
 

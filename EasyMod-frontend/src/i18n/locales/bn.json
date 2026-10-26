@@ -709,7 +709,7 @@
       "title": "কাস্টমার প্রসঙ্গ",
       "identity": "ক্রেতা",
       "relationship": "সম্পর্ক",
-      "operations": "চলমান অর্ডার",
+      "operations": "সাম্প্রতিক অর্ডার",
       "notes": "ব্যক্তিগত নোট",
       "tags": "ট্যাগ",
       "deliveredOrders": "ডেলিভারি হওয়া অর্ডার",

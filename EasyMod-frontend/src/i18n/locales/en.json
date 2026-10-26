@@ -709,7 +709,7 @@
       "title": "Customer context",
       "identity": "Customer",
       "relationship": "Relationship",
-      "operations": "Open orders",
+      "operations": "Recent orders",
       "notes": "Private notes",
       "tags": "Tags",
       "deliveredOrders": "Delivered orders",

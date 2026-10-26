@@ -161,13 +161,6 @@ describe('UnifiedInbox 24h window behavior', () => {
       status: 'active',
       updated_at: new Date().toISOString(),
     })
-    ;(apiClient.createAuditLog as any).mockResolvedValue({
-      id: 'audit-1',
-      action: 'UPDATE',
-      resource_type: 'CONVERSATION',
-      resource_id: 'conv-1',
-      created_at: new Date().toISOString(),
-    })
     ;(apiClient.transcribeVoice as any).mockResolvedValue({
       messageId: 'msg-1',
       transcript: 'Hello world',
@@ -618,7 +611,9 @@ describe('UnifiedInbox 24h window behavior', () => {
     const needsTab = await screen.findByRole('button', { name: /Needs your reply/i })
     expect(needsTab).toHaveTextContent('1')
     fireEvent.click(needsTab)
-    expect(screen.getAllByText('Alice').length).toBeGreaterThan(0)
+    // The tab switch re-filters asynchronously; assert after the flush so the
+    // suite is deterministic under full-parallel CPU load (was a sync read).
+    await waitFor(() => expect(screen.getAllByText('Alice').length).toBeGreaterThan(0))
     expect(screen.queryByText('Bob')).not.toBeInTheDocument()
   })
 

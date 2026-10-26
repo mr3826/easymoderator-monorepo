@@ -151,13 +151,22 @@ async function setCustomerTags({ shopId, customerId, tagIds }, actor) {
         if (defs.length !== unique.length) fail('One or more tags do not belong to this shop', 'TAG_NOT_FOUND', 404);
     }
 
-    await CustomerTagAssignment.destroy({ where: { shop_id: shopId, customer_id: customerId } });
-    if (defs.length) {
-        await CustomerTagAssignment.bulkCreate(
-            defs.map((d) => ({ shop_id: shopId, tag_id: d.id, customer_id: customerId, created_by: actor.userId || null })),
-            { ignoreDuplicates: true },
-        );
-    }
+    // Atomic replace-set: a failure between clear and insert must not silently
+    // wipe the customer's tags. Falls back to un-transacted only when the model
+    // exposes no transaction (unit-mock path).
+    const sequelize = CustomerTagAssignment.sequelize;
+    const apply = async (tx) => {
+        const opts = tx ? { transaction: tx } : {};
+        await CustomerTagAssignment.destroy({ where: { shop_id: shopId, customer_id: customerId }, ...opts });
+        if (defs.length) {
+            await CustomerTagAssignment.bulkCreate(
+                defs.map((d) => ({ shop_id: shopId, tag_id: d.id, customer_id: customerId, created_by: actor.userId || null })),
+                { ignoreDuplicates: true, ...opts },
+            );
+        }
+    };
+    if (typeof sequelize?.transaction === 'function') await sequelize.transaction(apply);
+    else await apply(null);
     audit('UPDATE', shopId, actor, { customer_id: customerId, tag_ids: defs.map((d) => d.id) });
     return { data: defs.map(serializeTag) };
 }

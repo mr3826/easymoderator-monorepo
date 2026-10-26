@@ -18,7 +18,9 @@ Server semantics (conversation.service.js `updateConversation`, row-locked):
 - reopen: `status:'active'` (+ optional hitl) — unchanged, audited now
 - every ownership/workflow delta writes audit `CONVERSATION_OWNERSHIP_UPDATE`
   (`resource_type conversation_ownership`, before/after {assignee_id,hitl,status},
-  forced flag, idempotency-keyed, non-fatal) — NEW (D4a)
+  forced flag, a deterministic content hash recorded in `idempotency_key` for
+  correlation — note: `audit_logs.idempotency_key` is a NON-unique index, so this
+  records a key, it does not dedup/replay-guard) — NEW (D4a)
 - every successful mutation that CHANGED ownership emits ONE SSE `hitl_changed`
   from the service, payload now including `assignee_id` + `assignee{id,name}` — NEW (D4b/D3)
   (controller's ownership-blind duplicate emits removed; system handoff path in

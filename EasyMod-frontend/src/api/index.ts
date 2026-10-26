@@ -186,7 +186,6 @@ export const apiClient = {
   createTemplate: conversationDomain.createTemplate,
   updateTemplate: conversationDomain.updateTemplate,
   deleteTemplate: conversationDomain.deleteTemplate,
-  createAuditLog: conversationDomain.createAuditLog,
 
   // Shop methods
   getShopBusinessInfo: shopDomain.getShopBusinessInfo,

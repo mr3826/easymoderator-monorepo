@@ -105,7 +105,6 @@ beforeEach(() => {
   (apiClient.getMessages as any).mockResolvedValue({ messages: [], pagination: { page: 1, totalPages: 1 } });
   (apiClient.getShopAgents as any).mockResolvedValue([]);
   (apiClient.markConversationRead as any).mockResolvedValue({});
-  (apiClient.createAuditLog as any).mockResolvedValue({});
 });
 
 const mountWith = async (conversation: any) => {
