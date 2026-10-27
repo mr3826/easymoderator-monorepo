@@ -1,5 +1,11 @@
 # Product Image Flow Validation
 
+> **Historical status note 2026-10-27:** This audit is dated 2026-07-28 and
+> predates customer-photo attribute matching. Operational Gate Closure now
+> sets customer-photo matching off by default; that path is conditional on an
+> explicit opt-in. This historical report's product-upload findings remain
+> unchanged. See `docs/operational-gate-closure-v1/ai-runtime-and-model-lifecycle.md`.
+
 **Date** 2026-07-28 · **status: the upload flow does not exist.** No image bytes are sent
 to any AI provider — and no image bytes are stored either. The Add Product form marks
 images required, previews them locally, and discards them.

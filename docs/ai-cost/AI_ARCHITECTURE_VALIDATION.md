@@ -1,5 +1,12 @@
 # AI Architecture Validation
 
+> **Current source note 2026-10-27:** The dated architecture review below
+> reflects the earlier photo-matching default. Operational Gate Closure changes
+> `AI_PHOTO_MATCH_ENABLED` to explicit opt-in (`false` by default) and gates the
+> image-triggered order-selection path. The model chain is unchanged; current
+> production overrides remain unknown. See
+> `docs/operational-gate-closure-v1/ai-runtime-and-model-lifecycle.md`.
+
 **Branch** `audit/ai-cost-model` · **date** 2026-07-28 · **verdict `ACCEPTED_WITH_CONFIGURATION_FIXES`**
 
 Validates the Gemini-first AI, RAG, embedding, caching and fallback architecture against
