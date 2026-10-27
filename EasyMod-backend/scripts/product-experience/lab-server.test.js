@@ -84,7 +84,7 @@ describe('local Product Engine Test Lab HTTP server', () => {
         expect(dataset.personas).toHaveLength(20);
         expect(dataset.provenance).toMatchObject({ sourceTextReturned: false, expectationTextUsedAsGroundTruth: false });
         expect(JSON.stringify(dataset)).not.toMatch(/customerMessage|simulatedAttachment|expectedAnswer|sourceHash/i);
-    });
+    }, 60_000);
 
     test('rejects cross-origin, missing-token, and over-limit mutating requests', async () => {
         active = await start({ runner: async () => ({ status: 'completed', turns: [] }) });

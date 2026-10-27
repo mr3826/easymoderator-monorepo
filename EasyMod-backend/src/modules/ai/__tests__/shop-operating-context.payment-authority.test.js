@@ -22,6 +22,7 @@
 process.env.NODE_ENV = 'test';
 
 jest.mock('src/config/memory-cache', () => ({
+    MemoryCache: jest.requireActual('src/config/memory-cache').MemoryCache,
     get: jest.fn(async () => null),
     set: jest.fn(async () => {}),
 }));

@@ -190,13 +190,11 @@ function buildRenderedEnv(source = process.env) {
         OPENAI_API_KEY: source.OPENAI_API_KEY || '',
         GEMINI_API_KEY: source.GEMINI_API_KEY || '',
         GOOGLE_GEMINI_API_KEY: source.GEMINI_API_KEY || '',
-        // Image understanding. Rendered explicitly rather than left to the code
-        // defaults so both are actually SETTABLE in production — this file is a
-        // strict allowlist, and a flag absent from it cannot be changed by any
-        // repo secret. AI_PHOTO_MATCH_ENABLED=false is the kill switch for the
-        // customer-photo path (2 Gemini calls per photo message against a
-        // 15 req/min free-tier cap); AI_VISION_ENABLED stays off.
-        AI_PHOTO_MATCH_ENABLED: source.AI_PHOTO_MATCH_ENABLED || 'true',
+        // Image understanding. Customer-photo product matching is opt-in; the
+        // production default stays off until provider terms and owner approval
+        // are documented. The strict allowlist makes malformed values fail the
+        // deployment render instead of silently enabling or disabling a path.
+        AI_PHOTO_MATCH_ENABLED: strictBooleanFlag(source.AI_PHOTO_MATCH_ENABLED, 'AI_PHOTO_MATCH_ENABLED', 'false'),
         AI_VISION_ENABLED: source.AI_VISION_ENABLED || 'false',
         // Growth remains authorization-gated, but it must still be explicitly
         // enabled by the production operator. A missing repository variable

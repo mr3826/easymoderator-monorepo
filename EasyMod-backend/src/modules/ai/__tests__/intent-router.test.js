@@ -962,14 +962,21 @@ describe('D — customer photo → product matching', () => {
         price: 2500, quantity: 4, track_quantity: true, variants: [], image_url: null, images: [],
     }]);
 
+    let previousPhotoMatchFlag;
     beforeEach(() => {
-        delete process.env.AI_PHOTO_MATCH_ENABLED;
+        previousPhotoMatchFlag = process.env.AI_PHOTO_MATCH_ENABLED;
+        process.env.AI_PHOTO_MATCH_ENABLED = 'true';
         delete process.env.AI_VISION_ENABLED;
         // Extraction returns JSON; the reply call returns prose.
         llm.chat.mockImplementation(async ({ systemPrompt }) =>
             /product image analyzer/i.test(systemPrompt || '')
                 ? { text: JSON.stringify(ATTRS), provider: 'gemini' }
                 : { text: 'Ji apa, eita ache.', provider: 'gemini' });
+    });
+
+    afterEach(() => {
+        if (previousPhotoMatchFlag === undefined) delete process.env.AI_PHOTO_MATCH_ENABLED;
+        else process.env.AI_PHOTO_MATCH_ENABLED = previousPhotoMatchFlag;
     });
 
     test('three photos in a burst cost exactly one image call, on the FIRST photo', async () => {
@@ -1363,6 +1370,31 @@ describe('D — customer photo → product matching', () => {
         expect(result.response).not.toMatch(/can't confidently match this photo/i);
         expect(result.response).not.toMatch(/only checked the first photo/i);
         expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('an unset photo flag fails closed without sending the image to a provider', async () => {
+        delete process.env.AI_PHOTO_MATCH_ENABLED;
+
+        const result = await route({
+            shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', language: 'en',
+            imageUrls: [PHOTO],
+        });
+
+        expect(imageCalls()).toHaveLength(0);
+        expect(JSON.stringify(llm.chat.mock.calls)).not.toContain(PHOTO);
+        expect(productSearch.searchByAttributes).toHaveBeenCalledWith(
+            expect.objectContaining({ query: 'eita ache?' }));
+        expect(result.source).toBe('grounding_image_no_match');
+        expect(result.response).toMatch(/photo matching isn't available right now/i);
+    });
+
+    test('a non-literal runtime photo flag also fails closed', async () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'TRUE';
+
+        await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        expect(imageCalls()).toHaveLength(0);
+        expect(JSON.stringify(llm.chat.mock.calls)).not.toContain(PHOTO);
     });
 });
 

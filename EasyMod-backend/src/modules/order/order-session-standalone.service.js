@@ -11,6 +11,7 @@ const CustomerEntity = require('../customer/customer.entity');
 // P0-2: screenshot OCR verification is no longer wired into checkout —
 // payment truth comes only from merchant confirmation or verified webhooks.
 const { isNegatedMutation, isQuestionShaped } = require('../ai/intent/stage2-rules');
+const { photoMatchEnabled } = require('../ai/vision-policy.service');
 const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
 const finiteNumberOrNull = (value) => (
     value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
@@ -251,6 +252,23 @@ const GATEWAY_PAYMENT_STATUS = {
 // English only when the customer clearly writes English. (Founder feedback 2026-06-12:
 // the order flow must never answer in Bengali AND English at once.)
 const pickLang = (lang, bn, en) => (lang === 'en' ? en : bn);
+
+const productInputPrompt = (lang, purpose = 'add') => {
+    const photoEnabled = photoMatchEnabled();
+    if (purpose === 'more') {
+        return photoEnabled
+            ? pickLang(lang, 'নাম লিখুন বা ছবি পাঠান', 'Send a name or photo')
+            : pickLang(lang, 'পণ্যের নাম লিখুন', 'Send a product name');
+    }
+    if (purpose === 'not-found') {
+        return photoEnabled
+            ? pickLang(lang, 'পণ্যের নাম লিখুন বা ছবি পাঠান', 'Send the product name or a photo')
+            : pickLang(lang, 'পণ্যের নাম লিখুন', 'Send the product name');
+    }
+    return photoEnabled
+        ? pickLang(lang, 'নাম লিখুন বা ছবি পাঠান', 'Send the name or a photo')
+        : pickLang(lang, 'পণ্যের নাম লিখুন', 'Send the product name');
+};
 const zoneLabel = (zone, lang) => (ZONE_LABELS[zone] ? pickLang(lang, ZONE_LABELS[zone].bn, ZONE_LABELS[zone].en) : zone);
 const gatewayLabel = (gw, lang) => (GATEWAY_LABELS[gw] ? pickLang(lang, GATEWAY_LABELS[gw].bn, GATEWAY_LABELS[gw].en) : gw);
 
@@ -781,8 +799,8 @@ class OrderSessionService {
                 if (OrderSessionService.isBareAddWord(answer)) {
                     nextStep = 'ADDING_PRODUCT';
                     prompt = pickLang(lang,
-                        'কোন পণ্যটি যোগ করতে চান? নাম লিখুন বা ছবি পাঠান।',
-                        'Which product would you like to add? Send the name or a photo.');
+                        `কোন পণ্যটি যোগ করতে চান? ${productInputPrompt(lang)}।`,
+                        `Which product would you like to add? ${productInputPrompt('en')}.`);
                     break;
                 }
                 // Treat the message as the next product(s) — one name, or several
@@ -2326,8 +2344,12 @@ class OrderSessionService {
             'SELECTING_PRODUCT':    pickLang(L, 'পণ্য নির্বাচন করুন (নম্বর লিখুন)', 'Select a product (enter a number)'),
             'PRODUCT_CONFIRMATION': pickLang(L, 'আপনি কি এই পণ্যটি অর্ডার করতে চান?', 'Do you want to order this item?'),
             'COLLECTING_QUANTITY':  pickLang(L, 'কয়টা নিবেন?', 'How many would you like?'),
-            'ADD_MORE':             pickLang(L, 'আরো কিছু নিতে চান? নাম/ছবি দিন, না হলে "শেষ" লিখুন', 'Add another item? Send a name/photo, or type "done"'),
-            'ADDING_PRODUCT':       pickLang(L, 'কোন পণ্যটি যোগ করতে চান? নাম লিখুন বা ছবি পাঠান', 'Which product to add? Send a name or photo'),
+            'ADD_MORE':             pickLang(L,
+                `আরো কিছু নিতে চান? ${productInputPrompt(L, 'more')}, না হলে "শেষ" লিখুন`,
+                `Add another item? ${productInputPrompt('en', 'more')}, or type "done"`),
+            'ADDING_PRODUCT':       pickLang(L,
+                `কোন পণ্যটি যোগ করতে চান? ${productInputPrompt(L)}`,
+                `Which product to add? ${productInputPrompt('en')}`),
             'COLLECTING_NAME':      pickLang(L, 'আপনার নাম কী?', "What's your name?"),
             'COLLECTING_PHONE':     pickLang(L, 'আপনার মোবাইল নম্বর কত?', "What's your mobile number?"),
             'COLLECTING_ADDRESS':   pickLang(L, 'আপনার ডেলিভারির ঠিকানা কি?', "What's your delivery address?"),
@@ -2410,9 +2432,9 @@ class OrderSessionService {
         const count = Array.isArray(cart) ? cart.length : 0;
         return pickLang(lang,
             `"${lastItem.name}" কার্টে যোগ হয়েছে ✅ (মোট ${count}টি পণ্য)।\n\n` +
-            `আরো কিছু নিতে চান? পণ্যের নাম লিখুন বা ছবি পাঠান।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
+            `আরো কিছু নিতে চান? ${productInputPrompt(lang, 'more')}।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
             `Added "${lastItem.name}" to your cart ✅ (${count} item${count > 1 ? 's' : ''}).\n\n` +
-            `Want to add anything else? Send a product name or photo.\nIf that's all, type "done".`);
+            `Want to add anything else? ${productInputPrompt('en', 'more')}.\nIf that's all, type "done".`);
     }
 
     /** Whole-message "finish / no more items" intent at the add-more step. */
@@ -2496,9 +2518,9 @@ class OrderSessionService {
         let products = result.products || [];
         let wasFallback = !!result.wasFallback;
 
-        // The dominant F-commerce signal is a product PHOTO — match on the image
-        // when text search comes up empty.
-        if ((wasFallback || !products.length) && rawMessage?.imageUrl) {
+        // When photo matching is explicitly enabled, use the image only after
+        // text search comes up empty. The default path remains text-only.
+        if ((wasFallback || !products.length) && rawMessage?.imageUrl && photoMatchEnabled()) {
             try {
                 const { matchImageMessage } = require('../ai/image-product-matcher.service');
                 const imageMatch = await matchImageMessage({ shopId, imageUrl: rawMessage.imageUrl, text: query });
@@ -2526,8 +2548,8 @@ class OrderSessionService {
             return {
                 nextStep: 'ADDING_PRODUCT',
                 prompt: pickLang(lang,
-                    'এই নামে কোনো পণ্য খুঁজে পাইনি। পণ্যের নাম লিখুন বা ছবি পাঠান, অথবা "শেষ" লিখুন।',
-                    'Could not find that product. Send the product name or a photo, or type "done".'),
+                    `এই নামে কোনো পণ্য খুঁজে পাইনি। ${productInputPrompt(lang, 'not-found')}, অথবা "শেষ" লিখুন।`,
+                    `Could not find that product. ${productInputPrompt('en', 'not-found')}, or type "done".`),
             };
         }
 
@@ -2705,9 +2727,9 @@ class OrderSessionService {
             : '';
         return pickLang(lang,
             `কার্টে যোগ হয়েছে ✅: ${names} (মোট ${count}টি পণ্য)।${missing}\n\n` +
-            `আরো কিছু নিতে চান? নাম লিখুন বা ছবি পাঠান।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
+            `আরো কিছু নিতে চান? ${productInputPrompt(lang, 'more')}।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
             `Added to your cart ✅: ${names} (${count} item${count > 1 ? 's' : ''}).${missing}\n\n` +
-            `Want to add anything else? Send a product name or photo.\nIf that's all, type "done".`);
+            `Want to add anything else? ${productInputPrompt('en', 'more')}.\nIf that's all, type "done".`);
     }
 
     // ─── Per-line cart editing (at the summary) ───────────────────────────────
@@ -2783,8 +2805,8 @@ class OrderSessionService {
                 return {
                     nextStep: 'ADDING_PRODUCT',
                     prompt: pickLang(lang,
-                        'কার্ট এখন খালি। কোন পণ্যটি অর্ডার করতে চান? নাম লিখুন বা ছবি পাঠান।',
-                        'Your cart is now empty. Which product would you like to order? Send a name or photo.'),
+                        `কার্ট এখন খালি। কোন পণ্যটি অর্ডার করতে চান? ${productInputPrompt(lang)}।`,
+                        `Your cart is now empty. Which product would you like to order? ${productInputPrompt('en')}.`),
                     completed: false,
                 };
             }

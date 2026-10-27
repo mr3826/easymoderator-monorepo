@@ -47,6 +47,7 @@ jest.mock('../../../utils/sse-manager', () => ({ emit: jest.fn() }));
 
 const entities = require('../../entities');
 const sseManager = require('../../../utils/sse-manager');
+const { sequelize } = require('../../../utils/database/database-setup');
 const conversationService = require('../conversation.service');
 
 describe('D2 — assignee must be an active member of the acting shop', () => {
@@ -121,6 +122,8 @@ describe('D3 — ownership is visible in read shapes', () => {
 describe('D4 — ownership changes write a server-side audit', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        sequelize.getDialect = () => 'sqlite';
+        sequelize.transaction = undefined;
         entities.Conversation.findOne.mockResolvedValue(mockConversation({ hitl: true, assignee_id: 'staff-1' }));
         entities.UserShop.findOne.mockResolvedValue({ user_id: 'owner-1' });
         entities.Message.findAll.mockResolvedValue([]);
@@ -148,6 +151,38 @@ describe('D4 — ownership changes write a server-side audit', () => {
             { actor: { userId: 'staff-1', role: 'staff' } });
 
         expect(entities.AuditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the ownership update successful when the best-effort audit insert fails', async () => {
+        entities.AuditLog.create.mockRejectedValueOnce(new Error('synthetic audit storage failure'));
+
+        await expect(conversationService.updateConversation('conv-1', 'shop-1',
+            { hitl: true, assignee_id: 'owner-1' },
+            { actor: { userId: 'owner-1', role: 'owner' } }))
+            .resolves.toMatchObject({ assignee_id: 'owner-1', hitl: true });
+        expect(entities.AuditLog.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('attempts the best-effort audit after the ownership transaction settles', async () => {
+        let transactionSettled = false;
+        let auditObservedTransactionSettled = false;
+        sequelize.getDialect = () => 'postgres';
+        sequelize.transaction = jest.fn(async (callback) => {
+            const result = await callback({ LOCK: { UPDATE: 'UPDATE' } });
+            transactionSettled = true;
+            return result;
+        });
+        entities.AuditLog.create.mockImplementationOnce(async () => {
+            auditObservedTransactionSettled = transactionSettled;
+            return {};
+        });
+
+        await conversationService.updateConversation('conv-1', 'shop-1',
+            { hitl: true, assignee_id: 'owner-1' },
+            { actor: { userId: 'owner-1', role: 'owner' } });
+
+        expect(sequelize.transaction).toHaveBeenCalledTimes(1);
+        expect(auditObservedTransactionSettled).toBe(true);
     });
 });
 

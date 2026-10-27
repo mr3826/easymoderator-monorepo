@@ -40,6 +40,7 @@ const {
     normalizeForIntent,
     classify,
 } = require('../ai/intent/stage2-rules');
+const { photoMatchEnabled } = require('../ai/vision-policy.service');
 
 // P+04 interruption classes — a mid-checkout message is never "just an answer"
 // when it is clearly a question, a handoff request, or about a DIFFERENT order.
@@ -443,7 +444,7 @@ async function handleOrderFlow({
     // The dominant F-commerce buy signal is a product PHOTO + "order korbo" —
     // the text carries no product name, so text search finds nothing. Identify
     // the product from the image instead (CLIP/RAG/Vision, already thresholded).
-    if ((wasFallback || !products.length) && imageUrls.length) {
+    if ((wasFallback || !products.length) && imageUrls.length && photoMatchEnabled()) {
         try {
             const { matchImageMessage } = require('../ai/image-product-matcher.service');
             const imageMatch = await matchImageMessage({ shopId, imageUrl: imageUrls[0], text: message });
@@ -462,8 +463,12 @@ async function handleOrderFlow({
         return {
             handled: true,
             response: language === 'en'
-                ? 'Which product would you like to order? Send the product name or a photo and I\'ll start your order 😊'
-                : 'কোন প্রোডাক্টটি অর্ডার করতে চান? প্রোডাক্টের নাম লিখে অথবা ছবি পাঠালে অর্ডারটি শুরু করে দিচ্ছি 😊',
+                ? (photoMatchEnabled()
+                    ? 'Which product would you like to order? Send the product name or a photo and I\'ll start your order 😊'
+                    : 'Which product would you like to order? Send the product name and I\'ll start your order 😊')
+                : (photoMatchEnabled()
+                    ? 'কোন প্রোডাক্টটি অর্ডার করতে চান? প্রোডাক্টের নাম লিখে অথবা ছবি পাঠালে অর্ডারটি শুরু করে দিচ্ছি 😊'
+                    : 'কোন প্রোডাক্টটি অর্ডার করতে চান? প্রোডাক্টের নাম লিখলে অর্ডারটি শুরু করে দিচ্ছি 😊'),
             confidence: 1.0,
             sourceReferences: null,
             meta: { order_session: 'product_needed' },

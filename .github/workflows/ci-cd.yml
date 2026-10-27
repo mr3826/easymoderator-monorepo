@@ -557,6 +557,8 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          # Customer-photo matching is opt-in; renderer defaults to false.
+          AI_PHOTO_MATCH_ENABLED: ${{ vars.AI_PHOTO_MATCH_ENABLED || 'false' }}
           GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
           EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
           EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
@@ -1030,6 +1032,8 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          # Customer-photo matching is opt-in; renderer defaults to false.
+          AI_PHOTO_MATCH_ENABLED: ${{ vars.AI_PHOTO_MATCH_ENABLED || 'false' }}
           GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
           EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
           EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}

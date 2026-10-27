@@ -6,6 +6,7 @@ const conversationService = require('./conversation.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
+const { AppError } = require('../../utils/AppError');
 const {
     Conversation: ConvModel,
     Customer: CustomerModel,
@@ -1093,12 +1094,11 @@ class ConversationController {
                     }));
                 }
                 if (delivery?.sent !== true) {
-                    const error = makeHttpError(
-                        409,
+                    throw new AppError(
                         delivery?.reason || 'Provider delivery was not confirmed; reconciliation is required before retrying',
+                        409,
+                        'DRAFT_DELIVERY_NOT_CONFIRMED',
                     );
-                    error.code = 'DRAFT_DELIVERY_NOT_CONFIRMED';
-                    throw error;
                 }
             } else if (typeof conversationService.settleInboxDeliveryOutbox === 'function') {
                 await conversationService.settleInboxDeliveryOutbox(messageId, { sent: true })

@@ -390,6 +390,16 @@ describe('handleOrderFlow — image-borne product (photo + "order korbo")', () =
     // Live regression 2026-06-11: customer sent a product PHOTO + "Oder korbo".
     // The text carries no product name, so text search found nothing and the
     // whole turn fell through to the LLM, which role-played the order.
+    let previousPhotoMatchFlag;
+    beforeEach(() => {
+        previousPhotoMatchFlag = process.env.AI_PHOTO_MATCH_ENABLED;
+        process.env.AI_PHOTO_MATCH_ENABLED = 'true';
+    });
+    afterEach(() => {
+        if (previousPhotoMatchFlag === undefined) delete process.env.AI_PHOTO_MATCH_ENABLED;
+        else process.env.AI_PHOTO_MATCH_ENABLED = previousPhotoMatchFlag;
+    });
+
     test('identifies the product from the image when text search has no match', async () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
         productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
@@ -460,6 +470,40 @@ describe('handleOrderFlow — image-borne product (photo + "order korbo")', () =
 
         expect(res.handled).toBe(true);
         expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
+    });
+
+    test('disabled photo matching skips image selection but keeps text search and asks for a product name', async () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'false';
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+
+        const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
+
+        expect(productSearch.searchForOrder).toHaveBeenCalledWith(expect.objectContaining({ query: 'order korbo' }));
+        expect(matchImageMessage).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
+        expect(res.response).toMatch(/product name/i);
+        expect(res.response).not.toMatch(/photo/i);
+    });
+
+    test('disabled photo matching preserves ordinary text-only order lookup', async () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'false';
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [{ id: 'prod-text', name: 'Red Saree', price: 1200, in_stock: true }],
+            wasFallback: false,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: 'sess-text', prompt: 'Your name?' });
+
+        const res = await handleOrderFlow(base({ message: 'red saree nibo' }));
+
+        expect(productSearch.searchForOrder).toHaveBeenCalledWith(expect.objectContaining({ query: 'red saree nibo' }));
+        expect(matchImageMessage).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).toHaveBeenCalledWith(expect.objectContaining({
+            product_info: expect.objectContaining({ id: 'prod-text', name: 'Red Saree' }),
+        }));
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'started' }));
     });
 });
 

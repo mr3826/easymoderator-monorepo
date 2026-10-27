@@ -63,7 +63,7 @@
     "@sentry/profiling-node": "^10.51.0",
     "axios": "^1.20.0",
     "bcryptjs": "^3.0.3",
-    "body-parser": "1.20.8",
+    "body-parser": "1.20.9",
     "bullmq": "^5.76.1",
     "connect-redis": "^7.1.1",
     "cookie-parser": "^1.4.7",
@@ -90,7 +90,7 @@
     "rate-limit-redis": "^4.3.1",
     "resend": "^6.12.3",
     "sequelize": "^6.37.7",
-    "undici": "6.29.0",
+    "undici": "6.29.1",
     "uuid": "11.1.1",
     "web-push": "^3.6.7",
     "websocket-driver": "0.7.5"

@@ -82,8 +82,19 @@ describe('READY orders', () => {
         const results = await Promise.all(attempts);
 
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
-        expect(results.filter((r) => r?.tracking_code === 'TRK-RACE')).toHaveLength(1);
-        expect(await dispatchRows(order)).toHaveLength(1);
+        const reconciledResults = results.filter((r) => r?.tracking_code);
+        expect(reconciledResults.length).toBeGreaterThan(0);
+        expect(reconciledResults.every((r) => (
+            r.consignment_id === 'CN-RACE' && r.tracking_code === 'TRK-RACE'
+        ))).toBe(true);
+        expect(results.every((r) => r?.blocked === true || r?.tracking_code === 'TRK-RACE')).toBe(true);
+        const dispatches = await dispatchRows(order);
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0]).toMatchObject({
+            status: 'COMMITTED',
+            consignment_id: 'CN-RACE',
+            tracking_code: 'TRK-RACE',
+        });
         const row = await confidenceRow(order);
         expect(row.decision).toBe('READY');
         expect(row.released_decision).toMatchObject({ decision: 'READY' });

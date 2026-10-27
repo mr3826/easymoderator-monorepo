@@ -19,6 +19,9 @@ jest.mock('../../product/product-search.service', () => ({
     checkStock: jest.fn(),
     searchForOrder: jest.fn(),
 }));
+jest.mock('../../ai/image-product-matcher.service', () => ({
+    matchImageMessage: jest.fn(),
+}));
 jest.mock('../../customer/customer.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../shop/shop.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../payment/payment-config.entity', () => ({ findAll: jest.fn() }));
@@ -39,10 +42,12 @@ jest.mock('../../ai/action-gate', () => ({
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
 const productSearch = require('../../product/product-search.service');
+const { matchImageMessage } = require('../../ai/image-product-matcher.service');
 const { authorize } = require('../../ai/action-gate');
 const { issueInvoiceForOrder } = require('../../invoice/chat-invoice.service');
 const ShopEntity = require('../../shop/shop.entity');
 const PaymentConfigEntity = require('../../payment/payment-config.entity');
+let previousPhotoMatchFlag;
 
 const makeSession = (overrides = {}) => ({
     id: 'sess-1',
@@ -58,6 +63,10 @@ const makeSession = (overrides = {}) => ({
 
 beforeEach(() => {
     jest.clearAllMocks();
+    previousPhotoMatchFlag = process.env.AI_PHOTO_MATCH_ENABLED;
+    delete process.env.AI_PHOTO_MATCH_ENABLED;
+    productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+    matchImageMessage.mockResolvedValue({ products: [], method: 'no_match', confidence: 0 });
     // Parcel dispatch is fire-and-forget via setImmediate — keep it out of tests.
     jest.spyOn(OrderSessionService, 'dispatchParcelWithRetry').mockResolvedValue(undefined);
     jest.spyOn(console, 'info').mockImplementation(() => {});
@@ -65,6 +74,8 @@ beforeEach(() => {
 
 afterEach(() => {
     jest.restoreAllMocks();
+    if (previousPhotoMatchFlag === undefined) delete process.env.AI_PHOTO_MATCH_ENABLED;
+    else process.env.AI_PHOTO_MATCH_ENABLED = previousPhotoMatchFlag;
 });
 
 describe('COLLECTING_NAME', () => {
@@ -732,6 +743,51 @@ describe('question-shape belt on capture steps (P+04)', () => {
         const res = await OrderSessionService.handleCurrentStep(session, answer, null);
 
         expect(res.question_deferred).toBeUndefined();
+    });
+});
+
+describe('customer-photo order selection policy', () => {
+    test('unset photo flag skips image matching while preserving text lookup', async () => {
+        const product = { id: 'prod-1', name: 'Lawn' };
+        productSearch.searchForOrder.mockResolvedValue({ products: [product], wasFallback: false });
+
+        const result = await OrderSessionService.identifyProduct('shop-1', 'lawn', {
+            imageUrl: 'https://cdn.example.test/synthetic.jpg',
+        });
+
+        expect(result).toEqual({ products: [product], wasFallback: false });
+        expect(matchImageMessage).not.toHaveBeenCalled();
+    });
+
+    test('unset photo flag skips image matching when text lookup has no result', async () => {
+        const result = await OrderSessionService.identifyProduct('shop-1', '', {
+            imageUrl: 'https://cdn.example.test/synthetic.jpg',
+        });
+
+        expect(result).toEqual({ products: [], wasFallback: true });
+        expect(matchImageMessage).not.toHaveBeenCalled();
+    });
+
+    test('explicit opt-in keeps the image matcher available', async () => {
+        const product = { id: 'prod-1', name: 'Lawn' };
+        process.env.AI_PHOTO_MATCH_ENABLED = 'true';
+        matchImageMessage.mockResolvedValue({ products: [product], method: 'vision', confidence: 0.9 });
+
+        const result = await OrderSessionService.identifyProduct('shop-1', '', {
+            imageUrl: 'https://cdn.example.test/synthetic.jpg',
+        });
+
+        expect(matchImageMessage).toHaveBeenCalledWith({
+            shopId: 'shop-1', imageUrl: 'https://cdn.example.test/synthetic.jpg', text: '',
+        });
+        expect(result).toEqual({ products: [product], wasFallback: false });
+    });
+
+    test('product prompts do not advertise photo selection while matching is disabled', () => {
+        expect(OrderSessionService.generateStepPrompt('ADDING_PRODUCT', {}, 'en')).not.toMatch(/photo/i);
+        expect(OrderSessionService.buildAddMorePrompt({ name: 'Lawn' }, [], 'en')).not.toMatch(/photo/i);
+        expect(OrderSessionService.buildMultiAddPrompt([{ name: 'Lawn', quantity: 1 }], [], [], 'en'))
+            .not.toMatch(/photo/i);
     });
 });
 

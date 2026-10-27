@@ -181,11 +181,23 @@ describe('P+02 interaction kernel — real database semantics', () => {
         expect(blocked.resolved).toBe(true);
         expect(blocked.meta.mutation_blocked).toBe(true);
 
-        // Repricing moves the context version -> a NEW proposal with the OLD
-        // version cannot create an order (stale summary).
+        // Capture a second proposal while the old checkout summary is still
+        // current. Repricing must make this still-sent proposal stale; replaying
+        // the first (already consumed) proposal would correctly be ALREADY_HANDLED.
+        const staleProposal = await interactions.createProposal({
+            shopId: shop.id, customerId: customer.id, customerChannelId: 'psid-it-1',
+            conversationId: conversation.id, kind: 'CHECKOUT_DECISION', language: 'en',
+            session, contextVersion: interactions.contextVersionFor(session),
+        });
+        await interactions.markSent(staleProposal.interactionId);
+        const stalePayload = staleProposal.options.find((o) => o.option_id === 'checkout.confirm').payload;
+        expect(stalePayload).toBeTruthy();
+
+        // Repricing moves the context version; a still-sent proposal bound to
+        // the earlier version must not create an order.
         await session.update({ step_data: { ...session.step_data, confirmed_summary_hash: 'hash-v2-PRICED-UP' } });
         const stale = await interactions.resolveInteraction({
-            payload: confirmPayload, shopId: shop.id, customerChannelId: 'psid-it-1',
+            payload: stalePayload, shopId: shop.id, customerChannelId: 'psid-it-1',
             metaChannelId: null, conversationId: conversation.id, mutationsAllowed: true,
         });
         expect(stale).toMatchObject({ resolved: false, code: 'INTERACTION_STALE_CONTEXT' });

@@ -321,10 +321,19 @@ describe('core secret / alert sink fail-closed (§10)', () => {
 // This file is a strict allowlist: a variable absent from it cannot be set in
 // production by any repo secret, no matter what the code default says. A kill
 // switch that silently cannot be thrown is worse than no kill switch.
-describe('image-understanding switches are settable in production', () => {
+describe('production safety switches retain their intended defaults', () => {
+    test('the production example keeps live-money and out-of-scope channel defaults off', () => {
+        const examplePath = path.resolve(__dirname, '../../../.env.prod.example');
+        const example = fs.readFileSync(examplePath, 'utf8');
+        expect(example).toMatch(/^BKASH_ENABLED=false\s*$/m);
+        expect(example).toMatch(/^TELEGRAM_ENABLED=false\s*$/m);
+        expect(example).toMatch(/^AI_PHOTO_MATCH_ENABLED=false\s*$/m);
+        expect(example).toMatch(/^AI_VISION_ENABLED=false\s*$/m);
+    });
+
     test('both render with their intended defaults when unset', () => {
         const env = buildRenderedEnv(validSource());
-        expect(env.AI_PHOTO_MATCH_ENABLED).toBe('true');   // customer photos: on
+        expect(env.AI_PHOTO_MATCH_ENABLED).toBe('false');  // customer photos: opt-in
         expect(env.AI_VISION_ENABLED).toBe('false');       // merchant images: off
         expect(env.GROWTH_OS_ENABLED).toBe('false');
         expect(env.DOMAIN_AGENT_RUNTIME_ENABLED).toBe('false');
@@ -337,6 +346,15 @@ describe('image-understanding switches are settable in production', () => {
     test('AI_PHOTO_MATCH_ENABLED=false actually reaches .env.prod', () => {
         const env = buildRenderedEnv(validSource({ AI_PHOTO_MATCH_ENABLED: 'false' }));
         expect(env.AI_PHOTO_MATCH_ENABLED).toBe('false');
+    });
+
+    test('customer photo matching can only be enabled with the exact true literal', () => {
+        const env = buildRenderedEnv(validSource({ AI_PHOTO_MATCH_ENABLED: 'true' }));
+        expect(env.AI_PHOTO_MATCH_ENABLED).toBe('true');
+        expect(() => buildRenderedEnv(validSource({ AI_PHOTO_MATCH_ENABLED: 'TRUE' })))
+            .toThrow(/AI_PHOTO_MATCH_ENABLED/);
+        expect(() => buildRenderedEnv(validSource({ AI_PHOTO_MATCH_ENABLED: 'yes' })))
+            .toThrow(/AI_PHOTO_MATCH_ENABLED/);
     });
 
     test('vision can be turned on deliberately', () => {

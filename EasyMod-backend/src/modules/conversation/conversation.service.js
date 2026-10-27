@@ -1558,9 +1558,11 @@ class ConversationService {
             await conversation.update(fields, ...(transaction ? [{ transaction }] : []));
 
             // MW-V1 D4: ownership/workflow transitions are audited where they
-            // actually happen (server-side, non-fatal). The idempotency_key is a
-            // correlation hash (audit_logs.idempotency_key is a non-unique index,
-            // so this records, it does not dedup).
+            // actually happen (server-side, non-fatal). Defer persistence until
+            // after commit so the best-effort insert cannot extend the
+            // conversation row lock. The idempotency_key is a correlation hash
+            // (audit_logs.idempotency_key is a non-unique index, so this records,
+            // it does not dedup).
             const afterOwnership = {
                 assignee_id: conversation.assignee_id ?? null,
                 hitl: conversation.hitl === true,
@@ -1569,19 +1571,19 @@ class ConversationService {
             const ownershipChanged = String(beforeOwnership.assignee_id) !== String(afterOwnership.assignee_id)
                 || beforeOwnership.hitl !== afterOwnership.hitl
                 || beforeOwnership.status !== afterOwnership.status;
-            if (ownershipChanged && actor && typeof AuditLog?.create === 'function') {
-                AuditLog.create({
-                    user_id: actor.userId || null,
-                    shop_id: shopId,
-                    action: 'CONVERSATION_OWNERSHIP_UPDATE',
-                    resource_type: 'conversation_ownership',
-                    resource_id: conversationId,
-                    idempotency_key: crypto.createHash('sha256')
-                        .update([conversationId, JSON.stringify(beforeOwnership), JSON.stringify(afterOwnership), actor.userId || 'system'].join('|'))
-                        .digest('hex'),
-                    metadata: { from: beforeOwnership, to: afterOwnership, forced: forced === true },
-                }).catch(() => {});
-            }
+            const ownershipAuditEntry = ownershipChanged && actor
+                ? {
+                        user_id: actor.userId || null,
+                        shop_id: shopId,
+                        action: 'CONVERSATION_OWNERSHIP_UPDATE',
+                        resource_type: 'conversation_ownership',
+                        resource_id: conversationId,
+                        idempotency_key: crypto.createHash('sha256')
+                            .update([conversationId, JSON.stringify(beforeOwnership), JSON.stringify(afterOwnership), actor.userId || 'system'].join('|'))
+                            .digest('hex'),
+                        metadata: { from: beforeOwnership, to: afterOwnership, forced: forced === true },
+                    }
+                : null;
 
             const heldEvents = [];
 
@@ -1642,13 +1644,21 @@ class ConversationService {
                 }));
             }
 
-            return { conversation, heldEvents, resolutionOutcome, ownershipChanged };
+            return { conversation, heldEvents, resolutionOutcome, ownershipChanged, ownershipAuditEntry };
         };
 
         try {
             const result = sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function'
                 ? await sequelize.transaction((transaction) => update(transaction))
                 : await update(null);
+            if (result.ownershipAuditEntry && typeof AuditLog?.create === 'function') {
+                try {
+                    await AuditLog.create(result.ownershipAuditEntry);
+                } catch (_) {
+                    // Audit persistence is best-effort; the ownership update is
+                    // already committed and must remain successful on failure.
+                }
+            }
             for (const { message, metadata } of result.heldEvents) {
                 sseManager.emit(shopId, 'message_delivery_updated', {
                     conversation_id: conversationId,
