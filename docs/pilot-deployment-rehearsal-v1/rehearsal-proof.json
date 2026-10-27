@@ -45,17 +45,37 @@
       "status": "PASS",
       "suites": 58,
       "testsPassed": 812,
+      "testsSkipped": 0,
       "exitCode": 0
+    },
+    "fullBackendDefaultSuiteLatestAttempt": {
+      "status": "ABORTED_SAFETY_GUARD",
+      "command": "npm run test --workspace=easymod-backend -- --runInBand",
+      "runtime": "Node 20.20.2",
+      "exitCode": 1,
+      "completed": false,
+      "passed": null,
+      "failed": null,
+      "skipped": null,
+      "redisAttempts": [
+        "::1:6379 ECONNREFUSED",
+        "127.0.0.1:6379 ECONNREFUSED"
+      ],
+      "successfulRedisConnection": false,
+      "note": "Interrupted after BullMQ attempted localhost Redis despite blank Redis environment variables; no final Jest totals were emitted."
     },
     "interactionAndWorkerFocused": {
       "status": "PASS",
+      "suites": 2,
       "testsPassed": 47,
+      "testsSkipped": 0,
       "exitCode": 0
     },
     "frontendUnit": {
       "status": "PASS",
       "files": 78,
       "testsPassed": 692,
+      "testsSkipped": "NOT_RETAINED_IN_EXECUTION_RECORD",
       "exitCode": 0
     },
     "frontendBuild": {
@@ -77,14 +97,17 @@
     "postgresRedisIntegration": "BLOCKED_DOCKER",
     "metaShapedE2e": "NOT_RUN",
     "playwright": "NOT_RUN",
+    "customerImageFallbackCoverage": "NOT_COVERED",
     "migrationDryRun": "BLOCKED_DOCKER"
   },
   "environment": {
     "docker": "SNAPSHOT_IO_ERROR_AND_READ_ONLY_METADATA_STORE",
     "systemDriveFreeBytes": 0,
+    "dDriveFreeBytes": 125862297600,
     "userDataDeleted": false,
     "otherServicesStopped": false,
     "providerCalls": 0,
+    "liveInference": "NOT_RUN",
     "observedProviderSpend": 0,
     "authorizedInferenceBudgetVerified": false,
     "credentialsPrinted": false,
@@ -92,22 +115,93 @@
     "activeDockerContext": "desktop-linux",
     "defaultDockerContextEndpoint": "npipe:////./pipe/docker_engine",
     "defaultDockerContextInfoProbe": "NO_OUTPUT_AFTER_30_SECONDS_INTERRUPTED",
-    "alternativeContainerAndDatabaseExecutablesInPath": []
+    "desktopLinuxVersionProbe": "NO_OUTPUT_AFTER_60_SECONDS_INTERRUPTED",
+    "dockerDesktopProcessesPresent": true,
+    "dockerDesktopWslDistroRunning": true,
+    "testProcessLocalhost6379Attempt": "ECONNREFUSED_IPV6_AND_IPV4_NO_SUCCESSFUL_CONNECTION",
+    "postgresPort5432Listening": false,
+    "observedHostPorts": [
+      {
+        "port": 5173,
+        "address": "::1",
+        "owner": "node.exe under D:\\easymod\\_local-runtimes",
+        "usedByRehearsal": false
+      },
+      {
+        "port": 6379,
+        "address": "loopback and IPv6",
+        "ownerProcesses": [
+          "com.docker.backend.exe",
+          "wslrelay.exe"
+        ],
+        "serviceIdentity": "UNKNOWN",
+        "usedByComposeRehearsal": false,
+        "hostTestConnectAttempts": [
+          "::1 ECONNREFUSED",
+          "127.0.0.1 ECONNREFUSED"
+        ],
+        "successfulConnection": false
+      }
+    ],
+    "checkedAlternativesNotFoundInPath": [
+      "podman",
+      "nerdctl",
+      "postgres",
+      "pg_ctl",
+      "redis-server"
+    ]
   },
   "providerDecision": {
     "recommendation": "KEEP_CURRENT_PROVIDER_CONFIGURATION",
     "openaiBillingVerified": false,
-    "openaiModel": "gpt-4.1-mini",
-    "openaiModelStatus": "DEPRECATED_SHUTDOWN_2027-01-14",
+    "openaiModelSourceDefault": "gpt-4.1-mini",
+    "openaiEffectiveProductionModel": "UNKNOWN",
+    "openaiModelStatus": "DEPRECATED_SHUTDOWN_2027-01-14_SOURCE_DEFAULT",
     "geminiPaidTierVerified": false,
-    "geminiPrimary": "gemini-3.1-flash-lite",
-    "geminiPrimaryStatus": "STABLE_EARLIEST_SHUTDOWN_2027-05-07",
-    "geminiPreviewFallback": "gemini-3.1-pro-preview",
+    "geminiPrimarySourceDefault": "gemini-3.1-flash-lite",
+    "geminiEffectiveProductionModel": "UNKNOWN",
+    "geminiPrimaryStatus": "STABLE_EARLIEST_SHUTDOWN_2027-05-07_SOURCE_DEFAULT",
+    "geminiPreviewFallbackSourceDefault": "gemini-3.1-pro-preview",
     "legacyGeminiVoiceModel": "gemini-1.5-flash_SHUT_DOWN_2025-09-29",
     "legacyGeminiTierModel": "gemini-2.0-flash_SHUT_DOWN_2026-06-01"
   },
+  "costEvidence": {
+    "existingPhotoCostDocsConflict": true,
+    "julyAuditVisionClaim": "NO_IMAGE_TOKENS; STALE_FOR_CODE_SHA_714BE007",
+    "augustAssumptionPhotoCostScenarioUsdPerConversation": 0.0008,
+    "historicalSyntheticImageTokensPerPhoto": 1064,
+    "geminiFlashLitePaidImageInputUsdPerMillionTokens": 0.25,
+    "conditionalImageTokenCostUsdPerPhoto": 0.000266,
+    "conditionalThreePhotoScenarioImageTokensUsd": 0.000798,
+    "excludesPromptOutputRetriesFallbackAndOtherCharges": true,
+    "effectiveProductionTaskCost": "UNKNOWN",
+    "usageAccountingDefault": "OFF",
+    "providerSpendCap": "NOT_FOUND",
+    "mutationBudgetCheckIsProviderSpendCap": false,
+    "officialPriceCheckedAt": "2026-10-27"
+  },
+  "providerImageHandling": {
+    "customerPhotoMatchProductionRendererDefault": true,
+    "customerPhotoMatchBackendOverride": false,
+    "customerPhotoMatchWorkerEnvFileValue": false,
+    "customerPhotoMatchWorkerRuntimeStatus": "NOT_RUN",
+    "visionBackendOverride": false,
+    "visionWorkerEnvFileValue": false,
+    "visionWorkerRuntimeStatus": "NOT_RUN",
+    "customerImageOpenAiFallbackSupportedBySource": true,
+    "imageFallbackTestCoverage": "NOT_COVERED",
+    "orderFlowImageMatcherIgnoresPhotoMatchFlag": true,
+    "orderFlowImageMatcherTextRagRunsWithVisionOff": true,
+    "orderFlowImageMatcherFixedConfidence": 0.82,
+    "orderFlowCallerChecksMatchConfidence": false,
+    "orderFlowImageMatchQuality": "UNCALIBRATED_INFERENCE_RISK_NOT_OBSERVED",
+    "liveInference": "NOT_RUN",
+    "liveCustomerImageTransferObserved": false,
+    "ownerImageDataAuthorization": "UNKNOWN",
+    "pilotCondition": "KEEP_AI_PHOTO_MATCH_ENABLED_FALSE_UNTIL_PROVIDER_TERMS_AND_OWNER_APPROVAL; SEPARATELY_GATE_UNCALIBRATED_TEXT_RAG_ORDER_MATCHER"
+  },
   "ownerDecisions": {
-    "D1": "PROPOSE_3_TO_5_BD_MESSENGER_SHOPS; OWNER_SELECTION_REQUIRED",
+    "D1": "DEFER_LIVE_TRAFFIC_UNTIL_RUNTIME_AND_GOVERNANCE_GATES_PASS; THEN_CONSIDER_ONE_OPTED_IN_SHADOW_MANUAL_SHOP_FOR_WORKFLOW_LEARNING; METRICS_AND_DENOMINATORS_UNRESOLVED",
     "D2": "NO_NEW_GRAPH_SCOPES; HUMAN_AGENT_AND_COMPLIANCE_CONFIRMATION_REQUIRED",
     "D3": "ALERT_CHANNEL_AND_OPERATOR_REQUIRED; ALERT_NOT_VERIFIED",
     "D4": "KEEP_SWITCHES_OFF; NAME_OPERATOR_AND_SECOND_APPROVER",
@@ -146,6 +240,17 @@
     "geminiSyntheticPlaceholderPresent": true,
     "realCredentialValuesInjected": false
   },
+  "reviewBoard": {
+    "sre": "COMPLETED_SOURCE_AND_HOST_REVIEW_RUNTIME_PARTIAL_NO_GO",
+    "flowGuard": "COMPLETED_SOURCE_POLICY_REVIEW_AND_NAMED_CLAIM_RECHECK_CONDITIONAL_PASS_RUNTIME_UNVERIFIED",
+    "aiPlatform": "COMPLETED_PROVIDER_CONTRACT_PRIVACY_AND_OFFICIAL_API_REVIEW_NO_LIVE_CALLS",
+    "finOps": "COMPLETED_COST_DOC_RECONCILIATION_FOUND_STALE_ZERO_VISION_AUDIT_AND_NO_SPEND_CAP",
+    "bazarlens": "COMPLETED_SOURCE_QUALITY_REVIEW_TASK_QUALITY_NOT_ESTABLISHED_LIVESTREAM_GAP",
+    "fieldFounder": "COMPLETED_COMMERCIAL_REVIEW_NO_LIVE_COHORT_RECOMMENDATION",
+    "momentumUX": "COMPLETED_PROVIDER_OUTAGE_UI_AND_BANGLA_PRICE_FALLBACK_GAPS",
+    "qa": "COMPLETED_READ_ONLY_PROVENANCE_SOURCE_AND_LOCKFILE_REVIEW_NO_TESTS_RUN",
+    "independentFullStackAttestation": "NOT_COMPLETED_RUNTIME_GATES_UNAVAILABLE"
+  },
   "packageConsistencyAudit": {
     "reviewedCommitBeforeCorrections": "0da680a3c59b0583c6b77e932e19da95a3ecaa80",
     "reviewer": "FlowGuard",
@@ -157,6 +262,25 @@
       "scope": "THREE_DOCUMENTATION_CORRECTIONS_ONLY",
       "runtimeAttestation": "NOT_PERFORMED"
     }
+  },
+  "flowGuardCurrentClaimRecheck": {
+    "reviewer": "FlowGuard",
+    "gitHeadAtReview": "bcb8279b8612484af68393e94b6f6763cb836835",
+    "applicationSourceSha": "714be0072b6c8a8bba181dbe814e284c3b342ffe",
+    "reviewState": "REHEARSAL_DOCUMENT_EDITS_PRESENT_IN_WORKING_TREE",
+    "scope": [
+      "cost-document-conflict-and-conditional-image-token-arithmetic",
+      "customer-photo-gemini-openai-fallback-and-separate-text-rag-order-selection",
+      "provider-outage-keyword-fallback-and-auto-threshold",
+      "d1-defer-then-consider-one-shop-recommendation",
+      "refused-localhost-redis-attempts-and-aborted-jest-account"
+    ],
+    "disposition": "CONDITIONAL_PASS_FOR_NAMED_CLAIMS_ONLY",
+    "testsRun": 0,
+    "servicesStarted": 0,
+    "providerCalls": 0,
+    "runtimeAttestation": "NOT_PERFORMED",
+    "overallReleaseVerdict": "NO_GO"
   },
   "initialEvidencePackageCommit": "0da680a3c59b0583c6b77e932e19da95a3ecaa80"
 }

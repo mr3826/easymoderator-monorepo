@@ -16,7 +16,7 @@ Produce a reproducible, isolated rehearsal and a founder-ready evidence package 
 - Full Git object/connectivity check exited 0 with no integrity errors.
 - The frozen checkout has no tracked modifications and 84 pre-existing untracked files under the two Product Experience artifact directories. Their contents are preserved; they are excluded from the rehearsal checkout.
 - A separate branch, `rehearsal/pilot-deployment-v1`, was created at the documentation tip in `D:\easymod\_rehearsal-pilot-deployment-v1`. Its checkout was clean at creation.
-- Existing Docker services and the Vite process were inventoried and left running. Existing listeners include Postgres/Redis ports `5432`, `6379`, `55432`, `56379`, and Vite `5173`; rehearsal ports must be separately allocated and bound to loopback.
+- Initial host inventory reported existing Docker services and a Vite process, with listeners on Postgres/Redis ports `5432`, `6379`, `55432`, `56379`, and Vite `5173`; all were left running. The later read-only snapshot in `00-source-and-environment.md` found no listener on 5432, still found 5173 and 6379, and did not recheck 55432/56379. The service behind 6379 is unknown and was not contacted. Rehearsal ports are separately allocated and bound to loopback.
 
 ## Execution gates
 
@@ -72,15 +72,17 @@ Initial pre-execution snapshot only: planning and source pin reconciliation were
 |---|---|---|
 | Source and isolation | PASS | Frozen full pins and ancestry verified; original tracked tree clean; 84 untracked artifacts preserved; rehearsal branch isolated |
 | Deployment parity | PARTIAL | Production topology parsed; image digest and runtime equivalence unavailable |
-| Build and host tests | PARTIAL/PASS | Backend security 58 suites/812 tests, focused interaction/worker 47/47, frontend 78 files/692 tests, frontend build, backend syntax check passed |
+| Build and host tests | PARTIAL | Previously recorded backend security 58 suites/812 passed/0 skipped and focused interaction/worker 2 suites/47 passed/0 skipped; frontend 78 files/692 tests (skip count not retained), frontend build, backend syntax check passed. Latest full default backend suite attempt was interrupted after BullMQ received `ECONNREFUSED` from both `::1:6379` and `127.0.0.1:6379`; no full-suite totals are available. |
 | Standalone frontend image dependency | PASS after correction | Child lockfile fixed and standalone npm ci dry-run resolved 450 packages |
 | Compose rehearsal | BLOCKED | Docker snapshot I/O and read-only metadata store; no services started |
 | Commerce safety | PARTIAL | Deterministic tests passed; no deployed queue, webhook replay, or runtime switch exercise |
 | Migration and recovery | BLOCKED/NOT RUN | No Docker-backed migration or database/worker fault injection |
-| Provider inventory | PASS source/docs | Existing adapters and official model lifecycle/pricing/privacy docs inspected; no account-level billing, key validity, or live calls |
-| Founder decision package | READY | D-1 through D-7 consolidated with evidence, alternatives, consequences, and owner authority |
-| Independent final attestation | NO_GO | Narrow independent code review completed; fresh final verifier unavailable because disk was full; runtime gates remain blocked |
+| Provider inventory | PARTIAL; effective runtime UNKNOWN | Existing adapters and official model lifecycle/pricing/privacy docs inspected. The customer-image OpenAI fallback is source-reachable; the July cost audit is stale against the pinned source; the August photo cost is a scenario, not validated task economics. Text-only RAG image-order selection remains reachable with vision off and is uncalibrated. No image or provider call occurred; billing, effective models, and spend caps are unknown. |
+| Bangladesh merchant task quality | NOT ESTABLISHED | Existing synthetic intent/grounding tests are contract evidence. BazarLens found no exact-candidate usefulness or provider-quality evidence, no livestream coverage in inherited held-out fixtures, and no calibrated image-to-SKU identity measure. |
+| Merchant outage UX | NOT ESTABLISHED | MomentumUX found no Inbox listener for `llm_outage` and an unlabeled keyword fallback that can misroute Bangla/Banglish price questions in AUTO. Keep `MANUAL`; no live UX or outage was exercised. |
+| Founder decision package | READY FOR OWNER REVIEW; D-1 OPEN | D-1 recommends deferring live traffic until runtime/governance gates pass, then considering one opted-in shadow/manual shop for workflow learning. Stop-metric denominators, coverage, and expansion criteria remain unassigned. |
+| Independent final attestation | NO_GO | SRE, FlowGuard, AI Platform, FinOps, BazarLens, FieldFounder, and MomentumUX reviews completed. QA completed source/lockfile review but ran no tests; the latest root full-suite attempt was aborted. No independent context has executed the blocked stack, migration, recovery, monitoring, kill-switch, or provider gates. |
 
 The mandatory documentation package is in this directory. No production settings were changed, no real provider call occurred, no merchant data was used, and no push or merge was performed.
 
-Follow-up host check: C: remained at 0 free bytes. The Docker default context info probe had no response after 30 seconds; the command was interrupted. No alternate container/Postgres/Redis runtime was available in PATH, so the runtime gates remain blocked.
+The latest host capacity, Docker API, listener, and command-path observations are recorded in 00-source-and-environment.md and 02-deployment-rehearsal.md. They did not establish a safe isolated Postgres/Redis target or usable Docker daemon, so runtime gates remain blocked.

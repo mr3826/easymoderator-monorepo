@@ -15,8 +15,8 @@ The production renderer at the frozen source explicitly emits strict-literal fal
 | BKASH_ENABLED | false | Renderer emits false when the integration is not enabled |
 | TELEGRAM_ENABLED | false | Renderer emits false when the integration is not enabled |
 | GROWTH_OS_ENABLED | false | Production renderer default false |
-| AI_PHOTO_MATCH_ENABLED | false | Local-only safety override; production renderer currently defaults this optional provider path to true |
-| AI_VISION_ENABLED | false | Production renderer default false |
+| AI_PHOTO_MATCH_ENABLED | false on backend override and worker synthetic env file | Local-only safety override; production renderer currently defaults this optional provider path to true. Neither service was started. |
+| AI_VISION_ENABLED | false on backend override and worker synthetic env file | Production renderer default false. Neither service was started. |
 
 The overlay and synthetic env explicitly disable commerce mutations, mobile API, payment integration, Telegram, image matching, and vision. The optional photo-match override is a documented non-equivalence, not a claim about production's default.
 

@@ -2,7 +2,7 @@
 
 ## Existing compatibility
 
-The application already calls OpenAI Chat Completions server-side through EasyMod-backend/src/modules/ai/llm.service.js. The current fallback model is gpt-4.1-mini. The code sends messages, temperature, and max_tokens and parses the returned text. The requested EM_OPENAI_KEY is not the variable the application reads; its current contract is OPENAI_API_KEY. The environment variable was present in the Windows user environment but absent from the process environment. No value was read, copied, or injected.
+The application already calls OpenAI Chat Completions server-side through EasyMod-backend/src/modules/ai/llm.service.js. The source-default fallback model is gpt-4.1-mini. The code sends messages, temperature, and max_tokens and parses the returned text. `LLM_OPENAI_MODEL` can override that default; the effective deployed model was not observed because no production runtime configuration was available. The requested EM_OPENAI_KEY is not the variable the application reads; its current contract is OPENAI_API_KEY. The environment variable was present in the Windows user environment but absent from the process environment. No value was read, copied, or injected.
 
 The existing model card lists Chat Completions, Responses, structured outputs, and function calling support. The current application request does not use provider-enforced structured output or tool calling. No Responses API migration is necessary for this rehearsal.
 
@@ -22,7 +22,7 @@ A token-per-million comparison does not establish cost per valid merchant task. 
 
 ## Privacy and keys
 
-OpenAI states API data is not used to train or improve models unless the customer opts in. Standard abuse-monitoring logs can contain prompts and responses and are retained up to 30 days by default, subject to documented exceptions. Some API features retain application state; the current app uses Chat Completions and does not ask for a new stored conversation feature. Confirm the project's actual data controls before sending customer content.
+OpenAI states API data is not used to train or improve models unless the customer opts in. Chat Completions abuse-monitoring logs can retain data for 30 days by default, with endpoint-specific exceptions; the endpoint's application-state retention is listed as none. OpenAI also states image and file inputs are scanned for CSAM and may be retained for manual review if the classifier detects potential CSAM, even when Zero Data Retention (ZDR), Modified Abuse Monitoring (MAM), or private retention with Private Safety Processing (PSP) is enabled. This is a limited safety exception, not a claim that all images are retained. The source permits customer-photo extraction to fall back to OpenAI with the image attached, so confirm the project's actual data controls and owner-approved data classes before enabling that path with real customer photos.
 
 No key was sent to a browser, mobile app, log, screenshot, or rehearsal container. There was no live request and no OpenAI spend.
 

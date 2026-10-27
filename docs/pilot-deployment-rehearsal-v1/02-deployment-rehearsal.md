@@ -14,10 +14,11 @@ DEPLOYMENT_REHEARSAL=PARTIAL. The manifest and host-side app checks passed, but 
 | Frontend unit tests | npm run test:unit -- --reporter=dot from EasyMod-frontend: 78 files, 692 tests passed, exit 0. |
 | Frontend production build | npm run build passed with Vite 7.3.6, transforming 2,758 modules. The React vendor chunk was 549.55 kB and triggered Vite's large-chunk warning. |
 | Backend build check | npm run build passed; the script performed node --check server.js. |
-| Backend security suite | npm run test:security -- --silent: 58 suites and 812 tests passed, exit 0. |
-| Interaction regression suite | Interaction service plus worker reply-mode coverage passed 47/47 with Jest --forceExit. Added assertions cover generated/unsent choices, replay after consume, per-shop flag revocation, worker no-send behavior, and SENT-only numeric lookup. |
+| Backend security suite | `npm run test:security -- --silent`: 58 suites, 812 passed, 0 skipped, exit 0 (recorded earlier against code SHA 714be007). |
+| Interaction regression suite | Interaction service plus worker reply-mode coverage: 2 suites, 47 passed, 0 skipped, exit 0 with Jest `--forceExit` (recorded earlier against code SHA 714be007). Added assertions cover generated/unsent choices, replay after consume, per-shop flag revocation, worker no-send behavior, and SENT-only numeric lookup. |
+| Full default backend suite, latest attempt | `npm run test --workspace=easymod-backend -- --runInBand` was interrupted with exit code 1 after BullMQ attempted `::1:6379` and `127.0.0.1:6379`, both returning `ECONNREFUSED`. No final totals were emitted and no successful Redis connection is evidenced. |
 
-The frontend unit run emitted existing non-fatal test-environment warnings, including a local CSRF request to an unstarted localhost service. No live provider or external merchant request was made.
+The frontend unit run emitted existing non-fatal test-environment warnings, including a local CSRF request to an unstarted localhost service. Its skip count was not retained in the execution record. No live provider or external merchant request was made.
 
 ## Build and runtime blockers
 
@@ -37,4 +38,6 @@ A future run must first recover Docker storage and host free space, then repeat 
 
 ## Follow-up runtime availability probe
 
-With C: still at 0 free bytes, the read-only Docker default-context info probe produced no output for 30 seconds and was interrupted. The context endpoint differs from desktop-linux, but it did not provide an independent working daemon. No alternate container or local Postgres/Redis server executable was present in PATH. No daemon, container, or existing service was restarted or stopped by this probe.
+The read-only default-context info probe produced no output for 30 seconds and was interrupted. A second read-only `docker --context desktop-linux version` probe produced no output for 60 seconds and was interrupted before `docker ps` could run. Docker Desktop processes were present and its `docker-desktop` WSL distro was running, but those observations do not prove the Docker API is usable. C: remained at 0 free bytes; D: had 125,862,297,600 bytes free.
+
+The host had a loopback-only listener on 5173 owned by the existing `node.exe` under `D:\easymod\_local-runtimes`, and listeners on 6379 associated with Docker backend and WSL relay processes. Their underlying application/container was unknown, so no service connection was intentionally made. A later full backend Jest attempt did try localhost port 6379 through BullMQ; IPv6 and IPv4 connection attempts were both refused, and the suite was interrupted before final totals. No successful TCP connection is evidenced. No listener was present on Postgres port 5432; the initial inventory's 55432 and 56379 ports were not rechecked. `podman`, `nerdctl`, `postgres`, `pg_ctl`, and `redis-server` were not found on PATH. No isolated database/Redis target or usable container daemon was established. No Docker/WSL service, existing container, or owner process was restarted, stopped, pruned, or otherwise changed.

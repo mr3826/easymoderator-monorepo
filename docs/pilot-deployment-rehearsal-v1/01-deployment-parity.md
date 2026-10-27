@@ -16,7 +16,7 @@ The production reference is docker-compose.prod.yml at the frozen docs pin. The 
 | Network egress | Production integrations require approved external APIs | Rehearsal project network marked internal; no live provider calls permitted | NON_EQUIVALENT by design |
 | Secrets | Production secret injection | Ignored local file containing synthetic values; no real credentials | ACCEPTABLE_SIMULATION |
 | Commerce flags | Production renderer strictly defaults global commerce switches to false | All commerce switches explicitly false in the local rendered env and overlay | EQUIVALENT configuration claim; runtime NOT VERIFIED |
-| Photo matching | Production renderer defaults AI_PHOTO_MATCH_ENABLED to true | Overlay forces AI_PHOTO_MATCH_ENABLED=false and AI_VISION_ENABLED=false to prevent provider activity | NON_EQUIVALENT, deliberate safety override |
+| Photo matching | Production renderer defaults AI_PHOTO_MATCH_ENABLED to true | Backend has explicit false overrides; worker receives the ignored rehearsal env file whose two image flags were false at inspection. No worker runtime was observed. | NON_EQUIVALENT, deliberate safety override |
 | Migrations | Production Compose disables startup migrations; deployment runbook applies them as an explicit step | No migration container/command executed | NON_EQUIVALENT / NOT RUN |
 | Persistent recovery | Production named volumes; host backup and restore evidence required | Fresh project volumes configured, but no backup, restore, or recovery drill | UNKNOWN |
 | Monitoring | Production Sentry/ops-alert configuration and an owner-operated channel | Synthetic rehearsal has no verified destination or received alert | NON_EQUIVALENT |

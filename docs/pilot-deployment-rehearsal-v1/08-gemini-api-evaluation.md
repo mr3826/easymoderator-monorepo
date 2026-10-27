@@ -4,7 +4,7 @@
 
 The application already calls Gemini generateContent directly through EasyMod-backend/src/modules/ai/llm.service.js. The main LLM contract reads EM-GEMINI-KEY or GEMINI_API_KEY. The requested EM_GEMINI_KEY was present in the Windows process and user environment, but its value was never read or printed and it was not passed into the rehearsal. No live request was made.
 
-The main default models are gemini-3.1-flash-lite primary and gemini-3.1-pro-preview for explicit high-stakes use or configured escalation. Automatic Pro escalation is not the default. The application sends prompt content and temperature 0.3; it does not request JSON schema output or tool calls in this main path. The current Gemini model cards support structured outputs and function calling, but those features are not needed to satisfy this existing contract.
+The source defaults are gemini-3.1-flash-lite primary and gemini-3.1-pro-preview for explicit high-stakes use or configured escalation. Automatic Pro escalation is not the default. `LLM_GEMINI_LITE_MODEL` and `LLM_GEMINI_PRO_MODEL` can override these IDs. The effective deployed model was not observed because `.env.prod` was absent from the checked worktrees and no runtime configuration was available. The application sends prompt content and temperature 0.3; it does not request JSON schema output or tool calls in this main path. The current Gemini model cards support structured outputs and function calling, but those features are not needed to satisfy this existing contract.
 
 ## Model lifecycle findings
 
@@ -38,4 +38,4 @@ No budget, tier, or account setting was verified. Do not send customer transcrip
 - [Gemini 3 temperature guidance](https://ai.google.dev/gemini-api/docs/generate-content/gemini-3)
 - [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)
 
-GEMINI_API_FEASIBILITY=SOURCE_COMPATIBLE_FOR_MAIN_LLM; PROJECT_ACCESS_AND_PAID_TIER_UNKNOWN.
+GEMINI_API_FEASIBILITY=SOURCE_COMPATIBLE_FOR_MAIN_LLM; EFFECTIVE_DEPLOYED_MODEL_UNKNOWN; PROJECT_ACCESS_AND_PAID_TIER_UNKNOWN.
