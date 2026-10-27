@@ -33,7 +33,7 @@ Produce a reproducible, isolated rehearsal and a founder-ready evidence package 
 
 - Do not modify the frozen source worktree or other worktrees; do not stop existing services.
 - Do not push, merge, deploy to production, enable real-shop flags, send real messages, or perform real payment/courier actions.
-- Do not inspect or print provider credential values. Do not include credentials or real customer data in artifacts.
+- Do not print, persist, or inject provider credential values. The bootstrap preflight may transiently read the two requested Windows aliases in memory only to confirm they are absent from the ignored rehearsal env file; no values enter WSL or artifacts. Do not include credentials or real customer data in artifacts.
 - Use synthetic data only. Live provider calls stay `NOT_RUN` unless a pre-existing, explicit project budget and authorization are verified.
 - Any source correction must be minimal, preceded by root-cause evidence, tested, and independently reviewed.
 - Final claims require fresh commands and recorded exits, counts and skips.
@@ -68,21 +68,20 @@ Initial pre-execution snapshot only: planning and source pin reconciliation were
 
 ## Final execution status (2026-10-27)
 
-| Gate | Final state | Evidence/limitation |
+| Gate | State | Evidence/limitation |
 |---|---|---|
-| Source and isolation | PASS | Frozen full pins and ancestry verified; original tracked tree clean; 84 untracked artifacts preserved; rehearsal branch isolated |
-| Deployment parity | PARTIAL | Production topology parsed; image digest and runtime equivalence unavailable |
-| Build and host tests | PARTIAL | Previously recorded backend security 58 suites/812 passed/0 skipped and focused interaction/worker 2 suites/47 passed/0 skipped; frontend 78 files/692 tests (skip count not retained), frontend build, backend syntax check passed. Latest full default backend suite attempt was interrupted after BullMQ received `ECONNREFUSED` from both `::1:6379` and `127.0.0.1:6379`; no full-suite totals are available. |
-| Standalone frontend image dependency | PASS after correction | Child lockfile fixed and standalone npm ci dry-run resolved 450 packages |
-| Compose rehearsal | BLOCKED | Docker snapshot I/O and read-only metadata store; no services started |
-| Commerce safety | PARTIAL | Deterministic tests passed; no deployed queue, webhook replay, or runtime switch exercise |
-| Migration and recovery | BLOCKED/NOT RUN | No Docker-backed migration or database/worker fault injection |
-| Provider inventory | PARTIAL; effective runtime UNKNOWN | Existing adapters and official model lifecycle/pricing/privacy docs inspected. The customer-image OpenAI fallback is source-reachable; the July cost audit is stale against the pinned source; the August photo cost is a scenario, not validated task economics. Text-only RAG image-order selection remains reachable with vision off and is uncalibrated. No image or provider call occurred; billing, effective models, and spend caps are unknown. |
-| Bangladesh merchant task quality | NOT ESTABLISHED | Existing synthetic intent/grounding tests are contract evidence. BazarLens found no exact-candidate usefulness or provider-quality evidence, no livestream coverage in inherited held-out fixtures, and no calibrated image-to-SKU identity measure. |
-| Merchant outage UX | NOT ESTABLISHED | MomentumUX found no Inbox listener for `llm_outage` and an unlabeled keyword fallback that can misroute Bangla/Banglish price questions in AUTO. Keep `MANUAL`; no live UX or outage was exercised. |
-| Founder decision package | READY FOR OWNER REVIEW; D-1 OPEN | D-1 recommends deferring live traffic until runtime/governance gates pass, then considering one opted-in shadow/manual shop for workflow learning. Stop-metric denominators, coverage, and expansion criteria remain unassigned. |
-| Independent final attestation | NO_GO | SRE, FlowGuard, AI Platform, FinOps, BazarLens, FieldFounder, and MomentumUX reviews completed. QA completed source/lockfile review but ran no tests; the latest root full-suite attempt was aborted. No independent context has executed the blocked stack, migration, recovery, monitoring, kill-switch, or provider gates. |
+| Source and isolation | PASS for scoped source; worktree cleanliness NO | Code `6d6bc1dd056e09202b97d05e81f20308b15109ab` derives from the frozen pins. Dedicated WSL2 Docker runtime and Compose project used. Unrelated untracked QA/cache and Product Experience artifacts were preserved. |
+| Deployment parity | PARTIAL | Eight-service isolated stack started; local app image IDs and secret-redacted Compose fingerprint recorded. Internal routes pass. Windows founder preview is blocked by absent host port mappings. All eight rehearsal containers were gracefully stopped after the final receipts; volumes and distro were preserved. |
+| Build and unit tests | PARTIAL | Backend security 58 suites/813 passed; startup-boundary 4 passed; frontend 78 files/692 passed; frontend build passed. The frontend skip count was not retained. Full backend default suite did not complete. Backend image audit reported 3 high findings. |
+| Standalone frontend lockfile | PASS | `axe-core` entries were synchronized in the child lockfile; standalone npm ci dry-run resolved 450 packages. This lockfile result is from commit `714be007`. |
+| Runtime defaults and kill switches | PARTIAL / exercised cases PASS | Backend and worker mutation flags false. Fresh independent run confirmed global Action Gate denial, conversation pause, and per-shop MANUAL. MANUAL queued a synthetic in-app HITL notification; no customer message or external send. Photo-match false is a rehearsal override from production's true default. |
+| Migration dry-run | PASS | Fresh independent six-phase disposable Postgres dry-run on exact code SHA `6d6bc1dd` exited 0: 240 generated orders plus 2 cross-shop idempotency fixtures (242 catalog total), duplicate refusal, repair/reapply, down/up. Partial failure and concurrency not run. |
+| Failure recovery | PARTIAL with independent receipts | Worker-pending and graceful Redis canaries independently stayed waiting and then completed once; full graceful Compose stop/restart independently passed. Abrupt crash, database outage, backup restore, and business side-effect replay remain untested. Receipts are in the runtime evidence directory and referenced in 04. |
+| Monitoring | PARTIAL | Live/readiness/SSE and internal proxy health passed, independently reconfirmed. Slack configured, Sentry absent; synthetic alert was not sent and no receipt exists. |
+| Provider inventory | DOCUMENTED; runtime entitlement UNKNOWN | Existing OpenAI/Gemini adapters and official API, lifecycle, pricing, and privacy evidence reviewed. No provider call, billing check, model-override check, or spend-cap validation. Keep existing provider configuration. |
+| Bangladesh merchant task quality | NOT ESTABLISHED | Existing synthetic contract tests do not establish exact-candidate merchant usefulness. Livestream coverage and image-to-SKU identity calibration remain gaps. |
+| Merchant outage UX | NOT ESTABLISHED | No Inbox `llm_outage` listener; Bangla/Banglish price fallback can misroute under AUTO. Keep reply mode `MANUAL`. |
+| Founder decision package | READY FOR OWNER REVIEW; all D-1 to D-7 remain open | Recommendations are consolidated in 05. No merchant selected or approved. |
+| Independent final attestation | NO_GO for full milestone; bounded checks independently passed | Two independent contexts verified source, images/config, runtime flags, and health. The fresh operational verifier reran the six-phase migration, worker/Redis recovery, kill switches, health/sink inspection, and scoped shutdown/restart. Full backend default suite, authenticated/browser E2E, alert receipt, broader fault injection, preview, and owner decisions remain open. |
 
-The mandatory documentation package is in this directory. No production settings were changed, no real provider call occurred, no merchant data was used, and no push or merge was performed.
-
-The latest host capacity, Docker API, listener, and command-path observations are recorded in 00-source-and-environment.md and 02-deployment-rehearsal.md. They did not establish a safe isolated Postgres/Redis target or usable Docker daemon, so runtime gates remain blocked.
+No production settings changed, no real provider request or customer data was used, no push/merge/deployment occurred, and no other agent worktree or process was stopped. Deployment and pilot authorization remain separate gates from the locally completed rehearsal evidence.

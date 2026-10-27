@@ -1,35 +1,51 @@
 # 04 — Migration and recovery
 
-## Gate status
+## Migration dry-run
 
-MIGRATION_DRY_RUN=BLOCKED for the rehearsal candidate. The permanent gate command, npm run test:backend:migration-dryrun, was not run against fresh Docker-backed production-shaped data because the local Docker engine failed with snapshot I/O errors and a read-only metadata store.
+`MIGRATION_DRY_RUN=PASS` for application code SHA `6d6bc1dd056e09202b97d05e81f20308b15109ab`. The permanent command `npm run test:backend:migration-dryrun` ran against disposable Postgres in the isolated WSL Docker Engine and exited 0. The six phases covered:
 
-The frozen readiness document records a prior six-phase production-shaped migration dry-run PASS at code tip c164a042. That is historical evidence for the frozen candidate, not a fresh run on rehearsal SHA 714be007. The rehearsal branch did not change the migration implementation, but this fact does not substitute for the mandated rerun.
+1. Empty database and migration application.
+2. Production-shaped seed of 3 shops, 3 customers, and 240 generated orders; two additional cross-shop shared-key idempotency fixtures were then inserted for the schema assertion, producing 242 catalog orders in that phase.
+3. Canonical index reconciliation.
+4. Refusal of duplicate IDs before unsafe uniqueness enforcement.
+5. Repair and reapplication.
+6. Down/up cycle on disposable test data.
 
-## Database and worker recovery matrix
+The final run used a source snapshot synchronized to code SHA `6d6bc1dd056e09202b97d05e81f20308b15109ab`; tracked changed-source hashes were compared and matched. The fresh independent verifier reran the same six-phase command against the disposable migration project: `MIGRATION_DRYRUN_EXIT=0`, `PROD-SHAPED-MIGRATION-DRYRUN: PASS`. Original log: `D:\easymod-runtime\pilot-deployment-rehearsal-v1\migration-dryrun.log`; independent receipt: `migration-dryrun-independent-final.log`.
 
-| Scenario | Initial state | Failure injection | Recovery | Observed state | Business invariant |
-|---|---|---|---|---|---|
-| Fresh database | Empty disposable Postgres schema | NOT RUN | NOT RUN | NOT OBSERVED | No duplicate order; schema/entity parity |
-| Existing database | Production-shaped pre-migration schema | NOT RUN | NOT RUN | NOT OBSERVED | Preserve committed order truth |
-| Duplicate order IDs / pre-existing indexes | Historical duplicate fixture and index present | NOT RUN | NOT RUN | NOT OBSERVED | Migration refuses unsafe duplicates loudly |
-| Partial migration failure | Disposable schema mid-step | NOT RUN | NOT RUN | NOT OBSERVED | Retry is idempotent; no partial business write |
-| Migration concurrency | Two migration attempts | NOT RUN | NOT RUN | NOT OBSERVED | Only one migration proceeds safely |
-| Backend crash | Accepted action and DB transaction | NOT RUN | NOT RUN | NOT OBSERVED | No unauthorized or duplicate order |
-| Worker crash | Job claimed before or after side-effect boundary | NOT RUN | NOT RUN | NOT OBSERVED | No duplicate outbound message or courier booking |
-| Redis interruption / pending jobs | BullMQ jobs queued | NOT RUN | NOT RUN | NOT OBSERVED | No silent loss or duplicate execution |
-| Duplicate webhook / delayed provider response | Signed synthetic callback | NOT RUN | NOT RUN | NOT OBSERVED | Correct payment truth; no duplicate booking |
-| Flag revocation during dispatch | In-flight synthetic action | Source-level tests only for interaction choices; commerce worker race NOT RUN | NOT RUN | NOT OBSERVED | Disabled operation stays disabled |
-| Failed deployment after migration | Previous app image plus migrated schema | NOT RUN | NOT RUN | NOT OBSERVED | Safe forward recovery or compatible app rollback |
+This dry-run does not exercise partial migration interruption, two concurrent migration processes, production-scale data, backup restore, or application rollback compatibility. The down/up cycle is disposable-schema evidence, not authority to run `migrate:down` against business data.
 
-No database or worker recovery row above is a runtime PASS. Focused tests did exercise the interaction resolver's SENT-only and revoked-flag branches, but they do not exercise a persistent queue, real transaction boundary, or process restart.
+## Worker and Redis recovery
+
+| Scenario | Initial state | Failure | Recovery | Observed state | Invariant evidenced | Receipt |
+|---|---|---|---|---|---|---|
+| Dedicated worker stop/restart | Isolated queue ready; worker stopped; no-send synthetic canary enqueued | Worker unavailable | Start dedicated worker | Job stayed waiting while stopped, then completed once as `{canary:true,ok:true}`; waiting/active/delayed/failed counts returned to zero | API does not consume jobs when embedded workers are disabled; dedicated worker resumes the pending synthetic job | Independent verifier: `worker-recovery-independent-final.log`, worker scenario exit 0 |
+| Graceful Redis restart | Worker stopped; synthetic canary persisted in BullMQ | Graceful project-scoped Redis stop/start | Redis healthy, worker still stopped, then worker restarted | Job remained waiting across Redis restart and completed once after worker restart; counts returned to zero | Graceful Redis restart retained the pending synthetic job | Independent verifier: same log, Redis scenario exit 0 |
+| Full application stack shutdown/restart | All eight rehearsal services running | Graceful stop of only `easymod-pilot-rehearsal-v1` | `docker compose up -d --wait` for only that project | Stop and restart commands exited 0; all eight services running after restart, with backend, worker, Growth, Postgres, Redis healthy | Graceful isolated stack lifecycle completed; no pending production work existed | Independent verifier: `compose-shutdown-restart-independent-final.log`, both exits 0 |
+| Signed webhook replay/race harness | Dedicated throwaway Postgres/Redis project | Synthetic duplicate/replay race | Harness cleanup | 1 suite, 2 tests passed; dedicated project removed with its volumes and exit 0 | Harness idempotency/replay behavior passed for its synthetic fixture | `payment-webhook-race.log`, test exit 0 and cleanup exit 0 |
+
+The main rehearsal project was not removed with `down --volumes`; its named data remains isolated. The temporary webhook project was a separate throwaway stack and its own volumes were removed. No external send or real payment/courier side effect occurred.
+
+For handoff, after the independent verifier recorded the successful restart state, the main project was gracefully stopped with project-scoped `docker compose stop`. All eight containers are exited and the named volumes and distro are preserved.
+
+## Not run
+
+| Scenario | State | Remaining reason or limit |
+|---|---|---|
+| Partial migration failure and concurrent migrations | NOT RUN | No injected interruption or dual-migration race |
+| Backend/database crash or database timeout | NOT RUN | No failure injection against app transaction processing |
+| Abrupt worker crash after accepted business side effect | NOT RUN | No crash at an outbound/business commit boundary |
+| Feature revocation during order/payment dispatch | NOT RUN | Only the conversation/per-shop synthetic stop cases and source interaction tests ran |
+| Backup restore / point-in-time recovery | NOT RUN | No backup, restore, RPO, or RTO evidence |
+| Failed deployment after migration / app-image rollback | NOT RUN | Prior-image compatibility with migrated schema not established |
+| Pending real or externally actionable jobs | NOT RUN | Rehearsal used no-send synthetic queue canaries only |
 
 ## Rollback and disaster recovery
 
-- The pilot operations runbook says the deploy rollback does not run migrate:down. Its separate migrate:down instruction warns that it deletes pilot data and is only for abandoning a pilot after the required human gate.
-- Application-image rollback is only feasible when the previous image is compatible with the already-applied schema. That compatibility was not tested here.
-- No host backup, volume snapshot, restore, point-in-time recovery, RPO, or RTO evidence was available. RPO and RTO remain NOT_MEASURED.
-- Do not claim that a code rollback restores a database or reverses a real payment, order, message, or courier action.
-- The safe operator plan for any future live issue is stop new automation with the relevant kill switches, preserve logs and queue/database state, use the existing incident runbook, and recover forward or restore from an independently verified backup after owner approval.
+- The existing pilot runbook says deployment rollback does not execute `migrate:down`; its separate down-migration path is a human-gated pilot-abandonment procedure.
+- The local disposable migration cycle passed, but previous-image compatibility with the resulting schema was not tested.
+- No host backup, volume snapshot, restore, PITR, RPO, or RTO evidence is available.
+- A code rollback cannot reverse a committed order, payment, message, or courier action.
+- For a future live incident, stop new automation with the relevant kill switches, preserve queue/database/log state, follow the existing incident runbook, and recover forward or restore from an independently verified backup under owner authority.
 
-ROLLBACK_FEASIBILITY=PARTIAL at the documentation/source-procedure level; production database rollback and recovery remain UNKNOWN and NOT VERIFIED.
+`FAILURE_RECOVERY=PARTIAL` and `ROLLBACK_FEASIBILITY=PARTIAL`: worker ownership/restart, graceful Redis persistence, the disposable migration dry-run, and full graceful Compose stop/restart passed. Broader fault injection and production data recovery remain unknown/not run.

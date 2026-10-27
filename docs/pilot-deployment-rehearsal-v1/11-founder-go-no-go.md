@@ -2,55 +2,54 @@
 
 ## Decision
 
-**Rehearsal: PARTIAL. Production release: NO-GO pending owner authorization and blocked runtime evidence.**
+**Rehearsal: PARTIAL. Pilot production release: NO-GO pending owner authorization and unresolved security, preview, monitoring, and recovery gates.**
 
-This run improved the local candidate and verified host-side source behavior. It did not deploy a stack, run a migration, demonstrate database/worker recovery, exercise the kill switches in a running app, or verify an alert reached an operator. No real provider call or merchant activity occurred.
+The isolated stack built from application code SHA `6d6bc1dd056e09202b97d05e81f20308b15109ab` started, reported the exact SHA, passed core health/readiness, ran its migration dry-run, and exercised synthetic flag and queue-recovery scenarios. The review does not authorize production deployment, a merchant cohort, or live automation.
 
-## What this run proved
+## What this rehearsal proved
 
-- The isolated branch is based on the verified frozen documentation tip and remains separate from the original candidate.
-- A numeric reply could reach a choice proposal still in GENERATED state even though the worker only marks it SENT after delivery. The code now resolves only SENT proposals, rechecks the per-shop interaction feature before dispatch, and skips the worker fallback/send if the flag is disabled.
-- Focused interaction/worker tests, the backend security suite, frontend unit tests/build, standalone child lockfile dry-run, production env render, and Compose manifest parse passed.
-- The standalone frontend production build context had an incomplete lockfile. The missing axe-core entries were added in commit 714be007 and its standalone npm dry-run passed.
-- Production-default commerce mutation flags are defined as false. The local synthetic environment explicitly sets them false. The optional image-matching path is separately disabled locally even though the production renderer currently defaults it true.
+- Source is isolated on `rehearsal/pilot-deployment-v1`, rooted at the verified frozen code/documentation pins. The exact code candidate was built into local backend/worker, merchant frontend, and Growth images with recorded immutable image IDs.
+- The production-shaped eight-service Compose topology ran in dedicated WSL2 distro `EasyModPilotRehearsalV1` on an internal-only network. Backend, worker, Growth, Postgres, and Redis reported healthy. Backend readiness reported Postgres and Redis connected; Caddy's health, API-version, frontend, and Growth routes returned 200 internally.
+- `/api/version` reported the tested code SHA, 66 migrations, and latest migration `20261026_001_order_idempotency_unique`.
+- Core commerce mutation switches were false in both backend and worker. A synthetic global `CREATE_ORDER` was denied and audited; conversation pause and per-shop `MANUAL` mode suppressed synthetic worker actions. A missing-signature payment callback returned 503.
+- The six-phase disposable production-shaped migration dry-run passed. A worker-stopped canary stayed queued and completed once under the dedicated worker. A pending no-send canary persisted across graceful Redis restart. Graceful full-stack stop and restart completed.
+- Backend security passed 58 suites/813 tests; queue-manager startup boundary passed 4 tests; frontend passed 78 files/692 tests and the production build passed. A separate throwaway signed webhook replay/race harness passed 2 tests and was removed with its dedicated data volumes.
+- No real customer data, message, order, payment, courier action, provider request, provider spend, or external alert was used.
 
-## What remains unproved
+## Why the verdict remains NO-GO
 
-- No final app image digest, container startup, health endpoint, authentication, queue state, webhook receipt, clean shutdown, or restart.
-- No fresh Postgres/Redis integration, Meta-shaped E2E, production-shaped migration dry-run, partial migration failure, concurrent migration, backup restore, worker crash, Redis disruption, or pending-job replay.
-- No runtime kill-switch exercise or synthetic monitoring alert receipt.
-- No independent final system verifier. The current code reviewer only attested the narrow interaction patch; prior c164a042 attestation is historical.
-- No provider billing/tier, model entitlement, project spend limit, or live task quality evidence. The user keys were never used.
-- No merchant-visible provider-outage state is wired through the Inbox SSE hook. On the queued Messenger path, provider failure can fall through to keyword matching; Bangla/Banglish price terms can start an order session at confidence 0.75, which meets the AUTO default threshold. Keep reply mode at MANUAL and require outage/fallback regression coverage and an operator-visible outage signal before considering AUTO.
-- The two rehearsal image flags do not disable all image-triggered order matching. With `AI_VISION_ENABLED=false`, the separate order-flow matcher still runs text-only RAG for image-plus-purchase-intent messages and the caller accepts nonempty matches without checking confidence. No wrong match was observed, but exact catalog identity is uncalibrated; require a separate gate and synthetic coverage before using this path.
-- Effective deployed provider model IDs were not verified. Customer-photo extraction is default-on in the production renderer and can fall back from Gemini to OpenAI with the image attached; no image or customer data was sent in this rehearsal. Keep this feature off for the live pilot until owner approval and both providers' image-data terms are confirmed. If OpenAI image transfer is not approved, a source change and regression test are required before using customer-photo matching.
-- No merchant cohort was selected, no Meta Human-Agent eligibility confirmed, and no production flag or rollout authorized.
-
-The Docker Desktop metadata store returned I/O errors and a read-only filesystem; C: had 0 bytes free. No user data was deleted and no existing service was intentionally stopped. This is why the deployment, database, migration, runtime kill-switch, alert, and full independent-attestation gates are blocked or not run.
+- Founder browser preview is BLOCKED. Caddy works from inside the rehearsal network, but Windows loopback ports 54580/54543 have no listeners. Docker records configured host bindings while runtime port mappings are null. No system networking settings were changed.
+- The backend image build reported 3 high npm audit findings; security disposition is required before a pilot.
+- No authenticated tenant workflow, public Meta/OAuth callback, valid payment callback to the primary stack, browser E2E, provider-outage UX, external alert receipt, partial/concurrent migration failure, abrupt worker crash after business side effect, database outage, backup restore, or prior-image schema rollback was verified.
+- Slack is configured but Sentry is not. The synthetic alert was `NOT_RUN_EXTERNAL_SINK_CONFIGURED`; no alert was sent or received. Readiness health is not evidence that an operator can receive incidents.
+- D-1 through D-7 remain owner decisions. The commercial reply path should remain `MANUAL`; photo matching, order/payment/courier automation, and webhook auto-booking remain off. Text-RAG order selection from accompanying text remains uncalibrated.
+- Full default backend unit suite, Playwright, and Meta-shaped E2E were not completed in this final run. The completed final backend security suite and targeted runtime evidence do not substitute for those gates.
 
 ## Provider decision
 
-Keep the current provider configuration for this rehearsal and do not add routing infrastructure or make an automatic provider switch. The listed models are source defaults; deployed overrides were not available, so the effective production model is UNKNOWN. OpenAI GPT-4.1 mini is deprecated with a published 2027-01-14 shutdown, and Gemini 3.1 Flash-Lite is listed as stable with a 2027-05-07 earliest shutdown; the Pro fallback is preview. Legacy source paths still reference Gemini 1.5 Flash and 2.0 Flash, which Google's current lifecycle pages list as shut down. For real customer photos, keep `AI_PHOTO_MATCH_ENABLED=false` until data terms, account controls, and owner approval cover both Gemini and the possible OpenAI fallback; this flag does not disable the separate text-RAG order-selection path. Reconcile the conditional photo-cost estimate before a commercial decision. See 06-09 for source routing, price, billing, privacy, and lifecycle evidence.
+**Recommendation: `KEEP_CURRENT_PROVIDER_CONFIGURATION`.** Existing OpenAI and Gemini adapters are present; no provider switch or routing framework is justified by this rehearsal. No live inference or spend occurred, and account billing, entitlement, spend cap, effective deployed model overrides, and cost per valid completed task remain unknown. Preserve the detailed official model lifecycle, API, cost, and data-handling analysis in 06-09. Keep customer-photo matching off until both provider image-data terms and owner authorization cover the existing Gemini-to-OpenAI fallback. This flag does not disable the separate text-only RAG order-selection path.
 
-## One founder decision package
+## Consolidated owner decision package
 
-Please resolve D-1 through D-7 together as listed in 05-owner-decisions-d1-d7.md:
+Resolve these together as detailed in [05-owner-decisions-d1-d7.md](05-owner-decisions-d1-d7.md):
 
-- D-1: defer live traffic until gates pass; then consider one opted-in shadow/manual shop for workflow learning. Define reply-safety, false-hold, missed-reply, inappropriate-order-prompt, wrong-catalog-match, provider-spend, and operator-load thresholds with denominators and accountable owners before traffic. Verify merchant-visible provider-outage behavior before exposing AI drafts, and gate/calibrate image-triggered text-RAG order selection before use. Do not treat the inherited 3–5 shop proposal as evidence-backed or as PMF validation.
-- D-2: confirm Meta review eligibility and close the app contact/support/data-deletion metadata gaps.
-- D-3: name the alert channel, dashboard, and on-call owner; accept a synthetic alert receipt test.
-- D-4: name switch operators and second approver; keep mutation switches off.
-- D-5: accept the missing mobile upload endpoint and keep mobile API disabled.
-- D-6: accept or defer V6/Phase-D debt while preserving the reviewed Inbox draft and reply-window guarantees.
-- D-7: keep webhook auto-booking off and use manual dispatch for the pilot.
-- Supplemental AI privacy condition: keep customer-photo matching off until both providers' image-data terms and owner authorization are confirmed; if OpenAI image fallback is not approved, require a Gemini-only source path and regression test.
+1. **D-1 cohort:** defer live traffic until runtime and governance gates pass; then consider at most one opted-in shadow/manual shop for workflow learning. Name coverage and measurable reply-safety, false-hold, missed-reply, wrong-catalog, spend, and operator-load thresholds with denominators.
+2. **D-2 Meta:** no new Graph scopes are proposed. The Meta app owner must confirm current Human-Agent eligibility and close contact/support/data-deletion metadata gaps.
+3. **D-3 monitoring:** name the alert channel, dashboard, and on-call owner; reconcile audit-action queries and verify a synthetic alert reaches that operator.
+4. **D-4 switches:** keep mutations off; name switch operators and a second approver, then confirm the production observation path.
+5. **D-5 mobile:** accept the missing `POST /api/mobile/products/images` endpoint for the controlled Messenger scope and keep mobile API disabled.
+6. **D-6 V6/Phase-D:** accept or defer the listed UX debt only while preserving the reviewed Inbox draft, send, and reply-window guarantees.
+7. **D-7 dispatch:** keep webhook auto-booking off and dispatch manually; any later enablement needs explicit owner authorization and main-stack replay/rollback evidence.
+8. **Photo data:** separately approve or reject customer-image transfer to Gemini and the possible OpenAI fallback; keep photo matching off until then.
 
-This package does not authorize production release. Reopen the release decision only after Docker storage and host space recover, blocked gates are run against the pinned source, the final reviewer attests the actual tested SHA, and the founder resolves the owner decisions.
+## Preview and evidence location
 
-## Founder preview
+**FOUNDER_PREVIEW=BLOCKED.** The environment is in the dedicated distro `EasyModPilotRehearsalV1` under `D:\easymod-runtime\pilot-deployment-rehearsal-v1`. The Compose overlay and isolated bootstrap scripts are in this directory. The image IDs, redacted config fingerprint, command outcomes, and runtime probe summary are recorded in 01-04 and `rehearsal-proof.json`; detailed local logs are under the runtime path above.
 
-Open the local folder D:\easymod\_rehearsal-pilot-deployment-v1\docs\pilot-deployment-rehearsal-v1 in Codex to review this handoff. The static rehearsal manifest is in docker-compose.rehearsal.override.yml and Caddyfile.rehearsal. There is no running application preview from this rehearsal.
+**FINAL_RUNTIME_STATE=STOPPED.** After the final independent receipts were captured, all eight containers in the named rehearsal project were gracefully stopped. Named volumes and the dedicated distro remain preserved.
 
-Final source code SHA: 714be0072b6c8a8bba181dbe814e284c3b342ffe.
-Frozen documentation SHA: d5dbd21620a0b25b6c57763c2214a95c811c2fbb.
-The final evidence commit SHA is reported in the handoff; it is documentation-only after the code SHA above.
+`SOURCE_CODE_SHA=6d6bc1dd056e09202b97d05e81f20308b15109ab`.
+
+`SOURCE_DOCUMENTATION_SHA=d5dbd21620a0b25b6c57763c2214a95c811c2fbb`.
+
+`FINAL_SHA` is the final local evidence commit reported in the handoff response; it changes evidence/docs only after the tested application code SHA above. No push, merge, or deployment is authorized by this package.

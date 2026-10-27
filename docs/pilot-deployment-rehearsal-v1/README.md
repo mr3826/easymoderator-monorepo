@@ -1,39 +1,46 @@
 # EasyModerator Pilot Deployment Rehearsal V1
 
-**Disposition: PARTIAL. Production release: NO-GO pending owner authorization.**
+**Disposition: PARTIAL. Production release: NO-GO pending owner authorization and unresolved release gates.**
 
-This package records the work performed against the frozen integrated candidate, the narrow fixes made on an isolated branch, the checks that passed, and the runtime gates blocked by the local Docker storage failure. It does not certify a deployment, migration, backup restore, alert path, or production release.
+This is a completed isolated rehearsal for application code SHA `6d6bc1dd056e09202b97d05e81f20308b15109ab`. It built and started the production-shaped Compose topology in a dedicated WSL2 Docker Engine, exercised health/readiness, runtime flags, Action Gate controls, migration behavior, and synthetic queue recovery. It did not change production, use merchant data, call AI providers, send a real message, authorize a payment, or book a courier.
 
-Provider review also corrected the customer-photo data-flow description: the default-on photo extraction path uses the shared Gemini-to-OpenAI fallback chain. No image was sent during this rehearsal. Keep `AI_PHOTO_MATCH_ENABLED=false` for a live pilot until both providers' image-data terms and the owner's data-transfer approval are confirmed.
+## What the rehearsal proved
 
-Independent cost review found that the July AI cost audit's “no vision” estimate is stale against the pinned source and conflicts with the August photo-cost assumptions. A conditional image-token estimate exists, but effective models, billing tier, fallback mix, and cost per valid task are unknown. Keep AI reply mode at `MANUAL`: provider-outage events are not consumed by the Inbox SSE hook, and provider failure can fall through to a keyword path that treats Bangla/Banglish price words as order intent. D-1 now recommends deferring live traffic until gates and measurable stop criteria are in place, then considering one opted-in shadow/manual shop for workflow learning only.
+- All eight services started from an isolated internal-only Compose project. Backend and worker use the same locally built image. Backend, worker, Growth, Postgres, and Redis reported healthy.
+- Backend `/health/live`, `/health/ready`, and `/health/sse` returned 200. Readiness reported Postgres and Redis connected; the API reported the exact rehearsal SHA and 66 migrations. Caddy routed health, API, merchant frontend, and Growth health internally.
+- Commerce and automation flags were false in both backend and worker containers. The global Action Gate denied synthetic `CREATE_ORDER` and wrote one audit row; conversation pause and per-shop `MANUAL` mode suppressed synthetic worker actions.
+- A synthetic message job remained waiting with the dedicated worker stopped and completed once after that worker started. A graceful Redis stop/start preserved a pending canary, which completed after the worker returned.
+- The six-phase disposable Postgres migration dry-run passed. Backend security tests passed 58 suites/813 tests, the worker-startup boundary passed 4 tests, frontend tests passed 692 tests, and the frontend build passed.
+
+The primary evidence is in [00-source-and-environment.md](00-source-and-environment.md), [01-deployment-parity.md](01-deployment-parity.md), [02-deployment-rehearsal.md](02-deployment-rehearsal.md), [03-feature-flags-and-side-effects.md](03-feature-flags-and-side-effects.md), [04-migration-and-recovery.md](04-migration-and-recovery.md), and [rehearsal-proof.json](rehearsal-proof.json). Command logs remain under `D:\easymod-runtime\pilot-deployment-rehearsal-v1` and contain synthetic data only.
+
+## Why this is still NO-GO
+
+- The app healthchecks and Caddy routes pass inside the isolated WSL network, but Windows cannot reach the configured loopback preview ports. Docker reports the port bindings in `HostConfig`, while runtime port mappings are null and no Windows listener exists on 54580/54543. Founder preview is BLOCKED.
+- Docker's backend image build reported 3 high npm audit findings. Resolve or explicitly disposition them before a pilot.
+- No authenticated tenant workflow, public callback/OAuth, shared-stack valid webhook, partial/concurrent migration failure, abrupt worker crash after a business side effect, database outage/timeout, backup restore, or external alert receipt was verified.
+- Slack is configured in the synthetic environment, so the synthetic alert sender was not invoked. No alert was sent or received.
+- D-1 through D-7 still require owner decisions. AI reply mode must remain MANUAL; customer photo matching, commerce mutations, and webhook auto-booking stay off. The separate text-RAG order matcher remains uncalibrated.
+
+See [05-owner-decisions-d1-d7.md](05-owner-decisions-d1-d7.md) for the consolidated founder package and [11-founder-go-no-go.md](11-founder-go-no-go.md) for the final disposition. Existing OpenAI/Gemini integration analysis and the recommendation to keep the provider configuration are preserved in 06-09. Live inference, provider spend, production changes, push, merge, and deployment are all `NO`/`NOT_RUN`.
+
+## Isolated runtime
+
+The named WSL2 distro is `EasyModPilotRehearsalV1`; its Docker data is on `D:\easymod-runtime\pilot-deployment-rehearsal-v1`. The stack uses project `easymod-pilot-rehearsal-v1`, an internal Compose network, named rehearsal volumes, and synthetic provider placeholders. The final clean shutdown/restart sequence is recorded in 04; no `down --volumes` was used for the main rehearsal project.
+
+After the independent evidence run, all eight containers were gracefully stopped for handoff. The named rehearsal volumes and distro were retained.
+
+Compose source is the production topology plus [docker-compose.rehearsal.override.yml](docker-compose.rehearsal.override.yml). [bootstrap-isolated-wsl-runtime.ps1](bootstrap-isolated-wsl-runtime.ps1) and [install-wsl-docker-runtime.sh](install-wsl-docker-runtime.sh) describe isolated provisioning. Do not treat internal Caddy success as an accessible Windows preview; no firewall, global WSL, Docker Desktop, or host-network changes were made to work around the port-forwarding failure.
 
 ## Review order
 
-1. 00-source-and-environment.md — source pins, isolation, host constraints.
-2. 01-deployment-parity.md — production topology and rehearsal differences.
-3. 02-deployment-rehearsal.md — build, configuration, and runtime evidence.
-4. 03-feature-flags-and-side-effects.md — flag defaults and the interaction delivery fix.
-5. 04-migration-and-recovery.md — database, worker, rollback, and recovery gates.
+1. 00-source-and-environment.md — source pins, runtime isolation, and host-preview limit.
+2. 01-deployment-parity.md — topology, image IDs, configuration fingerprint, and differences.
+3. 02-deployment-rehearsal.md — build, tests, health, and runtime evidence.
+4. 03-feature-flags-and-side-effects.md — flags, kill switches, worker boundary, and side effects.
+5. 04-migration-and-recovery.md — migration, queue recovery, shutdown, and gaps.
 6. 05-owner-decisions-d1-d7.md — one consolidated founder decision package.
-7. 06-ai-provider-inventory.md — current contracts and workload map.
-8. 07-openai-api-evaluation.md and 08-gemini-api-evaluation.md — official API suitability.
-9. 09-provider-cost-privacy-decision.md — cost, privacy, and final provider recommendation.
-10. 10-independent-attestation.md — reviewer coverage and unclosed gates.
-11. 11-founder-go-no-go.md — final handoff.
-
-The machine-readable summary is rehearsal-proof.json. The execution history and skill register are in 12-execution-plan-and-skill-register.md.
-
-## Rehearsal configuration
-
-The committed local-only Compose overlay is docker-compose.rehearsal.override.yml with Caddyfile.rehearsal. It reuses docker-compose.prod.yml service topology, but builds local images, binds only 127.0.0.1 ports 54580/54543, uses a project-isolated network marked internal, supplies synthetic local values through ignored .env.pilot-rehearsal and .env.pilot-images files, explicitly disables image paths for backend, and supplies the same false image flags to worker through the ignored rehearsal env file. Neither service was started; these are config inputs, not runtime observations.
-
-The Compose configuration parser passed:
-
-    docker compose --env-file .env.pilot-rehearsal --env-file .env.pilot-images -f docker-compose.prod.yml -f docs/pilot-deployment-rehearsal-v1/docker-compose.rehearsal.override.yml --project-name easymod-pilot-rehearsal-v1 config --quiet
-
-No rehearsal image was verified by digest and no rehearsal service was started. The local Docker metadata store returned snapshot I/O errors and a read-only filesystem; the system drive also had zero free space. Do not interpret the overlay or parser result as a running preview.
-
-## Resuming runtime work
-
-Have the host owner recover C: space through a reviewed, non-destructive path. Preserve Docker/WSL processes and the unidentified WSL-relayed listener on port 6379; do not prune or restart them to clear this rehearsal. After space is restored, confirm Docker health read-only, review the synthetic env inputs and this overlay, rebuild all local app images from the recorded source SHA, record immutable digests, and run the missing migration, flag, recovery, monitoring, shutdown, and restart gates in the isolated project. Keep external egress blocked and do not load real provider credentials or customer data. A successful config --quiet is only a manifest check.
+7. 06-09 — current AI provider source, official API, cost, and privacy evidence.
+8. 10-independent-attestation.md — review contexts and final independent QA.
+9. 11-founder-go-no-go.md — final handoff.
+10. rehearsal-proof.json and 12-execution-plan-and-skill-register.md — machine-readable result and execution record.

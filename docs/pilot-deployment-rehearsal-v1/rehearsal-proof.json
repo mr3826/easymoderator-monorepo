@@ -14,42 +14,60 @@
   "rehearsal": {
     "branch": "rehearsal/pilot-deployment-v1",
     "worktree": "D:\\easymod\\_rehearsal-pilot-deployment-v1",
-    "codeSha": "714be0072b6c8a8bba181dbe814e284c3b342ffe",
+    "codeSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
     "changes": [
       "SENT-only resolution for numbered pilot interaction choices and resolver-side per-shop feature recheck",
-      "Standalone frontend lockfile synchronized with declared axe-core dependencies"
+      "Standalone frontend lockfile synchronized with declared axe-core dependencies",
+      "Passive queue-manager imports with explicit worker startup/readiness and IPv4 Growth healthcheck"
     ],
     "composeConfig": "PASS",
-    "imageDigests": "NOT_AVAILABLE",
-    "stackStarted": false,
+    "imageDigests": {
+      "backendAndWorker": "sha256:510f16e2ccbf930cc1e6d8404eacad76944d99588e35eda231a45f6a90763b9d",
+      "frontend": "sha256:6839e5de30384ed968e6fc0bdfa38aa0cf9d6bd64a8759125ae93b84b0b7e299",
+      "growthFrontend": "sha256:64485db23a2e266439f6846c5404094a574174738855e66abf947bb54bc0b922",
+      "caddy": "sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794",
+      "postgres": "sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a",
+      "redis": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "qdrant": "sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9"
+    },
+    "stackStarted": true,
     "productionChanged": false,
     "pushed": false,
     "merged": false,
-    "deployed": false
+    "deployed": false,
+    "codeCommit": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+    "documentationPin": "d5dbd21620a0b25b6c57763c2214a95c811c2fbb",
+    "composeConfigFingerprintRedactedSha256": "372d979a0b5de7b578c0578f917d749ff60c7908557a734efa336b1ce8b303db",
+    "stackStoppedCleanly": true,
+    "stackRestarted": true,
+    "hostPreview": "BLOCKED_WINDOWS_WSL_PORT_FORWARDING"
   },
   "statuses": {
     "deploymentEquivalence": "PARTIAL",
-    "deploymentRehearsal": "PARTIAL",
-    "productionDefaultFlags": "PARTIAL_RUNTIME_NOT_RUN",
-    "backgroundMutationDenial": "PARTIAL_SOURCE_TESTS_ONLY",
-    "killSwitchRehearsal": "PARTIAL_SOURCE_TESTS_ONLY",
-    "migrationDryRun": "BLOCKED",
-    "failureRecovery": "NOT_RUN",
-    "rollbackFeasibility": "PARTIAL_SOURCE_PROCEDURE_ONLY",
-    "monitoringVerified": "NOT_RUN",
-    "independentAttestation": "NO_GO",
+    "deploymentRehearsal": "PARTIAL_INTERNAL_STACK_PASS_WINDOWS_PREVIEW_BLOCKED",
+    "productionDefaultFlags": "PASS_CORE_RUNTIME_MUTATION_FLAGS_OFF_PHOTO_MATCH_OVERRIDDEN",
+    "backgroundMutationDenial": "PARTIAL_EXERCISED_SYNTHETIC_PATHS",
+    "killSwitchRehearsal": "PASS_EXERCISED_SYNTHETIC_PATHS",
+    "migrationDryRun": "PASS_SIX_PHASE_DISPOSABLE_POSTGRES",
+    "failureRecovery": "PARTIAL_WORKER_AND_GRACEFUL_REDIS_RECOVERY_INDEPENDENTLY_REPRODUCED;BROAD_FAULTS_NOT_RUN",
+    "rollbackFeasibility": "PARTIAL_DISPOSABLE_MIGRATION_AND_SOURCE_PROCEDURE_ONLY",
+    "monitoringVerified": "PARTIAL_HEALTH_AND_SINK_CONFIG_INDEPENDENTLY_VERIFIED;ALERT_RECEIPT_NOT_RUN",
+    "independentAttestation": "NO_GO_FULL_MILESTONE;BOUNDED_OPERATIONAL_GATES_PASS",
     "productionReleaseVerdict": "NO_GO_PENDING_OWNER_AUTHORIZATION"
   },
   "tests": {
     "backendSecurity": {
       "status": "PASS",
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+      "runtime": "Node 20.20.2",
       "suites": 58,
-      "testsPassed": 812,
-      "testsSkipped": 0,
-      "exitCode": 0
+      "testsPassed": 813,
+      "testsSkipped": "NOT_REPORTED_IN_FINAL_OUTPUT",
+      "exitCode": 0,
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\backend-security.log"
     },
     "fullBackendDefaultSuiteLatestAttempt": {
-      "status": "ABORTED_SAFETY_GUARD",
+      "status": "NOT_RUN_TO_COMPLETION",
       "command": "npm run test --workspace=easymod-backend -- --runInBand",
       "runtime": "Node 20.20.2",
       "exitCode": 1,
@@ -62,10 +80,11 @@
         "127.0.0.1:6379 ECONNREFUSED"
       ],
       "successfulRedisConnection": false,
-      "note": "Interrupted after BullMQ attempted localhost Redis despite blank Redis environment variables; no final Jest totals were emitted."
+      "note": "An earlier default run was stopped after BullMQ attempted unknown localhost Redis on IPv6 and IPv4 and both attempts were refused; no final totals. Final backend security suite used isolated dependencies and passed."
     },
     "interactionAndWorkerFocused": {
-      "status": "PASS",
+      "status": "PASS_PRIOR_CODE_SHA_714BE007",
+      "sourceSha": "714be0072b6c8a8bba181dbe814e284c3b342ffe",
       "suites": 2,
       "testsPassed": 47,
       "testsSkipped": 0,
@@ -73,37 +92,76 @@
     },
     "frontendUnit": {
       "status": "PASS",
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
       "files": 78,
       "testsPassed": 692,
       "testsSkipped": "NOT_RETAINED_IN_EXECUTION_RECORD",
-      "exitCode": 0
+      "exitCode": 0,
+      "warning": "Non-fatal localhost CSRF refusal and localstorage-file warnings",
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\frontend-unit-final.log"
     },
     "frontendBuild": {
       "status": "PASS",
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
       "bundler": "Vite 7.3.6",
       "modulesTransformed": 2758,
-      "warning": "React vendor chunk 549.55 kB"
+      "warning": "React vendor chunk 549.55 kB",
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\frontend-build-final.log"
     },
     "backendBuild": {
       "status": "PASS",
-      "check": "node --check server.js",
-      "exitCode": 0
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+      "check": "Docker backend image built; npm run build also passed node --check server.js",
+      "exitCode": 0,
+      "npmAudit": "3 HIGH findings reported during image build; unresolved release blocker"
     },
     "standaloneFrontendNpmCiDryRun": {
-      "status": "PASS_AFTER_LOCKFILE_FIX",
+      "status": "PASS_FOR_LOCKFILE_COMMIT_714BE007",
       "packagesResolved": 450,
       "exitCode": 0
     },
-    "postgresRedisIntegration": "BLOCKED_DOCKER",
+    "postgresRedisIntegration": "PARTIAL_ISOLATED_PAYMENT_WEBHOOK_REPLAY_AND_WORKER_REDIS_RECOVERY",
     "metaShapedE2e": "NOT_RUN",
     "playwright": "NOT_RUN",
     "customerImageFallbackCoverage": "NOT_COVERED",
-    "migrationDryRun": "BLOCKED_DOCKER"
+    "migrationDryRun": {
+      "status": "PASS",
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+      "command": "npm run test:backend:migration-dryrun",
+      "phases": 6,
+      "seed": "3 shops, 3 customers, 240 generated orders plus 2 deliberate cross-shop shared-key idempotency fixtures; catalog total 242",
+      "exitCode": 0,
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\migration-dryrun.log",
+      "notCovered": [
+        "partial migration failure",
+        "migration concurrency",
+        "backup restore",
+        "production rollback compatibility"
+      ],
+      "independentRerun": {
+        "reviewer": "fresh independent operational verifier",
+        "sourceMarker": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+        "phases": 6,
+        "exitCode": 0,
+        "seed": "240 generated orders plus 2 cross-shop idempotency fixtures; 242 catalog total",
+        "disposableProject": "easymod-prodshaped-46475",
+        "cleanup": "PASS",
+        "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\migration-dryrun-independent-final.log"
+      }
+    },
+    "queueManagerStartupBoundary": {
+      "status": "PASS",
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+      "suites": 1,
+      "testsPassed": 4,
+      "testsSkipped": "NOT_REPORTED_IN_FINAL_OUTPUT",
+      "exitCode": 0,
+      "failedBeforeFix": "12 Worker constructors occurred on manager import; no explicit startWorkers boundary",
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\queue-manager-startup-final.log"
+    }
   },
   "environment": {
-    "docker": "SNAPSHOT_IO_ERROR_AND_READ_ONLY_METADATA_STORE",
-    "systemDriveFreeBytes": 0,
-    "dDriveFreeBytes": 125862297600,
+    "docker": "DEDICATED_WSL2_ENGINE_29.9.2;DOCKER_DESKTOP_UNTOUCHED",
     "userDataDeleted": false,
     "otherServicesStopped": false,
     "providerCalls": 0,
@@ -112,12 +170,6 @@
     "authorizedInferenceBudgetVerified": false,
     "credentialsPrinted": false,
     "realCustomerDataUsed": false,
-    "activeDockerContext": "desktop-linux",
-    "defaultDockerContextEndpoint": "npipe:////./pipe/docker_engine",
-    "defaultDockerContextInfoProbe": "NO_OUTPUT_AFTER_30_SECONDS_INTERRUPTED",
-    "desktopLinuxVersionProbe": "NO_OUTPUT_AFTER_60_SECONDS_INTERRUPTED",
-    "dockerDesktopProcessesPresent": true,
-    "dockerDesktopWslDistroRunning": true,
     "testProcessLocalhost6379Attempt": "ECONNREFUSED_IPV6_AND_IPV4_NO_SUCCESSFUL_CONNECTION",
     "postgresPort5432Listening": false,
     "observedHostPorts": [
@@ -149,7 +201,43 @@
       "postgres",
       "pg_ctl",
       "redis-server"
-    ]
+    ],
+    "runtimeDistro": "EasyModPilotRehearsalV1",
+    "runtimeRootfsSha256": "2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934",
+    "composeVersion": "5.6.1",
+    "nodeVersion": "20.20.2",
+    "npmVersion": "10.8.2",
+    "composeNetworkInternal": true,
+    "composeConfigFingerprintRedactedSha256": "372d979a0b5de7b578c0578f917d749ff60c7908557a734efa336b1ce8b303db",
+    "stackServices": [
+      "backend",
+      "worker",
+      "frontend",
+      "growth-frontend",
+      "caddy",
+      "postgres",
+      "redis",
+      "qdrant"
+    ],
+    "stackStarted": true,
+    "stackStoppedCleanly": true,
+    "stackRestartedHealthy": true,
+    "productionChanged": false,
+    "otherAgentsWorktreesTouched": false,
+    "otherAgentProcessesStopped": false,
+    "hostPreview": {
+      "status": "BLOCKED",
+      "configuredHostBindings": [
+        "127.0.0.1:54580",
+        "127.0.0.1:54543"
+      ],
+      "dockerRuntimePorts": null,
+      "windowsListeners": false,
+      "httpStatus": 0,
+      "httpsStatus": 0,
+      "internalCaddyRoutes": "PASS"
+    },
+    "bootstrapReproducibility": "PARTIAL: Ubuntu rootfs, Docker packages, and Node archive are hash/version pinned; supporting Ubuntu utility packages use signed repository versions without pins."
   },
   "providerDecision": {
     "recommendation": "KEEP_CURRENT_PROVIDER_CONFIGURATION",
@@ -167,7 +255,7 @@
   },
   "costEvidence": {
     "existingPhotoCostDocsConflict": true,
-    "julyAuditVisionClaim": "NO_IMAGE_TOKENS; STALE_FOR_CODE_SHA_714BE007",
+    "julyAuditVisionClaim": "NO_IMAGE_TOKENS; STALE_FOR_REHEARSAL_CODE_SHA_6D6BC1DD",
     "augustAssumptionPhotoCostScenarioUsdPerConversation": 0.0008,
     "historicalSyntheticImageTokensPerPhoto": 1064,
     "geminiFlashLitePaidImageInputUsdPerMillionTokens": 0.25,
@@ -184,10 +272,10 @@
     "customerPhotoMatchProductionRendererDefault": true,
     "customerPhotoMatchBackendOverride": false,
     "customerPhotoMatchWorkerEnvFileValue": false,
-    "customerPhotoMatchWorkerRuntimeStatus": "NOT_RUN",
+    "customerPhotoMatchWorkerRuntimeStatus": "FLAG_OFF_RUNTIME_CONFIRMED_NO_JOB_RUN",
     "visionBackendOverride": false,
     "visionWorkerEnvFileValue": false,
-    "visionWorkerRuntimeStatus": "NOT_RUN",
+    "visionWorkerRuntimeStatus": "FLAG_OFF_RUNTIME_CONFIRMED_NO_JOB_RUN",
     "customerImageOpenAiFallbackSupportedBySource": true,
     "imageFallbackTestCoverage": "NOT_COVERED",
     "orderFlowImageMatcherIgnoresPhotoMatchFlag": true,
@@ -203,11 +291,11 @@
   "ownerDecisions": {
     "D1": "DEFER_LIVE_TRAFFIC_UNTIL_RUNTIME_AND_GOVERNANCE_GATES_PASS; THEN_CONSIDER_ONE_OPTED_IN_SHADOW_MANUAL_SHOP_FOR_WORKFLOW_LEARNING; METRICS_AND_DENOMINATORS_UNRESOLVED",
     "D2": "NO_NEW_GRAPH_SCOPES; HUMAN_AGENT_AND_COMPLIANCE_CONFIRMATION_REQUIRED",
-    "D3": "ALERT_CHANNEL_AND_OPERATOR_REQUIRED; ALERT_NOT_VERIFIED",
-    "D4": "KEEP_SWITCHES_OFF; NAME_OPERATOR_AND_SECOND_APPROVER",
+    "D3": "HEALTH_AND_READINESS_PASS; SLACK_CONFIGURED_SYNTHETIC_ALERT_NOT_RUN; ALERT_RECEIPT_NOT_VERIFIED",
+    "D4": "THREE_SYNTHETIC_KILL_SWITCH_LEVELS_PASS; KEEP_FLAGS_OFF; NAME_OPERATOR_AND_SECOND_APPROVER",
     "D5": "MOBILE_UPLOAD_ROUTE_ABSENT; KEEP_MOBILE_API_OFF",
     "D6": "ACCEPT_OR_DEFER_V6_PHASE_D_DEBT; PRESERVE_INBOX_GUARANTEES",
-    "D7": "KEEP_WEBHOOK_AUTO_BOOKING_OFF; MANUAL_DISPATCH"
+    "D7": "KEEP_WEBHOOK_AUTO_BOOKING_OFF; MISSING_SIGNATURE_503; SEPARATE_THROWAWAY_REPLAY_RACE_TESTS_PASS; MANUAL_DISPATCH"
   },
   "credentialInventory": {
     "openaiRequestedAlias": "EM_OPENAI_KEY",
@@ -230,7 +318,7 @@
       "GEMINI_API_KEY"
     ],
     "geminiSourceContractCredentialAvailability": "UNKNOWN_FOR_REAL_ENV_KEY",
-    "credentialValuesRead": false,
+    "credentialValuesRead": true,
     "credentialValuesPrinted": false,
     "openaiRequestedAliasMappedToSourceContract": false,
     "openaiLiveCredentialPassedToRehearsal": false,
@@ -238,7 +326,8 @@
     "geminiRequestedAliasMappedToSourceContract": false,
     "geminiLiveCredentialPassedToRehearsal": false,
     "geminiSyntheticPlaceholderPresent": true,
-    "realCredentialValuesInjected": false
+    "realCredentialValuesInjected": false,
+    "credentialValuesReadPurpose": "Transient in-memory comparison against the ignored rehearsal env file to prevent accidental injection; values were not printed, persisted, or passed to WSL."
   },
   "reviewBoard": {
     "sre": "COMPLETED_SOURCE_AND_HOST_REVIEW_RUNTIME_PARTIAL_NO_GO",
@@ -248,8 +337,20 @@
     "bazarlens": "COMPLETED_SOURCE_QUALITY_REVIEW_TASK_QUALITY_NOT_ESTABLISHED_LIVESTREAM_GAP",
     "fieldFounder": "COMPLETED_COMMERCIAL_REVIEW_NO_LIVE_COHORT_RECOMMENDATION",
     "momentumUX": "COMPLETED_PROVIDER_OUTAGE_UI_AND_BANGLA_PRICE_FALLBACK_GAPS",
-    "qa": "COMPLETED_READ_ONLY_PROVENANCE_SOURCE_AND_LOCKFILE_REVIEW_NO_TESTS_RUN",
-    "independentFullStackAttestation": "NOT_COMPLETED_RUNTIME_GATES_UNAVAILABLE"
+    "independentFullStackAttestation": "NO_GO_FULL_MILESTONE;BOUNDED_OPERATIONAL_GATES_INDEPENDENTLY_PASSED",
+    "historicalQa": "COMPLETED_READ_ONLY_PROVENANCE_SOURCE_AND_LOCKFILE_REVIEW_NO_TESTS_RUN",
+    "independentPackageQa": {
+      "firstReview": "PARTIAL; provenance, targeted test, images/config, and allowed probes verified; documentation corrections applied",
+      "operationalFollowup": "PASS_BOUNDED_GATES",
+      "sourceSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+      "migrationDryRun": "PASS_EXIT_0_SIX_PHASES",
+      "queueAndRedisRecovery": "PASS_BOTH_SCENARIOS_EXIT_0",
+      "killSwitches": "PASS_EXIT_0_SYNTHETIC",
+      "monitoring": "PARTIAL_HEALTH_PASS_ALERT_NOT_SENT_OR_RECEIVED",
+      "shutdownRestart": "PASS_BOTH_EXITS_0",
+      "hostPreview": "BLOCKED",
+      "fullMilestoneVerdict": "NO_GO"
+    }
   },
   "packageConsistencyAudit": {
     "reviewedCommitBeforeCorrections": "0da680a3c59b0583c6b77e932e19da95a3ecaa80",
@@ -263,11 +364,168 @@
       "runtimeAttestation": "NOT_PERFORMED"
     }
   },
-  "flowGuardCurrentClaimRecheck": {
+  "initialEvidencePackageCommit": "0da680a3c59b0583c6b77e932e19da95a3ecaa80",
+  "runtimeEvidence": {
+    "apiSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+    "migrationCount": 66,
+    "latestMigration": "20261026_001_order_idempotency_unique",
+    "healthEndpoints": {
+      "/health/live": 200,
+      "/health/ready": 200,
+      "/health/sse": 200,
+      "/api/version": 200
+    },
+    "readiness": {
+      "database": "connected",
+      "redis": "connected",
+      "ssePubsub": "ready",
+      "sseConnections": 0
+    },
+    "runtimeFlags": {
+      "START_EMBEDDED_WORKERS": false,
+      "RUN_WORKER": "UNSET",
+      "DOMAIN_AGENT_RUNTIME_ENABLED": false,
+      "AI_ORDER_MUTATIONS_ENABLED": false,
+      "AI_COURIER_BOOKING_ENABLED": false,
+      "AI_PAYMENT_ACCEPTANCE_ENABLED": false,
+      "AI_SUPPORT_CASE_ENABLED": false,
+      "AI_PHOTO_MATCH_ENABLED": false,
+      "AI_VISION_ENABLED": false,
+      "MOBILE_API_ENABLED": false
+    },
+    "queueOwnership": {
+      "workerStoppedCanaryState": "WAITING",
+      "workerRestartResult": "COMPLETED_ONCE",
+      "result": {
+        "canary": true,
+        "ok": true
+      },
+      "independentReceipt": {
+        "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\worker-recovery-independent-final.log",
+        "workerStopScenarioExit": 0,
+        "stateWhileStopped": "waiting",
+        "result": {
+          "canary": true,
+          "ok": true
+        },
+        "queueCountsAfterCleanup": {
+          "waiting": 0,
+          "active": 0,
+          "delayed": 0,
+          "failed": 0
+        }
+      }
+    },
+    "redisRecovery": {
+      "restart": "GRACEFUL",
+      "pendingJobPreserved": true,
+      "completedAfterWorkerRestart": true,
+      "independentReceipt": {
+        "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\worker-recovery-independent-final.log",
+        "redisStopStartScenarioExit": 0,
+        "pendingPreservedWhileWorkerStopped": true,
+        "result": {
+          "canary": true,
+          "ok": true
+        },
+        "queueCountsAfterCleanup": {
+          "waiting": 0,
+          "active": 0,
+          "delayed": 0,
+          "failed": 0
+        },
+        "finalWorkerRedis": {
+          "running": true,
+          "healthy": true,
+          "restartCount": 0
+        }
+      }
+    },
+    "killSwitches": {
+      "global": "DENIED_RUNTIME_KILL_SWITCH_ENABLED_AUDITED",
+      "conversation": "ai_paused",
+      "shop": "manual_mode",
+      "syntheticMessages": 0,
+      "independentExitCode": 0,
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\kill-switches-independent-final.log",
+      "manualInAppHitlNotification": "QUEUED_FOR_SYNTHETIC_SHOP",
+      "customerMessageCount": 0,
+      "externalCustomerSend": false,
+      "note": "Synthetic shop had no push subscription or Telegram binding; internal network has no egress."
+    },
+    "webhookMissingSignatureStatus": 503,
+    "monitoring": {
+      "slackConfigured": true,
+      "sentryConfigured": false,
+      "syntheticAlert": "NOT_RUN_EXTERNAL_SINK_CONFIGURED",
+      "alertReceipt": false,
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\monitoring-independent-final.log",
+      "independentExitCode": 0,
+      "healthLive": 200,
+      "healthReady": 200,
+      "healthSse": 200,
+      "database": "connected",
+      "redis": "connected",
+      "sendTestAlertCalled": false,
+      "alertReceived": false
+    },
+    "caddyInternalRoutes": {
+      "/health/live": 200,
+      "/health/ready": 200,
+      "/api/version": 200,
+      "/": 200,
+      "/growth/health/ready": 200
+    },
+    "hostPreview": "BLOCKED_WINDOWS_WSL_PORT_FORWARDING",
+    "stackCleanShutdownAndRestart": "PASS",
+    "backendImageAudit": "3_HIGH_FINDINGS",
+    "exploratoryProbeNotes": [
+      "Compose hostname caddy did not resolve from the WSL distro host; replaced with direct container-IP TLS probes.",
+      "Auxiliary docker info format query requested unsupported .DefaultBridge; network Internal=true and direct Caddy HTTP 200 were observed before that diagnostic error."
+    ],
+    "growthContainerInspectFinal": {
+      "path": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\growth-container-inspect-final.json",
+      "imageId": "sha256:64485db23a2e266439f6846c5404094a574174738855e66abf947bb54bc0b922",
+      "health": "healthy",
+      "secrets": "ENVIRONMENT_NAMES_ONLY_NO_VALUES"
+    },
+    "supersededArtifact": "growth-container-inspect.json captured before final Growth image recreation; do not use for final image identity.",
+    "finalEdgeProbe": {
+      "status": "PASS",
+      "source": "direct Caddy container IP via TLS from isolated WSL distro",
+      "routes": {
+        "/health/live": 200,
+        "/health/ready": 200,
+        "/api/version": 200,
+        "/": 200,
+        "/growth/health/ready": 200
+      },
+      "apiSha": "6d6bc1dd056e09202b97d05e81f20308b15109ab",
+      "migrationCount": 66
+    },
+    "shutdownRestartIndependent": {
+      "log": "D:\\easymod-runtime\\pilot-deployment-rehearsal-v1\\compose-shutdown-restart-independent-final.log",
+      "stopExitCode": 0,
+      "restartExitCode": 0,
+      "finalState": "ALL_EIGHT_RUNNING;BACKEND_WORKER_GROWTH_POSTGRES_REDIS_HEALTHY",
+      "volumesRemoved": false,
+      "internalNetwork": true
+    },
+    "handoffFinalState": {
+      "project": "easymod-pilot-rehearsal-v1",
+      "containers": 8,
+      "state": "STOPPED",
+      "stopMethod": "PROJECT_SCOPED_DOCKER_COMPOSE_STOP",
+      "volumesRemoved": false,
+      "distroPreserved": true,
+      "otherServicesStopped": false
+    }
+  },
+  "flowGuardPreQueueOwnershipCorrectionClaimRecheck": {
     "reviewer": "FlowGuard",
     "gitHeadAtReview": "bcb8279b8612484af68393e94b6f6763cb836835",
     "applicationSourceSha": "714be0072b6c8a8bba181dbe814e284c3b342ffe",
-    "reviewState": "REHEARSAL_DOCUMENT_EDITS_PRESENT_IN_WORKING_TREE",
+    "reviewState": "HISTORICAL_REVIEW_AT_CODE_SHA_714BE007_WITH_UNCOMMITTED_DOC_EDITS",
     "scope": [
       "cost-document-conflict-and-conditional-image-token-arithmetic",
       "customer-photo-gemini-openai-fallback-and-separate-text-rag-order-selection",
@@ -281,6 +539,5 @@
     "providerCalls": 0,
     "runtimeAttestation": "NOT_PERFORMED",
     "overallReleaseVerdict": "NO_GO"
-  },
-  "initialEvidencePackageCommit": "0da680a3c59b0583c6b77e932e19da95a3ecaa80"
+  }
 }
