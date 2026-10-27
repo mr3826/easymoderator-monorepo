@@ -8,7 +8,7 @@ EasyModerator already contains direct server-side HTTP integrations. This rehear
 2. Gemini 3.1 Pro Preview is available for explicit high-stakes preference or configured escalation; automatic escalation is not the default.
 3. OpenAI GPT-4.1 mini is the final fallback.
 
-The code reads Gemini from EM-GEMINI-KEY or GEMINI_API_KEY and OpenAI from OPENAI_API_KEY. The requested Windows variable EM_GEMINI_KEY is not the exact source name; EM_OPENAI_KEY is not read by this adapter. User/process presence was checked by name only. No real value was mapped into the rehearsal.
+The code reads Gemini from EM-GEMINI-KEY or GEMINI_API_KEY and OpenAI from OPENAI_API_KEY. The requested Windows variable EM_GEMINI_KEY is not the exact source name; EM_OPENAI_KEY is not read by this adapter. Presence and scope were inventoried for the two requested aliases. The bootstrap preflight transiently read those values in memory only to compare them against the ignored rehearsal env file and prevent accidental injection; it did not print, persist, map, or pass either value to WSL. No real value was mapped into the rehearsal.
 
 Separate source paths use Gemini embedding-2 with an optional OpenAI embedding fallback, and an older Gemini 1.5 Flash voice-processing model. Model IDs differ across legacy tier-selection and voice paths, so the shared LLM model list is not the whole model inventory.
 
