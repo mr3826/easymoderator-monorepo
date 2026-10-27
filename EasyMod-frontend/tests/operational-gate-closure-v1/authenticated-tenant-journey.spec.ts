@@ -350,7 +350,16 @@ test('authenticated merchant workflow stays shop-scoped and closes the operation
     expect(Array.isArray(shopBTags)).toBe(true);
     expect(shopBTags.map((tag: AnyRecord) => tag.name)).not.toContain(FIXTURE.tagName);
 
+    // Match the production frontend client: state-changing requests carry the
+    // session-bound CSRF token returned by /api/csrf. Without this header the
+    // security middleware correctly returns 403 before tenant scoping runs.
+    const csrfResponse = await contextB.request.get(`${baseURL}/api/csrf`);
+    expect(csrfResponse.status(), 'Shop B receives its session CSRF token').toBe(200);
+    const csrfToken = (await csrfResponse.json()).csrfToken;
+    expect(typeof csrfToken).toBe('string');
+
     const deniedCancel = await contextB.request.patch(`${baseURL}/api/order/${encodeURIComponent(orderAId)}`, {
+      headers: { 'X-CSRF-Token': csrfToken },
       data: { order_status: 'cancelled' },
     });
     expect(deniedCancel.status(), 'Shop B cannot mutate Shop A commerce records').toBe(404);
