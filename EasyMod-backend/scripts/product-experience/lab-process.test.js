@@ -67,7 +67,8 @@ describe('Test Lab spawned production-route processes', () => {
         server = null;
     });
 
-    test.skipIf(!fs.existsSync(DATASET_PATH))('executes a real spawned persona replay, playground turn, and fixed triage case', async () => {
+    const testDataset = fs.existsSync(DATASET_PATH) ? test : test.skip;
+    testDataset('executes a real spawned persona replay, playground turn, and fixed triage case', async () => {
         server = createLabServer({ datasetPath: DATASET_PATH });
         await server.start();
         const base = `http://127.0.0.1:${server.address().port}`;

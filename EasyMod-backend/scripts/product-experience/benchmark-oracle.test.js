@@ -5,7 +5,9 @@ const { DEFAULT_INPUT, normalizeInputType } = require('./replay');
 const { buildOracle } = require('./benchmark-oracle');
 const { createV12Catalog } = require('./catalog-fixtures-v1-2');
 
-describe.skipIf(!fs.existsSync(DEFAULT_INPUT))('frozen independent customer-truth oracle', () => {
+const datasetAvailable = fs.existsSync(DEFAULT_INPUT);
+const describeDataset = datasetAvailable ? describe : describe.skip;
+describeDataset('frozen independent customer-truth oracle', () => {
     test('classifies the unchanged 200-turn source without persisting message or advisory-answer cells', () => {
         const source = fs.readFileSync(DEFAULT_INPUT);
         const rows = buildOracle(source, createV12Catalog());

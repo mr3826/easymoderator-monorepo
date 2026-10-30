@@ -1264,7 +1264,8 @@ const loadFrozenOracle = (oraclePath, datasetSource) => {
 describe('Product Engine local Test Lab route replay', () => {
     jest.setTimeout(mode === 'real-gemini' ? 1800000 : 180000);
 
-    test.skipIf(!fs.existsSync(DEFAULT_INPUT))('executes the selected source turns sequentially through the production router and grounding gate', async () => {
+    const testDataset = fs.existsSync(DEFAULT_INPUT) ? test : test.skip;
+    testDataset('executes the selected source turns sequentially through the production router and grounding gate', async () => {
         if (process.env.LAB_OPERATION === 'triage') {
             const receipt = await executeTriage();
             expect(receipt.provenance.externalCalls).toBe(0);
