@@ -52,9 +52,9 @@ regexes = [
 [[allowlists]]
 description = "Reviewed rehearsal evidence receipts containing only public 40-hex git commit SHAs (apiSha deployment candidates, already published across docs and container labels); git object IDs are not credentials."
 paths = [
-  '''^docs/pilot-deployment-rehearsal-v1/rehearsal-proof\.json\$''',
+  '''^docs/pilot-deployment-rehearsal-v1/rehearsal-proof\.json$''',
 ]
 regexTarget = "match"
 regexes = [
-  '''^[0-9a-f]{40}\$''',
+  '''^[0-9a-f]{40}$''',
 ]
