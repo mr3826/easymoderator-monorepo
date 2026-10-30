@@ -39,13 +39,13 @@ Built directly on `docs/pilot-deployment-rehearsal-v1/05-owner-decisions-d1-d7.m
 - **Acceptance condition:** Written authority matrix + one rehearsed production-side flag flip + verification query results.
 
 ## D-5 — Mobile limitation
-- **Current evidence:** `POST /api/mobile/products/images` remains absent in the candidate (client flow `useProducts.ts:216`); `MOBILE_API_ENABLED` literal-`'true'`-only default OFF (`config.js:43`). The controlled Messenger pilot does not depend on mobile upload; the truthful "feature disabled" presentation pattern is demonstrated on the preview (01).
-- **Recommended:** Keep mobile API disabled; gate the client upload path on capability detection; exclude mobile photo upload from pilot scope explicitly.
+- **Current evidence:** `POST /api/mobile/products/images` remains absent in the candidate (client flow `useProducts.ts:216`); `MOBILE_API_ENABLED` is literal-`'true'`-only and defaults OFF at source (`config.js:43`) — **however the repo records the mobile API ENABLED in production** since the 2026-09-26 activation (`docs/mobile/MOBILE_EXECUTION_STATE.md`; 49/50 production API proof, read-only writes, refusal of cross-shop + admin surfaces). The live mobile limitation is therefore specifically the photo-upload endpoint (plus Wave-3 mutation sub-flags, never rendered for production). The truthful "feature disabled" presentation pattern is demonstrated on the preview (01, action-queue 409).
+- **Recommended:** Keep capability-gating the client upload path; explicitly exclude mobile photo upload from pilot scope; accept that other mobile API surfaces are production-live and pilot-relevant.
 - **Alternative:** Absorb the mobile branch endpoint in a separately scoped post-pilot increment.
-- **Risk:** Mobile testers hit an unavailable feature without clear messaging.
-- **Blocks limited pilot:** NO if scope excludes mobile.
+- **Risk:** Mobile testers hit an unavailable feature without clear messaging — higher salience now because real mobile clients exist against the live API.
+- **Blocks limited pilot:** NO if scope excludes mobile photo upload.
 - **Owner authority:** Product owner.
-- **Acceptance condition:** Written scope note excluding mobile photo upload + client capability-gate confirmation.
+- **Acceptance condition:** Written scope note excluding mobile photo upload + client capability-gate confirmation + acknowledgment that the mobile API surface is live in production.
 
 ## D-6 — V6/Phase-D debt
 - **Current evidence:** 30-item V6 action-first UX list + one skipped Phase-D `Channels.tsx` e2e spec unchanged; no UX work was in scope this milestone. Inbox guarantees re-validated on the current stack: authenticated journeys (chromium 58.5s / firefox 1.3m, pilot logs) still assert draft-unsent (`DRAFT_DELIVERY_NOT_CONFIRMED`), dismissed-expiry persistence, handoff claim/resolve, expired-window no-send, and cross-tenant 404s.
