@@ -21,8 +21,8 @@
 
 ## Baseline regression evidence
 
-- Four critical suites passed: **126 tests** at the baseline SHA. Details are in [initial-baseline-tests.json](artifacts/initial-baseline-tests.json).
-- Direct baseline resolver replay: **193 `NOT_FOUND`, 6 `NONE`, 1 `VERIFIED`**, with related evidence on 48 turns and no identifying terms on the 6 `NONE` turns. The aggregate report is [initial-baseline-replay.json](artifacts/initial-baseline-replay.json).
+- Four critical suites passed: **126 tests** at the baseline SHA. Details are in `artifacts/initial-baseline-tests.json` (local evidence artifact; not committed).
+- Direct baseline resolver replay: **193 `NOT_FOUND`, 6 `NONE`, 1 `VERIFIED`**, with related evidence on 48 turns and no identifying terms on the 6 `NONE` turns. The aggregate report is `artifacts/initial-baseline-replay.json` (local evidence artifact; not committed).
 - Dataset SHA-256: `892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6`.
 
 These results establish a small offline baseline, not a live database, worker, Messenger, or model baseline. The dataset is adversarial and is not merchant truth.

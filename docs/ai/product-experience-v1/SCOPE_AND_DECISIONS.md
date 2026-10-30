@@ -58,5 +58,5 @@ Out of scope: new model providers, vector stores, product UI redesign, mobile wo
 - **Chosen:** keep the deterministic evidence replay and add a sequential 200-turn replay through the production `intent-router.route()` and outbound grounding gate with a local fake model that returns unsupported claims. Database, FAQ, cache, audit, search, and provider collaborators are mocked.
 - **Value / cost:** proves deterministic routing and send-gate behavior without paid calls or business writes.
 - **Limit:** it is not a real database, worker, provider, image-recognition, or Messenger integration test.
-- **Evidence:** [200-turn-replay.json](artifacts/200-turn-replay.json) and [production-router-replay.json](artifacts/production-router-replay.json).
+- **Evidence:** `artifacts/200-turn-replay.json` (local evidence artifact; not committed) and `artifacts/production-router-replay.json` (local evidence artifact; not committed).
 - **Independent verdict:** pending Agent H final review.
