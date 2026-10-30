@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const fs = require('node:fs');
 const path = require('node:path');
 const { createLabServer, DATASET_PATH } = require('./lab-server');
 
@@ -67,7 +68,7 @@ describe('local Product Engine Test Lab HTTP server', () => {
         active = null;
     });
 
-    test('serves a tokenized same-origin UI, health, and a PII-safe 20-persona/200-turn dataset index', async () => {
+    test.skipIf(!fs.existsSync(DATASET_PATH))('serves a tokenized same-origin UI, health, and a PII-safe 20-persona/200-turn dataset index', async () => {
         active = await start();
         const page = await get(active.url);
         expect(page.status).toBe(200);
