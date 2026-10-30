@@ -17,7 +17,7 @@
 | 2 | D-2 Meta console current state | Confirm Human-Agent eligibility + email/support/data-deletion URLs | YES for AI modes | ☐ |
 | 3 | D-3 alert channel + on-call | Name them; run test-alert; human ack recorded | YES | ☐ |
 | 4 | D-4 kill-switch operators | Named per level; two-person rule on global mutation flags | YES | ☐ |
-| 5 | D-5 mobile exclusion | Accept photo-upload limitation; exclude it from scope — note the rest of the mobile API is production-live since 2026-09-26 (`04`, `06`) | No | ☐ |
+| 5 | D-5 mobile photo scope | Accept URL-paste photo-draft (working end-to-end at candidate); exclude camera-file upload; mobile API is production-live since 2026-09-26 (`04`, `06`) | No | ☐ |
 | 6 | D-6 UX debt acceptance | Defer with Inbox guarantees pinned as release condition | No | ☐ |
 | 7 | D-7 auto-booking stance | Keep OFF, manual dispatch | No (safe default) | ☐ |
 | 8 | Image-transfer condition | Keep photo matching OFF; approve provider terms before any enablement | YES for photo features | ☐ |
