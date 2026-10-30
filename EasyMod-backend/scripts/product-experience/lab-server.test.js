@@ -60,7 +60,8 @@ const start = async options => {
     return { server, url: `http://127.0.0.1:${server.address().port}`, token: server.lab.token };
 };
 
-describe('local Product Engine Test Lab HTTP server', () => {
+const describeDataset = fs.existsSync(DATASET_PATH) ? describe : describe.skip;
+describeDataset('local Product Engine Test Lab HTTP server', () => {
     let active;
 
     afterEach(async () => {
@@ -68,8 +69,7 @@ describe('local Product Engine Test Lab HTTP server', () => {
         active = null;
     });
 
-    const testDataset = fs.existsSync(DATASET_PATH) ? test : test.skip;
-    testDataset('serves a tokenized same-origin UI, health, and a PII-safe 20-persona/200-turn dataset index', async () => {
+    test('serves a tokenized same-origin UI, health, and a PII-safe 20-persona/200-turn dataset index', async () => {
         active = await start();
         const page = await get(active.url);
         expect(page.status).toBe(200);
