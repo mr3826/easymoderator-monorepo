@@ -26,6 +26,16 @@ describe('mobile E2E fixture gate', () => {
         expect(fixtures.isMobileE2eFixturesEnabled(ENABLED_ENV)).toBe(true);
     });
 
+    test('allows the isolated Compose PostgreSQL service only in NODE_ENV=test', () => {
+        const composeEnv = {
+            ...ENABLED_ENV,
+            DATABASE_URL: 'postgres://e2e:e2e@postgres:5432/easymod_mobile_e2e',
+        };
+
+        expect(fixtures.isMobileE2eFixturesEnabled(composeEnv)).toBe(true);
+        expect(fixtures.isMobileE2eFixturesEnabled({ ...composeEnv, NODE_ENV: 'production' })).toBe(false);
+    });
+
     test.each([
         ['production NODE_ENV', { NODE_ENV: 'production' }],
         ['development NODE_ENV', { NODE_ENV: 'development' }],
@@ -35,6 +45,7 @@ describe('mobile E2E fixture gate', () => {
         ['missing token', { MOBILE_E2E_FIXTURES_TOKEN: undefined }],
         ['short token', { MOBILE_E2E_FIXTURES_TOKEN: 'short-token' }],
         ['remote database host', { DATABASE_URL: 'postgres://e2e:e2e@10.0.0.5:5432/easymod_mobile_e2e' }],
+        ['other service database host', { DATABASE_URL: 'postgres://e2e:e2e@database:5432/easymod_mobile_e2e' }],
         ['production database name', { DATABASE_URL: 'postgres://e2e:e2e@127.0.0.1:5432/easymod_production_test' }],
         ['non-disposable database name', { DATABASE_URL: 'postgres://e2e:e2e@127.0.0.1:5432/easymod' }],
         ['non-postgres URL', { DATABASE_URL: 'mysql://e2e:e2e@127.0.0.1:3306/easymod_test' }],

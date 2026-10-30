@@ -6,6 +6,9 @@ const PW_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || `http://${PW_HOST}:${PW_P
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Live-stack founder walkthrough is run explicitly, never in CI/e2e sweeps
+  // (it needs the seeded lab servers): set PW_WALKTHROUGH=1 to include it.
+  testIgnore: process.env.PW_WALKTHROUGH ? [] : /walkthrough/,
   fullyParallel: true,
   timeout: 30_000,
   expect: {

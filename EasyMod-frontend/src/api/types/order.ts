@@ -40,6 +40,8 @@ export interface Order {
   id: string;
   orderNumber?: string;
   customerName: string;
+  /** Verified shop-scoped customer id (FE-08) — the only safe order→conversation link. */
+  customerId?: string;
   customerPhone?: string;
   deliveryAddress?: string;
   delivery_address?: DeliveryAddress;
@@ -53,8 +55,11 @@ export interface Order {
   payment_status?: string;
   payment_method?: string;
   delivery_tracking_code?: string;
+  delivery_consignment_id?: string;
   delivery_provider?: string;
   delivery_booked_at?: string;
+  delivery_status?: string | null;
+  delivery_dispatched_at?: string | null;
   note?: string;
 }
 

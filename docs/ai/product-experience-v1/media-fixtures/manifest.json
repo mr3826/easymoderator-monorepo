@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "sourceImagesProvided": false,
+  "realVisionEvaluation": "NOT_RUN",
+  "fixtures": [
+    {
+      "id": "image-1",
+      "path": "EasyMod-backend/tests/fixtures/product-experience/inbound/image-1.svg",
+      "sha256": "00116BDDCDB9A606EEA596FCE7F5A67353F118AC5B03A91595A9FD25AAA2400C",
+      "classification": "synthetic pipeline substitute",
+      "modelInvoked": false
+    },
+    {
+      "id": "image-2",
+      "path": "EasyMod-backend/tests/fixtures/product-experience/inbound/image-2.svg",
+      "sha256": "4EE62612A073DADE09938C3D87C681BD1EB6F80AC9506128482E304CDE652F26",
+      "classification": "synthetic pipeline substitute",
+      "modelInvoked": false
+    },
+    {
+      "id": "image-3",
+      "path": "EasyMod-backend/tests/fixtures/product-experience/inbound/image-3.svg",
+      "sha256": "92B7FF157092DFFE335A01720A29569FCAA6A6E94513ADC71168A90073742AEF",
+      "classification": "synthetic pipeline substitute",
+      "modelInvoked": false
+    },
+    {
+      "id": "image-4",
+      "path": "EasyMod-backend/tests/fixtures/product-experience/inbound/image-4-prompt-injection.svg",
+      "sha256": "00F4AD43797477849A89CB0065D2B80C597BFEDD59D97CF89EAA13D469CF4B39",
+      "classification": "synthetic prompt-injection pipeline substitute",
+      "modelInvoked": false
+    }
+  ],
+  "handling": {
+    "csvAttachmentLabelsAreMetadataOnly": true,
+    "customerImagesAreNotMerchantProductMedia": true,
+    "substitutesDoNotProveImageRecognitionAccuracy": true
+  }
+}

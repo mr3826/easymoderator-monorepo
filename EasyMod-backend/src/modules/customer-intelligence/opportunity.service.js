@@ -502,6 +502,41 @@ async function listOpportunities(shopId, { status = 'LIVE', page = 1, pageSize =
     return { data: rows.map((row) => serializeOpportunity(row, now)), total: count, page, pageSize };
 }
 
+/**
+ * P+01: batch live-opportunity projection keyed by customer id, built with the
+ * SAME serializer the opportunity API uses — the Inbox shows this exact
+ * authoritative shape, never a second/competing projection. At most one live
+ * row per customer exists (partial unique index), so the map is well-defined.
+ * @param {string} shopId
+ * @param {string[]} customerIds
+ * @returns {Promise<Map<string, object>>}
+ */
+async function liveOpportunitiesForCustomers(shopId, customerIds, now = new Date()) {
+    const ids = [...new Set((Array.isArray(customerIds) ? customerIds : []).filter(Boolean))];
+    const out = new Map();
+    if (!shopId || ids.length === 0) return out;
+    const { CustomerOpportunity, Customer } = entities();
+    const rows = await CustomerOpportunity.findAll({
+        where: {
+            shop_id: shopId,
+            customer_id: { [Op.in]: ids },
+            status: { [Op.in]: LIVE_STATUSES },
+        },
+        include: [{
+            model: Customer,
+            as: 'customer',
+            attributes: ['id', 'name', 'channel_type', 'messaging_consent'],
+            where: { shop_id: shopId },
+            required: true,
+        }],
+    });
+    for (const row of rows) {
+        const data = plain(row);
+        out.set(data.customer_id, serializeOpportunity(row, now));
+    }
+    return out;
+}
+
 const median = (values) => {
     if (!values.length) return null;
     const sorted = [...values].sort((a, b) => a - b);
@@ -561,6 +596,7 @@ module.exports = {
     markContacted,
     dismiss,
     listOpportunities,
+    liveOpportunitiesForCustomers,
     serializeOpportunity,
     recommendedAction,
 };

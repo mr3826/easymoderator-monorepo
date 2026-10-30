@@ -1,0 +1,875 @@
+{
+  "schemaVersion": 1,
+  "checkpointTimestampLocal": "2026-10-24 05:38:00 +06:00",
+  "timezone": "Asia/Dhaka",
+  "pauseStatus": "PARTIALLY_PAUSED",
+  "project": "EasyModerator",
+  "milestone": "Product Engine V1.3 - Integration and Customer Truth Verification",
+  "pauseReason": "Explicit controlled pause for independent review and work-history handoff.",
+  "repository": {
+    "repositoryPath": "D:\\easymod\\easy-moderator",
+    "worktreePath": "D:\\easymod\\_wt-product-engine-v1-3",
+    "branch": "feature/product-engine-v1.3-customer-truth",
+    "currentCodeHead": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+    "baselineSha": "957bb991a18db1949369a6f805822b8c8b69889b",
+    "backendSourceSha256": "e1168c0e5e9cf6132a379053144f85e94089c4c430664de1f62716f26e6a11fa",
+    "commitsSinceBaseline": 62,
+    "trackedChanges": [],
+    "stagedChanges": [],
+    "untrackedFiles": [
+      {
+        "path": "EasyMod-backend/src/modules/ai/intent-router.lab-baseline-3d0e15d3-2280-4546-8628-4437618fd21e.js",
+        "sizeBytes": 78330,
+        "sha256": "F9AAC74F861332B7A80997535FBC1284EE63EF19A82FE94C4DFF320C324DA258",
+        "status": "preserved; creator/lifecycle unknown"
+      },
+      {
+        "path": "docs/ai/product-experience-v1-3/checkpoints/V1_3_PAUSE_STATE_AND_WORK_HISTORY.md",
+        "status": "created by checkpoint"
+      },
+      {
+        "path": "docs/ai/product-experience-v1-3/checkpoints/v1.3-checkpoint-state.json",
+        "status": "created by checkpoint"
+      }
+    ],
+    "worktreeClean": false,
+    "mergeRebaseCherryPickMarkers": false,
+    "checkpointCommit": null,
+    "pushed": false,
+    "merged": false,
+    "deployed": false
+  },
+  "agents": [
+    {
+      "id": "/root/architecture_challenge",
+      "role": "independent code-change reviewer",
+      "actualTask": "Re-review pairedPreference proof binding at 2aedd348.",
+      "workCompleted": "Original code review confirmed prior P2 fixed; no remaining material issue in that diff. A later checkpoint integrity review was requested but interrupted without a report.",
+      "filesChanged": [],
+      "testsExecuted": [],
+      "currentOperationStatus": "checkpoint review interrupted; original code review completed before pause",
+      "blockers": "Other product gates remain open; independent checkpoint certification is unverified.",
+      "uncommittedWork": [],
+      "nextUnfinishedStep": "No checkpoint review result; preserve UNVERIFIED status.",
+      "pauseStatus": "REVIEW_INTERRUPTED_AFTER_PAUSE_REQUEST",
+      "taskStartReference": null,
+      "currentOperation": "Read-only integrity review of checkpoint artifacts requested after checkpoint creation; interrupted after bounded wait with no report.",
+      "decisionsMade": null,
+      "outputArtifacts": "Original code review report in task history; no checkpoint review output."
+    },
+    {
+      "id": "/root/integration_gate_review",
+      "role": "integration/infrastructure gate reviewer",
+      "actualTask": "Read-only integration feasibility and service-ownership review.",
+      "workCompleted": "No files, tests, service changes or provider calls.",
+      "filesChanged": [],
+      "testsExecuted": [],
+      "currentOperationStatus": "completed",
+      "blockers": "Docker Engine unavailable; current gate incomplete.",
+      "uncommittedWork": [],
+      "nextUnfinishedStep": "Verify local Docker or dedicated disposable PostgreSQL/Redis after resume.",
+      "pauseStatus": "COMPLETED_BEFORE_PAUSE",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    },
+    {
+      "id": "/root/merchant_customer_cost_review",
+      "role": "merchant/customer value and cost reviewer",
+      "actualTask": "Held-out sampling feasibility, ledger reconciliation, evaluator caveats.",
+      "workCompleted": "Reconciled 24 campaigns and $1.658082224 estimated remaining; flagged cross-check prompt wiring.",
+      "filesChanged": [],
+      "testsExecuted": [],
+      "currentOperationStatus": "completed",
+      "blockers": "Usefulness not measured; cross-check caveat; old proof totals stale.",
+      "uncommittedWork": [],
+      "nextUnfinishedStep": "Review prompt selection and fresh budget.",
+      "pauseStatus": "COMPLETED_BEFORE_PAUSE",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    },
+    {
+      "id": "/root/architecture_map",
+      "role": "unknown; listed only in execution context",
+      "actualTask": "unknown; absent from current live roster; explicit interrupt returned not_found",
+      "workCompleted": "unknown",
+      "filesChanged": null,
+      "testsExecuted": null,
+      "currentOperationStatus": "unknown",
+      "blockers": "unavailable from current roster",
+      "uncommittedWork": null,
+      "nextUnfinishedStep": "unknown",
+      "pauseNotice": "sent; no acknowledgement in 10-second wait; explicit interrupt returned not_found",
+      "pauseStatus": "INTERRUPT_NOT_FOUND; UNDERLYING_STATUS_UNKNOWN",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    },
+    {
+      "id": "/root/dataset_review",
+      "role": "unknown; listed only in execution context",
+      "actualTask": "unknown; absent from current live roster; explicit interrupt returned not_found",
+      "workCompleted": "unknown",
+      "filesChanged": null,
+      "testsExecuted": null,
+      "currentOperationStatus": "unknown",
+      "blockers": "unavailable from current roster",
+      "uncommittedWork": null,
+      "nextUnfinishedStep": "unknown",
+      "pauseNotice": "sent; no acknowledgement in 10-second wait; explicit interrupt returned not_found",
+      "pauseStatus": "INTERRUPT_NOT_FOUND; UNDERLYING_STATUS_UNKNOWN",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    },
+    {
+      "id": "/root/final_independent_review",
+      "role": "unknown; listed only in execution context",
+      "actualTask": "unknown; absent from current live roster; explicit interrupt returned not_found",
+      "workCompleted": "unknown",
+      "filesChanged": null,
+      "testsExecuted": null,
+      "currentOperationStatus": "unknown",
+      "blockers": "unavailable from current roster",
+      "uncommittedWork": null,
+      "nextUnfinishedStep": "unknown",
+      "pauseNotice": "sent; no acknowledgement in 10-second wait; explicit interrupt returned not_found",
+      "pauseStatus": "INTERRUPT_NOT_FOUND; UNDERLYING_STATUS_UNKNOWN",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    },
+    {
+      "id": "/root/independent_reviewer",
+      "role": "unknown; listed only in execution context",
+      "actualTask": "unknown; absent from current live roster; explicit interrupt returned not_found",
+      "workCompleted": "unknown",
+      "filesChanged": null,
+      "testsExecuted": null,
+      "currentOperationStatus": "unknown",
+      "blockers": "unavailable from current roster",
+      "uncommittedWork": null,
+      "nextUnfinishedStep": "unknown",
+      "pauseNotice": "sent; no acknowledgement in 10-second wait; explicit interrupt returned not_found",
+      "pauseStatus": "INTERRUPT_NOT_FOUND; UNDERLYING_STATUS_UNKNOWN",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    },
+    {
+      "id": "/root/merchant_value_review",
+      "role": "unknown; listed only in execution context",
+      "actualTask": "unknown; absent from current live roster; explicit interrupt returned not_found",
+      "workCompleted": "unknown",
+      "filesChanged": null,
+      "testsExecuted": null,
+      "currentOperationStatus": "unknown",
+      "blockers": "unavailable from current roster",
+      "uncommittedWork": null,
+      "nextUnfinishedStep": "unknown",
+      "pauseNotice": "sent; no acknowledgement in 10-second wait; explicit interrupt returned not_found",
+      "pauseStatus": "INTERRUPT_NOT_FOUND; UNDERLYING_STATUS_UNKNOWN",
+      "taskStartReference": null,
+      "currentOperation": null,
+      "decisionsMade": null,
+      "outputArtifacts": null
+    }
+  ],
+  "phaseCoverage": [
+    {
+      "phase": 0,
+      "name": "V1.2 baseline",
+      "status": "VERIFIED_COMPLETE",
+      "evidence": "Baseline 957bb991; source CSV 200/20, SHA 892fb831.",
+      "remaining": "Preserve baseline; V1.2 proof has limitations."
+    },
+    {
+      "phase": 1,
+      "name": "Customer truth benchmark",
+      "status": "VERIFIED_COMPLETE",
+      "evidence": "Current-SHA source and held-out comparisons; 200 turns each; source 15/18 and held-out 29/37.",
+      "remaining": "Identity, variant, unknown-handling and unsupported-claim metrics."
+    },
+    {
+      "phase": 2,
+      "name": "Merchant catalog fixtures",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Synthetic catalog projection integrity passed.",
+      "remaining": "Conflicting-tenant matrix against real current stack."
+    },
+    {
+      "phase": 3,
+      "name": "PostgreSQL/Redis/worker integration",
+      "status": "BLOCKED",
+      "evidence": "Historical 12/12 integration, webhook 46/46, backend 4011 pass/2 skip.",
+      "remaining": "Current full gate blocked by Docker."
+    },
+    {
+      "phase": 4,
+      "name": "Genuine product photos",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Three photos; category 2/3, color 3/3.",
+      "remaining": "1/15 cases; identity unscored; acceptance FAIL."
+    },
+    {
+      "phase": 5,
+      "name": "Real Gemini quality",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Earlier paid source comparison at 33ca.",
+      "remaining": "No paid current-HEAD or held-out Gemini result."
+    },
+    {
+      "phase": 6,
+      "name": "Automated response quality",
+      "status": "IMPLEMENTED_NOT_VERIFIED",
+      "evidence": "Evaluator implemented; proof suite reported 61/61.",
+      "remaining": "No usefulness score; inspect cross-check prompt."
+    },
+    {
+      "phase": 7,
+      "name": "Targeted corrections",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Router/grounding changes and improved deterministic metrics.",
+      "remaining": "Review residual categories after integration."
+    },
+    {
+      "phase": 8,
+      "name": "Shared-service regression",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Historical backend 4011 pass/2 skip and worker/webhook receipts.",
+      "remaining": "Current integration blocked."
+    },
+    {
+      "phase": 9,
+      "name": "Playwright E2E",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Current-SHA 6/6 across three browsers; axe 0 serious/critical.",
+      "remaining": "Later artifacts need scan; real Gemini trace UI absent."
+    },
+    {
+      "phase": 10,
+      "name": "Security/adversarial",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "58 suites/799 pass; replay zero tenant violations/unscoped reads.",
+      "remaining": "Current DB tenant check and final scan."
+    },
+    {
+      "phase": 11,
+      "name": "Performance/economics",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Deterministic latency and manual ledger reconciliation.",
+      "remaining": "Comparable live performance and ROI not established."
+    },
+    {
+      "phase": 12,
+      "name": "V1.2 comparison",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Current deterministic comparisons; paid source at earlier SHA.",
+      "remaining": "Current-SHA paid held-out comparison."
+    },
+    {
+      "phase": 13,
+      "name": "Independent final verification",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Earlier package review at 33ca; current diff review at 2aedd.",
+      "remaining": "Current final package review."
+    },
+    {
+      "phase": 14,
+      "name": "Consolidated proof",
+      "status": "PARTIALLY_COMPLETE",
+      "evidence": "Historical roots and direct comparisons preserved.",
+      "remaining": "Current proof/manifest absent; root 02 failed, root 03 incomplete."
+    }
+  ],
+  "tests": [
+    {
+      "category": "Product-experience Jest aggregate",
+      "sourceSha": "3ef2e81",
+      "passCount": 313,
+      "failCount": 0,
+      "skippedCount": 2,
+      "exactCommand": null,
+      "exactTimestamp": null,
+      "status": "historical reported pass; no run after pause",
+      "lastExecution": null,
+      "interruptedCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Proof integrity focused Jest",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "passCount": 61,
+      "failCount": 0,
+      "skippedCount": 0,
+      "exactCommand": null,
+      "exactTimestamp": null,
+      "status": "post-fix result reported; not rerun at pause",
+      "lastExecution": null,
+      "interruptedCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Verifier/integration runner unit tests",
+      "sourceSha": "3ef2e81",
+      "passCount": 21,
+      "failCount": 0,
+      "skippedCount": 0,
+      "detail": "verifier 12/12; integration runner 9/9",
+      "exactCommand": null,
+      "status": "historical reported pass",
+      "lastExecution": null,
+      "interruptedCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Backend security",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "suitesPassed": 58,
+      "passCount": 799,
+      "failCount": 0,
+      "skippedCount": 0,
+      "status": "PASS in root 02 receipt",
+      "lastExecution": null,
+      "interruptedCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Deterministic source",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "routeTurns": 200,
+      "answerableTurns": 15,
+      "factSlots": 18,
+      "verifiedFacts": 18,
+      "falseRefusals": 0,
+      "unsupportedPriceClaimsSent": 0,
+      "contextEvaluated": 13,
+      "safeHandoffs": 4,
+      "status": "direct comparison PASS",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Deterministic held-out",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "routeTurns": 200,
+      "answerableTurns": 29,
+      "factSlots": 37,
+      "verifiedFacts": 37,
+      "falseRefusals": 0,
+      "contextEvaluated": 24,
+      "safeHandoffs": 6,
+      "status": "direct comparison PASS",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Historical real integration",
+      "sourceSha": "33ca2b76; backend hash e1168c0e",
+      "integrationPass": 12,
+      "webhookPass": 46,
+      "backendRegressionPass": 4011,
+      "backendRegressionSkipped": 2,
+      "status": "historical pass; current verifier BLOCKED",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Historical paid Gemini source",
+      "sourceSha": "33ca2b76",
+      "textRequests": 158,
+      "visionRequests": 6,
+      "routeTurns": 200,
+      "status": "historical proof PASS; not current HEAD",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Photo evaluation",
+      "sourceSha": "33ca2b76",
+      "photos": 3,
+      "categoryMatches": 2,
+      "colorMatches": 3,
+      "identityScored": false,
+      "visualCaseTypes": 1,
+      "requiredVisualCaseTypes": 15,
+      "status": "FAIL",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Semantic usefulness",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "status": "NOT_RUN",
+      "score": null,
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Tenant/adversarial",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "securitySuites": 58,
+      "securityTests": 799,
+      "tenantViolations": 0,
+      "unscopedReads": 0,
+      "status": "partial; real DB tenant check outstanding",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Playwright",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "browsers": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "passCount": 6,
+      "failCount": 0,
+      "skippedCount": 0,
+      "status": "PASS in root 02",
+      "lastExecution": null,
+      "interruptedCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Accessibility",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "browsers": 3,
+      "criticalOrSeriousViolations": 0,
+      "status": "PASS for scanned Lab sections",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    },
+    {
+      "category": "Privacy/checksum",
+      "status": "partial/stale",
+      "detail": "Root 02 scan predated later browser outputs; old review left 12 rasters not OCR scanned.",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index.",
+      "sourceSha": null
+    },
+    {
+      "category": "Full offline verifier",
+      "sourceSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+      "root02": "FAIL/complete",
+      "root03": "BLOCKED/incomplete",
+      "status": "no full verifier pass",
+      "skippedCount": null,
+      "lastExecution": null,
+      "failCount": null,
+      "interruptedCount": null,
+      "passCount": null,
+      "nextAction": "See Markdown critical path.",
+      "actualScope": "See category and recorded counts in Markdown report.",
+      "fixtureVersion": null,
+      "command": "Exact command not retained; see Markdown test-state section.",
+      "evidence": "See Markdown evidence index."
+    }
+  ],
+  "gemini": {
+    "keyScope": "Windows User EM_GEMINI_KEY present; current process scope absent; value never read or printed.",
+    "priorAuthenticationVerified": true,
+    "modelsRecorded": [
+      "gemini-3.1-flash-lite",
+      "gemini-3.1-pro-preview"
+    ],
+    "distinctCampaigns": 24,
+    "requestAttempts": 3158,
+    "providerReportedUsageRecords": 3153,
+    "uncertainCalls": {
+      "total": 5,
+      "pending": 2,
+      "transportFailed": 1,
+      "transportTimeout": 2
+    },
+    "visionRequests": 133,
+    "pricedEstimateUsd": 0.70805928,
+    "v13ReservedUsd": 6.002185026,
+    "v12ReservedUsd": 2.33973275,
+    "combinedReservedUsd": 8.341917776,
+    "authorizationUsd": 10,
+    "remainingUsd": 1.658082224,
+    "campaignCeilingsUsd": 37.42,
+    "invoicesAvailable": false,
+    "currentHeadPaidEvaluation": "NOT_RUN",
+    "usefulnessEvaluation": "NOT_RUN",
+    "photoVerdict": "FAIL",
+    "newPaidCallsAfterPause": 0
+  },
+  "infrastructure": {
+    "docker": "Prior preflight unavailable; no Compose project started.",
+    "postgres55432": "not listening",
+    "port56379": {
+      "status": "listening",
+      "process": "wslrelay",
+      "pid": 22420,
+      "ownership": "unknown; untouched"
+    },
+    "testLab14071": "not listening",
+    "ports14468And6034": "not listening",
+    "node20Path": "C:\\Users\\ahmee\\AppData\\Local\\EasyModerator\\product-v1-3-runtime\\node-v20.20.2\\extracted\\node-v20.20.2-win-x64\\node.exe",
+    "pathNodeVersionReported": "25.6.1; reviewer-reported",
+    "playwrightVersion": "1.58.2 via existing ignored junctions; no install",
+    "activeV13Processes": [],
+    "stoppedDiagnostics": [
+      {
+        "powershellPid": 25036,
+        "dockerPid": 18000,
+        "status": "stopped; exit confirmed"
+      },
+      {
+        "powershellPid": 8736,
+        "dockerPid": 9608,
+        "status": "stopped; exit confirmed"
+      }
+    ]
+  },
+  "blockers": [
+    {
+      "id": "B1",
+      "severity": "P0",
+      "goal": [
+        3,
+        8
+      ],
+      "symptom": "Docker preflight unavailable; current integration blocked.",
+      "rootCause": "Exact endpoint failure unknown.",
+      "nextStep": "Verify local Docker or owned disposable DB/Redis after resume."
+    },
+    {
+      "id": "B2",
+      "severity": "P0",
+      "goal": [
+        1,
+        12,
+        14
+      ],
+      "symptom": "Verifier comparison children fail generically while direct runs pass.",
+      "rootCause": "Unknown.",
+      "nextStep": "Small exact-child-environment reproduction."
+    },
+    {
+      "id": "B3",
+      "severity": "P1",
+      "goal": [
+        13,
+        14
+      ],
+      "symptom": "Current proof and final post-browser privacy/checksum missing.",
+      "rootCause": "Incomplete/stale evidence.",
+      "nextStep": "Fresh package after gates."
+    },
+    {
+      "id": "B4",
+      "severity": "P1",
+      "goal": [
+        4
+      ],
+      "symptom": "Photo acceptance 2/3; 1/15 cases; identity unscored.",
+      "rootCause": "Insufficient coverage.",
+      "nextStep": "Plan licensed identity-scored matrix."
+    },
+    {
+      "id": "B5",
+      "severity": "P1",
+      "goal": [
+        5,
+        6
+      ],
+      "symptom": "Usefulness absent; Pro cross-check prompt caveat.",
+      "rootCause": "Reviewer finding not reproduced.",
+      "nextStep": "Inspect prompt path before paid evaluation."
+    },
+    {
+      "id": "B6",
+      "severity": "P1",
+      "goal": [
+        5,
+        11
+      ],
+      "symptom": "Manual reserve $1.658082224; ceilings $37.42; five uncertain calls.",
+      "rootCause": "No global cap/invoice.",
+      "nextStep": "Fresh reconcile and enforce cap."
+    },
+    {
+      "id": "B7",
+      "severity": "P2",
+      "goal": [
+        14
+      ],
+      "symptom": "Generated untracked snapshot makes tree dirty.",
+      "rootCause": "Lifecycle unknown.",
+      "nextStep": "Preserve/hash-copy before clean candidate."
+    }
+  ],
+  "resumeContract": {
+    "project": "EasyModerator",
+    "milestone": "Product Engine V1.3 - Integration and Customer Truth Verification",
+    "pauseTimestampLocal": "2026-10-24 05:32:04 +06:00",
+    "baseSha": "957bb991a18db1949369a6f805822b8c8b69889b",
+    "currentBranch": "feature/product-engine-v1.3-customer-truth",
+    "currentSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+    "worktreePath": "D:\\easymod\\_wt-product-engine-v1-3",
+    "worktreeClean": false,
+    "checkpointCommit": null,
+    "confirmedActiveAgents": 0,
+    "completedAgents": 2,
+    "interruptedAgents": 1,
+    "unconfirmedAgents": 5,
+    "backgroundTasksConfirmed": 0,
+    "nextSinglePriority": "Preserve/hash the untracked snapshot and isolate ENGINE_COMPARISON_FAILED before broad reruns.",
+    "nextSafeCommand": "git -C D:\\easymod\\_wt-product-engine-v1-3 status --short --branch",
+    "requiredEnvironment": [
+      "Node 20.20.2",
+      "Python 3",
+      "verified local Docker or owned disposable PostgreSQL/Redis",
+      "fresh process-only EM-GEMINI-KEY only for explicitly authorized paid calls"
+    ],
+    "paidBudget": {
+      "authorizationUsd": 10,
+      "remainingEstimateUsd": 1.658082224,
+      "manualReconciliation": true,
+      "invoicesAvailable": false,
+      "uncertainCalls": 5,
+      "newCallsAfterPause": 0,
+      "explicitResumeRequired": true
+    },
+    "productionChanged": false,
+    "otherAgentWorktreesTouched": false,
+    "pushed": false,
+    "merged": false,
+    "deployed": false
+  },
+  "independence": {
+    "independentCheckpointReviewAvailable": true,
+    "reviewRequested": true,
+    "reviewCompleted": false,
+    "reviewStatus": "INTERRUPTED_NO_REPORT",
+    "reviewer": "/root/architecture_challenge",
+    "directReadOnlyChecksPerformed": true,
+    "status": "UNVERIFIED",
+    "reason": "The requested read-only checkpoint review was interrupted after a bounded wait and returned no report."
+  },
+  "evidenceRoots": [
+    "D:\\easymod\\_product-engine-v1-3-evidence-resume-final-20261024-01",
+    "D:\\easymod\\_product-engine-v1-3-evidence-resume-final-20261024-02",
+    "D:\\easymod\\_product-engine-v1-3-evidence-resume-final-20261024-03",
+    "D:\\easymod\\_product-engine-v1-3-evidence-final-20261024-01"
+  ],
+  "actionsAfterPause": {
+    "implementation": false,
+    "tests": false,
+    "paidCalls": false,
+    "browser": false,
+    "dependencyInstall": false,
+    "servicesStarted": false,
+    "productionChanged": false,
+    "pushed": false,
+    "merged": false,
+    "deployed": false
+  },
+  "workHistory": [
+    {
+      "summary": "Initial V1.3 implementation at 63ba2448; extended router/product grounding and truth evaluation.",
+      "period": "2026-10-22 initial",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "Targeted truth, context, price, delivery, payment, garment, photo and privacy corrections.",
+      "period": "2026-10-22",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "Added oracle, replay, held-out fixtures, comparisons, Test Lab, integration, cost, privacy and proof tooling.",
+      "period": "2026-10-22 to 2026-10-23",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "Earlier independent package review at 33ca passed but Product QA remained FAIL and integration readiness NO.",
+      "period": "2026-10-23",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "Added usefulness evaluator and proof/integration harness fixes; 16 files, 2174 insertions, 36 deletions.",
+      "period": "2026-10-24 commit 3ef2e81",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "Bound pairedPreference aggregate proof metric to per-case recomputation; current diff reviewer found no material issue.",
+      "period": "2026-10-24 commit 2aedd348",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "Root 02 full verifier FAIL; later direct comparisons and Playwright passed; root 03 blocked/incomplete and browser attempt interrupted.",
+      "period": "2026-10-24 resumed verification",
+      "evidence": "OBSERVED"
+    },
+    {
+      "summary": "No tests/provider calls/implementation after pause; two blocked read-only Docker diagnostic trees stopped by exact PID.",
+      "period": "pause request",
+      "evidence": "OBSERVED"
+    }
+  ],
+  "implementation": {
+    "runtimeProductEngineChanged": true,
+    "runtimeFiles": [
+      "EasyMod-backend/src/modules/ai/intent-router.service.js",
+      "EasyMod-backend/src/modules/ai/grounding/outbound-grounding.gate.js",
+      "EasyMod-backend/src/modules/ai/grounding/grounding-prompt.js",
+      "EasyMod-backend/src/modules/ai/prompt-sanitizer.service.js"
+    ],
+    "behavior": [
+      "Re-fetch product context across turns.",
+      "Handle mixed product/delivery-fee and negotiation/catalog-price cases.",
+      "Ground price, stock, delivery and payment claims; fail closed on unscoped claims.",
+      "Require unique visual evidence and fail closed on unresolved customer photos.",
+      "Improve Bengali digit/contact masking."
+    ],
+    "unchangedBoundaries": [
+      "No new message worker runtime path.",
+      "No new order creation, stock reservation, courier booking, payment confirmation or live Meta send path.",
+      "No new DTO file identified."
+    ],
+    "harnessFiles": [
+      "EasyMod-backend/scripts/product-experience/semantic-usefulness.js",
+      "EasyMod-backend/scripts/product-experience/run-semantic-usefulness-evaluation.js",
+      "EasyMod-backend/scripts/product-experience/run-engine-comparison.js",
+      "EasyMod-backend/scripts/product-experience/run-integration.js",
+      "EasyMod-backend/scripts/product-experience/verify-product-v1-3.js",
+      "EasyMod-backend/scripts/product-experience/generate-product-engine-v1-3-proof.js"
+    ]
+  },
+  "checkpointArtifacts": [
+    "D:\\easymod\\_wt-product-engine-v1-3\\docs\\ai\\product-experience-v1-3\\checkpoints\\V1_3_PAUSE_STATE_AND_WORK_HISTORY.md",
+    "D:\\easymod\\_wt-product-engine-v1-3\\docs\\ai\\product-experience-v1-3\\checkpoints\\v1.3-checkpoint-state.json"
+  ],
+  "resumption": {
+    "resumedAtLocal": "2026-10-24 05:56:11 +06:00",
+    "timezone": "Asia/Dhaka",
+    "currentGoalStatus": "ACTIVE",
+    "resumeBaseSha": "2aedd348360ce2c08f1614a706e2f993bf726c7b",
+    "baselineSha": "957bb991a18db1949369a6f805822b8c8b69889b",
+    "snapshotSha256": "F9AAC74F861332B7A80997535FBC1284EE63EF19A82FE94C4DFF320C324DA258",
+    "offlineSemanticCrosscheckTests": "11/11 PASS",
+    "comparatorFreshSourceRun": "PASS",
+    "historicalComparatorFailure": "UNRESOLVED_GENERIC_OUTPUT_DID_NOT_REPRODUCE",
+    "paidCallsSinceResume": 0,
+    "v13DistinctCampaigns": 24,
+    "v13Attempts": 3158,
+    "v13ProviderReportedUsageRecords": 3153,
+    "v13UncertainOrUnpricedRecords": 5,
+    "v13VisionRequests": 133,
+    "v13EstimatedProviderChargeUsd": 0.70805928,
+    "v13ReservedUsd": 6.002185026,
+    "v12ReservedUsd": 2.33973275,
+    "aggregateReservedUsd": 8.341917776,
+    "aggregateAuthorizationUsd": 10,
+    "remainingAggregateAuthorizationUsd": 1.658082224,
+    "dockerDaemon": "UNAVAILABLE_TIMEOUT",
+    "integration": "BLOCKED",
+    "photoIdentity": "OPEN",
+    "heldoutUsefulness": "OPEN",
+    "finalProof": "OPEN",
+    "independentFinalReview": "OPEN"
+  }
+}

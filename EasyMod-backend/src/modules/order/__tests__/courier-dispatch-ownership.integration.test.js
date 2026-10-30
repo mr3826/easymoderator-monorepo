@@ -19,6 +19,11 @@ const SHOP_PROVIDER = {
     provider: 'pathao',
     pickup: { provider_store_id: 'sandbox-store-1' },
 };
+const bookForTest = (targetOrder, options = {}) => orderService.bookForOrder(targetOrder, {
+    shopId: targetOrder.shop_id,
+    ...options,
+    mutationAuthority: { kind: 'test' },
+});
 
 const makeOrderData = () => ({
     customer_name: 'Courier Race Buyer',
@@ -106,9 +111,9 @@ describe('courier dispatch ownership on PostgreSQL', () => {
             return providerResult;
         });
 
-        const winnerPromise = orderService.bookForOrder(order, { shopId: shop.id });
+        const winnerPromise = bookForTest(order);
         await providerReady;
-        const loserResult = await orderService.bookForOrder(order, { shopId: shop.id });
+        const loserResult = await bookForTest(order);
 
         expect(loserResult).toMatchObject({
             blocked: true,
@@ -131,6 +136,9 @@ describe('courier dispatch ownership on PostgreSQL', () => {
             consignment_id: 'CN-OWNERSHIP-RACE',
             tracking_code: 'TRK-OWNERSHIP-RACE',
         });
+        // Booking persists onto the row reloaded under the transaction lock;
+        // this caller instance is deliberately stale until reloaded.
+        await order.reload();
         expect(order.delivery_consignment_id).toBe('CN-OWNERSHIP-RACE');
         expect(order.delivery_tracking_code).toBe('TRK-OWNERSHIP-RACE');
     });
@@ -146,13 +154,13 @@ describe('courier dispatch ownership on PostgreSQL', () => {
             return providerResult;
         });
 
-        const winnerPromise = orderService.bookForOrder(order, { shopId: shop.id });
+        const winnerPromise = bookForTest(order);
         await providerReady;
         // The loser explicitly resolves to a DIFFERENT provider than the
         // in-flight winner (pathao). Before the cross-provider fix, the claim
         // was keyed on (shop_id, order_id, provider), so this would create a
         // second, independent claim row instead of being blocked.
-        const loserResult = await orderService.bookForOrder(order, {
+        const loserResult = await bookForTest(order, {
             shopId: shop.id,
             resolvedProvider: {
                 blocked: false,
@@ -184,13 +192,14 @@ describe('courier dispatch ownership on PostgreSQL', () => {
             consignment_id: 'CN-CROSS-PROVIDER-RACE',
             tracking_code: 'TRK-CROSS-PROVIDER-RACE',
         });
+        await order.reload();
         expect(order.delivery_provider).toBe('pathao');
         expect(order.delivery_consignment_id).toBe('CN-CROSS-PROVIDER-RACE');
         expect(order.delivery_tracking_code).toBe('TRK-CROSS-PROVIDER-RACE');
     });
 
     test('rejects a stale terminal transition after the winner commits', async () => {
-        await orderService.bookForOrder(order, { shopId: shop.id });
+        await bookForTest(order);
         const committed = await CourierDispatch.findOne({ where: { shop_id: shop.id, order_id: order.id } });
 
         const transition = await orderService.transitionCourierDispatchRecord(

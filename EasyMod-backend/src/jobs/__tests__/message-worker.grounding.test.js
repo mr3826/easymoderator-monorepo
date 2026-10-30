@@ -11,9 +11,12 @@
  */
 
 process.env.NODE_ENV = 'test';
+process.env.API_URL = 'https://api.easymod.tech';
+process.env.PUBLIC_ASSET_URL = 'https://api.easymod.tech';
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 jest.mock('bullmq', () => ({
     Worker: jest.fn(),
@@ -68,7 +71,17 @@ const mockCustomerFindOne = jest.fn(async () => ({
 jest.mock('src/modules/customer/customer.entity', () => ({ findOne: mockCustomerFindOne }));
 const mockGetShopAiSettings = jest.fn(async () => ({ automation_mode: 'AI_ACTIVE', confidence_threshold: 75 }));
 jest.mock('src/modules/shop/shop.service', () => ({ getShopAiSettings: mockGetShopAiSettings }));
-jest.mock('src/modules/entities', () => ({ Subscription: { findOne: jest.fn(async () => ({ status: 'active' })) } }));
+const mockFaqFindAll = jest.fn();
+jest.mock('src/modules/entities', () => ({
+    Subscription: { findOne: jest.fn(async () => ({ status: 'active' })) },
+    FaqResponse: { findAll: (...args) => mockFaqFindAll(...args) },
+}));
+const mockGetOperatingContext = jest.fn();
+jest.mock('src/modules/ai/shop-operating-context.service', () => ({
+    getOperatingContext: (...args) => mockGetOperatingContext(...args),
+    hashOperatingContext: context => require('crypto').createHash('sha256')
+        .update(String(context || '').trim()).digest('hex'),
+}));
 jest.mock('src/modules/subscription/subscription.access', () => ({ isAiActive: jest.fn(() => true) }));
 jest.mock('src/modules/ai/sentiment.service', () => ({
     analyzeSentiment: jest.fn(async () => ({ sentiment: 'neutral', score: 0, method: 'keyword' })),
@@ -103,9 +116,13 @@ jest.mock('src/modules/ai/recovery/turn-recovery.service', () => ({
     isHoldingSuppressed: jest.fn(() => false),
     isHardTimeoutSuppressed: jest.fn(() => false),
 }));
+const mockGetProductsByIds = jest.fn();
+jest.mock('src/modules/product/product-search.service', () => ({
+    getProductsByIds: (...args) => mockGetProductsByIds(...args),
+}));
 
 const { processMessageJob, _private } = require('src/jobs/message-worker');
-const { Conversation } = require('src/modules/conversation/conversation.entity');
+const { Conversation, Message } = require('src/modules/conversation/conversation.entity');
 const { getProvider } = require('src/modules/channel-providers/provider.registry');
 const metaChannelService = require('src/modules/channel-providers/meta-channel.service');
 const AIChatbotController = require('src/modules/conversation/ai-chatbot.controller');
@@ -116,7 +133,7 @@ const { opsAlert } = require('src/utils/ops-alert');
 const merchantNotificationService = require('src/modules/notification/merchant-notification.service');
 
 const SHOP = 'shop-a';
-const PHOTO_URL = 'https://cdn.easymod.tech/products/black-saree.jpg';
+const PHOTO_URL = 'https://api.easymod.tech/uploads/product-images/shop-a/black-saree.jpg';
 
 const sendMessage = jest.fn(async () => ({ ok: true, providerMessageId: 'provider-1' }));
 
@@ -142,6 +159,7 @@ const verifiedEvidence = ({ photo = null, material = null } = {}) => grounding.r
     message: 'black saree picture den',
     candidates: [{
         id: 'p-1',
+        shop_id: SHOP,
         name: 'Premium Black Saree',
         category: 'saree',
         price: 1490,
@@ -157,10 +175,24 @@ const verifiedEvidence = ({ photo = null, material = null } = {}) => grounding.r
     }],
 });
 
+const liveProductRow = (photo = null, price = 1490) => ({
+    id: 'p-1', shop_id: SHOP, name: 'Premium Black Saree', category: 'saree', price,
+    quantity: 3, track_quantity: false, in_stock: true, is_active: true,
+    variants: [], images: [], image_url: photo, tags: [], ai_color: 'black', ai_material: null,
+});
+
 const sentPayload = () => sendMessage.mock.calls[0][0].normalizedMessage;
+const faqContentHash = (faq) => crypto.createHash('sha256')
+    .update([faq.category, faq.template_en, faq.template_bn].filter(Boolean).join('\n'), 'utf8')
+    .digest('hex');
+const operatingContextHash = (context) => crypto.createHash('sha256')
+    .update(String(context || '').trim(), 'utf8')
+    .digest('hex');
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockFaqFindAll.mockResolvedValue([]);
+    mockGetOperatingContext.mockResolvedValue('');
     Conversation.findOne.mockResolvedValue({ id: 'conv-1', hitl: false, status: 'open' });
     mockCustomerFindOne.mockResolvedValue({
         id: 'cust-1',
@@ -171,11 +203,57 @@ beforeEach(() => {
     mockGetShopAiSettings.mockResolvedValue({ automation_mode: 'AI_ACTIVE', confidence_threshold: 75 });
     metaChannelService.getSettings.mockResolvedValue({ automation_mode: 'DRAFT', ai_auto_reply: true });
     getProvider.mockReturnValue({ sendMessage });
+    mockGetProductsByIds.mockImplementation(async (ids, shopId) => ids.includes('p-1') && shopId === SHOP
+        ? [liveProductRow()]
+        : []);
+});
+
+describe('conversation history preserves grounded product references', () => {
+    test('assistant references survive metadata loading for attribute follow-ups', async () => {
+        const sourceReferences = [{ kind: 'product', id: 'product-1', title: 'Classic Blue Denim Jacket' }];
+        const productPresentation = {
+            schemaVersion: '1', status: 'READY', shopId: SHOP,
+            selection: 'SINGLE', products: [{ id: 'product-1', shopId: SHOP,
+                selectedVariant: { id: 'variant-xl', option: 'Size', value: 'XL' } }],
+        };
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'current', sender: 'customer', content: 'size XL available?', metadata: {} },
+            { id: 'assistant-1', sender: 'ai', content: 'Classic Blue Denim Jacket — ৳3200', metadata: { sourceReferences, product_presentation: productPresentation } },
+        ]);
+
+        const history = await _private.loadConversationHistory('conversation-1', ['current']);
+
+        expect(history).toHaveLength(1);
+        expect(history[0].sourceReferences).toEqual(sourceReferences);
+        expect(history[0].productPresentation).toEqual(productPresentation);
+    });
 });
 
 describe('grounded replies reach Meta intact', () => {
+    test('product presentation contracts are persisted with the grounded AI message', async () => {
+        const productPresentation = {
+            schemaVersion: '1', status: 'READY', shopId: SHOP,
+            selection: 'SINGLE', products: [],
+        };
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'A grounded reply',
+            confidence: 0.9,
+            source: 'llm',
+            grounding: grounding.emptyEvidence(SHOP),
+            productPresentation,
+            attachments: [],
+        });
+
+        await processMessageJob(job());
+
+        expect(mockStoreAIResponse.mock.calls[0][2]).toEqual(expect.objectContaining({
+            product_presentation: productPresentation,
+        }));
+    });
+
     test('a verified product photo is attached to the outbound message', async () => {
         const evidence = verifiedEvidence({ photo: PHOTO_URL });
+        mockGetProductsByIds.mockResolvedValueOnce([liveProductRow(PHOTO_URL)]);
         AIChatbotController.processNewIntent.mockResolvedValue({
             response: 'Premium Black Saree — ৳1490 😊',
             confidence: 0.9,
@@ -192,8 +270,182 @@ describe('grounded replies reach Meta intact', () => {
         expect(sentPayload().text).toContain('৳1490');
     });
 
+    test('a product price changed during generation holds the reply before provider delivery', async () => {
+        const evidence = verifiedEvidence();
+        mockGetProductsByIds.mockResolvedValueOnce([liveProductRow(null, 1590)]);
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'Premium Black Saree — ৳1490',
+            confidence: 0.9,
+            source: 'llm',
+            provider: 'gemini-lite',
+            grounding: evidence,
+            attachments: [],
+        });
+
+        const result = await processMessageJob(job());
+
+        expect(mockGetProductsByIds).toHaveBeenCalledWith(['p-1'], SHOP, { throwOnError: true });
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'product_evidence_stale' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('FAQ policy evidence is compared with the active tenant row before send', async () => {
+        const faq = {
+            id: '1', shop_id: SHOP, is_active: true,
+            category: 'Delivery fee', template_en: 'Delivery fee is ৳60.', template_bn: null,
+        };
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.knowledgeIds = ['1'];
+        evidence.knowledgeFound = true;
+        evidence.knowledgeSnapshots = [{ id: '1', type: 'faq', contentHash: faqContentHash(faq) }];
+        mockFaqFindAll.mockResolvedValueOnce([faq]);
+
+        await expect(_private.revalidateKnowledgeEvidenceBeforeSend(evidence))
+            .resolves.toEqual({ valid: true, changedKnowledgeIds: [] });
+        expect(mockFaqFindAll).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ shop_id: SHOP, is_active: true }),
+        }));
+    });
+
+    test('changed or deactivated FAQ evidence is not current at the send boundary', async () => {
+        const faq = {
+            id: '1', shop_id: SHOP, is_active: true,
+            category: 'Delivery fee', template_en: 'Delivery fee is ৳60.', template_bn: null,
+        };
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.knowledgeIds = ['1'];
+        evidence.knowledgeFound = true;
+        evidence.knowledgeSnapshots = [{ id: '1', type: 'faq', contentHash: faqContentHash(faq) }];
+        mockFaqFindAll.mockResolvedValueOnce([{
+            ...faq, template_en: 'Delivery fee is ৳80.',
+        }]);
+
+        await expect(_private.revalidateKnowledgeEvidenceBeforeSend(evidence))
+            .resolves.toEqual({ valid: false, changedKnowledgeIds: ['1'] });
+
+        mockFaqFindAll.mockResolvedValueOnce([]);
+        await expect(_private.revalidateKnowledgeEvidenceBeforeSend(evidence))
+            .resolves.toEqual({ valid: false, changedKnowledgeIds: ['1'] });
+    });
+
+    test('a failed FAQ freshness read stays retryable', async () => {
+        const faq = {
+            id: '1', shop_id: SHOP, is_active: true,
+            category: 'Delivery fee', template_en: 'Delivery fee is ৳60.', template_bn: null,
+        };
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.knowledgeIds = ['1'];
+        evidence.knowledgeFound = true;
+        evidence.knowledgeSnapshots = [{ id: '1', type: 'faq', contentHash: faqContentHash(faq) }];
+        mockFaqFindAll.mockRejectedValueOnce(new Error('FAQ store unavailable'));
+
+        await expect(_private.revalidateKnowledgeEvidenceBeforeSend(evidence)).rejects.toMatchObject({
+            code: 'KNOWLEDGE_EVIDENCE_REVALIDATION_FAILED',
+            retryable: true,
+        });
+    });
+
+    test('operating payment and delivery context is compared with the current shop settings', async () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.operatingContextHash = operatingContextHash('COD only; no MFS number.');
+        mockGetOperatingContext.mockResolvedValueOnce('COD only; no MFS number.');
+        await expect(_private.revalidateOperatingContextBeforeSend(evidence))
+            .resolves.toEqual({ valid: true, changed: false });
+
+        mockGetOperatingContext.mockResolvedValueOnce('bKash 01712345678 is now active.');
+        await expect(_private.revalidateOperatingContextBeforeSend(evidence))
+            .resolves.toEqual({ valid: false, changed: true });
+        expect(mockGetOperatingContext).toHaveBeenCalledWith(SHOP, { strict: true });
+    });
+
+    test('knowledge evidence without an operating-context hash is stale at the send boundary', async () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.knowledgeIds = ['faq-1'];
+        evidence.knowledgeFound = true;
+
+        await expect(_private.revalidateOperatingContextBeforeSend(evidence))
+            .resolves.toEqual({ valid: false, changed: true });
+        expect(mockGetOperatingContext).not.toHaveBeenCalled();
+    });
+
+    test('operating policy text without its context hash is stale at the send boundary', async () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        grounding.withPolicyText(evidence, 'Delivery is available nationwide.');
+
+        await expect(_private.revalidateOperatingContextBeforeSend(evidence))
+            .resolves.toEqual({ valid: false, changed: true });
+        expect(mockGetOperatingContext).not.toHaveBeenCalled();
+    });
+
+    test('an operating-context read failure remains retryable', async () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.operatingContextHash = operatingContextHash('COD only.');
+        mockGetOperatingContext.mockRejectedValueOnce(new Error('shop settings unavailable'));
+
+        await expect(_private.revalidateOperatingContextBeforeSend(evidence)).rejects.toMatchObject({
+            code: 'OPERATING_CONTEXT_REVALIDATION_FAILED',
+            retryable: true,
+        });
+    });
+
+    test('changed payment settings hold the candidate before provider delivery', async () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.operatingContextHash = operatingContextHash('COD only; no MFS number.');
+        mockGetOperatingContext.mockResolvedValueOnce('bKash 01712345678 is now active.');
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'We can help with your question.',
+            confidence: 0.9,
+            source: 'llm',
+            grounding: evidence,
+            attachments: [],
+        });
+
+        const result = await processMessageJob(job());
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'operating_context_stale' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('knowledge without a verifiable FAQ snapshot is held instead of auto-sent', async () => {
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.knowledgeIds = ['custom-knowledge-1'];
+        evidence.knowledgeFound = true;
+
+        await expect(_private.revalidateKnowledgeEvidenceBeforeSend(evidence))
+            .resolves.toEqual({ valid: false, changedKnowledgeIds: ['custom-knowledge-1'] });
+        expect(mockFaqFindAll).not.toHaveBeenCalled();
+    });
+
+    test('an FAQ policy changed after generation is held before provider delivery', async () => {
+        const faq = {
+            id: '1', shop_id: SHOP, is_active: true,
+            category: 'Delivery fee', template_en: 'Delivery fee is ৳60.', template_bn: null,
+        };
+        const evidence = grounding.emptyEvidence(SHOP);
+        evidence.knowledgeIds = ['1'];
+        evidence.knowledgeFound = true;
+        evidence.knowledgeSnapshots = [{ id: '1', type: 'faq', contentHash: faqContentHash(faq) }];
+        grounding.withPolicyText(evidence, faq.template_en);
+        mockFaqFindAll.mockResolvedValueOnce([{
+            ...faq, template_en: 'Delivery fee is ৳80.',
+        }]);
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'Delivery fee is ৳60.',
+            confidence: 0.9,
+            source: 'llm',
+            grounding: evidence,
+            attachments: [],
+        });
+
+        const result = await processMessageJob(job());
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'knowledge_evidence_stale' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
     test('media belonging to another product never leaves the worker', async () => {
         const evidence = verifiedEvidence({ photo: PHOTO_URL });
+        mockGetProductsByIds.mockResolvedValueOnce([liveProductRow(PHOTO_URL)]);
         AIChatbotController.processNewIntent.mockResolvedValue({
             response: 'Premium Black Saree — ৳1490',
             confidence: 0.9,

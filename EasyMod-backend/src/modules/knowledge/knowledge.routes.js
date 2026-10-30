@@ -26,6 +26,13 @@ router.delete('/faqs/:id', validate(knowledgeValidator.deleteFaq), knowledgeCont
 
 router.get('/gaps', knowledgeController.listGaps);
 
+// Pilot+ P+05 — knowledge gap suggestions (platform-flag gated, default off).
+const gapController = require('./gap-suggestions.controller');
+router.get('/gap-suggestions', gapController.requireSuggestionsEnabled, gapController.list);
+router.post('/gap-suggestions/:id/review', gapController.requireSuggestionsEnabled, gapController.review);
+router.post('/gap-suggestions/:id/dismiss', gapController.requireSuggestionsEnabled, gapController.dismiss);
+router.post('/gap-suggestions/:id/publish', gapController.requireSuggestionsEnabled, gapController.publish);
+
 router.get('/documents', knowledgeController.listDocuments);
 router.post('/documents', validate(knowledgeValidator.createDocument), knowledgeController.createDocument);
 router.delete('/documents/:id', validate(knowledgeValidator.deleteDocument), knowledgeController.deleteDocument);

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "runId": "e5787f5a-91f4-48d5-a859-7f6606da175b",
+  "status": "FAIL",
+  "startedAt": "2026-10-20T17:42:34.321Z",
+  "completedAt": "2026-10-20T17:42:34.325Z",
+  "sourceRevision": "1be73a59971d6d66b59ef631ee82cef0636fcf72",
+  "localUrl": null,
+  "browsersAvailable": [],
+  "browserLimitations": [
+    "Firefox or WebKit are included only when their local browser binary is installed."
+  ],
+  "playwrightExitCode": null,
+  "playwrightSignal": null,
+  "tests": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "results": []
+  },
+  "accessibility": {
+    "status": "NOT_RUN"
+  },
+  "htmlReport": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\html-report\\index.html",
+  "traceDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\test-results",
+  "screenshotsDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\screenshots",
+  "failure": "Chromium is not installed; install it before running the browser gate."
+}

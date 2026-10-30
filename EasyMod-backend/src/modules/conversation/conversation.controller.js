@@ -6,6 +6,7 @@ const conversationService = require('./conversation.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
+const { AppError } = require('../../utils/AppError');
 const {
     Conversation: ConvModel,
     Customer: CustomerModel,
@@ -1093,12 +1094,11 @@ class ConversationController {
                     }));
                 }
                 if (delivery?.sent !== true) {
-                    const error = makeHttpError(
-                        409,
+                    throw new AppError(
                         delivery?.reason || 'Provider delivery was not confirmed; reconciliation is required before retrying',
+                        409,
+                        'DRAFT_DELIVERY_NOT_CONFIRMED',
                     );
-                    error.code = 'DRAFT_DELIVERY_NOT_CONFIRMED';
-                    throw error;
                 }
             } else if (typeof conversationService.settleInboxDeliveryOutbox === 'function') {
                 await conversationService.settleInboxDeliveryOutbox(messageId, { sent: true })
@@ -1227,22 +1227,20 @@ class ConversationController {
             const conversation = await conversationService.updateConversation(
                 conversationId,
                 shopId,
-                { hitl, status, assignee_id, resolution_note, last_seen_message_id }
+                { hitl, status, assignee_id, resolution_note, last_seen_message_id },
+                {
+                    actor: req.user ? {
+                        userId: req.user.userId || req.user.id || null,
+                        role: req.user.role || null,
+                    } : null,
+                    force: req.body?.force === true,
+                }
             );
 
-            // Notify other agent tabs of ownership and workflow changes. Manual
-            // takeover is state-only; system escalation uses human-handoff.service
-            // and is the only path allowed to send a holding message.
-            if (hitl !== undefined || status !== undefined) {
-                sseManager.emit(shopId, 'hitl_changed', {
-                    conversation_id: conversationId,
-                    hitl: conversation.hitl,
-                    status: conversation.status,
-                    needs_merchant_reply: conversation.needs_merchant_reply,
-                    needs_merchant_reply_reason: conversation.needs_merchant_reply_reason,
-                    ai_is_replying: conversation.ai_is_replying,
-                });
-            }
+            // MW-V1 D3/SSE: the ownership/workflow event is emitted once, inside
+            // conversation.service.updateConversation, and now carries the
+            // assignee. Manual takeover remains state-only; system escalation
+            // (human-handoff.service) keeps its own holding-message path.
 
             // When re-enabling AI (HITL off), clear the 30-min manual-reply pause so the AI
             // can respond immediately instead of waiting out the remainder of the timer.
@@ -1288,14 +1286,7 @@ class ConversationController {
                 await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
             }
 
-            sseManager.emit(shopId, 'hitl_changed', {
-                conversation_id: conversationId,
-                hitl: conversation.hitl,
-                status: conversation.status,
-                needs_merchant_reply: conversation.needs_merchant_reply,
-                needs_merchant_reply_reason: conversation.needs_merchant_reply_reason,
-                ai_is_replying: conversation.ai_is_replying,
-            });
+            // Workflow SSE is emitted once by the service (MW-V1 D3).
 
             res.json({
                 success: true,

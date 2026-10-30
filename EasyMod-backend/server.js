@@ -23,9 +23,9 @@ process.on('uncaughtException', (err) => {
     const app = require('src/app');
     const { sequelize } = require('src/utils/database/database-setup');
     const { getRedisClient, closeRedis } = require('src/utils/redis-client');
+    const queueManager = require('src/jobs/queue-manager');
 
     let server = null;
-    let queueManager = null;
 
     try {
         // Database Connection
@@ -77,18 +77,12 @@ process.on('uncaughtException', (err) => {
         // Set START_EMBEDDED_WORKERS=true only for single-process deployments.
         if (process.env.START_EMBEDDED_WORKERS === 'true') {
             try {
-                const { startWorker } = require('src/jobs/message-worker');
-                startWorker();
-            } catch (workerErr) {
-                console.warn('⚠️  BullMQ message worker failed to start (Redis unavailable?):', workerErr.message);
-            }
-
-            try {
-                queueManager = require('src/jobs/queue-manager');
+                queueManager.startWorkers();
+                await queueManager.waitUntilReady();
                 await queueManager.scheduleJobs();
-                console.log('✅ Bull queue-manager started');
-            } catch (qmErr) {
-                console.warn('⚠️  Queue manager failed to start:', qmErr.message);
+                console.log('✅ Embedded Bull queue-manager started');
+            } catch (workerErr) {
+                console.warn('⚠️  Embedded Bull queue-manager failed to start:', workerErr.message);
             }
         }
 

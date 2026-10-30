@@ -131,7 +131,10 @@ const getCustomerById = async (customerId, userId, shopId) => {
  * Delete a customer — returns the deleted customer's id for audit logging.
  */
 const deleteCustomer = async (customerId, userId, shopId) => {
-    await verifyShopAccess(userId, shopId);
+    const membership = await verifyShopAccess(userId, shopId);
+    if (!['owner', 'admin'].includes(membership.role)) {
+        throw new AppError('Only a shop owner or admin can erase a customer record', 403);
+    }
 
     const customer = await Customer.findOne({
         where: {

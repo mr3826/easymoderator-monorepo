@@ -48,15 +48,19 @@ No agent, controller, queue worker, or mutation service may bypass this ordering
 
 ### 3.1 Authorization Token
 
-Every mutation service MUST require an `ActionAuthorization` parameter. The service MUST reject a missing, malformed, unsigned, expired, tenant-mismatched, action-mismatched, idempotency-mismatched, or evidence-mismatched token before opening a mutation transaction.
+Every mutation service MUST require an explicit authority context before opening a mutation transaction. Agent-initiated mutations MUST carry a valid `ActionAuthorization`; manual merchant actions MUST carry a server-constructed human context that the service revalidates against the active shop membership; system actions MUST carry a server-constructed context with a verified webhook signature and event identity. A missing, malformed, expired, tenant-mismatched, action-mismatched, idempotency-mismatched, evidence-mismatched, or unrecognized context MUST fail closed. Client request fields MUST NOT be accepted as authority.
 
 The gate is the only minting boundary. The authorization token MUST contain:
 
 | Field | Requirement |
 |---|---|
+| `actionId` | Stable identity of the proposed action |
 | `actionType` | Exact registry action type |
 | `shopId` | Current tenant |
 | `actorAgent` | Agent identity resolved by the runtime |
+| `taskId` | Originating task identity when present |
+| `conversationId` | Bound conversation identity |
+| `traceId` | Request trace identity |
 | `idempotencyKey` | Deterministic action key |
 | `evidenceSnapshotHash` | Snapshot used by the checks |
 | `issuedAt` | Gate issuance time |
@@ -66,13 +70,19 @@ The gate is the only minting boundary. The authorization token MUST contain:
 
 An authorization older than 30 seconds MUST fail closed. A token cannot be replayed into a later turn.
 
+The gate decision audit MUST be followed by one idempotent result record linked by `gateDecisionId`. The result record contains sanitized mutation and outbound states/codes; it MUST NOT contain message bodies, payment evidence, credentials, or raw provider responses. A result record MUST only be appendable by a caller presenting the same gate-signed `ActionAuthorization` — shape validity alone is not sufficient (`recordActionGateOutcome` verifies the mint signature; only the 30-second TTL is relaxed at result time, so a mutation that commits just after expiry can still record its outcome).
+
+Every mutating action type MUST map to one explicit runtime sub-flag in `config/ai-runtime-flags.js`. Read-only types ride `DOMAIN_AGENT_RUNTIME_ENABLED` alone. An action type with no mapping — including any type added later without wiring its flag — MUST be denied, never allowed by fall-through. The current map is `CREATE_ORDER` / `EDIT_PREORDER_CART` / `CANCEL_ORDER_SESSION` -> `AI_ORDER_MUTATIONS_ENABLED`, `BOOK_COURIER` -> `AI_COURIER_BOOKING_ENABLED`, `ACCEPT_PAYMENT` -> `AI_PAYMENT_ACCEPTANCE_ENABLED`, `CREATE_SUPPORT_CASE` -> `AI_SUPPORT_CASE_ENABLED`. `render-production-env` emits all four sub-flags with strict-literal defaults of `false`.
+
+A committed mutation whose result audit fails MUST NOT be converted into a caller-facing failure: the order-creation path returns the committed order with a `result_unaudited` marker (the replayed confirmed turn re-records the outcome), mirroring the courier path's committed-but-unaudited handling. An original validation or tenant failure MUST never be masked behind a failed failure-outcome audit write.
+
 ### 3.2 Capability Resolution
 
 The gate MUST resolve authoritative capability from the registry using `(actionType, requestedByAgent)`. An agent-provided capability claim is never trusted. A legacy `claimedCapability`, if present, is metadata only. A claimed/resolved mismatch is a logged security event and the action is denied.
 
 ### 3.3 Mutation Service Boundary
 
-The dependency graph MUST enforce this rule in CI:
+The dependency graph MUST enforce the agent portion of this rule in CI:
 
 ```text
 from: modules/ai/**, jobs/message-worker.js, agent adapters/**
@@ -83,7 +93,7 @@ allowed only through: ActionGate.authorize() -> authorized mutation adapter
 
 The dependency-cruiser rule MUST be a severity `error` rule. It MUST fail when any file under `modules/ai/**` imports a mutation service directly. The allowed adapter list MUST be explicit rather than a wildcard. A CI failure blocks merge.
 
-The implementation MUST add an integration test that starts from the message worker and traverses every reachable action path. The test MUST assert that any durable or external mutation has an `action_gate_audit` record with the same `actionId`, `idempotencyKey`, `shopId`, and `traceId`. A path that mutates without the record fails the test.
+Manual and signed-system actions MUST be independently tested at their authenticated route boundary and recorded with the human user or verified event identity. The implementation MUST add an integration test that starts from the message worker and traverses every reachable agent action path. The test MUST assert that any durable or external agent mutation has an `action_gate_audit` decision and a linked, idempotent result record with the same `gateDecisionId`, `actionId`, `idempotencyKey`, `shopId`, `taskId`, `conversationId`, and `traceId`. A path that mutates without both records fails the test.
 
 ## 4. Gate Check Set And Decision
 
@@ -94,17 +104,18 @@ The gate evaluates the following checks in order. Every check has a stable name 
 3. `tenant_records_match`
 4. `agent_identity_registered`
 5. `capability_registry_allows`
-6. `domain_transition_allowed`
-7. `domain_hop_limit`
-8. `action_schema_valid`
-9. `idempotency_key_deterministic`
-10. `idempotency_not_committed`
-11. `evidence_snapshot_fresh`
-12. `material_state_revalidated`
-13. `customer_confirmation_valid` when required
-14. `merchant_mode_allows_mutation`
-15. `cost_budget_available`
-16. `authorization_ttl_available`
+6. `runtime_kill_switch_enabled`
+7. `domain_transition_allowed`
+8. `domain_hop_limit`
+9. `action_schema_valid`
+10. `idempotency_key_deterministic`
+11. `idempotency_not_committed`
+12. `evidence_snapshot_fresh`
+13. `material_state_revalidated`
+14. `customer_confirmation_valid` when required
+15. `merchant_mode_allows_mutation`
+16. `cost_budget_available`
+17. `authorization_ttl_available`
 
 The gate MUST write one decision row for every attempted mutation, including denials, exceptions, and timeouts. A denial names the first failing check and preserves the complete check outcome bitmap without customer text.
 
@@ -125,13 +136,13 @@ The entire Action Gate fails closed. On any exception, timeout, unavailable depe
 
 ## 6. Latency Budget
 
-The gate has a launch ceiling of `ACTION_GATE_P95_MS = 150`. The 16 checks are expected to use in-process validation and indexed reads. Any check that cannot meet the ceiling MUST be precomputed into `AgentTask.context` and validated by hash or version at gate time; it MUST NOT perform an unbounded network call inline.
+The gate has a launch ceiling of `ACTION_GATE_P95_MS = 150`. The 17 checks are expected to use in-process validation and indexed reads. Any check that cannot meet the ceiling MUST be precomputed into `AgentTask.context` and validated by hash or version at gate time; it MUST NOT perform an unbounded network call inline.
 
 The gate records per-check elapsed time and total duration. A p95 breach over 100 decisions in a 15-minute window pages the gate owner and blocks promotion of new action types. The end-to-end turn budgets are owned by [BD AI Evaluation](./BD_AI_EVALUATION.md) and the customer hard timeout by [Conversation Recovery Policy](./CONVERSATION_RECOVERY_POLICY.md).
 
 ## 7. Read-Only Actions
 
-Read-only actions still require a tenant context, contract validation, evidence snapshot, deterministic idempotency key, and audit record. They do not receive `ActionAuthorization` because they do not mutate, but they MUST NOT be used to smuggle a write through a read endpoint.
+Read-only actions still require a tenant context, contract validation, evidence snapshot, deterministic idempotency key, and audit record. The shop and conversation must match the retrieved evidence for every read. `READ_ORDER_STATUS` and `READ_CUSTOMER_CONTEXT` additionally require the verified customer identity; shop-catalog `READ_PRODUCT` does not require a customer record because product facts are shop-scoped, not customer-scoped. A catalog read that cannot be audited MUST fail closed before its facts are used in a reply — except when the audited-read runtime itself is disabled: `DOMAIN_AGENT_RUNTIME_ENABLED=false` is the shipped production default, and the evaluator's `domain_agent_runtime_disabled` result is a policy state, not an integrity failure, so the legacy grounded reply continues while the runtime is off. Once the runtime is enabled, every non-disabled audit failure (unavailable audit store, stale evidence, tenant mismatch, contract invalid) MUST fail closed with the safe handoff. Read-only actions do not receive `ActionAuthorization` because they do not mutate, but they MUST NOT be used to smuggle a write through a read endpoint.
 
 Order-status reads MUST bind to the requesting customer identity or return `HUMAN_REQUIRED`. A shop and guessed legacy order number are not sufficient authorization.
 
@@ -185,6 +196,8 @@ Each flag has rolling-window triggers, a named role owner, and a re-enable proce
 | `DOMAIN_AGENT_RUNTIME_ENABLED` | Any confirmed cross-tenant data exposure | Immediate; one occurrence | Security | Security incident closed, tenant test suite green, Security owner and incident commander approval |
 
 Kill switches fail closed and are durable across worker restarts. Disabling a flag stops new actions while preserving reconciliation and customer support visibility.
+
+Deployment note (IC-V1 review F10): with `AI_COURIER_BOOKING_ENABLED=false` — the rendered production default — a verified payment webhook confirms and invoices the order but does NOT auto-book the courier; the booking answers `{blocked, status: 'automation_disabled'}`, is logged, and dispatch proceeds manually. Enabling webhook auto-booking at rollout is a deliberate operator action, not an effect of this deploy.
 
 ## 12. Audit Record
 

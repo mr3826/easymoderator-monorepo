@@ -172,6 +172,21 @@ const hasPurchaseIntent = (message) => {
     return PURCHASE_PATTERNS.some(pattern => text.includes(pattern));
 };
 
+// P+04: question-shaped utterance detector — keeps ordinary customer questions
+// ("delivery charge koto?", "আপনার নাম কী?") from being captured as a checkout
+// field value. Deliberately conservative: plain names, addresses, digits and
+// zone words must NOT match, or we would stall real checkout answers.
+const QUESTION_BANGLISH = /\b(?:koto|kemon|kena|keno|kothay|kotthay|kobe|kar|ki|kon|paba|parba|parben|cover)\b/i;
+const QUESTION_BANGLA = ['কত', 'কেমন', 'কেন', 'কোথায়', 'কবে', 'কার', 'কোন', 'পাব'];
+const isQuestionShaped = (message) => {
+    const text = String(message || '').trim();
+    if (!text) return false;
+    if (text.includes('?')) return true;
+    const lower = normalizeForIntent(text.toLowerCase());
+    if (QUESTION_BANGLISH.test(lower)) return true;
+    return QUESTION_BANGLA.some((marker) => text.includes(marker));
+};
+
 const isNegatedCancel = (message) => {
     const text = normalizeForIntent(String(message || '').toLowerCase().trim());
     return /\b(?:don't|dont|do\s+not|no)\b.*\bcancel\b.*\b(?:order|session|checkout)?\b/i.test(text)
@@ -398,6 +413,7 @@ module.exports = {
     isNegatedPurchase,
     isNegatedMutation,
     isNegatedCancel,
+    isQuestionShaped,
     isOrderCancel,
     isShadowPurchase,
     isPlainGreeting,

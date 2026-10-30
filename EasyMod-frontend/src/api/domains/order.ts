@@ -71,6 +71,9 @@ function normalizeOrder(raw: any): Order {
     id: raw.id,
     orderNumber: raw.orderNumber ?? raw.order_number ?? raw.id,
     customerName: raw.customerName ?? raw.customer_name ?? raw.customer?.name ?? raw.customer?.display_name ?? '',
+    // FE-08: the only verified link from an order to its conversation is the
+    // shop-scoped customer id (flat list column or nested detail object).
+    customerId: raw.customerId ?? raw.customer_id ?? raw.customer?.id ?? undefined,
     customerPhone: raw.customerPhone ?? raw.customer_phone ?? raw.customer?.phone ?? '',
     status: raw.status ?? raw.order_status ?? 'draft',
     channel: raw.channel ?? '',
@@ -135,11 +138,14 @@ export async function getOrder(orderId: string): Promise<Order> {
  * ```
  */
 export async function createOrder(
-  order: CreateOrderPayload
+  order: CreateOrderPayload,
+  idempotencyKey?: string,
 ): Promise<Order> {
   // The manual-order form already sends a snake_case payload the create validator
   // expects, so only the response is normalised back into the app's Order shape.
-  const response: AxiosResponse<ApiResponse<Order>> = await httpClient.post('/api/order', order);
+  const response: AxiosResponse<ApiResponse<Order>> = idempotencyKey
+    ? await httpClient.post('/api/order', order, { headers: { 'Idempotency-Key': idempotencyKey } })
+    : await httpClient.post('/api/order', order);
   return normalizeOrder(response.data.data);
 }
 

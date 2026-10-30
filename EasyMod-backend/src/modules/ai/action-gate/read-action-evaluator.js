@@ -10,6 +10,7 @@ const {
     validateProposedAction,
 } = require('../contracts/action.contract');
 const { isEvidenceSnapshotFresh } = require('../contracts/evidence.contract');
+const { isRuntimeFlagEnabled } = require('../../../config/ai-runtime-flags');
 
 const READ_DOMAINS = Object.freeze({
     READ_PRODUCT: 'PRODUCT',
@@ -49,13 +50,13 @@ const evaluateReadAction = ({
 
     if (MUTATING_ACTION_TYPES.includes(actionType)) return failure('mutating_action_refused');
     if (!READ_ONLY_ACTION_TYPES.includes(actionType)) return failure('read_action_type_invalid');
-    if (actionType === 'READ_ORDER_STATUS' && !tenantContext.customerId) {
+    if (!isRuntimeFlagEnabled('DOMAIN_AGENT_RUNTIME_ENABLED')) return failure('domain_agent_runtime_disabled');
+    if ((actionType === 'READ_ORDER_STATUS' || actionType === 'READ_CUSTOMER_CONTEXT') && !tenantContext.customerId) {
         return failure('customer_identity_unbound');
     }
     if (!tenantContext.shopId || !tenantContext.conversationId || !traceId) {
         return failure('tenant_context_incomplete');
     }
-    if (!tenantContext.customerId) return failure('tenant_context_incomplete');
     if (!evidenceShopId || evidenceShopId !== tenantContext.shopId) {
         return failure('tenant_scope_mismatch');
     }

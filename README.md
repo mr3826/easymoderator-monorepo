@@ -29,6 +29,7 @@ EasyModerator is a production-focused Messenger sales and order automation platf
 - AI reply mode is configured once in Business Settings. New or unresolved shops fail closed to Manual; Draft requires merchant review, and Auto can send only after policy and confidence gates pass.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
+- A generated product availability or stock claim requires tenant-scoped product evidence. When no product was identified, subjectless, named, generic, and deictic claims such as “in stock” and “we have it in stock” are withheld; delivery options and recognized bKash/Nagad payment availability route through their own shop-policy checks. Product stock and variant claims remain independently checked when a reply also contains a separate delivery-policy aside. Delivery claims require explicit coverage or timeline evidence; COD acceptance alone cannot authorize delivery scope. Generic “payment is available” wording requires at least one authoritative accepted method.
 - Public pricing lives at `/pricing` and is driven by the public server plan catalog; the landing page pricing section stays the primary conversion surface.
 - Business Info includes an optional owner-written "additional info" field. It is stored with the shop profile, used in reply context immediately, and included in the scheduled business-info search index.
 - Payment and delivery defaults come from the live shop operating context; FAQs are optional shop-specific knowledge, not required starter setup.
@@ -78,6 +79,13 @@ npm run build:all
 [Monorepo Architecture](docs/infrastructure/MONOREPO_ARCHITECTURE.md) for the
 boundary and rollback rules.
 
+The isolated Product Engine V1.1 Test Lab, rerun commands, and local QA evidence
+are documented in [Product Engine V1.1 Test Lab](docs/ai/product-experience-v1-1/README.md).
+
+The V1.3 customer-truth benchmark, isolated integration workflow, bounded Gemini
+opt-in, and consolidated proof package are documented in
+[Product Engine V1.3 verification](docs/ai/product-experience-v1-3/README.md).
+
 ### Backend test suites
 
 Backend tests belong to exactly one suite, chosen by filename, and
@@ -111,6 +119,13 @@ DATABASE_URL=postgres://e2e:e2e@127.0.0.1:55432/easymod_integration_test \
 ```
 
 See [EasyMod-backend/README.md](EasyMod-backend/README.md) and [EasyMod-frontend/README.md](EasyMod-frontend/README.md) for module-specific setup, environment variables, testing, and architecture.
+
+The full V1.3 Product Engine integration runner defaults to Docker Compose. If
+Docker is unavailable, it can use an explicitly selected user-owned PostgreSQL
+and Redis pair on `127.0.0.1`; it verifies an empty test database and Redis
+logical databases before running migrations and worker/webhook suites. See the
+[V1.3 verification guide](docs/ai/product-experience-v1-3/README.md) for the
+external-service setup and cleanup requirements.
 
 Launch-critical Meta deletion/deauthorization behavior, the authenticated/public
 route inventory, webhook guarantees, external-media policy, required production

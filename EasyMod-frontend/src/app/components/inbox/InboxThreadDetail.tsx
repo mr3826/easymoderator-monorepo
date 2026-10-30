@@ -5,7 +5,7 @@
 import { memo, useState } from "react";
 import {
   Bot, User, CheckCircle2, Edit3, Loader2, UserCheck, AlertTriangle,
-  Clock, ArrowLeft, Lock, FileText, RotateCcw,
+  Clock, ArrowLeft, Lock, FileText, RotateCcw, PanelRight,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -21,6 +21,8 @@ import type {
   SuggestionVisibility,
 } from "@/api/types/conversation";
 import { InboxComposer } from "./InboxComposer";
+import OpportunityCard from "../customers/OpportunityCard";
+import type { Opportunity } from "@/api/types/customer-intelligence";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -374,8 +376,13 @@ interface InboxThreadDetailProps {
   onResolve: () => void;
   onLoadOlderMessages: () => void;
   onDismissSuggestion: (msgId: string) => void | Promise<void>;
+  /** P+01: authoritative opportunity state changed from within the inbox strip. */
+  onOpportunityChanged?: (opportunity: Opportunity) => void;
   onSetShowResolveDialog: (show: boolean) => void;
   onSetResolveNote: (note: string) => void;
+  /** MW-V1: toggle the customer-context panel (desktop column / mobile sheet). */
+  onToggleContext?: () => void;
+  contextOpen?: boolean;
   onMessageSent: (message: Message) => void;
   onSendFailed: () => void;
   onTemplatesChanged: () => Promise<void>;
@@ -407,8 +414,11 @@ export function InboxThreadDetail({
   onResolve,
   onLoadOlderMessages,
   onDismissSuggestion,
+  onOpportunityChanged,
   onSetShowResolveDialog,
   onSetResolveNote,
+  onToggleContext,
+  contextOpen,
   onMessageSent,
   onSendFailed,
   onTemplatesChanged,
@@ -459,6 +469,11 @@ export function InboxThreadDetail({
   const suggestionHeading = isDraftReview ? t("inbox.status.draftReady") : t("inbox.status.humanReviewRequired");
   const providerSendFailed = getDeliveryState(heldAiMsg || ({} as Message)) === "FAILED"
     || heldMeta?.held_reason === "provider_send_failed";
+  // MW-V1 §11.1: a policy-blocked candidate gets the SAME blocked treatment
+  // as a provider failure (no misleading re-send affordance) with its own
+  // truthful copy — the stored reason class only, never an invented cause.
+  const isPolicyBlocked = heldMeta?.held_reason === "policy_blocked";
+  const messagingBlocked = providerSendFailed || isPolicyBlocked;
 
   const transcriptMessages = messages.filter((message) => (
     message.is_transcript_message !== false
@@ -534,14 +549,14 @@ export function InboxThreadDetail({
 
   return (
     <div
-      className={`flex-1 flex flex-col bg-gray-50 ${mobilePanelOpen ? "flex" : "hidden"} md:flex`}
+      className={`flex-1 flex flex-col bg-gray-50 ${mobilePanelOpen ? "flex" : "hidden"} lg:flex`}
     >
       {/* Conversation Header */}
       <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 shrink-0">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
-              className="md:hidden p-1 -ml-1 text-gray-500 hover:text-gray-700"
+              className="lg:hidden p-1 -ml-1 text-gray-500 hover:text-gray-700"
               onClick={onMobileBack}
               aria-label="Back to conversations"
             >
@@ -559,6 +574,22 @@ export function InboxThreadDetail({
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+            {onToggleContext && (
+              <button
+                type="button"
+                onClick={onToggleContext}
+                aria-expanded={contextOpen === true}
+                aria-label={t("inbox.context.title")}
+                title={t("inbox.context.title")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium font-bn ${
+                  contextOpen ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+                data-testid="context-toggle"
+              >
+                <PanelRight className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden md:inline">{t("inbox.context.title")}</span>
+              </button>
+            )}
             {selectedConversation.status !== "closed" && (
               <button
                 onClick={() => onSetShowResolveDialog(true)}
@@ -645,6 +676,18 @@ export function InboxThreadDetail({
         </div>
       )}
 
+      {/* P+01 Inbox Lead Intelligence — the same authoritative opportunity the
+          Customers page shows; reasons are recorded facts, never a score. */}
+      {selectedConversation.open_opportunity && (
+        <div className="border-b border-gray-100 bg-gray-50/60 px-4 md:px-6 py-3" data-testid="inbox-lead-insight">
+          <OpportunityCard
+            opportunity={selectedConversation.open_opportunity}
+            showCustomer={false}
+            onChanged={(updated) => onOpportunityChanged?.(updated)}
+          />
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 pb-24 md:pb-6">
         {loadingMessages ? (
@@ -728,11 +771,11 @@ export function InboxThreadDetail({
             </p>
           )}
            <div className="flex flex-col sm:flex-row gap-2">
-             {providerSendFailed ? (
-               <p className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                 {t("inbox.status.providerBlocked")}
-               </p>
-             ) : (
+              {messagingBlocked ? (
+                <p className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 font-bn">
+                  {t(isPolicyBlocked && !providerSendFailed ? "inbox.status.policyBlocked" : "inbox.status.providerBlocked")}
+                </p>
+              ) : (
                <>
             <button
                onClick={() => handleUseAiSuggestion(false)}

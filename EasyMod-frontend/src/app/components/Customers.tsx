@@ -13,7 +13,6 @@ import {
   MessageSquare,
   Calendar,
   ShieldAlert,
-  ShieldOff,
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
@@ -83,7 +82,6 @@ function LegacyCustomers() {
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [togglingBlacklist, setTogglingBlacklist] = useState(false);
 
   const [newCustomer, setNewCustomer] = useState({
     name: "",
@@ -200,25 +198,10 @@ function LegacyCustomers() {
     }
   };
 
-  const handleToggleBlacklist = async (customer: Customer) => {
-    try {
-      setTogglingBlacklist(true);
-      const nextBlacklisted = !customer.blacklisted;
-      if (nextBlacklisted) {
-        await apiClient.blacklistCustomer(customer.id);
-      } else {
-        await apiClient.removeFromBlacklist(customer.id);
-      }
-      const updated: Customer = { ...customer, blacklisted: nextBlacklisted };
-      setCustomers(prev => prev.map(c => c.id === customer.id ? updated : c));
-      setSelectedCustomer(updated);
-      toast.success(updated.blacklisted ? t('customers.success.blacklisted') : t('customers.success.unblacklisted'));
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, t('customers.errors.blacklistFailed')));
-    } finally {
-      setTogglingBlacklist(false);
-    }
-  };
+  // MW-V1: the previous handleToggleBlacklist targeted POST/DELETE
+  // /api/customer/:id/blacklist — a route the backend has never mounted —
+  // and rendered a permanently-false "blacklisted" state. Contact refusal
+  // truth is messaging_consent (opt-out), surfaced in the Inbox, not here.
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -397,11 +380,7 @@ function LegacyCustomers() {
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                {customer.blacklisted ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-gray-900 text-white">
-                                    <ShieldOff className="w-3 h-3" /> {t('customers.blacklisted')}
-                                  </span>
-                                ) : customer.rto_risk === 'high' ? (
+                                {customer.rto_risk === 'high' ? (
                                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
                                     <ShieldAlert className="w-3 h-3" /> {t('customers.rtoHigh')}
                                   </span>
@@ -507,12 +486,7 @@ function LegacyCustomers() {
                 <div>
                   <h3 className="text-xl font-semibold text-gray-900">{selectedCustomer.name ?? t('customers.unknownName')}</h3>
                   <p className="text-sm text-gray-500">{t('customers.detail.id', { id: selectedCustomer.id.slice(0, 8) })}</p>
-                  {selectedCustomer.blacklisted && (
-                    <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-900 text-white">
-                      <ShieldOff className="w-3 h-3" /> {t('customers.blacklisted')}
-                    </span>
-                  )}
-                  {!selectedCustomer.blacklisted && selectedCustomer.rto_risk && (
+                  {selectedCustomer.rto_risk && (
                     <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
                       selectedCustomer.rto_risk === 'high' ? 'bg-red-100 text-red-700' :
                       selectedCustomer.rto_risk === 'medium' ? 'bg-amber-100 text-amber-700' :
@@ -594,7 +568,7 @@ function LegacyCustomers() {
                 </div>
 
                 {/* RTO Shield Section */}
-                {(selectedCustomer.rto_risk || selectedCustomer.rto_count !== undefined || selectedCustomer.blacklisted) && (
+                {(selectedCustomer.rto_risk || selectedCustomer.rto_count !== undefined) && (
                   <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
                     <div className="flex items-center gap-2 mb-3">
                       <ShieldAlert className="w-4 h-4 text-gray-600" />
@@ -625,24 +599,8 @@ function LegacyCustomers() {
                   </div>
                 )}
 
-                {/* Blacklist Toggle */}
-                <div className="pt-2">
-                  <button
-                    onClick={() => handleToggleBlacklist(selectedCustomer)}
-                    disabled={togglingBlacklist}
-                    className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-                      selectedCustomer.blacklisted
-                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
-                    }`}
-                  >
-                    {selectedCustomer.blacklisted ? (
-                      <><ShieldOff className="w-4 h-4" /> {t('customers.detail.removeBlacklist')}</>
-                    ) : (
-                      <><ShieldAlert className="w-4 h-4" /> {t('customers.detail.addBlacklist')}</>
-                    )}
-                  </button>
-                </div>
+                {/* MW-V1: blacklist toggle removed — unmounted endpoint,
+                    permanently-false state (see handler note above). */}
               </div>
             </div>
           </div>

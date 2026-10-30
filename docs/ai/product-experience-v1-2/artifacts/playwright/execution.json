@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "runId": "0a2e2320-569e-479d-9878-2a40030a0519",
+  "status": "PASS",
+  "startedAt": "2026-10-21T12:31:43.656Z",
+  "completedAt": "2026-10-21T12:37:35.433Z",
+  "sourceRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1",
+  "localUrl": "http://127.0.0.1:3411",
+  "browsersAvailable": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "browserLimitations": [
+    "Firefox or WebKit are included only when their local browser binary is installed."
+  ],
+  "playwrightExitCode": 0,
+  "playwrightSignal": null,
+  "tests": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "results": [
+      {
+        "status": "passed",
+        "project": "chromium",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:41:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
+        "duration": "1.6m"
+      },
+      {
+        "status": "passed",
+        "project": "chromium",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:376:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "550ms"
+      },
+      {
+        "status": "passed",
+        "project": "firefox",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:41:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
+        "duration": "1.9m"
+      },
+      {
+        "status": "passed",
+        "project": "firefox",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:376:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "679ms"
+      },
+      {
+        "status": "passed",
+        "project": "webkit",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:41:1 › local Test Lab journeys, data boundaries, run history, and responsive controls",
+        "duration": "2.0m"
+      },
+      {
+        "status": "passed",
+        "project": "webkit",
+        "title": "tests\\product-engine-lab\\lab.spec.ts:376:1 › loads the real Lab shell on every installed browser engine",
+        "duration": "685ms"
+      }
+    ]
+  },
+  "browserCoverage": {
+    "chromium": {
+      "fullWorkflow": "passed",
+      "shellSmoke": "passed",
+      "realGeminiTraceUi": false
+    },
+    "firefox": {
+      "fullWorkflow": "passed",
+      "shellSmoke": "passed",
+      "realGeminiTraceUi": false
+    },
+    "webkit": {
+      "fullWorkflow": "passed",
+      "shellSmoke": "passed",
+      "realGeminiTraceUi": false
+    }
+  },
+  "browserObservations": [
+    {
+      "suite": "chromium",
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-chromium.json"
+    },
+    {
+      "suite": "chromium-shell",
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-chromium-shell.json"
+    },
+    {
+      "suite": "firefox",
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-firefox.json"
+    },
+    {
+      "suite": "firefox-shell",
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-firefox-shell.json"
+    },
+    {
+      "suite": "webkit",
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-webkit.json"
+    },
+    {
+      "suite": "webkit-shell",
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "artifact": "browser-observations-0a2e2320-569e-479d-9878-2a40030a0519-webkit-shell.json"
+    }
+  ],
+  "sourceProvenance": {
+    "candidateEngineSourceRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+backend-src-sha256:d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
+    "candidateEngineSourceSha256": "d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
+    "candidateRunnerRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+runner-sha256:3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "candidateRunnerSourceSha256": "3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "candidateRunId": "e9f1b90e-1036-40ed-bae0-54361382cfe7",
+    "datasetSha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6"
+  },
+  "accessibility": {
+    "status": "PASS_NO_CRITICAL_OR_SERIOUS",
+    "browsers": [
+      {
+        "browser": "chromium",
+        "status": "PASS_NO_CRITICAL_OR_SERIOUS",
+        "criticalOrSeriousViolationCount": 0,
+        "scannedSections": [
+          "Overview",
+          "Scenario Explorer",
+          "Evidence Inspector",
+          "Baseline vs Candidate",
+          "Cost & Latency",
+          "Failure Triage",
+          "Run History",
+          "Conversation Replay",
+          "Playground"
+        ],
+        "report": "axe-accessibility-report-0a2e2320-569e-479d-9878-2a40030a0519-chromium.json"
+      },
+      {
+        "browser": "firefox",
+        "status": "PASS_NO_CRITICAL_OR_SERIOUS",
+        "criticalOrSeriousViolationCount": 0,
+        "scannedSections": [
+          "Overview",
+          "Scenario Explorer",
+          "Evidence Inspector",
+          "Baseline vs Candidate",
+          "Cost & Latency",
+          "Failure Triage",
+          "Run History",
+          "Conversation Replay",
+          "Playground"
+        ],
+        "report": "axe-accessibility-report-0a2e2320-569e-479d-9878-2a40030a0519-firefox.json"
+      },
+      {
+        "browser": "webkit",
+        "status": "PASS_NO_CRITICAL_OR_SERIOUS",
+        "criticalOrSeriousViolationCount": 0,
+        "scannedSections": [
+          "Overview",
+          "Scenario Explorer",
+          "Evidence Inspector",
+          "Baseline vs Candidate",
+          "Cost & Latency",
+          "Failure Triage",
+          "Run History",
+          "Conversation Replay",
+          "Playground"
+        ],
+        "report": "axe-accessibility-report-0a2e2320-569e-479d-9878-2a40030a0519-webkit.json"
+      }
+    ],
+    "criticalOrSeriousViolationCount": 0
+  },
+  "htmlReport": "D:\\easymod\\_wt-verified-commerce-v1-2\\docs\\ai\\product-experience-v1-2\\artifacts\\playwright\\html-report\\index.html",
+  "traceDirectory": "D:\\easymod\\_wt-verified-commerce-v1-2\\docs\\ai\\product-experience-v1-2\\artifacts\\playwright\\test-results",
+  "screenshotsDirectory": "D:\\easymod\\_wt-verified-commerce-v1-2\\docs\\ai\\product-experience-v1-2\\artifacts\\playwright\\screenshots",
+  "failure": null
+}

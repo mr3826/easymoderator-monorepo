@@ -13,7 +13,6 @@ import type {
   VoiceTranscriptionResponse,
 } from '../types/conversation';
 import { normalizeAiReplyMode } from '../types/conversation';
-import type { AuditLog } from '../types/audit';
 import type { AxiosResponse } from 'axios';
 
 interface ConversationListBody {
@@ -62,10 +61,11 @@ function normalizeConversationList(
 
 // Conversations
 export async function getConversations(
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<ConversationsResponse> {
   const response: AxiosResponse<ApiResponse<ConversationListResponse>> =
-    await httpClient.get('/api/conversation', { params });
+    await httpClient.get('/api/conversation', { params, ...(signal ? { signal } : {}) });
   return normalizeConversationList(response.data.data);
 }
 
@@ -84,35 +84,6 @@ export async function sendMessage(
   const response: AxiosResponse<ApiResponse<Message>> = await httpClient.post(
     `/api/conversation/${conversationId}/message`,
     { content, ...options }
-  );
-  return response.data.data;
-}
-
-export async function assignConversation(
-  conversationId: string,
-  assigneeId: string | null
-): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.patch(
-    `/api/conversation/${conversationId}/assign`,
-    { assigneeId }
-  );
-  return response.data.data;
-}
-
-export async function closeConversation(
-  conversationId: string,
-  resolutionNote?: string
-): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.post(
-    `/api/conversation/${conversationId}/close`,
-    { resolutionNote }
-  );
-  return response.data.data;
-}
-
-export async function reopenConversation(conversationId: string): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.post(
-    `/api/conversation/${conversationId}/reopen`
   );
   return response.data.data;
 }
@@ -143,9 +114,9 @@ export async function createMessage(
     ? await httpClient.post(
       `/api/conversation/${conversationId}/messages`,
       message,
-      { headers: { 'Idempotency-Key': options.idempotencyKey } },
+      { headers: { 'Idempotency-Key': options.idempotencyKey }, __skipGlobalErrorToast: true },
     )
-    : await httpClient.post(`/api/conversation/${conversationId}/messages`, message);
+    : await httpClient.post(`/api/conversation/${conversationId}/messages`, message, { __skipGlobalErrorToast: true });
   return response.data.data;
 }
 
@@ -240,20 +211,10 @@ export async function deleteTemplate(templateId: string): Promise<void> {
   await httpClient.delete(`/api/templates/${templateId}`);
 }
 
-// Audit Logs
-export async function createAuditLog(log: {
-  action: string;
-  resource_type: string;
-  resource_id: string;
-  old_values?: unknown;
-  new_values?: unknown;
-  metadata?: unknown;
-}): Promise<AuditLog> {
-  const response: AxiosResponse<ApiResponse<AuditLog>> = await httpClient.post(
-    '/api/audit',
-    log
-  );
-  return response.data.data;
-}
+// MW-V1: the former createAuditLog() helper POSTed /api/audit — a route the
+// backend never mounted (audit.routes.js exposes only GET /logs, GET
+// /resource/:type/:id, POST /cleanup). Ownership/CRM changes are now audited
+// SERVER-side (see conversation.service CONVERSATION_OWNERSHIP_UPDATE), so the
+// client-side write helper is removed rather than kept as a silent no-op.
 
 

@@ -117,6 +117,7 @@ jest.mock('src/modules/entities', () => ({
     Customer: { findOne: jest.fn(), findOrCreate: jest.fn() },
     Channel: { findOne: jest.fn() },
     OrderReturn: { findOne: jest.fn(), findAll: jest.fn(), create: jest.fn() },
+    CourierDispatch: { findOne: jest.fn(), findOrCreate: jest.fn(), update: jest.fn() },
     Invoice: { create: jest.fn() },
     Campaign: { findOne: jest.fn(), findAll: jest.fn(), create: jest.fn() },
     PushSubscription: { create: jest.fn(), findOne: jest.fn(), destroy: jest.fn() }
@@ -151,6 +152,9 @@ beforeEach(() => {
     Order.findByPk.mockResolvedValue(order);
     Order.findAndCountAll.mockResolvedValue({ rows: [order], count: 1 });
     OrderItem.findAll.mockResolvedValue([mockOrderItem]);
+    Product.findAll.mockResolvedValue([mockProduct]);
+    const { CourierDispatch } = require('src/modules/entities');
+    CourierDispatch.findOne.mockResolvedValue(null);
     Customer.findOne.mockResolvedValue({ id: 'cust-1', display_name: 'Test Customer', phone: '01700000000' });
     Customer.findOrCreate.mockResolvedValue([{ id: 'cust-1' }, false]);
 });

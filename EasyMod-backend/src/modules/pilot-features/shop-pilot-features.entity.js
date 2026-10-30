@@ -30,6 +30,22 @@ const ShopPilotFeatures = sequelize.define('ShopPilotFeatures', {
         allowNull: false,
         defaultValue: {},
     },
+    // Pilot+ V1 feature flags (docs/pilot-plus-v1/03 §9 D8) — default OFF.
+    interaction_choices: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+    },
+    action_queue: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+    },
+    knowledge_suggestions: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+    },
     updated_by: {
         type: DataTypes.UUID,
         allowNull: true,

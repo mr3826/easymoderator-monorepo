@@ -112,6 +112,8 @@ jest.mock('../../entities', () => ({
     Channel: {
         findOne: jest.fn()
     },
+    CourierDispatch: { findOne: jest.fn(), findOrCreate: jest.fn(), update: jest.fn() },
+    AuditLog: { create: jest.fn() },
     Invoice: {
         create: jest.fn()
     }
@@ -122,7 +124,7 @@ jest.mock('../../../utils/email.service', () => ({
 }));
 
 const orderService = require('../order.service');
-const { Order, OrderItem, Product, UserShop, Customer, Invoice, Channel } = require('../../entities');
+const { Order, OrderItem, Product, UserShop, Customer, Invoice, Channel, CourierDispatch, AuditLog } = require('../../entities');
 const { sequelize } = require('../../../utils/database/database-setup');
 const subscriptionService = require('../../subscription/subscription.service');
 const rtoShieldService = require('../../rto-shield/rto-shield.service');
@@ -177,10 +179,14 @@ describe('Order Service', () => {
         jest.clearAllMocks();
         
         // Default mock implementations
-        sequelize.transaction = jest.fn(() => Promise.resolve({
+        sequelize.transaction = jest.fn(async (callback) => {
+            const transaction = {
+            LOCK: { UPDATE: 'UPDATE' },
             commit: jest.fn(),
             rollback: jest.fn()
-        }));
+            };
+            return typeof callback === 'function' ? callback(transaction) : transaction;
+        });
         // Postgres query mock for generateOrderNumber - returns [[{ next_number: X }]]
         sequelize.query = jest.fn().mockResolvedValue([[{ next_number: 1 }]]);
         sequelize.getDialect = jest.fn().mockReturnValue('postgres');
@@ -201,6 +207,8 @@ describe('Order Service', () => {
             invoice_number: 'INV-202401-ORD-001'
         });
         Channel.findOne = jest.fn().mockResolvedValue(null);
+        CourierDispatch.findOne.mockResolvedValue(null);
+        AuditLog.create.mockResolvedValue({ id: 'audit-1' });
         
         sendEmail.mockResolvedValue(true);
     });
@@ -376,6 +384,7 @@ describe('Order Service', () => {
         });
 
         it('should reject order when subscription limit exceeded', async () => {
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
             subscriptionService.checkOrderLimit = jest.fn().mockRejectedValue(
                 new AppError('Order limit exceeded', 403)
             );
@@ -491,6 +500,93 @@ describe('Order Service', () => {
             expect(Order.create).not.toHaveBeenCalled();
         });
 
+        it('replays an existing idempotency key before enforcing a later subscription limit', async () => {
+            const existingOrder = { id: 'existing-order', order_number: 'ORD-001' };
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Order.findOne = jest.fn().mockResolvedValue(existingOrder);
+            subscriptionService.checkOrderLimit.mockRejectedValue(new AppError('Order limit exceeded', 403));
+
+            const result = await orderService.createOrder('user-1', 'shop-1', validOrderData, 'request-id-1');
+
+            expect(result).toBe(existingOrder);
+            expect(subscriptionService.checkOrderLimit).not.toHaveBeenCalled();
+            expect(rtoShieldService.checkPhone).not.toHaveBeenCalled();
+        });
+
+        it('rechecks an idempotency key under a shop-scoped transaction lock', async () => {
+            const existingOrder = { id: 'existing-order', order_number: 'ORD-001' };
+            const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: jest.fn(), rollback: jest.fn() };
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Order.findOne = jest.fn()
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce(existingOrder);
+            sequelize.transaction = jest.fn().mockResolvedValue(transaction);
+
+            const result = await orderService.createOrder('user-1', 'shop-1', validOrderData, 'request-id-1');
+
+            expect(result).toBe(existingOrder);
+            expect(sequelize.query).toHaveBeenCalledWith(
+                expect.stringContaining('pg_advisory_xact_lock'),
+                expect.objectContaining({
+                    replacements: { key: 'order:shop-1:request-id-1' },
+                    transaction,
+                }),
+            );
+            expect(Order.findOne).toHaveBeenNthCalledWith(2, expect.objectContaining({
+                where: { shop_id: 'shop-1', idempotency_key: 'request-id-1' },
+                transaction,
+            }));
+            expect(transaction.commit).toHaveBeenCalledTimes(1);
+            expect(Order.create).not.toHaveBeenCalled();
+        });
+
+        it('aggregates duplicate product lines before checking tracked stock', async () => {
+            const mockProduct = {
+                id: 'prod-1', name: 'Low Stock Product', price: 100, quantity: 5,
+                track_quantity: true, allow_backorder: false,
+                decrement: jest.fn().mockResolvedValue(true),
+            };
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Product.findAll = jest.fn().mockResolvedValue([mockProduct]);
+            Order.create = jest.fn().mockResolvedValue({ id: 'order-1', order_number: 'ORD-001' });
+            OrderItem.create = jest.fn().mockResolvedValue({ id: 'item-1' });
+            const orderData = {
+                ...validOrderData,
+                items: [
+                    { product_id: 'prod-1', quantity: 3 },
+                    { product_id: 'prod-1', quantity: 3 },
+                ],
+            };
+
+            await expect(orderService.createOrder('user-1', 'shop-1', orderData))
+                .rejects.toThrow('Insufficient stock');
+
+            expect(Order.create).not.toHaveBeenCalled();
+            expect(mockProduct.decrement).not.toHaveBeenCalled();
+        });
+
+        it('locks products in stable order before validating and decrementing tracked stock', async () => {
+            const mockProduct = {
+                id: 'prod-1', name: 'Test Product', price: 100, quantity: 10,
+                track_quantity: true, allow_backorder: false,
+                decrement: jest.fn().mockResolvedValue(true),
+            };
+            const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: jest.fn(), rollback: jest.fn() };
+            sequelize.transaction = jest.fn().mockResolvedValue(transaction);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Product.findAll = jest.fn().mockResolvedValue([mockProduct]);
+            Order.create = jest.fn().mockResolvedValue({ id: 'order-1', order_number: 'ORD-001', save: jest.fn() });
+            OrderItem.create = jest.fn().mockResolvedValue({ id: 'item-1' });
+
+            await orderService.createOrder('user-1', 'shop-1', validOrderData);
+
+            expect(Product.findAll).toHaveBeenCalledWith(expect.objectContaining({
+                order: [['id', 'ASC']],
+                lock: 'UPDATE',
+                transaction,
+            }));
+        });
+
         it('should deduct stock atomically when creating order', async () => {
             const mockProduct = {
                 id: 'prod-1',
@@ -580,6 +676,20 @@ describe('Order Service', () => {
             );
         });
 
+        it('scopes customer and product associations to the current shop', async () => {
+            Order.findOne = jest.fn().mockResolvedValue(createMockOrder());
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+
+            await orderService.getOrderById('order-1', 'user-1', 'shop-1');
+
+            const options = Order.findOne.mock.calls[0][0];
+            const customerInclude = options.include.find((include) => include.as === 'customer');
+            const itemsInclude = options.include.find((include) => include.as === 'order_items');
+            const productInclude = itemsInclude.include.find((include) => include.as === 'product');
+            expect(customerInclude).toMatchObject({ where: { shop_id: 'shop-1' }, required: false });
+            expect(productInclude).toMatchObject({ where: { shop_id: 'shop-1' }, required: false });
+        });
+
         it('should throw error when order not found', async () => {
             Order.findOne = jest.fn().mockResolvedValue(null);
             UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
@@ -628,6 +738,40 @@ describe('Order Service', () => {
             await expect(orderService.listOrders('user-1', 'shop-1', {}))
                 .rejects
                 .toThrow('You do not have access to this shop');
+        });
+
+        // MW-V1 customer-context panel: recent orders per conversation's customer,
+        // filtered by the authoritative id INSIDE the shop scope (never cross-shop).
+        it('filters by customer_id within the shop scope', async () => {
+            Order.findAll = jest.fn().mockResolvedValue([]);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+
+            await orderService.listOrders('user-1', 'shop-1', { customer_id: 'cust-9' });
+
+            const callArgs = Order.findAll.mock.calls[0][0];
+            expect(callArgs.where).toMatchObject({ shop_id: 'shop-1', customer_id: 'cust-9' });
+        });
+
+        it('filters delivered orders within the shop scope', async () => {
+            Order.findAll = jest.fn().mockResolvedValue([]);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+
+            await orderService.listOrders('user-1', 'shop-1', { order_status: 'delivered' });
+
+            expect(Order.findAll.mock.calls[0][0].where).toMatchObject({
+                shop_id: 'shop-1',
+                order_status: 'delivered',
+            });
+        });
+
+        it('scopes the optional Customer association to the current shop', async () => {
+            Order.findAll = jest.fn().mockResolvedValue([]);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+
+            await orderService.listOrders('user-1', 'shop-1', { page: 1, limit: 10 });
+
+            const customerInclude = Order.findAll.mock.calls[0][0].include.find((include) => include.as === 'customer');
+            expect(customerInclude).toMatchObject({ where: { shop_id: 'shop-1' }, required: false });
         });
     });
 
@@ -711,16 +855,61 @@ describe('Order Service', () => {
         it('restores tracked stock when an order is cancelled via order_status', async () => {
             const mockOrder = createMockOrder({ order_status: 'confirmed', metadata: {} });
             const prod = { id: 'prod-1', track_quantity: true, increment: jest.fn().mockResolvedValue(true) };
+            const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: jest.fn(), rollback: jest.fn() };
             Order.findOne = jest.fn().mockResolvedValue(mockOrder);
             UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
             OrderItem.findAll = jest.fn().mockResolvedValue([{ product_id: 'prod-1', quantity: 2 }]);
-            Product.findOne = jest.fn().mockResolvedValue(prod);
-            sequelize.transaction = jest.fn(async (cb) => cb({ commit: jest.fn(), rollback: jest.fn() }));
+            Product.findAll = jest.fn().mockResolvedValue([prod]);
+            sequelize.transaction = jest.fn(async (cb) => cb(transaction));
 
             await orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'cancelled' });
 
-            expect(mockOrder.update).toHaveBeenCalledWith(expect.objectContaining({ order_status: 'cancelled' }));
-            expect(prod.increment).toHaveBeenCalledWith('quantity', expect.objectContaining({ by: 2 }));
+            expect(mockOrder.update).toHaveBeenCalledWith(
+                expect.objectContaining({ order_status: 'cancelled' }),
+                { transaction },
+            );
+            expect(prod.increment).toHaveBeenCalledWith('quantity', { by: 2, transaction });
+        });
+
+        it('rolls back the order cancellation when stock restoration fails', async () => {
+            const restoreError = new Error('stock write failed');
+            const mockOrder = createMockOrder({ order_status: 'confirmed', metadata: {} });
+            const product = { id: 'prod-1', track_quantity: true, increment: jest.fn().mockRejectedValue(restoreError) };
+            const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: jest.fn(), rollback: jest.fn() };
+            sequelize.transaction = jest.fn(async (callback) => {
+                try {
+                    return await callback(transaction);
+                } catch (error) {
+                    await transaction.rollback();
+                    throw error;
+                }
+            });
+            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            OrderItem.findAll = jest.fn().mockResolvedValue([{ product_id: 'prod-1', quantity: 2 }]);
+            Product.findAll = jest.fn().mockResolvedValue([product]);
+
+            await expect(orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'cancelled' }))
+                .rejects.toBe(restoreError);
+
+            expect(mockOrder.update).toHaveBeenCalledWith(
+                expect.objectContaining({ order_status: 'cancelled' }),
+                { transaction },
+            );
+            expect(transaction.rollback).toHaveBeenCalledTimes(1);
+            expect(transaction.commit).not.toHaveBeenCalled();
+        });
+
+        it('does not restore inventory twice for a repeated cancellation', async () => {
+            const mockOrder = createMockOrder({ order_status: 'cancelled', metadata: {} });
+            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            OrderItem.findAll = jest.fn().mockResolvedValue([{ product_id: 'prod-1', quantity: 2 }]);
+
+            await orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'cancelled' });
+
+            expect(OrderItem.findAll).not.toHaveBeenCalled();
+            expect(Product.findAll).not.toHaveBeenCalled();
         });
 
         it('does NOT touch stock for a non-cancel status change', async () => {
@@ -732,6 +921,16 @@ describe('Order Service', () => {
 
             expect(mockOrder.update).toHaveBeenCalledWith(expect.objectContaining({ order_status: 'processing' }));
             expect(Product.findOne).not.toHaveBeenCalled();
+        });
+
+        it('does not transition an existing confirmed order back into Draft', async () => {
+            const mockOrder = createMockOrder({ order_status: 'confirmed', metadata: {} });
+            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+
+            await expect(orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'draft' }))
+                .rejects.toMatchObject({ status: 409, code: 'ORDER_STATUS_TRANSITION_INVALID' });
+            expect(mockOrder.update).not.toHaveBeenCalled();
         });
     });
 
@@ -747,6 +946,57 @@ describe('Order Service', () => {
             it('should calculate totals correctly', async () => {
                 // Test through createOrder
             });
+        });
+    });
+
+    // Pilot+ F3: the conversational checkout commits orders with
+    // order_status 'confirmed' — the vocabulary used across the API validator,
+    // controllers, dashboard and webhooks. enforceStateConsistency must not
+    // silently rename a real, committed order to 'draft' behind the merchant's
+    // back, while still coercing genuinely unknown values.
+    describe('State consistency at creation (Pilot+ F3)', () => {
+        const runCreateInternal = async (orderDataOverrides) => {
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'us-1' });
+            Product.findAll = jest.fn().mockResolvedValue([{
+                id: 'prod-1', name: 'Test Product', price: 100.00, quantity: 10, track_quantity: false,
+            }]);
+            Order.create = jest.fn().mockImplementation((data) => Promise.resolve({
+                ...createMockOrder(), ...data,
+            }));
+            OrderItem.create = jest.fn().mockResolvedValue({ id: 'item-1' });
+
+            return orderService.createOrderInternal('shop-1', {
+                customer_name: 'Test',
+                customer_phone: '01712345678',
+                items: [{ product_id: 'prod-1', quantity: 1 }],
+                payment_status: 'pending',
+                ...orderDataOverrides,
+            });
+        };
+
+        it.each(['confirmed', 'processing', 'completed', 'cancelled', 'draft'])(
+            'creation preserves the live validator vocabulary status "%s"',
+            async (status) => {
+                const order = await runCreateInternal({ order_status: status });
+                expect(order.order_status).toBe(status);
+            }
+        );
+
+        it('legacy statuses placed/paid/fulfilled/refunded are still recognized', async () => {
+            for (const status of ['placed', 'paid', 'fulfilled', 'refunded']) {
+                const order = await runCreateInternal({ order_status: status });
+                expect(order.order_status).toBe(status);
+            }
+        });
+
+        it('a genuinely unknown status is still coerced to draft', async () => {
+            const order = await runCreateInternal({ order_status: 'not-a-real-state' });
+            expect(order.order_status).toBe('draft');
+        });
+
+        it('an invalid payment_status is still coerced to pending', async () => {
+            const order = await runCreateInternal({ payment_status: 'weird' });
+            expect(order.payment_status).toBe('pending');
         });
     });
 });

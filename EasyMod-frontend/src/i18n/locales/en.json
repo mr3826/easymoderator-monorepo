@@ -2,7 +2,9 @@
   "nav": {
     "home": "Home",
     "orders": "Orders",
-    "messages": "Messages",
+    "messages": "Inbox",
+    "customers": "Customers",
+    "workspaceNavigation": "Workspace navigation",
     "products": "Products",
     "businessInfo": "Business Info",
     "chat": "Chat",
@@ -426,14 +428,14 @@
   },
   "dashboard": {
     "pulse": {
-      "title": "Business Health",
-      "subtitle": "Orders, replies, and cash position for today",
+      "title": "Today's work",
+      "subtitle": "Review verified replies, Draft orders and delivery exceptions first.",
       "refresh": "Refresh",
       "loading": "Loading today's status...",
       "errorTitle": "Dashboard Could Not Load",
       "errorMsg": "Dashboard could not load. Check your internet connection.",
       "retry": "Try Again",
-      "partialFail": "Some data could not be updated.",
+      "partialFail": "Some dashboard sources could not be updated: {{sources}}.",
       "cards": {
         "todaySales": "Today's Sales",
         "confirmedOrders": "Today's Orders",
@@ -446,7 +448,56 @@
         "confirmed": "Confirmed ✅",
         "cancelled": "Cancelled ❌",
         "processing": "Pending 🕐",
-        "paymentPending": "Payment Due 💳"
+        "paymentPending": "Payment Due 💳",
+        "draft": "Draft",
+        "delivered": "Delivered",
+        "returned": "Returned",
+        "finalized": "Finalized",
+        "unknown": "Status unavailable"
+      },
+      "work": {
+        "title": "What needs attention",
+        "subtitle": "Only work verified from the available Inbox and Order data is listed here.",
+        "groups": {
+          "replies": "Customer replies",
+          "drafts": "Draft orders",
+          "exceptions": "Delivery exceptions"
+        },
+        "caughtUp": "No verified work items remain. You are caught up.",
+        "partialEmpty": "We could not verify all work sources, so we cannot confirm that everything is caught up.",
+        "coverageNote": "Some work sources are incomplete. Check the full Inbox and Orders lists before assuming all clear.",
+        "draftDetail": "Draft order for {{customer}}",
+        "reviewDraft": "Review draft",
+        "openOrders": "Open orders",
+        "moreInGroup": "{{count}} more in this group",
+        "openNextConversation": "Open next conversation",
+        "reviewNextOrder": "Review next order"
+      },
+      "replyTasks": {
+        "open": "Open conversation",
+        "viewFullInbox": "View full Inbox",
+        "reasons": {
+          "default": "Customer needs a reply",
+          "CUSTOMER_UNANSWERED": "Customer is waiting for a reply",
+          "PROVIDER_SEND_FAILED": "The last reply did not send",
+          "HITL_REQUIRED": "Human review is required",
+          "ORDER_CONFIDENCE_HOLD": "Order details need review"
+        }
+      },
+      "attention": {
+        "reviewOrder": "Review order"
+      },
+      "sourceNames": {
+        "overview": "order overview",
+        "actionCounts": "action counts",
+        "drafts": "Draft orders",
+        "replies": "reply tasks",
+        "recentOrders": "recent orders"
+      },
+      "overview": {
+        "title": "Business overview",
+        "subtitle": "Order counts and courier cash are separate measures.",
+        "ordersToday": "Orders today"
       },
       "botActivity": {
         "title": "Reply Performance",
@@ -457,7 +508,8 @@
       "latestOrders": {
         "title": "Last 5 Orders",
         "viewAll": "View All",
-        "empty": "Today's orders will appear here after customers confirm details in Messenger.",
+        "empty": "Recent orders will appear here when available.",
+        "valueNote": "Order totals are not cash collected or settled.",
         "noProduct": "No product specified"
       },
       "liveUpdate": "Live update every 60 seconds",
@@ -469,7 +521,8 @@
         "inTransitSub": "Cash in Transit",
         "atRisk": "Coming back",
         "atRiskSub": "At Risk · {{days}} days",
-        "ordersUnit": "{{count}} orders"
+        "ordersUnit": "{{count}} orders",
+        "unavailable": "Unavailable"
       }
     },
     "setup": {
@@ -610,6 +663,21 @@
     "tabNeedsReview": "Needs your reply",
     "noResults": "No results found",
     "noConversations": "No conversations yet",
+    "tryAgain": "Try again",
+    "empty": {
+      "searchAndFilter": "No conversations match this search and filter on this page.",
+      "search": "No conversations match this search on this page.",
+      "filter": "No conversations match this filter on this page.",
+      "page": "No conversations on this page.",
+      "currentPageOnly": "Search and filters apply only to this page. Choose another page to check there."
+    },
+    "pagination": {
+      "label": "Inbox conversation pages",
+      "range": "Showing {{start}}–{{end}} of {{total}} conversations",
+      "page": "Page {{current}} of {{total}}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page"
+    },
     "agentHandling": "🙋 You're replying",
     "resumeAi": "Resume AI",
     "aiActive": "🤖 AI is replying",
@@ -625,7 +693,8 @@
       "failed": "AI reply failed",
       "draftReady": "Draft ready for review",
       "humanReviewRequired": "Human review required",
-      "providerBlocked": "Automatic reply blocked. Send a fresh merchant reply after checking the channel."
+      "providerBlocked": "Automatic reply blocked. Send a fresh merchant reply after checking the channel.",
+      "policyBlocked": "Blocked by messaging rules — this reply was not sent. Check the conversation facts, then reply manually if it is still appropriate."
     },
     "upgradeForAI": "Upgrade for AI",
     "agentBanner": "You're replying yourself — AI is paused for this conversation.",
@@ -645,6 +714,9 @@
     "outsideWindowPlaceholder": "Wait for the customer to message again...",
     "send": "Send",
     "sending": "Sending...",
+    "messageAccepted": "Reply accepted by messaging provider",
+    "messageDelivered": "Reply delivered",
+    "openNextReplyTask": "Open next reply task",
     "sendEdited": "Send edited reply",
     "outsideWindowDisabled": "Meta's 24-hour messaging window has expired. EasyModerator will not send out-of-window Messenger messages in this launch version.",
     "windowWarning": "The Messenger reply window is closing soon. Reply only if this is part of the active customer conversation.",
@@ -698,16 +770,95 @@
     "deliveryFailed": "Reply not delivered: {{reason}}",
     "channelIssue": "Channel issue — {{name}}: {{message}}",
     "templates": {
-      "orderConfirmed": "Order Confirmed",
+      "checkNow": "Let me check",
+      "replySoon": "Message received",
+      "askDetails": "Ask for a detail",
       "needAddress": "Need Address",
-      "advancePayment": "Advance Payment",
-      "courierUpdate": "Courier Update",
-      "thankYou": "Thank You",
-      "outOfStock": "Out of Stock",
-      "deliveryCharge": "Delivery Charge",
-      "returnWindow": "Return Window",
-      "cashOnDelivery": "Cash on Delivery",
-      "dispatchToday": "Dispatch Today"
+      "thankYou": "Thank You"
+    },
+    "context": {
+      "title": "Customer context",
+      "identity": "Customer",
+      "relationship": "Relationship",
+      "operations": "Recent orders",
+      "notes": "Private notes",
+      "tags": "Tags",
+      "deliveredOrders": "Delivered orders",
+      "deliveredValue": "Delivered value",
+      "noOrders": "No orders yet.",
+      "notesEmpty": "No notes yet.",
+      "tagsEmpty": "No tags yet.",
+      "loading": "Loading…",
+      "unavailable": "Some details couldn't load just now.",
+      "notesAdd": "Add note",
+      "notesSave": "Save note",
+      "noteDelete": "Delete",
+      "tagsEdit": "Edit tags",
+      "tagsApply": "Apply",
+      "tagsNoVocabulary": "No tags defined yet — ask an owner/admin to create some.",
+      "crmFailed": "Could not save",
+      "noLink": "This conversation is not linked to a customer record.",
+      "viewProfile": "View customer profile",
+      "openOrder": "Open order",
+      "rto": {
+        "clear": "No delivery-risk flags",
+        "verify": "Delivery-risk: verification advised",
+        "block": "Delivery-risk: on a risk list"
+      },
+      "owner": {
+        "title": "Ownership",
+        "unclaimed": "No one has taken this yet",
+        "none": "No active owner",
+        "teammate": "a teammate",
+        "claim": "Claim this work",
+        "assign": "Assign to…",
+        "force": "Take over as manager",
+        "failed": "Could not update ownership"
+      }
+    },
+    "actions": {
+      "title": "Top actions ({{total}})",
+      "refresh": "Refresh action queue",
+      "assigned": "Assigned",
+      "views": {
+        "label": "Work views",
+        "empty": "No open work in this view.",
+        "attention": "All open",
+        "mine": "Needs my attention",
+        "unassigned": "Unassigned",
+        "handoff": "Human handoff",
+        "recovery": "Send recovery",
+        "opportunities": "Opportunities",
+        "review": "Awaiting review"
+      },
+      "dueBy": "Due {{time}}",
+      "bucket": {
+        "NEEDS_HUMAN": "Needs a person",
+        "COMMITTED_WITHOUT_ACK": "Delivery trouble",
+        "CUSTOMER_BLOCKED": "Customer blocked",
+        "DRAFT_RECOVERY": "Drafts to review",
+        "PURCHASE_OPPORTUNITY": "Purchase opportunities",
+        "KNOWLEDGE_GAP": "Knowledge gaps"
+      },
+      "reason": {
+        "HITL_REQUIRED": "Customer asked for a human",
+        "HANDOFF_SUSPENDED_CHECKOUT": "Checkout paused while a human steps in",
+        "SEND_FAILED_AFTER_MUTATION": "Order updated, but the reply never reached the customer",
+        "SEND_NEEDS_RECONCILIATION": "Check whether this reply actually went out",
+        "CHECKOUT_WAITING_CUSTOMER": "Customer stuck in checkout",
+        "DRAFT_AWAITING_REVIEW": "AI draft waiting for your OK",
+        "HELD_MESSAGE": "Reply on hold — review before it goes out",
+        "OPPORTUNITY_OPEN": "Ready-to-order customer",
+        "KNOWLEDGE_GAP_OPEN": "Question the AI could not answer"
+      },
+      "next": {
+        "open_conversation": "Open chat",
+        "review_draft": "Review draft",
+        "reconcile_send": "Check send",
+        "resume_checkout": "Resume checkout",
+        "review_opportunity": "Review deal",
+        "review_knowledge_gap": "Review question"
+      }
     }
   },
   "products": {
@@ -717,6 +868,7 @@
     "addManually": "Add Manually",
     "downloadTemplate": "Download Upload Template",
     "searchPlaceholder": "Search by product name, SKU",
+    "lowStockOnly": "Low stock only",
     "filter": "Filter",
     "filterTitle": "Filter Products",
     "filterCategory": "Category",
@@ -1014,6 +1166,7 @@
     "statusConfirmed": "Confirmed",
     "statusProcessing": "Processing",
     "statusCompleted": "Completed",
+    "statusDelivered": "Delivered",
     "statusCancelled": "Cancelled",
     "columns": {
       "orderId": "Order ID",
@@ -1027,6 +1180,7 @@
     "itemCount": "{{count}} items",
     "createModal": {
       "title": "Create Manual Order",
+      "draftStockDisclosure": "This order starts as Draft. Tracked stock is deducted now and restored if you cancel it. Payment and delivery are not confirmed by creating this order.",
       "customerSection": "Customer Information",
       "customerName": "Customer Name",
       "customerNamePlaceholder": "Enter customer name",
@@ -1098,6 +1252,8 @@
       "codPending": "COD pending",
       "customerChat": "Customer Chat (last 3 messages)",
       "noChatSnippet": "No chat snippet found.",
+      "linkedChatEmpty": "The linked conversation has no recent messages.",
+      "openConversation": "Open conversation in Inbox",
       "note": "Note",
       "notePlaceholder": "Write an order note here",
       "saveNote": "Save Note",
@@ -1153,6 +1309,13 @@
   "customers": {
     "title": "Customer Management",
     "subtitle": "Manage and track all your customers in one place",
+    "channels": {
+      "facebook": "Facebook",
+      "messenger": "Messenger",
+      "webchat": "Website chat",
+      "telegram": "Telegram",
+      "manual": "Manual"
+    },
     "totalCustomers": "Total Customers",
     "channelCustomers": "Channel Customers",
     "channelCustomersHelper": "Facebook, etc.",
@@ -2083,6 +2246,43 @@
       "cooldownLabel": "Cooldown (minutes)",
       "triggerKeywordsLabel": "Alert keywords",
       "triggerKeywordsPlaceholder": "e.g. complain, refund"
+    }
+  },
+  "faqSettings": {
+    "gaps": {
+      "title": "Questions customers keep asking",
+      "subtitle": "Real customer questions your shop has not answered yet. You write every answer — nothing is published automatically.",
+      "askedTimes": "asked {{count}} times",
+      "openSettings": "Open settings",
+      "writeAnswer": "Write answer",
+      "dismiss": "Dismiss",
+      "publish": "Publish answer",
+      "questionLabel": "Question",
+      "answerLabel": "Your answer",
+      "answerPlaceholder": "Write the exact answer customers should receive.",
+      "dismissTitle": "Why dismiss this question?",
+      "dismissConfirm": "Dismiss",
+      "published": "Answer published to your FAQs.",
+      "dismissed": "Suggestion dismissed.",
+      "actionFailed": "Something went wrong. Please try again.",
+      "refreshed": "This question changed on the server — the list was refreshed.",
+      "status": {
+        "IN_REVIEW": "In review"
+      },
+      "domain": {
+        "PAYMENT": "Payment",
+        "DELIVERY": "Delivery",
+        "PRODUCT": "Product",
+        "POLICY": "Policy",
+        "OTHER": "Other"
+      },
+      "dismissReasons": {
+        "NOT_USEFUL": "Not useful",
+        "ALREADY_ANSWERED": "Already answered",
+        "CONFIG_ONLY": "Settings fix it",
+        "OUTDATED": "Outdated",
+        "OTHER": "Other"
+      }
     }
   },
   "subscription": {

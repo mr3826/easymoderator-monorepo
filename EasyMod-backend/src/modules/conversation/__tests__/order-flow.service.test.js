@@ -17,9 +17,13 @@ const Customer = require('../../customer/customer.entity');
 
 jest.mock('../../order/order-session-standalone.service', () => ({
     getActiveSession: jest.fn(),
+    getResumableSession: jest.fn(),
     processStep: jest.fn(),
     startOrderSession: jest.fn(),
     cancelSession: jest.fn(),
+    suspendSession: jest.fn(),
+    resumeSession: jest.fn(),
+    markAwaitingResume: jest.fn(),
 }));
 jest.mock('../../product/product-search.service', () => ({
     searchForOrder: jest.fn(),
@@ -133,14 +137,13 @@ describe('handleOrderFlow — continue an active session', () => {
         expect(OrderSessionService.processStep).not.toHaveBeenCalled();
     });
 
-    test.each([
-        'stop',
-        'I need an agent',
-        'I want to return my order',
-    ])('releases an active session for terminal intent %s', async (message) => {
-        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+    // P+04 (interruption classes): terminal semantics split. STOP stays
+    // terminal (cancel); a human request PAUSES the cart instead of destroying
+    // it; questions about OTHER orders or ordinary info DEFER the step.
+    test('STOP remains terminal: session cancelled and released', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE', current_step: 'COLLECTING_PHONE' });
 
-        const res = await handleOrderFlow(base({ message }));
+        const res = await handleOrderFlow(base({ message: 'stop' }));
 
         expect(res.handled).toBe(false);
         expect(res.meta).toEqual(expect.objectContaining({ order_session: 'released_for_terminal_intent' }));
@@ -149,7 +152,68 @@ describe('handleOrderFlow — continue an active session', () => {
             traceId: null,
             mutationsAllowed: true,
         });
+        expect(OrderSessionService.suspendSession).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['I need an agent', 'HUMAN_HANDOFF_REQUEST'],
+        ['talk to a person', 'HUMAN_HANDOFF_REQUEST'],
+    ])('human request (%s) SUSPENDS the session without cancelling', async (message) => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE', current_step: 'COLLECTING_ADDRESS' });
+        OrderSessionService.suspendSession.mockResolvedValue({ suspended: true });
+
+        const res = await handleOrderFlow(base({ message }));
+
+        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'suspended_for_handoff' }));
+        expect(OrderSessionService.suspendSession).toHaveBeenCalledWith('sess-1', SHOP, expect.objectContaining({
+            reason: expect.any(String),
+        }));
+        expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
         expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test('asking about an EXISTING separate order does not destroy the current cart', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE', current_step: 'COLLECTING_NAME' });
+        OrderSessionService.markAwaitingResume.mockResolvedValue({ deferred: true });
+
+        const res = await handleOrderFlow(base({ message: 'amar ager order 123456 kothay?' }));
+
+        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({
+            order_session: 'question_deferred',
+            resume_step: 'COLLECTING_NAME',
+        }));
+        expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        'delivery charge koto?',
+        'bkash naki cash on delivery?',
+        'size available?',
+        'exchange korte parbo?',
+    ])('informational question (%s) defers the step instead of capturing it as an answer', async (message) => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE', current_step: 'COLLECTING_NAME' });
+        OrderSessionService.markAwaitingResume.mockResolvedValue({ deferred: true });
+
+        const res = await handleOrderFlow(base({ message }));
+
+        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'question_deferred', resume_step: 'COLLECTING_NAME' }));
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+        expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
+    });
+
+    test('step machine belt: a question-shaped answer reported by processStep releases without field write', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE', current_step: 'COLLECTING_NAME' });
+        OrderSessionService.processStep.mockResolvedValue({ question_deferred: true, current_step: 'COLLECTING_NAME' });
+        OrderSessionService.markAwaitingResume.mockResolvedValue({ deferred: true });
+
+        const res = await handleOrderFlow(base({ message: 'John Doe' }));
+
+        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'question_deferred' }));
     });
 
     test('does not mutate an active cart for a negated edit', async () => {
@@ -161,6 +225,53 @@ describe('handleOrderFlow — continue an active session', () => {
         expect(res.meta).toEqual(expect.objectContaining({ order_session: 'no_mutation' }));
         expect(OrderSessionService.processStep).not.toHaveBeenCalled();
         expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
+    });
+});
+
+describe('handleOrderFlow — resume a suspended session (P+04)', () => {
+    const suspended = { id: 'sess-s', status: 'SUSPENDED', current_step: 'COLLECTING_ADDRESS', step_data: {} };
+
+    beforeEach(() => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        OrderSessionService.getResumableSession.mockResolvedValue(suspended);
+    });
+
+    test('an ordinary field answer after a handoff resumes the step machine with the message', async () => {
+        OrderSessionService.resumeSession.mockResolvedValue({ resumed: true });
+        OrderSessionService.processStep.mockResolvedValue({ prompt: 'Address type?', current_step: 'COLLECTING_ADDRESS', completed: false });
+
+        const res = await handleOrderFlow(base({ message: 'Mirpur 10, Dhaka' }));
+
+        expect(OrderSessionService.resumeSession).toHaveBeenCalledWith('sess-s', SHOP, expect.any(Object));
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-s', SHOP, 'Mirpur 10, Dhaka', null, { mutationsAllowed: true });
+        expect(res.meta.order_session).toBe('continue');
+    });
+
+    test('an explicit resume word re-asks the preserved step without consuming the word as an answer', async () => {
+        OrderSessionService.resumeSession.mockResolvedValue({ resumed: true, current_step: 'COLLECTING_ADDRESS', prompt: 'ঠিকানা দিন' });
+
+        const res = await handleOrderFlow(base({ message: 'continue', language: 'bn' }));
+
+        expect(res.handled).toBe(true);
+        expect(res.response).toBe('ঠিকানা দিন');
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+        expect(res.meta.order_session).toBe('resumed');
+    });
+
+    test('a new informational question while suspended goes to the pipeline and stays suspended', async () => {
+        const res = await handleOrderFlow(base({ message: 'delivery charge koto?' }));
+
+        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'question_deferred', resume_step: 'COLLECTING_ADDRESS' }));
+        expect(OrderSessionService.resumeSession).not.toHaveBeenCalled();
+    });
+
+    test('STOP while suspended still terminates the cart', async () => {
+        const res = await handleOrderFlow(base({ message: 'stop' }));
+
+        expect(res.handled).toBe(false);
+        expect(OrderSessionService.cancelSession).toHaveBeenCalled();
+        expect(OrderSessionService.resumeSession).not.toHaveBeenCalled();
     });
 });
 
@@ -279,6 +390,16 @@ describe('handleOrderFlow — image-borne product (photo + "order korbo")', () =
     // Live regression 2026-06-11: customer sent a product PHOTO + "Oder korbo".
     // The text carries no product name, so text search found nothing and the
     // whole turn fell through to the LLM, which role-played the order.
+    let previousPhotoMatchFlag;
+    beforeEach(() => {
+        previousPhotoMatchFlag = process.env.AI_PHOTO_MATCH_ENABLED;
+        process.env.AI_PHOTO_MATCH_ENABLED = 'true';
+    });
+    afterEach(() => {
+        if (previousPhotoMatchFlag === undefined) delete process.env.AI_PHOTO_MATCH_ENABLED;
+        else process.env.AI_PHOTO_MATCH_ENABLED = previousPhotoMatchFlag;
+    });
+
     test('identifies the product from the image when text search has no match', async () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
         productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
@@ -349,6 +470,40 @@ describe('handleOrderFlow — image-borne product (photo + "order korbo")', () =
 
         expect(res.handled).toBe(true);
         expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
+    });
+
+    test('disabled photo matching skips image selection but keeps text search and asks for a product name', async () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'false';
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+
+        const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
+
+        expect(productSearch.searchForOrder).toHaveBeenCalledWith(expect.objectContaining({ query: 'order korbo' }));
+        expect(matchImageMessage).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
+        expect(res.response).toMatch(/product name/i);
+        expect(res.response).not.toMatch(/photo/i);
+    });
+
+    test('disabled photo matching preserves ordinary text-only order lookup', async () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'false';
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [{ id: 'prod-text', name: 'Red Saree', price: 1200, in_stock: true }],
+            wasFallback: false,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: 'sess-text', prompt: 'Your name?' });
+
+        const res = await handleOrderFlow(base({ message: 'red saree nibo' }));
+
+        expect(productSearch.searchForOrder).toHaveBeenCalledWith(expect.objectContaining({ query: 'red saree nibo' }));
+        expect(matchImageMessage).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).toHaveBeenCalledWith(expect.objectContaining({
+            product_info: expect.objectContaining({ id: 'prod-text', name: 'Red Saree' }),
+        }));
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'started' }));
     });
 });
 

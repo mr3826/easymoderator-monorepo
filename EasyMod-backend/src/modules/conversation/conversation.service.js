@@ -5,7 +5,11 @@ const {
     MetaChannel,
     MetaChannelSettings,
     InboxDeliveryOutbox,
+    User,
+    UserShop,
+    AuditLog,
 } = require('../entities');
+const crypto = require('crypto');
 const { Op, literal } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -271,6 +275,26 @@ const terminalizeDuplicateSiblings = async (candidate, rows, transaction, actorI
     }
     return dismissedSiblingMessageIds;
 };
+
+/**
+ * P+01: read-only projection of the AUTHORITATIVE live Sales Opportunity for
+ * the Inbox. Pilot-flag gated (fail-closed: any lookup error => no projection,
+ * never a failed inbox), reuses opportunity.service's canonical serializer so
+ * Inbox and Customer 360 can never disagree, and computes no second score.
+ */
+async function liveOpportunityMap(shopId, customerIds) {
+    const ids = [...new Set((customerIds || []).filter(Boolean))];
+    if (!ids.length) return new Map();
+    try {
+        const { isCustomerIntelligenceEnabled } = require('../pilot-features/pilot-features.service');
+        const enabled = await isCustomerIntelligenceEnabled(shopId);
+        if (!enabled) return new Map();
+        const { liveOpportunitiesForCustomers } = require('../customer-intelligence/opportunity.service');
+        return await liveOpportunitiesForCustomers(shopId, ids);
+    } catch (_) {
+        return new Map();
+    }
+}
 
 const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
     const metadata = normalizeObject(conversation?.metadata);
@@ -563,6 +587,13 @@ class ConversationService {
             title,
             status: conversation.status || meta.status || 'active',
             hitl: conversation.hitl ?? false,
+            // MW-V1 D3: ownership must be visible or "who owns the next action"
+            // cannot be answered. Names are attached by the list/detail loaders
+            // (loadAssigneeNames); assignee_id alone is already authoritative.
+            assignee_id: conversation.assignee_id ?? null,
+            assignee: null,
+            resolution_note: conversation.resolution_note ?? null,
+            resolved_at: conversation.resolvedAt ?? conversation.resolved_at ?? null,
             lastMessage: meta.last_actual_message ?? conversation.message ?? null,
             unreadCount: Math.max(0, Number(meta.unreadCount) || 0),
             lastReadMessageId: meta.last_read_message_id || null,
@@ -576,6 +607,23 @@ class ConversationService {
             created_at: conversation.createdAt ?? conversation.created_at,
             updated_at: conversation.updatedAt ?? conversation.updated_at
         };
+    }
+
+    // MW-V1: one batched name query per page, never per row. assignee_id values
+    // were membership-checked at write time, so display lookup is safe.
+    async loadAssigneeNames(assigneeIds) {
+        const ids = [...new Set((assigneeIds || []).filter(Boolean).map(String))];
+        const out = new Map();
+        if (ids.length === 0 || typeof User?.findAll !== 'function') return out;
+        try {
+            const rows = await User.findAll({
+                where: ids.length === 1 ? { id: ids[0] } : { id: { [Op.in]: ids } },
+                attributes: ['id', 'full_name'],
+            });
+            for (const row of rows || []) out.set(String(row.id), { id: row.id, name: row.full_name || null });
+        } catch { /* names are display-only; the id remains authoritative */ }
+        for (const id of ids) if (!out.has(id)) out.set(id, { id, name: null });
+        return out;
     }
 
     async getConversations(shopId, options = {}) {
@@ -672,19 +720,28 @@ class ConversationService {
                 }
             }
 
+            const opportunitiesByCustomer = await liveOpportunityMap(
+                shopId,
+                conversations.rows.map((row) => row.customer_id),
+            );
+
+            const mappedConversations = conversations.rows.map((row) => ({
+                ...this.mapConversation(row),
+                suggestionCount: suggestionCounts.get(row.id) || 0,
+                hasAiSuggestion: suggestionCounts.has(row.id),
+                open_opportunity: opportunitiesByCustomer.get(row.customer_id) || null,
+                ...deriveWorkflowProjection(
+                    row,
+                    messagesByConversation.get(row.id) || [],
+                    aiReplyMode,
+                ),
+            }));
+            const assigneeNames = await this.loadAssigneeNames(mappedConversations.map((m) => m.assignee_id));
+            for (const m of mappedConversations) m.assignee = assigneeNames.get(String(m.assignee_id)) || null;
+
             return {
-                conversations: conversations.rows.map((row) => ({
-                    ...this.mapConversation(row),
-                    suggestionCount: suggestionCounts.get(row.id) || 0,
-                    hasAiSuggestion: suggestionCounts.has(row.id),
-                    ...deriveWorkflowProjection(
-                        row,
-                        messagesByConversation.get(row.id) || [],
-                        aiReplyMode,
-                    ),
-                })),
-                ai_reply_mode: aiReplyMode,
-                pagination: {
+                conversations: mappedConversations,
+                ai_reply_mode: aiReplyMode,                pagination: {
                     total: conversations.count,
                     page,
                     limit,
@@ -742,10 +799,17 @@ class ConversationService {
                     })
                     : [],
             ]);
-            return {
+            const opportunitiesByCustomer = await liveOpportunityMap(shopId, [conversation.customer_id]);
+            const detail = {
                 ...this.mapConversation(conversation),
                 ...deriveWorkflowProjection(conversation, messages || [], aiReplyMode),
+                open_opportunity: opportunitiesByCustomer.get(conversation.customer_id) || null,
             };
+            if (detail.assignee_id) {
+                const names = await this.loadAssigneeNames([detail.assignee_id]);
+                detail.assignee = names.get(String(detail.assignee_id)) || null;
+            }
+            return detail;
         } catch (error) {
             if (error instanceof AppError) throw error;
             throw new Error(`Failed to fetch conversation: ${error.message}`);
@@ -1343,7 +1407,7 @@ class ConversationService {
         return pending.length;
     }
 
-    async updateConversation(conversationId, shopId, updates) {
+    async updateConversation(conversationId, shopId, updates, opts = {}) {
         const update = async (transaction) => {
             const conversation = await Conversation.findOne({
                 where: { id: conversationId, shop_id: shopId },
@@ -1388,6 +1452,59 @@ class ConversationService {
                 }
             }
             const resuming = updates.hitl === false && !closing;
+            // P+03 (spec §9.4/9.5): ownership is server-authoritative. A
+            // takeover while another agent already owns an OPEN handoff is an
+            // explicit conflict (409), never a silent overwrite — same for a
+            // resolution written over another owner's pending work. Owner and
+            // admin members may force (manager escalation); a forced action
+            // still records the new owner below.
+            const actor = opts.actor || null;
+            const privileged = actor && ['owner', 'admin'].includes(String(actor.role || '').toLowerCase());
+            const sameOwner = actor && conversation.assignee_id
+                && String(conversation.assignee_id) === String(actor.userId);
+            // A client-supplied force is only meaningful for privileged members;
+            // staff must never self-escalate over another owner's handoff (FlowGuard).
+            const forced = opts.force === true && privileged;
+            if (actor && conversation.assignee_id && !sameOwner && !privileged && !forced) {
+                if (updates.hitl === true && conversation.hitl === true) {
+                    const error = new Error('This conversation is already assigned to another team member');
+                    error.code = 'HUMAN_TAKEOVER_CONFLICT';
+                    error.statusCode = 409;
+                    throw error;
+                }
+                if ((updates.hitl === false || updates.status === 'closed') && conversation.hitl === true) {
+                    const error = new Error('Only the assigned teammate (or an admin/owner) can resolve this handoff');
+                    error.code = 'HANDOFF_RESOLUTION_CONFLICT';
+                    error.statusCode = 409;
+                    throw error;
+                }
+            }
+            // MW-V1 D2: an explicit assignment must reference an ACTIVE MEMBER
+            // of the acting shop — never any UUID. (Actor-self claims are already
+            // covered by JWT + verifyShopAccess; null unassign needs no lookup.)
+            if (updates.assignee_id !== undefined && updates.assignee_id !== null) {
+                if (typeof UserShop?.findOne !== 'function') {
+                    const error = new Error('Assignee membership check unavailable');
+                    error.code = 'ASSIGNEE_CHECK_UNAVAILABLE';
+                    error.statusCode = 503;
+                    throw error;
+                }
+                const member = await UserShop.findOne({
+                    where: { user_id: updates.assignee_id, shop_id: shopId, is_active: true },
+                    ...(transaction ? { transaction } : {}),
+                });
+                if (!member) {
+                    const error = new Error('Assignee must be an active member of this shop');
+                    error.code = 'INVALID_ASSIGNEE';
+                    error.statusCode = 400;
+                    throw error;
+                }
+            }
+            const beforeOwnership = {
+                assignee_id: conversation.assignee_id || null,
+                hitl: conversation.hitl === true,
+                status: conversation.status || 'active',
+            };
             const existingResumeBoundaryState = resumeBoundaryStateFor(conversation);
             if (resuming
                 && existingResumeBoundaryState.present
@@ -1431,9 +1548,42 @@ class ConversationService {
                 };
             }
             if (updates.assignee_id !== undefined) fields.assignee_id = updates.assignee_id;
+            else if (updates.hitl === true && actor?.userId) {
+                // "Take over" == claim: a handoff requested is not a person
+                // responsible until someone (or their manager) is assigned.
+                fields.assignee_id = actor.userId;
+            }
             if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
 
             await conversation.update(fields, ...(transaction ? [{ transaction }] : []));
+
+            // MW-V1 D4: ownership/workflow transitions are audited where they
+            // actually happen (server-side, non-fatal). Defer persistence until
+            // after commit so the best-effort insert cannot extend the
+            // conversation row lock. The idempotency_key is a correlation hash
+            // (audit_logs.idempotency_key is a non-unique index, so this records,
+            // it does not dedup).
+            const afterOwnership = {
+                assignee_id: conversation.assignee_id ?? null,
+                hitl: conversation.hitl === true,
+                status: conversation.status || 'active',
+            };
+            const ownershipChanged = String(beforeOwnership.assignee_id) !== String(afterOwnership.assignee_id)
+                || beforeOwnership.hitl !== afterOwnership.hitl
+                || beforeOwnership.status !== afterOwnership.status;
+            const ownershipAuditEntry = ownershipChanged && actor
+                ? {
+                        user_id: actor.userId || null,
+                        shop_id: shopId,
+                        action: 'CONVERSATION_OWNERSHIP_UPDATE',
+                        resource_type: 'conversation_ownership',
+                        resource_id: conversationId,
+                        idempotency_key: crypto.createHash('sha256')
+                            .update([conversationId, JSON.stringify(beforeOwnership), JSON.stringify(afterOwnership), actor.userId || 'system'].join('|'))
+                            .digest('hex'),
+                        metadata: { from: beforeOwnership, to: afterOwnership, forced: forced === true },
+                    }
+                : null;
 
             const heldEvents = [];
 
@@ -1494,13 +1644,21 @@ class ConversationService {
                 }));
             }
 
-            return { conversation, heldEvents, resolutionOutcome };
+            return { conversation, heldEvents, resolutionOutcome, ownershipChanged, ownershipAuditEntry };
         };
 
         try {
             const result = sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function'
                 ? await sequelize.transaction((transaction) => update(transaction))
                 : await update(null);
+            if (result.ownershipAuditEntry && typeof AuditLog?.create === 'function') {
+                try {
+                    await AuditLog.create(result.ownershipAuditEntry);
+                } catch (_) {
+                    // Audit persistence is best-effort; the ownership update is
+                    // already committed and must remain successful on failure.
+                }
+            }
             for (const { message, metadata } of result.heldEvents) {
                 sseManager.emit(shopId, 'message_delivery_updated', {
                     conversation_id: conversationId,
@@ -1529,15 +1687,36 @@ class ConversationService {
                     ],
                 })
                 : [];
-            return {
+            const finalShape = {
                 ...this.mapConversation(result.conversation),
                 hitl: result.conversation.hitl,
                 ...deriveWorkflowProjection(result.conversation, messages || [], aiReplyMode),
                 ...(result.resolutionOutcome ? { resolution_outcome: result.resolutionOutcome } : {}),
             };
+            if (finalShape.assignee_id) {
+                const names = await this.loadAssigneeNames([finalShape.assignee_id]);
+                finalShape.assignee = names.get(String(finalShape.assignee_id)) || null;
+            }
+            // MW-V1 D3: ownership-carrying workflow event now has ONE source —
+            // the service at the actual write — and includes the assignee.
+            // (The controller previously emitted an ownership-blind duplicate.)
+            if (result.ownershipChanged) {
+                sseManager.emit(shopId, 'hitl_changed', {
+                    conversation_id: conversationId,
+                    hitl: finalShape.hitl,
+                    status: finalShape.status,
+                    needs_merchant_reply: finalShape.needs_merchant_reply,
+                    needs_merchant_reply_reason: finalShape.needs_merchant_reply_reason,
+                    ai_is_replying: finalShape.ai_is_replying,
+                    assignee_id: finalShape.assignee_id,
+                    assignee: finalShape.assignee || null,
+                });
+            }
+            return finalShape;
         } catch (error) {
             const wrapped = new Error(`Failed to update conversation: ${error.message}`);
             if (error?.code) wrapped.code = error.code;
+            if (error?.statusCode) wrapped.statusCode = error.statusCode;
             throw wrapped;
         }
     }
@@ -1592,17 +1771,12 @@ class ConversationService {
                     const conversationId = target?.id || target;
                     const deliveryLock = await acquireBulkDeliveryLock(conversationId);
                     try {
-                        const updatedConversation = await this.updateConversation(conversationId, shopId, { status: 'closed' });
+                        // MW-V1 D4b: updateConversation is now the single
+                        // ownership-event source (it emits hitl_changed with the
+                        // assignee); the previous per-item emit here double-fired.
+                        await this.updateConversation(conversationId, shopId, { status: 'closed' });
                         updatedConversationIds.push(conversationId);
                         await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
-                        sseManager.emit(shopId, 'hitl_changed', {
-                            conversation_id: conversationId,
-                            hitl: updatedConversation.hitl,
-                            status: updatedConversation.status,
-                            needs_merchant_reply: updatedConversation.needs_merchant_reply,
-                            needs_merchant_reply_reason: updatedConversation.needs_merchant_reply_reason,
-                            ai_is_replying: updatedConversation.ai_is_replying,
-                        });
                     } finally {
                         await releaseBulkDeliveryLock(deliveryLock, conversationId);
                     }

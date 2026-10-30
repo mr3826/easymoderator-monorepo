@@ -2,9 +2,9 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import ConversationAlertBanner from './ConversationAlertBanner';
 import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
-  Store, LogOut,
+  Store, LogOut, Users,
   CreditCard, Bell, ChevronLeft, ChevronRight,
-  ChevronDown, Building2, MessageSquare, Truck, Settings, BookOpen,
+  ChevronDown, Building2, MessageSquare, Truck, BookOpen,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -25,8 +25,9 @@ export default function DashboardLayout() {
 
   const navigation = [
     { name: t('nav.home'), path: dashboardPath, icon: Home },
-    { name: t('nav.orders'), path: '/orders', icon: ShoppingBag },
     { name: t('nav.messages'), path: '/inbox', icon: MessageCircle },
+    { name: t('nav.orders'), path: '/orders', icon: ShoppingBag },
+    { name: t('nav.customers'), path: '/customers', icon: Users },
     { name: t('nav.products'), path: '/products', icon: Grid3X3 },
   ];
 
@@ -39,10 +40,7 @@ export default function DashboardLayout() {
     { name: t('nav.faqs'), path: '/manage-shop/faqs', icon: BookOpen },
   ];
 
-  const mobileNavigation = [
-    ...navigation,
-    { name: t('nav.settings'), path: '/manage-shop', icon: Settings },
-  ];
+  const mobileNavigation = navigation;
 
   const { user, currentShop, logout } = useAuth();
 
@@ -57,7 +55,8 @@ export default function DashboardLayout() {
   const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem];
   const activeNav = allNavItems.find(item =>
     item.path === location.pathname ||
-    (item.path !== dashboardPath && location.pathname.startsWith(item.path))
+    (item.path !== dashboardPath && location.pathname.startsWith(item.path)) ||
+    (item.path === '/products' && location.pathname.startsWith('/categories'))
   );
   const pageTitle = activeNav?.name
     ?? (location.pathname.startsWith('/manage-shop') ? t('nav.settings') : 'EasyModerator');
@@ -86,18 +85,20 @@ export default function DashboardLayout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-3 px-2 overflow-y-auto">
+        <nav aria-label={t('nav.workspaceNavigation')} className="flex-1 py-3 px-2 overflow-y-auto">
           <div className="space-y-0.5">
             {navigation.map((item) => {
               const Icon = item.icon;
               const isActive =
                 location.pathname === item.path ||
-                (item.path !== dashboardPath && location.pathname.startsWith(item.path));
+                (item.path !== dashboardPath && location.pathname.startsWith(item.path)) ||
+                (item.path === '/products' && location.pathname.startsWith('/categories'));
 
               return (
                 <Link
                   key={item.path}
                   to={item.path}
+                  aria-current={isActive ? 'page' : undefined}
                   aria-label={collapsed ? item.name : undefined}
                   title={collapsed ? item.name : undefined}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group relative ${
@@ -216,8 +217,11 @@ export default function DashboardLayout() {
 
         {/* ─── Sticky AppBar ─────────────────────────────────────────── */}
         <header className="sticky top-0 z-20 h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-4 shrink-0">
-          {/* Page title */}
-          <h1 className="text-sm font-semibold text-gray-800 flex-1 truncate">{pageTitle}</h1>
+          {/* Page title. Deliberately not a heading: every page renders its own
+              <h1> in <main>; an <h1> here duplicated the document heading and
+              made heading-based locators ambiguous (customer-intelligence
+              journeys, release-readiness sweep). */}
+          <p className="text-sm font-semibold text-gray-800 flex-1 truncate">{pageTitle}</p>
 
           {/* Notifications */}
           <InAppNotificationCenter />
@@ -274,18 +278,20 @@ export default function DashboardLayout() {
         </main>
       </div>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
+      <nav aria-label={t('nav.workspaceNavigation')} className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
         <ul className="grid grid-cols-5 gap-1">
           {mobileNavigation.map((item) => {
             const Icon = item.icon;
             const isActive =
-              location.pathname === item.path ||
-              (item.path !== dashboardPath && location.pathname.startsWith(item.path));
+                location.pathname === item.path ||
+                (item.path !== dashboardPath && location.pathname.startsWith(item.path)) ||
+                (item.path === '/products' && location.pathname.startsWith('/categories'));
 
             return (
               <li key={`mobile-${item.path}`}>
                 <Link
                   to={item.path}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`flex min-h-12 flex-col items-center justify-center rounded-lg px-1 text-[11px] font-semibold transition-colors ${
                     isActive ? 'bg-blue-50 text-blue-600' : 'text-gray-600'
                   }`}

@@ -234,9 +234,9 @@ describe('D — vision policy', () => {
         expect(visionEnabled()).toBe(false);
     });
 
-    test('customer-photo matching is ENABLED by default — opt out, not opt in', () => {
+    test('customer-photo matching is disabled by default — explicit opt in only', () => {
         const { photoMatchEnabled } = require('src/modules/ai/vision-policy.service');
-        expect(photoMatchEnabled()).toBe(true);
+        expect(photoMatchEnabled()).toBe(false);
     });
 
     test('photo matching is switchable off without touching the vision flag', () => {
@@ -248,9 +248,16 @@ describe('D — vision policy', () => {
 
     test('the two switches are independent — vision on does not turn photo matching off', () => {
         process.env.AI_VISION_ENABLED = 'true';
+        process.env.AI_PHOTO_MATCH_ENABLED = 'true';
         const { photoMatchEnabled, visionEnabled } = require('src/modules/ai/vision-policy.service');
         expect(visionEnabled()).toBe(true);
         expect(photoMatchEnabled()).toBe(true);
+    });
+
+    test('non-literal photo flag values are disabled', () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'TRUE';
+        const { photoMatchEnabled } = require('src/modules/ai/vision-policy.service');
+        expect(photoMatchEnabled()).toBe(false);
     });
 
     test('image blocks are stripped from outgoing messages, text is kept', () => {

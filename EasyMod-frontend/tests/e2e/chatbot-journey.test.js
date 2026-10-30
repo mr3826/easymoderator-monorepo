@@ -337,7 +337,7 @@ test.describe('Group 1: Authentication & Shop Selection', () => {
   test('owner can sign in and reach dashboard', async ({ page }) => {
     await setupMockApi(page);
     await login(page);
-    await expect(page.getByRole('main').getByRole('heading', { name: 'Business Health' })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: "Today's work" })).toBeVisible({ timeout: 20000 });
   });
 });
 
@@ -359,7 +359,7 @@ test.describe('Group 3: Business Info Entry', () => {
   test('dashboard loads metrics safely', async ({ page }) => {
     await setupMockApi(page);
     await login(page);
-    await expect(page.getByRole('main').getByRole('heading', { name: 'Business Health' })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: "Today's work" })).toBeVisible({ timeout: 20000 });
   });
 });
 

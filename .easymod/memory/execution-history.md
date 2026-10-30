@@ -1,5 +1,159 @@
 # Execution History
-**Last Updated:** 2026-09-01 (Phase 1 exact Page and tenant routing)
+**Last Updated:** 2026-10-25 (Merchant Workspace V1 — increment 2)
+
+## 2026-10-25 — Merchant Workspace V1 increment 2: inbox customer context, ownership lifecycle, CRM Lite (notes + tags), server-backed work views
+
+**Task:** Turn the Inbox into a merchant customer-service + commerce workspace
+(doc 03 five questions) on a child branch of the frozen increment-1 tip
+`3d1bc0eb`, in a NEW protected worktree, with a controlled multi-workstream
+integration rehearsal first, full real-stack QA, independent review, and a
+founder preview. Do not rebuild Pilot+; reuse its engines; no new business
+authority without evidence; never touch other agents' worktrees or production.
+
+**Outcome:** Complete on `feat/merchant-workspace-v1-increment2` (evidence root
+`docs/merchant-workspace-v1/increment-2/`). Phase 1 rehearsal (disposable
+`_rehearsal-mw-v1-integration`) merged v6-action-first into increment-1: tsc 0,
+build green, backend 496/496, but 30 frontend behaviour failures — 27 Pilot+
+inbox guarantees broken by v6 files that merged WITHOUT conflicts (its
+DashboardLayout/http-client shift request ordering) — so v6/orders-v2 are
+DEFERRED for owner-rebase, NOT file-level-integrated; only the pilot-customer-rto
+create-time `customer_id` shop-integrity guard was content-ported (`57c5ada3`,
+strengthens the association trust). Increment 2 continues from pure increment-1.
+Phase 4 closed four REAL ownership defects found by source mining: D1 HTTP force
+was validator-blocked; D2 any UUID was accepted as assignee (now active-member
+checked, fail-closed); D3 mapConversation hid assignee/resolution (now exposed
+with a batched, no-N+1 assignee-name lookup); D4 ownership changes were audited
+only by a client call to a non-existent route (now server-side
+CONVERSATION_OWNERSHIP_UPDATE audit + single service-emitted hitl_changed SSE
+carrying the owner). Phase 3 adds CustomerContextPanel (identity always;
+relationship/RTO only when customer_intelligence on AND zero gated requests
+while off; operations via the authoritative customer_id order filter; honest
+unavailable degradation; per-conversation stale-request discard; canonical
+/inbox?conversation= deep link). Phase 5/6 add CRM Lite: staff-private
+customer_notes (paranoid soft delete, content never in audits/logs/AI-prompt/
+SSE), shop-scoped customer_tag_definitions + idempotent assignments with a
+reserved derived-status blocklist, and seven server-backed built-in work views
+with full-collection counts (no saved-view engine). Phase 7: policy-blocked AI
+candidates now get truthful blocked copy + no misleading re-send; the permanently-
+false blacklist surface (unmounted route, always-undefined flag) was removed.
+
+**Tests:** backend 313/313 suites 4214 passed; real-stack integration 30/30
+suites 219 passed INCLUDING a new 13-spec mwv1-increment2 suite (D1-D4 over
+HTTP, same-name non-cross-association, notes/tags tenancy + content-free audit,
+queue counts/views); Meta-shaped E2E 48/48 (zero live sends); frontend 665/665
+vitest + tsc 0 + vite build; Playwright 10/10 deterministic journeys on BOTH
+chromium and firefox (incl. axe clean on the panel) + 5/5 live founder
+screenshots; live perf measured (customer_id filter adds ~0 latency vs plain
+list — indexed, no N+1).
+
+**Schema:** additive + reversible — `customer_notes` (paranoid) and
+`customer_tag_definitions` + `customer_tag_assignments` (UNIQUE tag↔customer);
+conversations reused existing columns (assignee_id/resolution_note/resolved_at
+already present); no data rewrites.
+
+**Meta Risk:** reduced — no order can display another customer's chat, no
+foreign-shop assignee/tag/note is reachable, ownership is audited and visible,
+and no AI candidate implies a business fact it cannot support. Notes are
+staff-private and provably absent from outbound/AI-prompt/SSE. PRODUCTION_-
+RELEASE_AUTHORIZED=NO; nothing pushed/merged/deployed; other agents' worktrees
+and the Pilot+/increment-1 trees untouched.
+
+## 2026-10-25 — Merchant Workspace V1 increment 1: safe composer macros, verified order→chat link, dead-code removal
+
+**Task:** Execute the three Gate-0-flagged contract corrections (FE-01, FE-08,
+FE-03) as a child branch of the frozen Pilot+ V1 candidate `9f562aaf`, without
+restarting or touching the Pilot+ workstream, other agents' worktrees, or
+production.
+
+**Outcome:** Complete in `feat/merchant-workspace-v1-increment1` (worktree
+`D:\easymod\_wt-merchant-workspace-v1-increment1`; evidence
+`docs/merchant-workspace-v1/increment-1-handoff.md`). FE-01 replaced the ten
+hard-coded quick-reply fallbacks (which asserted order/stock/payment/courier/
+charge/return/COD/dispatch facts and were shown even when the templates API
+FAILED) with five claim-free ones — only information-requests or
+promise-to-follow-up; template click still only fills the editable composer
+(no auto-send, no AI-grounding inheritance, both asserted). FE-08 replaced the
+order-detail name search (`getConversations({search:name,limit:1})`, which the
+list endpoint silently ignores — it actually returned the shop's most recently
+ACTIVE conversation, i.e. possibly a different customer's chat) with the
+verified shop-scoped `customer_id` association already enforced server-side,
+a client-side identity recheck, an honest unavailable state for manual/unlinked
+orders, AbortController stale-response protection, and the canonical
+`/inbox?conversation=<id>` deep link. FE-03 removed the dead
+assign/close/reopen helpers targeting unmounted routes (zero references; the
+canonical tested PATCH contract unchanged).
+
+**Tests:** tsc 0; frontend vitest 644/644 (+16 new: claim-free invariants,
+empty/API-failure/inactive-template wiring, unlinked/wrong-customer/empty/
+stale-discard cases); Playwright pilot-plus 10/10 on BOTH chromium and firefox
+(7 Pilot+ regression journeys + 3 new increment journeys with request-level
+assertions); vite build green. No backend files changed (`git diff
+--name-only 9f562aaf..HEAD -- EasyMod-backend` empty); backend suites inherited
+the Pilot+ green state by construction.
+
+**Schema:** none. `Order.customerId` is a frontend normalisation field over the
+existing `customer_id` column.
+
+**Meta Risk:** reduced — the merchant UI no longer offers hard-coded
+customer-truth claims, and no order can display another customer's
+conversation. Live full-stack preview blocked by host Docker Desktop engine
+(machine reboot; WSL stopped) — not a code issue; lab restart documented in
+the handoff. PRODUCTION_RELEASE_AUTHORIZED=NO; nothing pushed/merged/deployed.
+
+## 2026-10-25 — Pilot+ V1: lead intelligence, structured choices, action queue, context-preserving checkout, knowledge-gap actions
+
+**Task:** From the verified Product Engine V1.3 tree (`f0f04e4e`) implement the
+five Pilot+ opportunities as one business loop, with the three Domain-Engine P0s
+as isolated prerequisites, full automated QA, independent verification, and a
+founder-reviewable local lab. No production mutation; no other agent's worktree
+or process touched.
+
+**Outcome:** Complete on branch `feat/pilotplus-v1-merchant-momentum`
+(evidence root `docs/pilot-plus-v1/`, machine proof `pilot-plus-v1-proof.json`).
+P0-1 retired Meta tags: outside-window sends now HOLD (never blind-tag; error-100
+tags un-emittable at rule + wire double guard; HUMAN_AGENT behind an off-by-default
+permission flag with a 7-day verified-event clock). P0-2 OCR-payment myth: dead
+"Payment confirmed" branch removed with source + behavior invariants. P0-3 payment
+authority: enable/disable/delete of self-mfs now synchronizes the single AI-read
+source (mechanism corrected after A/B evidence — no hot-path query; see 06/A1).
+F3 committed conversational orders keep their true status. P+01 reuses the
+existing opportunity engine through one authoritative projection in the inbox
+read path. P+02 adds the only new mechanism: a server-side opaque interaction-
+proposal kernel (registry-only options, scope+expiry+bound-version+single-use
+CAS, quick replies within Meta limits, honest text/numbered fallbacks, typed
+equivalence execution). P+03 is a request-time ranked read model over existing
+authorities (no task store) plus claimed-handoff ownership (409s; privileged-only
+force). P+04 splits mid-checkout messages into terminal/pause/defer classes with
+a preserved SUSPENDED state and deterministic resume hint. P+05 clusters gap
+evidence deterministically, routes structured domains to their settings, and
+publishes only merchant-authored answers through the existing FAQ authority.
+All five surfaces sit behind default-off platform flags; kill switch verified
+to disable even in-flight choice taps.
+
+**Tests:** Backend units 4163/4169 (3 red suites proven baseline-inherited tooling
+flakes — fail worse at pristine f0f04e4e; deterministic run convention in 06/A2).
+Real-stack integration 29/29 suites 206/206 including both new additive
+migrations; Meta-shaped E2E 48/48 (fake transport, zero live sends); security
+perimeter 802/802; frontend vitest 628/628 + tsc clean + vite build; Playwright
+Pilot+ journeys 7/7 on chromium and firefox plus 8 live-lab walkthrough
+screenshots; performance deltas measured with EXPLAIN plans (doc 08). Independent
+fresh-context verifier: IMPLEMENTATION_VERIFIED, zero new vulnerabilities.
+Adversarial diff review: 11 findings, all closed.
+
+**Schema:** Additive only — `customer_interactions` (+3 `shop_pilot_features`
+flag columns) and `knowledge_gap_suggestions`; both reversible by drop; no data
+rewrites; `order_sessions.status` needed no migration (plain VARCHAR).
+
+**Meta Risk:** Retired tags can no longer reach the wire; outside-window sends
+fail closed into merchant-visible recovery states; interactive choices traverse
+the full policy chain and can never express payment/delivery/stock truth beyond
+the authoritative records; every new endpoint derives the shop from the JWT only.
+Open item pending founder: Meta App Review for the Human-Agent permission (the
+code path stays inert until granted) and the standing "opt-out exception for
+legacy transactional sends" in the policy chain (unchanged by Pilot+, still
+listed in meta-policy-risks).
+
+---
 
 ## 2026-09-01 - Meta remediation Phase 1: exact Page and tenant routing
 

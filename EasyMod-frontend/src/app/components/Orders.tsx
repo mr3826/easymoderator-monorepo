@@ -72,10 +72,14 @@ export default function Orders() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const createOrderRetryKeysRef = useRef(new Map<string, string>());
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [showProductSelector, setShowProductSelector] = useState(false);
   const [detailNote, setDetailNote] = useState('');
   const [conversationSnippets, setConversationSnippets] = useState<string[]>([]);
+  // FE-08: id of the conversation that VERIFIEDLY belongs to this order's
+  // customer (null = no safe link → honest unavailable state, never a guess).
+  const [linkedConversationId, setLinkedConversationId] = useState<string | null>(null);
   // Bug #14: inline product search — no separate modal needed
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [showCourierModal, setShowCourierModal] = useState(false);
@@ -180,6 +184,7 @@ export default function Orders() {
         const fetchedOrders = await apiClient.getOrders({
           search: appliedSearchQuery || undefined,
           ...dateRange,
+          order_status: filterStatus === 'all' ? undefined : filterStatus,
           payment_status: paymentStatus,
           fulfillment_status: fulfillmentStatus,
           page: 1,
@@ -197,33 +202,44 @@ export default function Orders() {
     return () => controller.abort();
   }, [dateFilter, appliedSearchQuery, filterStatus]);
 
+  // FE-08: resolve the chat snippet ONLY through the verified shop-scoped
+  // customer id (backend GET /api/conversation already filters customer_id
+  // inside the caller's own shop scope). The previous name search was worse
+  // than it looked: the list endpoint ignores `search`, so this used to show
+  // whatever conversation was most recently ACTIVE — possibly another
+  // customer's. No customerId (manual orders) or no matching thread now
+  // renders the honest "no linked chat" state instead of guessing.
   useEffect(() => {
+    setLinkedConversationId(null);
+    setConversationSnippets([]);
+    const customerId = selectedOrder?.customerId;
+    if (!customerId) return;
+
+    const controller = new AbortController();
     const loadConversationSnippet = async () => {
-      if (!selectedOrder?.customerName) {
-        setConversationSnippets([]);
-        return;
-      }
       try {
-        const list = await apiClient.getConversations({ search: selectedOrder.customerName, limit: 1 });
-        const firstConv = list.data?.[0];
-        if (!firstConv) {
-          setConversationSnippets([]);
-          return;
-        }
-        const messagesResult = await apiClient.getMessages(firstConv.id, { page: 1, limit: 3 });
+        const list = await apiClient.getConversations({ customer_id: customerId, limit: 1 }, controller.signal);
+        // Defensive client-side identity check before touching messages.
+        const linked = (list.data ?? []).find((c) => String(c.customer_id ?? '') === String(customerId));
+        if (!linked) return;
+        const messagesResult = await apiClient.getMessages(linked.id, { page: 1, limit: 3, signal: controller.signal });
+        if (controller.signal.aborted) return;
         const snippets = (messagesResult.messages || [])
           .slice(-3)
           .map((msg) => msg.content)
           .filter(Boolean);
+        setLinkedConversationId(linked.id);
         setConversationSnippets(snippets);
       } catch (err: unknown) {
-        console.error('Failed to load conversation snippet:', err);
-        setConversationSnippets([]);
+        if ((err as { code?: string })?.code !== 'ERR_CANCELED') {
+          console.error('Failed to load conversation snippet:', err);
+        }
       }
     };
 
     loadConversationSnippet();
-  }, [selectedOrder?.id, selectedOrder?.customerName]);
+    return () => controller.abort();
+  }, [selectedOrder?.id, selectedOrder?.customerId]);
 
   const filteredOrders = orders.filter(order => {
     if (filterStatus === 'all') {
@@ -421,7 +437,21 @@ export default function Orders() {
         note: manualOrder.notes
       };
 
-      const newOrder = await apiClient.createOrder(orderData);
+      const requestFingerprint = JSON.stringify(orderData);
+      let idempotencyKey = createOrderRetryKeysRef.current.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        createOrderRetryKeysRef.current.set(requestFingerprint, idempotencyKey);
+        if (createOrderRetryKeysRef.current.size > 5) {
+          const oldest = createOrderRetryKeysRef.current.keys().next().value;
+          if (oldest) createOrderRetryKeysRef.current.delete(oldest);
+        }
+      }
+
+      const newOrder = await apiClient.createOrder(orderData, idempotencyKey);
+      createOrderRetryKeysRef.current.delete(requestFingerprint);
       setOrders([newOrder, ...orders]);
       setShowCreateOrder(false);
       toast.success(t('orders.createModal.createButton'));
@@ -580,6 +610,7 @@ export default function Orders() {
               { value: 'confirmed', label: t('orders.statusConfirmed') },
               { value: 'processing', label: t('orders.statusProcessing') },
               { value: 'completed', label: t('orders.statusCompleted') },
+              { value: 'delivered', label: t('orders.statusDelivered') },
               { value: 'cancelled', label: t('orders.statusCancelled') },
             ].map(({ value, label }) => (
               <motion.button
@@ -648,6 +679,9 @@ export default function Orders() {
             </div>
 
             <div className="p-6 space-y-6">
+              <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 font-bn">
+                {t('orders.createModal.draftStockDisclosure')}
+              </p>
               {/* Customer Info */}
               <div>
                 <h3 className="font-semibold text-gray-900 mb-3">{t('orders.createModal.customerSection')}</h3>
@@ -1115,16 +1149,31 @@ export default function Orders() {
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.customerChat')}</h3>
-              {conversationSnippets.length === 0 ? (
-                <p className="text-sm text-gray-500">{t('orders.detailModal.noChatSnippet')}</p>
+              {linkedConversationId ? (
+                conversationSnippets.length === 0 ? (
+                  <p className="text-sm text-gray-500">{t('orders.detailModal.linkedChatEmpty')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {conversationSnippets.map((line, idx) => (
+                      <p key={`${selectedOrder.id}-msg-${idx}`} className="rounded-lg bg-white p-3 text-sm text-gray-700 border border-gray-200">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )
               ) : (
-                <div className="space-y-2">
-                  {conversationSnippets.map((line, idx) => (
-                    <p key={`${selectedOrder.id}-msg-${idx}`} className="rounded-lg bg-white p-3 text-sm text-gray-700 border border-gray-200">
-                      {line}
-                    </p>
-                  ))}
-                </div>
+                <p className="text-sm text-gray-500">{t('orders.detailModal.noChatSnippet')}</p>
+              )}
+              {/* FE-08: navigation only ever for the conversation VERIFIED to
+                  belong to this order's customer, via the canonical inbox deep link. */}
+              {linkedConversationId && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/inbox?conversation=${encodeURIComponent(linkedConversationId)}`)}
+                  className="mt-3 text-sm font-semibold text-blue-700 hover:underline font-bn"
+                >
+                  {t('orders.detailModal.openConversation')}
+                </button>
               )}
             </div>
 

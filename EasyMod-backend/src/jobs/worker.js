@@ -38,6 +38,8 @@ async function startWorker() {
         console.log('✅ Database connected');
 
         // 5. Schedule recurring jobs and start workers
+        queueManager.startWorkers();
+        await queueManager.waitUntilReady();
         await queueManager.scheduleJobs();
         workerReady = true;
 

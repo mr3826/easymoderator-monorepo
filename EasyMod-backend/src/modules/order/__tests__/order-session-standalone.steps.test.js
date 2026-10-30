@@ -19,6 +19,9 @@ jest.mock('../../product/product-search.service', () => ({
     checkStock: jest.fn(),
     searchForOrder: jest.fn(),
 }));
+jest.mock('../../ai/image-product-matcher.service', () => ({
+    matchImageMessage: jest.fn(),
+}));
 jest.mock('../../customer/customer.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../shop/shop.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../payment/payment-config.entity', () => ({ findAll: jest.fn() }));
@@ -39,9 +42,12 @@ jest.mock('../../ai/action-gate', () => ({
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
 const productSearch = require('../../product/product-search.service');
+const { matchImageMessage } = require('../../ai/image-product-matcher.service');
+const { authorize } = require('../../ai/action-gate');
 const { issueInvoiceForOrder } = require('../../invoice/chat-invoice.service');
 const ShopEntity = require('../../shop/shop.entity');
 const PaymentConfigEntity = require('../../payment/payment-config.entity');
+let previousPhotoMatchFlag;
 
 const makeSession = (overrides = {}) => ({
     id: 'sess-1',
@@ -57,6 +63,10 @@ const makeSession = (overrides = {}) => ({
 
 beforeEach(() => {
     jest.clearAllMocks();
+    previousPhotoMatchFlag = process.env.AI_PHOTO_MATCH_ENABLED;
+    delete process.env.AI_PHOTO_MATCH_ENABLED;
+    productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+    matchImageMessage.mockResolvedValue({ products: [], method: 'no_match', confidence: 0 });
     // Parcel dispatch is fire-and-forget via setImmediate — keep it out of tests.
     jest.spyOn(OrderSessionService, 'dispatchParcelWithRetry').mockResolvedValue(undefined);
     jest.spyOn(console, 'info').mockImplementation(() => {});
@@ -64,6 +74,8 @@ beforeEach(() => {
 
 afterEach(() => {
     jest.restoreAllMocks();
+    if (previousPhotoMatchFlag === undefined) delete process.env.AI_PHOTO_MATCH_ENABLED;
+    else process.env.AI_PHOTO_MATCH_ENABLED = previousPhotoMatchFlag;
 });
 
 describe('COLLECTING_NAME', () => {
@@ -274,12 +286,13 @@ describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
         );
     });
 
-    test('fails open (advances) when the stock lookup throws', async () => {
+    test('stays on quantity collection when the stock lookup is unavailable', async () => {
         productSearch.checkStock.mockRejectedValue(new Error('db down'));
         const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'bn' } });
         const res = await OrderSessionService.handleCurrentStep(session, '2', null);
 
-        expect(res.current_step).toBe('ADD_MORE');
+        expect(res.current_step).toBe('COLLECTING_QUANTITY');
+        expect(res.prompt).toContain('স্টক এখন যাচাই করা যাচ্ছে না');
     });
 });
 
@@ -527,6 +540,37 @@ describe('multi-item order: summary, create, invoice', () => {
         expect(optsArg.items[1]).toEqual(expect.objectContaining({ name: 'Silk Dupatta', quantity: 2, total: 1000 }));
     });
 
+    test('requires a fresh customer confirmation when tracked stock changes but remains available', async () => {
+        productSearch.checkStock.mockResolvedValue({
+            available: true,
+            product: { id: 'prod-1', track_quantity: true, quantity: 8, price: 1650 },
+        });
+        authorize.mockResolvedValueOnce({ authorized: false, reasonCode: 'material_state_revalidated' });
+        const session = makeSession({
+            current_step: 'ORDER_SUMMARY',
+            product_info: { id: 'prod-1', name: 'Azal Lawn Two Piece', price: 1650, quantity: 1, track_quantity: true, stock_snapshot: 10 },
+            step_data: {
+                language: 'en',
+                name: 'Evan',
+                phone: '01886895874',
+                address: 'Mirpur, Dhaka',
+                delivery_charge: 60,
+                payment_method: 'cod',
+                cart: [{ product_id: 'prod-1', name: 'Azal Lawn Two Piece', price: 1650, quantity: 1, track_quantity: true, stock_snapshot: 10 }],
+            },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null, { conversationId: 'conv-1' });
+
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(res.mutation_blocked).toBe(true);
+        expect(res.prompt).toMatch(/stock availability changed/i);
+        expect(res.step_data.cart[0].stock_snapshot).toBe(8);
+        expect(authorize.mock.calls[0][1].materialStateRevalidated).toBe(false);
+        expect(authorize.mock.calls[0][1].customerConfirmationValid).toBe(false);
+        expect(createOrderInternal).not.toHaveBeenCalled();
+    });
+
     test('confirmation appends the shop closing message (thank-you + social links)', async () => {
         productSearch.checkStock.mockResolvedValue({ available: true });
         createOrderInternal.mockResolvedValue({
@@ -608,6 +652,142 @@ describe('COLLECTING_ZONE → payment routing', () => {
 
         expect(res.current_step).toBe('COLLECTING_PAYMENT');
         expect(res.prompt).toMatch(/পেমেন্ট পদ্ধতি/);
+    });
+});
+
+// Pilot+ P0-2: an OCR screenshot is NOT payment verification. The step machine
+// must never tell a customer "Payment confirmed" from a screenshot, and the
+// historical AWAITING_MFS_SCREENSHOT step (whose gateway condition was already
+// unsatisfiable — enabled ids are only 'cod'|'self-mfs') recovers to the
+// payment question instead of claiming verification. Payment truth remains
+// merchant confirmation / verified gateway webhook only.
+describe('self-MFS payment truth (P0-2)', () => {
+    const { verifyPaymentScreenshot } = require('../../payment/self-mfs-handler.service');
+
+    test('a legacy AWAITING_MFS_SCREENSHOT step never claims payment confirmed', async () => {
+        verifyPaymentScreenshot.mockResolvedValue({ verified: true, trxId: 'TRXFAKE1', amount: 1650 });
+        const session = makeSession({
+            current_step: 'AWAITING_MFS_SCREENSHOT',
+            step_data: {
+                language: 'en',
+                enabled_gateways: ['cod', 'self-mfs'],
+                delivery_zone: 'inside_dhaka',
+                delivery_charge: 60,
+                total: 1710,
+            },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'see attachment', {
+            imageUrl: 'https://cdn.example.test/screenshot.png',
+        });
+
+        expect(verifyPaymentScreenshot).not.toHaveBeenCalled();
+        expect(res.step_data.mfs_payment_verified).toBeUndefined();
+        expect(res.prompt).not.toMatch(/Payment confirmed|পেমেন্ট নিশ্চিত/i);
+        expect(res.current_step).toBe('COLLECTING_PAYMENT');
+    });
+
+    test('answering "bkash" when self-mfs is enabled advances without any screenshot claim', async () => {
+        const session = makeSession({
+            current_step: 'COLLECTING_PAYMENT',
+            step_data: { language: 'en', enabled_gateways: ['cod', 'self-mfs'], delivery_zone: 'inside_dhaka', delivery_charge: 60 },
+        });
+        const res = await OrderSessionService.handleCurrentStep(session, 'bkash', null);
+
+        expect(verifyPaymentScreenshot).not.toHaveBeenCalled();
+        expect(res.current_step).toBe('COLLECTING_NOTES');
+        expect(res.prompt).not.toMatch(/screenshot|স্ক্রিনশট/i);
+        expect(res.step_data.payment_method).toBe('self-mfs');
+    });
+
+    test('service source contains no OCR-confirmation success path at all', () => {
+        const fs = require('fs');
+        const src = fs.readFileSync(require.resolve('../order-session-standalone.service'), 'utf8');
+        expect(src).not.toMatch(/verifyPaymentScreenshot/);
+        expect(src).not.toMatch(/Payment confirmed ✅/);
+        expect(src).not.toMatch(/পেমেন্ট নিশ্চিত হয়েছে/);
+        expect(src).not.toMatch(/mfs_payment_verified\s*=\s*true/);
+    });
+});
+
+// P+04 belt: identity-capturing steps must refuse question-shaped answers
+// instead of storing "delivery charge koto?" as the customer's name, while
+// ordinary names/addresses/digits keep flowing through unchanged.
+describe('question-shape belt on capture steps (P+04)', () => {
+    test.each([
+        ['COLLECTING_NAME', 'delivery charge koto?'],
+        ['COLLECTING_NAME', 'আপনার নাম কি?'],
+        ['COLLECTING_PHONE', 'number ta ki apnar?'],
+        ['COLLECTING_ADDRESS', 'which area deliver covers?'],
+        ['COLLECTING_ZONE', 'কত charge?'],
+    ])('%s refuses to store question %s as field data', async (step, answer) => {
+        const session = makeSession({ current_step: step, step_data: { language: 'en' } });
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.question_deferred).toBe(true);
+        expect(res.current_step).toBe(step);
+        expect(session.update).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['COLLECTING_NAME', 'Rahim Uddin'],
+        ['COLLECTING_NAME', 'Karim'],
+        ['COLLECTING_PHONE', '01712345678'],
+        ['COLLECTING_ADDRESS', 'House 12, Road 5, Mirpur 10, Dhaka'],
+        ['COLLECTING_ZONE', '1'],
+    ])('%s still accepts plain answer %s', async (step, answer) => {
+        const session = makeSession({
+            current_step: step,
+            step_data: { language: 'en', enabled_gateways: ['cod'], delivery_charge: 60 },
+        });
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.question_deferred).toBeUndefined();
+    });
+});
+
+describe('customer-photo order selection policy', () => {
+    test('unset photo flag skips image matching while preserving text lookup', async () => {
+        const product = { id: 'prod-1', name: 'Lawn' };
+        productSearch.searchForOrder.mockResolvedValue({ products: [product], wasFallback: false });
+
+        const result = await OrderSessionService.identifyProduct('shop-1', 'lawn', {
+            imageUrl: 'https://cdn.example.test/synthetic.jpg',
+        });
+
+        expect(result).toEqual({ products: [product], wasFallback: false });
+        expect(matchImageMessage).not.toHaveBeenCalled();
+    });
+
+    test('unset photo flag skips image matching when text lookup has no result', async () => {
+        const result = await OrderSessionService.identifyProduct('shop-1', '', {
+            imageUrl: 'https://cdn.example.test/synthetic.jpg',
+        });
+
+        expect(result).toEqual({ products: [], wasFallback: true });
+        expect(matchImageMessage).not.toHaveBeenCalled();
+    });
+
+    test('explicit opt-in keeps the image matcher available', async () => {
+        const product = { id: 'prod-1', name: 'Lawn' };
+        process.env.AI_PHOTO_MATCH_ENABLED = 'true';
+        matchImageMessage.mockResolvedValue({ products: [product], method: 'vision', confidence: 0.9 });
+
+        const result = await OrderSessionService.identifyProduct('shop-1', '', {
+            imageUrl: 'https://cdn.example.test/synthetic.jpg',
+        });
+
+        expect(matchImageMessage).toHaveBeenCalledWith({
+            shopId: 'shop-1', imageUrl: 'https://cdn.example.test/synthetic.jpg', text: '',
+        });
+        expect(result).toEqual({ products: [product], wasFallback: false });
+    });
+
+    test('product prompts do not advertise photo selection while matching is disabled', () => {
+        expect(OrderSessionService.generateStepPrompt('ADDING_PRODUCT', {}, 'en')).not.toMatch(/photo/i);
+        expect(OrderSessionService.buildAddMorePrompt({ name: 'Lawn' }, [], 'en')).not.toMatch(/photo/i);
+        expect(OrderSessionService.buildMultiAddPrompt([{ name: 'Lawn', quantity: 1 }], [], [], 'en'))
+            .not.toMatch(/photo/i);
     });
 });
 

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS_NO_CRITICAL_OR_SERIOUS",
+  "browser": "firefox",
+  "scannedSections": [
+    {
+      "section": "Overview",
+      "violations": []
+    },
+    {
+      "section": "Scenario Explorer",
+      "violations": []
+    },
+    {
+      "section": "Evidence Inspector",
+      "violations": []
+    },
+    {
+      "section": "Baseline vs Candidate",
+      "violations": []
+    },
+    {
+      "section": "Cost & Latency",
+      "violations": []
+    },
+    {
+      "section": "Failure Triage",
+      "violations": []
+    },
+    {
+      "section": "Run History",
+      "violations": []
+    },
+    {
+      "section": "Conversation Replay",
+      "violations": []
+    },
+    {
+      "section": "Playground",
+      "violations": []
+    }
+  ],
+  "criticalOrSeriousViolationCount": 0
+}

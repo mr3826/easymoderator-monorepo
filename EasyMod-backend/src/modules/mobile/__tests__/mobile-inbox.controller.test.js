@@ -137,7 +137,50 @@ describe('mobile Inbox write contract (replyConversation & setAiMode)', () => {
             resource_type: 'conversation_message',
         }));
         expect(res.status).toHaveBeenCalledWith(201);
-        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: { message: expect.anything() } }));
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            data: expect.objectContaining({
+                message: expect.objectContaining({ delivery_state: 'SENT' }),
+                delivery: expect.objectContaining({ persisted: true, sent: true, state: 'SENT' }),
+            }),
+        }));
+    });
+
+    test('reports a persisted reply as failed rather than sent when delivery fails', async () => {
+        const res = response();
+        const failedMessage = {
+            id: 'msg-failed',
+            conversation_id: 'conv-123',
+            sender: 'business',
+            content: 'Hello customer!',
+            message_type: 'text',
+            delivery_state: 'FAILED',
+            provider_message_id: null,
+        };
+        conversationService.getConversationById.mockResolvedValue({
+            id: 'conv-123',
+            channel: 'messenger',
+            last_customer_message_at: new Date().toISOString(),
+        });
+        conversationService.createMessage.mockResolvedValue(failedMessage);
+        conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: false, reason_code: 'META_TIMEOUT' });
+
+        await controller.replyConversation({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { message: 'Hello customer!' },
+            get: jest.fn(),
+        }, res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({
+                delivery: expect.objectContaining({ persisted: true, sent: false, state: 'FAILED' }),
+                message: expect.objectContaining({ delivery_state: 'FAILED' }),
+            }),
+        }));
+        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'INBOX_MESSAGE_DELIVERY_FAILED' }));
+        expect(AuditLog.create).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'INBOX_MESSAGE_SENT' }));
     });
 
     test('rejects reply when message content is missing or whitespace', async () => {
@@ -182,34 +225,87 @@ describe('mobile Inbox write contract (replyConversation & setAiMode)', () => {
         }));
     });
 
-    test('permits reply outside Meta 24-hour window when message_tag is explicitly supplied', async () => {
-        const res = response();
+    test('a retired message_tag does NOT bypass the 24h window on the mobile path', async () => {
+        const next = jest.fn();
         const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
         conversationService.getConversationById.mockResolvedValue({
             id: 'conv-123',
             channel: 'messenger',
             last_customer_message_at: thirtyHoursAgo,
         });
-        conversationService.createMessage.mockResolvedValue({
-            id: 'msg-tagged',
-            conversation_id: 'conv-123',
-            content: 'Your order has been shipped',
-        });
-        conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: true });
 
         const req = {
             params: { conversationId: 'conv-123' },
             shop: { id: 'shop-a' },
+            // Meta returns error 100 for POST_PURCHASE_UPDATE since 2026-04-27.
             body: { message: 'Your order has been shipped', message_tag: 'POST_PURCHASE_UPDATE' },
             get: jest.fn(),
         };
 
-        await controller.replyConversation(req, res, jest.fn());
+        await controller.replyConversation(req, response(), next);
 
-        expect(conversationService.createMessage).toHaveBeenCalledWith('conv-123', 'shop-a', expect.objectContaining({
-            message_tag: 'POST_PURCHASE_UPDATE',
+        expect(conversationService.createMessage).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'OUTSIDE_24H_WINDOW',
+            status: 422,
         }));
-        expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    test('an unrecognized message_tag on an in-window reply is rejected, not silently ignored', async () => {
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({
+            id: 'conv-123',
+            channel: 'messenger',
+            last_customer_message_at: new Date().toISOString(),
+        });
+
+        await controller.replyConversation({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { message: 'hello', message_tag: 'MADE_UP_TAG' },
+            get: jest.fn(),
+        }, response(), next);
+
+        expect(conversationService.createMessage).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'MESSAGE_TAG_NOT_ALLOWED',
+            status: 422,
+        }));
+    });
+
+    test('HUMAN_AGENT bypasses the window only when the app holds the Meta permission (flag)', async () => {
+        const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+        process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+        try {
+            const res = response();
+            const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+            conversationService.getConversationById.mockResolvedValue({
+                id: 'conv-123',
+                channel: 'messenger',
+                last_customer_message_at: thirtyHoursAgo,
+            });
+            conversationService.createMessage.mockResolvedValue({
+                id: 'msg-tagged',
+                conversation_id: 'conv-123',
+                content: 'Your order has been shipped',
+            });
+            conversationController._deliverViaMetaIfApplicable.mockResolvedValue({ sent: true });
+
+            await controller.replyConversation({
+                params: { conversationId: 'conv-123' },
+                shop: { id: 'shop-a' },
+                body: { message: 'Your order has been shipped', message_tag: 'HUMAN_AGENT' },
+                get: jest.fn(),
+            }, res, jest.fn());
+
+            expect(conversationService.createMessage).toHaveBeenCalledWith('conv-123', 'shop-a', expect.objectContaining({
+                message_tag: 'HUMAN_AGENT',
+            }));
+            expect(res.status).toHaveBeenCalledWith(201);
+        } finally {
+            if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+        }
     });
 
     test('toggles AI mode to pause and resume', async () => {
@@ -243,6 +339,66 @@ describe('mobile Inbox write contract (replyConversation & setAiMode)', () => {
             success: true,
             data: expect.objectContaining({ ai_mode: 'ai_active' }),
         }));
+    });
+
+    test('does not report AI paused when Redis cannot persist the pause key', async () => {
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({ id: 'conv-123' });
+        cacheRedis.setex.mockRejectedValueOnce(new Error('Redis unavailable'));
+
+        await controller.setAiMode({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { mode: 'pause' },
+        }, response(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'AI_MODE_UNAVAILABLE',
+            status: 503,
+        }));
+        expect(conversationService.holdPendingAiCandidates).not.toHaveBeenCalled();
+        expect(sseManager.emit).not.toHaveBeenCalled();
+        expect(AuditLog.create).not.toHaveBeenCalled();
+    });
+
+    test('does not report AI resumed when Redis cannot clear the pause key', async () => {
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({ id: 'conv-123' });
+        cacheRedis.del.mockRejectedValueOnce(new Error('Redis unavailable'));
+
+        await controller.setAiMode({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { mode: 'resume' },
+        }, response(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'AI_MODE_UNAVAILABLE',
+            status: 503,
+        }));
+        expect(sseManager.emit).not.toHaveBeenCalled();
+        expect(AuditLog.create).not.toHaveBeenCalled();
+    });
+
+    test('rolls the pause back when its audit write fails', async () => {
+        // IC-V1 review F9: a 503 must not leave AI silently paused — the
+        // pause key is deleted so merchant-visible state matches the response.
+        const next = jest.fn();
+        conversationService.getConversationById.mockResolvedValue({ id: 'conv-123' });
+        AuditLog.create.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        await controller.setAiMode({
+            params: { conversationId: 'conv-123' },
+            shop: { id: 'shop-a' },
+            body: { mode: 'pause' },
+        }, response(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'AI_MODE_AUDIT_UNAVAILABLE',
+            status: 503,
+        }));
+        expect(cacheRedis.del).toHaveBeenCalledWith('ai:pause:conv-123');
+        expect(sseManager.emit).not.toHaveBeenCalled();
     });
 
     test('rejects setAiMode with invalid mode', async () => {

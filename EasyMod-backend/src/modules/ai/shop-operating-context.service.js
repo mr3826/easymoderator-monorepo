@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 /**
  * Shop Operating Context
  *
@@ -36,7 +38,7 @@ const COURIER_LABEL = { steadfast: 'Steadfast', redx: 'RedX', pathao: 'Pathao Co
  * Reads the provider name only (no provider-instance construction) so a shop
  * with stale credentials still reports its configured courier without throwing.
  */
-const getActiveCourierName = async (shopId) => {
+const getActiveCourierName = async (shopId, { strict = false } = {}) => {
     try {
         const DeliveryIntegration = require('../delivery/delivery-integration.entity');
         const integration = await DeliveryIntegration.findOne({
@@ -45,9 +47,17 @@ const getActiveCourierName = async (shopId) => {
         });
         if (!integration) return null;
         return COURIER_LABEL[integration.provider] || integration.provider;
-    } catch (_) {
+    } catch (error) {
+        if (strict) throw error;
         return null;
     }
+};
+
+const hashOperatingContext = (context) => {
+    const value = String(context || '').trim();
+    return value
+        ? crypto.createHash('sha256').update(value).digest('hex')
+        : null;
 };
 
 /**
@@ -55,12 +65,12 @@ const getActiveCourierName = async (shopId) => {
  * @param {string} shopId
  * @returns {Promise<string>} formatted block, or '' if it can't be built
  */
-const getOperatingContext = async (shopId) => {
+const getOperatingContext = async (shopId, { strict = false } = {}) => {
     if (!shopId) return '';
     try {
         const [bdSettings, courier] = await Promise.all([
-            getBdSettings(shopId).catch(() => null),
-            getActiveCourierName(shopId),
+            strict ? getBdSettings(shopId) : getBdSettings(shopId).catch(() => null),
+            getActiveCourierName(shopId, { strict }),
         ]);
 
         const selfMfs = !!(bdSettings && hasSelfMfs(bdSettings));
@@ -95,9 +105,10 @@ const getOperatingContext = async (shopId) => {
         );
 
         return lines.join('\n');
-    } catch (_) {
+    } catch (error) {
+        if (strict) throw error;
         return '';
     }
 };
 
-module.exports = { getOperatingContext, getActiveCourierName };
+module.exports = { getOperatingContext, getActiveCourierName, hashOperatingContext };

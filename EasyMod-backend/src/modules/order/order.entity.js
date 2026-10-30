@@ -1,4 +1,4 @@
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 
 const Order = sequelize.define('Order', {
@@ -186,7 +186,19 @@ const Order = sequelize.define('Order', {
         { fields: ['shop_id', 'order_status'] },
         { fields: ['shop_id', 'created_at'] },
         { fields: ['order_number'], unique: true },
-        { fields: ['customer_id'] }
+        { fields: ['customer_id'] },
+        {
+            // IC-V1 review F4, reconciled by the production-shaped migration
+            // dry-run: the canonical DB-level backstop for create-order
+            // idempotency (advisory locks no-op on non-postgres dialects) is
+            // the partial unique index created by migration 20261026_001 /
+            // 20260611_001 — declared here so sync/drift state matches every
+            // real catalog instead of duplicating the index under another name.
+            unique: true,
+            fields: ['shop_id', 'idempotency_key'],
+            name: 'idx_orders_shop_idempotency',
+            where: { idempotency_key: { [Op.not]: null } },
+        }
     ]
 });
 

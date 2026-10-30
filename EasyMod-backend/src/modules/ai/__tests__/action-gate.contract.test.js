@@ -9,6 +9,7 @@ jest.mock('../../entities', () => ({
 const {
     ACTION_GATE_CHECK_NAMES,
     authorize,
+    recordActionGateOutcome,
     verifyAuthorization,
 } = require('../action-gate');
 const {
@@ -92,7 +93,7 @@ describe('A2 contract primitives', () => {
 });
 
 describe('Action Gate', () => {
-    test('runs all 16 checks, audits, and mints a verifiable authorization', async () => {
+    test('runs all 17 checks, audits, and mints a verifiable authorization', async () => {
         const evidence = withEvidenceSnapshot({ shopId: 'shop-1', sourceText: 'live order summary' });
         const summaryHash = confirmedSummaryHash(SUMMARY);
         const action = createProposedAction({
@@ -111,7 +112,7 @@ describe('Action Gate', () => {
         const result = await authorize(action, validContext(evidence, action));
 
         expect(result.authorized).toBe(true);
-        expect(ACTION_GATE_CHECK_NAMES).toHaveLength(16);
+        expect(ACTION_GATE_CHECK_NAMES).toHaveLength(17);
         expect(Object.keys(result.checkResults)).toEqual(expect.arrayContaining(ACTION_GATE_CHECK_NAMES));
         expect(verifyAuthorization(result.authorization, {
             actionType: 'CREATE_ORDER', shopId: 'shop-1', idempotencyKey: action.idempotencyKey,
@@ -125,6 +126,129 @@ describe('Action Gate', () => {
                 customer_confirmation_valid: true,
             }) }),
         }));
+    });
+
+    test('fails closed when the AI order mutation kill switch is disabled', async () => {
+        const previous = process.env.AI_ORDER_MUTATIONS_ENABLED;
+        process.env.AI_ORDER_MUTATIONS_ENABLED = 'false';
+        try {
+            const evidence = withEvidenceSnapshot({ shopId: 'shop-1', sourceText: 'live order summary' });
+            const summaryHash = confirmedSummaryHash(SUMMARY);
+            const action = createProposedAction({
+                requestedByAgent: 'OrderAgent',
+                actionType: 'CREATE_ORDER',
+                domain: 'ORDER',
+                shopId: 'shop-1',
+                conversationId: 'conv-1',
+                idempotencyKey: deriveCreateOrderIdempotencyKey({
+                    shopId: 'shop-1', conversationId: 'conv-1', orderSessionId: 'session-1', confirmedSummaryHash: summaryHash,
+                }),
+                evidenceSnapshotHash: evidence.snapshotHash,
+                payload: { orderSessionId: 'session-1', summaryHash },
+            });
+
+            const result = await authorize(action, validContext(evidence, action));
+            expect(result.authorized).toBe(false);
+            expect(result.reasonCode).toBe('runtime_kill_switch_enabled');
+            expect(result.checkResults.runtime_kill_switch_enabled).toBe(false);
+        } finally {
+            if (previous === undefined) delete process.env.AI_ORDER_MUTATIONS_ENABLED;
+            else process.env.AI_ORDER_MUTATIONS_ENABLED = previous;
+        }
+    });
+
+    test('revokes an already-issued order authorization when its kill switch is disabled', async () => {
+        const evidence = withEvidenceSnapshot({ shopId: 'shop-1', sourceText: 'live order summary' });
+        const summaryHash = confirmedSummaryHash(SUMMARY);
+        const action = createProposedAction({
+            requestedByAgent: 'OrderAgent',
+            actionType: 'CREATE_ORDER',
+            domain: 'ORDER',
+            shopId: 'shop-1',
+            conversationId: 'conv-1',
+            idempotencyKey: deriveCreateOrderIdempotencyKey({
+                shopId: 'shop-1', conversationId: 'conv-1', orderSessionId: 'session-1', confirmedSummaryHash: summaryHash,
+            }),
+            evidenceSnapshotHash: evidence.snapshotHash,
+            payload: { orderSessionId: 'session-1', summaryHash },
+        });
+        const result = await authorize(action, validContext(evidence, action));
+        expect(result.authorized).toBe(true);
+
+        const previous = process.env.AI_ORDER_MUTATIONS_ENABLED;
+        process.env.AI_ORDER_MUTATIONS_ENABLED = 'false';
+        try {
+            expect(verifyAuthorization(result.authorization, { actionType: 'CREATE_ORDER', shopId: 'shop-1' })).toBe(false);
+        } finally {
+            if (previous === undefined) delete process.env.AI_ORDER_MUTATIONS_ENABLED;
+            else process.env.AI_ORDER_MUTATIONS_ENABLED = previous;
+        }
+    });
+
+    test('ACCEPT_PAYMENT has its own kill switch and fails closed when off', async () => {
+        // IC-V1 review F2: every mutating capability needs an explicit sub-flag.
+        // Before the fix, ACCEPT_PAYMENT fell through to "allow".
+        const evidence = withEvidenceSnapshot({ shopId: 'shop-1', sourceText: 'payment confirmed' });
+        const action = createProposedAction({
+            requestedByAgent: 'OrderAgent',
+            actionType: 'ACCEPT_PAYMENT',
+            domain: 'COMMERCE_OPS',
+            shopId: 'shop-1',
+            conversationId: 'conv-1',
+            idempotencyKey: deriveAcceptPaymentIdempotencyKey({ shopId: 'shop-1', orderId: 'order-1', trxId: 'trx-1' }),
+            evidenceSnapshotHash: evidence.snapshotHash,
+            payload: { orderId: 'order-1', trxId: 'trx-1' },
+        });
+        const previous = process.env.AI_PAYMENT_ACCEPTANCE_ENABLED;
+        process.env.AI_PAYMENT_ACCEPTANCE_ENABLED = 'false';
+        try {
+            const result = await authorize(action, { ...validContext(evidence, action), currentDomain: 'ORDER' });
+            expect(result.authorized).toBe(false);
+            expect(result.reasonCode).toBe('runtime_kill_switch_enabled');
+        } finally {
+            if (previous === undefined) delete process.env.AI_PAYMENT_ACCEPTANCE_ENABLED;
+            else process.env.AI_PAYMENT_ACCEPTANCE_ENABLED = previous;
+        }
+    });
+
+    test('appends the sanitized mutation and outbound result linked to the gate decision', async () => {
+        const evidence = withEvidenceSnapshot({ shopId: 'shop-1', sourceText: 'live order summary' });
+        const summaryHash = confirmedSummaryHash(SUMMARY);
+        const action = createProposedAction({
+            requestedByAgent: 'OrderAgent',
+            actionType: 'CREATE_ORDER',
+            domain: 'ORDER',
+            shopId: 'shop-1',
+            conversationId: 'conv-1',
+            idempotencyKey: deriveCreateOrderIdempotencyKey({
+                shopId: 'shop-1', conversationId: 'conv-1', orderSessionId: 'session-1', confirmedSummaryHash: summaryHash,
+            }),
+            evidenceSnapshotHash: evidence.snapshotHash,
+            payload: { orderSessionId: 'session-1', summaryHash },
+        });
+        const authorizationResult = await authorize(action, { ...validContext(evidence, action), taskId: 'task-1' });
+        const result = await recordActionGateOutcome({
+            authorization: authorizationResult.authorization,
+            mutationResult: { success: true, state: 'ORDER_CREATED', resourceId: 'order-1', raw: 'must not be stored' },
+            outboundResult: { success: false, state: 'PENDING', code: 'SEND_PENDING', body: 'private customer text' },
+        });
+
+        expect(result.recorded).toBe(true);
+        expect(AuditLog.create).toHaveBeenLastCalledWith(expect.objectContaining({
+            action: 'ai.action_gate.result_recorded',
+            idempotency_key: expect.any(String),
+            metadata: expect.objectContaining({
+                gateDecisionId: authorizationResult.gateDecisionId,
+                actionType: 'CREATE_ORDER',
+                taskId: 'task-1',
+                conversationId: 'conv-1',
+                mutationResult: { success: true, state: 'ORDER_CREATED', code: null, resourceId: 'order-1' },
+                outboundResult: { success: false, state: 'PENDING', code: 'SEND_PENDING', resourceId: null },
+            }),
+        }));
+        const lastAudit = AuditLog.create.mock.calls.at(-1)[0];
+        expect(JSON.stringify(lastAudit)).not.toContain('private customer text');
+        expect(JSON.stringify(lastAudit)).not.toContain('must not be stored');
     });
 
     test('fails closed when tenant or evidence context is incomplete', async () => {

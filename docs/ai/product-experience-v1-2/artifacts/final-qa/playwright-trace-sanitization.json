@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "archivesRewritten": 12,
+  "archives": 12,
+  "rasterMembersRemoved": 3164,
+  "opaqueMembersRemoved": 0,
+  "textMembersRedacted": 50,
+  "archiveMemberNameCollisionsResolved": 6,
+  "redactionCounts": {
+    "exactSourceText": 20712,
+    "contactPatterns": 9550,
+    "addresses": 5488,
+    "profileNames": 0,
+    "emails": 1132,
+    "archiveMemberNames": 18
+  },
+  "rasterImagesPreserved": false,
+  "opaqueBinaryMembersPreserved": false,
+  "textPayloadsRedactedThisPass": false,
+  "zipCommentsDropped": true,
+  "zipExtraFieldsDropped": true,
+  "archiveMemberNamesRedacted": 18,
+  "sourceCsvSha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6"
+}

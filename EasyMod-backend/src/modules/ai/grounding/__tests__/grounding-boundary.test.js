@@ -16,6 +16,8 @@
  */
 
 process.env.NODE_ENV = 'test';
+process.env.API_URL = 'https://api.easymod.tech';
+process.env.PUBLIC_ASSET_URL = 'https://api.easymod.tech';
 
 jest.mock('src/config/memory-cache', () => ({
     MemoryCache: class {
@@ -32,6 +34,7 @@ jest.mock('src/modules/ai/vision-policy.service', () => ({
     photoMatchEnabled: () => false,
     stripImageBlocks: () => [],
 }));
+jest.mock('src/modules/ai/action-gate', () => ({ recordReadAction: jest.fn(async () => ({ recorded: true })) }));
 jest.mock('src/modules/knowledge/knowledge.service', () => ({ incrementFaqHit: jest.fn() }));
 jest.mock('src/modules/product/product-search.service', () => ({
     searchByAttributes: jest.fn(),
@@ -55,6 +58,7 @@ const OTHER_SHOP = 'shop-b';
 /** Catalog row shape as product-search.formatProduct returns it. */
 const product = (over = {}) => ({
     id: 'p-1',
+    shop_id: SHOP,
     name: 'Premium Black Saree',
     name_bn: null,
     category: 'saree',
@@ -80,7 +84,7 @@ const product = (over = {}) => ({
 const BLACK_SAREE = product();
 const BLACK_SAREE_WITH_PHOTO = product({
     id: 'p-photo',
-    image_url: 'https://cdn.easymod.tech/products/black-saree.jpg',
+    image_url: 'https://api.easymod.tech/uploads/product-images/shop-a/black-saree.jpg',
 });
 const COTTON_SAREE = product({ id: 'p-cotton', name: 'Cotton Saree', price: 990, ai_material: 'cotton' });
 
@@ -143,6 +147,43 @@ describe('nonexistent product', () => {
         // Both are genuine products of this shop that matched "saree".
         expect(result.response).toContain('Premium Black Saree');
         expect(result.response).toContain('৳1490');
+        expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('out-of-stock related catalog rows are not offered under an available-alternatives heading', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([product({
+            id: 'sold-out-saree',
+            name: 'Premium Black Saree',
+            quantity: 0,
+            track_quantity: true,
+            in_stock: true,
+        })]);
+
+        const result = await routeMessage('chiffon saree ache?');
+
+        expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+        expect(result.grounding.relatedProducts[0].facts.stock).toEqual({
+            state: grounding.FactState.KNOWN,
+            value: 'OUT_OF_STOCK',
+        });
+        expect(result.response).not.toMatch(/What we do have|আমাদের কাছে যা আছে|Amader kache ja ache/i);
+        expect(result.response).not.toContain('Premium Black Saree');
+        expect(llm.chat).not.toHaveBeenCalled();
+        expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
+    });
+
+    test('only explicitly in-stock related products are offered as alternatives', async () => {
+        const soldOutSaree = product({
+            id: 'sold-out-saree', name: 'Premium Black Saree', quantity: 0, track_quantity: true,
+        });
+        productSearch.searchByAttributes.mockResolvedValue([soldOutSaree, COTTON_SAREE]);
+
+        const result = await routeMessage('chiffon saree ache?');
+
+        expect(result.response).toMatch(/What we do have:|আমাদের কাছে যা আছে:|Amader kache ja ache:/i);
+        expect(result.response).toContain('Cotton Saree');
+        expect(result.response).not.toContain('Premium Black Saree');
+        expect(result.response).not.toContain('৳1490');
         expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
     });
 
@@ -210,13 +251,14 @@ describe('nonexistent product', () => {
 
 // ── Test 2 — a real product with a NULL attribute ────────────────────────────
 describe('unknown product attribute', () => {
-    test('a NULL material is rendered as UNKNOWN rather than omitted', async () => {
+    test('a NULL material stays unknown when the product question is answered deterministically', async () => {
         productSearch.searchByAttributes.mockResolvedValue([BLACK_SAREE]);
 
         const result = await routeMessage('black saree ache?');
 
         expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.VERIFIED);
-        expect(lastSystemPrompt()).toContain('Material: UNKNOWN');
+        expect(result.grounding.verifiedProducts[0].facts.material.state).toBe(grounding.FactState.UNKNOWN);
+        expect(result.response).not.toMatch(/silk|cotton|chiffon/i);
     });
 
     test('"eta chiffon?" resolves against the product in context, not a new search', async () => {
@@ -233,7 +275,7 @@ describe('unknown product attribute', () => {
             ],
         });
 
-        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-1'], SHOP);
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-1'], SHOP, { throwOnError: true });
         expect(result.grounding.askedAttributes).toContain('material');
         expect(lastSystemPrompt()).toContain('Material: UNKNOWN');
     });
@@ -308,7 +350,9 @@ describe('product image provenance', () => {
         expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.VERIFIED);
         expect(result.grounding.mediaStatus).toBe(grounding.MediaStatus.UNAVAILABLE);
         expect(gate(result).attachments).toHaveLength(0);
-        expect(lastSystemPrompt()).toContain('NO photo stored');
+        expect(result.source).toBe('grounding_media_unavailable');
+        expect(result.response).toContain('ei product er chobi');
+        expect(llm.chat).not.toHaveBeenCalled();
     });
 
     test('a verified product with a stored image sends exactly that image', async () => {
@@ -324,7 +368,7 @@ describe('product image provenance', () => {
 
         expect(result.grounding.mediaStatus).toBe(grounding.MediaStatus.AVAILABLE);
         expect(verdict.attachments).toEqual(proposed);
-        expect(verdict.attachments[0].url).toBe('https://cdn.easymod.tech/products/black-saree.jpg');
+        expect(verdict.attachments[0].url).toBe('https://api.easymod.tech/uploads/product-images/shop-a/black-saree.jpg');
     });
 
     test('an attachment that does not belong to the verified product is dropped', async () => {
@@ -332,7 +376,7 @@ describe('product image provenance', () => {
         const result = await routeMessage('black saree picture den');
 
         const verdict = gate(result, {
-            attachments: [{ type: 'image', url: 'https://cdn.easymod.tech/products/other-shop.jpg' }],
+            attachments: [{ type: 'image', url: 'https://api.easymod.tech/uploads/product-images/shop-b/other-shop.jpg' }],
         });
 
         expect(verdict.attachments).toHaveLength(0);
@@ -408,7 +452,7 @@ describe('shop isolation', () => {
             systemPrompt: 'shop b',
         });
 
-        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-1'], OTHER_SHOP);
+        expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-1'], OTHER_SHOP, { throwOnError: true });
         expect(result.grounding.verifiedProducts).toHaveLength(0);
         expect(result.source).toBe('grounding_needs_product');
     });
@@ -439,13 +483,27 @@ describe('real product conversations remain useful', () => {
 
     test('a price that is not the catalog price is rejected even for a real product', async () => {
         productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
-        llm.chat.mockResolvedValue({ text: 'Cotton Saree ache — 1290 taka 😊', provider: 'gemini-lite' });
 
         const result = await routeMessage('cotton saree koto?');
-        const verdict = gate(result);
+        const verdict = gate(result, {
+            candidate: 'Cotton Saree ache — 1290 taka 😊',
+            modelGenerated: true,
+        });
 
         expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
         expect(verdict.reasonCode).toBe(grounding.ReasonCode.UNSUPPORTED_PRICE_CLAIM);
+    });
+
+    test('a direct price question is answered from the current catalog without inference', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
+
+        const result = await routeMessage('cotton saree koto?');
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Cotton Saree');
+        expect(result.response).toContain('৳990');
+        expect(llm.chat).not.toHaveBeenCalled();
+        expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
     });
 
     test('greetings are untouched by the boundary', async () => {
@@ -516,11 +574,12 @@ describe('stock for shops that do not count inventory', () => {
         expect(grounding.buildFacts(off).stock.value).toBe('OUT_OF_STOCK');
     });
 
-    test('the prompt never shows a stock line the catalog contradicts', async () => {
+    test('the deterministic availability answer follows the untracked stock fact', async () => {
         productSearch.searchByAttributes.mockResolvedValue([UNTRACKED]);
-        await routeMessage('black panjabi ache?');
-        expect(lastSystemPrompt()).toContain('IN_STOCK');
-        expect(lastSystemPrompt()).not.toContain('OUT_OF_STOCK');
+        const result = await routeMessage('black panjabi ache?');
+        expect(result.grounding.verifiedProducts[0].facts.stock.value).toBe('IN_STOCK');
+        expect(result.response).toMatch(/Stock-e ache|In stock|স্টকে আছে/i);
+        expect(result.response).not.toMatch(/Out of stock|স্টকে নেই/i);
     });
 });
 
@@ -554,25 +613,41 @@ describe('merchant knowledge', () => {
 // ── Tests 11-12 — provider independence ──────────────────────────────────────
 describe('provider independence', () => {
     test.each(['gemini-lite', 'gemini-pro', 'openai'])(
-        'the same grounding decision is reached when %s produced the reply',
+        'the outbound gate rejects an unsupported price regardless of %s selection',
         async (provider) => {
             productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
-            llm.chat.mockResolvedValue({ text: 'Cotton Saree ache — 4500 taka', provider });
 
             const result = await routeMessage('cotton saree koto?');
-            const verdict = gate(result);
+            const verdict = gate(result, {
+                candidate: 'Cotton Saree ache — 4500 taka',
+                modelGenerated: true,
+            });
 
-            expect(result.provider).toBe(provider);
+            expect(result.source).toBe('grounding_product_presentation');
             expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
             expect(verdict.reasonCode).toBe(grounding.ReasonCode.UNSUPPORTED_PRICE_CLAIM);
+            expect(llm.chat).not.toHaveBeenCalled();
         },
     );
 
-    test('a total provider outage never produces a merchant claim', async () => {
+    test('verified deterministic product facts remain available during a provider outage', async () => {
         productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
         llm.chat.mockRejectedValue(new Error('All LLM providers failed'));
 
-        await expect(routeMessage('cotton saree koto?')).rejects.toThrow(/providers failed/);
+        const result = await routeMessage('tell me about cotton saree');
+
+        expect(result.source).toBe('grounding_product_presentation');
+        expect(result.response).toContain('Cotton Saree');
+        expect(result.response).toContain('৳990');
+        expect(llm.chat).not.toHaveBeenCalled();
+    });
+
+    test('a total provider outage never produces a merchant claim for an unknown attribute', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
+        llm.chat.mockRejectedValue(new Error('All LLM providers failed'));
+
+        await expect(routeMessage('cotton saree material?')).rejects.toThrow(/providers failed/);
+        expect(llm.chat).toHaveBeenCalled();
     });
 });
 
@@ -618,13 +693,14 @@ describe('retrieval failure', () => {
 
 // ── Test 14 — malformed model output ─────────────────────────────────────────
 describe('malformed model output', () => {
-    test('an empty completion for a product turn becomes a safe fallback', async () => {
+    test('an empty completion for a product-adjacent policy turn becomes a safe fallback', async () => {
         productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
         llm.chat.mockResolvedValue({ text: '', provider: 'gemini-lite' });
 
-        const result = await routeMessage('cotton saree ache?');
+        const result = await routeMessage('cotton saree return policy ki?');
         const verdict = gate(result);
 
+        expect(llm.chat).toHaveBeenCalled();
         expect(verdict.decision).toBe(grounding.GroundingDecision.SAFE_FALLBACK);
         expect(verdict.reasonCode).toBe(grounding.ReasonCode.MODEL_OUTPUT_INVALID);
         expect(typeof verdict.text).toBe('string');
@@ -675,16 +751,17 @@ describe('prompt injection has no authority over grounding', () => {
 
 // ── Caching ──────────────────────────────────────────────────────────────────
 describe('response cache', () => {
-    test('a reply carrying product facts is never cached', async () => {
-        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
-        llm.chat.mockResolvedValue({ text: 'Cotton Saree — ৳990', provider: 'gemini-lite' });
+    test('direct price answers re-read mutable product prices on each turn', async () => {
+        productSearch.searchByAttributes
+            .mockResolvedValueOnce([COTTON_SAREE])
+            .mockResolvedValueOnce([product({ id: 'p-cotton', name: 'Cotton Saree', price: 1090, ai_material: null })]);
 
-        await routeMessage('cotton saree koto?');
-        llm.chat.mockClear();
-        await routeMessage('cotton saree koto?');
+        const first = await routeMessage('cotton saree koto?');
+        const second = await routeMessage('cotton saree koto?');
 
-        // Second call re-derives from live catalog data instead of replaying a
-        // 30-minute-old price — and a bad answer cannot be served repeatedly.
-        expect(llm.chat).toHaveBeenCalledTimes(1);
+        expect(first.response).toContain('৳990');
+        expect(second.response).toContain('৳1,090');
+        expect(productSearch.searchByAttributes).toHaveBeenCalledTimes(2);
+        expect(llm.chat).not.toHaveBeenCalled();
     });
 });

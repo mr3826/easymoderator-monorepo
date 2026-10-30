@@ -1,0 +1,396 @@
+import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const artifactBase = process.env.LAB_ARTIFACT_ROOT
+  ? resolve(process.env.LAB_ARTIFACT_ROOT)
+  : resolve(process.cwd(), '../docs/ai/product-experience-v1-2/artifacts');
+const screenshotRoot = resolve(artifactBase, 'playwright/screenshots');
+const runUuid = (value: string) => value.match(/[a-f0-9]{8}-[a-f0-9-]{27}/i)?.[0] || '';
+mkdirSync(screenshotRoot, { recursive: true });
+const observeBrowser = (page: import('@playwright/test').Page, projectName: string) => {
+  const observations = { browser: projectName, consoleErrors: [] as string[], pageErrors: [] as string[], failedRequests: [] as Array<{ origin: string; path: string; method: string; failure: string | null }> };
+  page.on('console', message => { if (message.type() === 'error') observations.consoleErrors.push(message.text().slice(0, 500)); });
+  page.on('pageerror', error => observations.pageErrors.push(error.message));
+  page.on('requestfailed', request => {
+    const url = new URL(request.url());
+    observations.failedRequests.push({ origin: url.origin, path: url.pathname, method: request.method(), failure: request.failure()?.errorText || null });
+  });
+  const runId = process.env.LAB_PLAYWRIGHT_RUN_ID || 'local';
+  return { observations, write: () => writeFileSync(resolve(screenshotRoot, '..', `browser-observations-${runId}-${projectName}.json`), `${JSON.stringify(observations, null, 2)}\n`) };
+};
+
+const startUiRun = async (page: import('@playwright/test').Page, buttonName: string, timeoutMs = 180_000) => {
+  const summary = page.locator('#active-run-summary');
+  const previousId = runUuid(await summary.textContent() || '');
+  await page.getByRole('button', { name: buttonName }).click();
+  await expect.poll(async () => runUuid(await summary.textContent() || ''), { timeout: 15_000 }).not.toBe(previousId);
+  await expect(summary).toContainText('completed', { timeout: timeoutMs });
+  return runUuid(await summary.textContent() || '');
+};
+
+const selectComparisonRuns = async (page: import('@playwright/test').Page, baselineId: string, candidateId: string) => {
+  const baseline = page.locator('#baseline-run');
+  const candidate = page.locator('#candidate-run');
+  await expect(baseline.locator(`option[value="${baselineId}"]`)).toHaveCount(1, { timeout: 30_000 });
+  await expect(candidate.locator(`option[value="${candidateId}"]`)).toHaveCount(1, { timeout: 30_000 });
+  await baseline.selectOption(baselineId);
+  await candidate.selectOption(candidateId);
+  await expect(baseline).toHaveValue(baselineId);
+  await expect(candidate).toHaveValue(candidateId);
+};
+
+test('local Test Lab journeys, data boundaries, run history, and responsive controls', async ({ page }, testInfo) => {
+  mkdirSync(screenshotRoot, { recursive: true });
+  const browserObservation = observeBrowser(page, testInfo.project.name);
+  const accessibilitySections: Array<{ section: string; violations: Array<{ id: string; impact: string | null; help: string; helpUrl: string; targets: string[][] }> }> = [];
+  const inspectAccessibility = async (section: string) => {
+    const result = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    accessibilitySections.push({
+      section,
+      violations: result.violations.map(violation => ({
+        id: violation.id,
+        impact: violation.impact,
+        help: violation.help,
+        helpUrl: violation.helpUrl,
+        targets: violation.nodes.map(node => node.target.map(String)),
+      })),
+    });
+  };
+  await page.goto('/');
+  await expect(page).toHaveTitle(/Founder Test Lab/);
+  await expect(page.locator('#service-status')).toContainText('ready');
+  await expect(page.locator('#dataset-stats')).toContainText('20');
+  await expect(page.locator('#dataset-stats')).toContainText('200');
+  await inspectAccessibility('Overview');
+
+  const available = await page.evaluate(async () => {
+    const response = await fetch('/__lab/api/dataset');
+    const data = await response.json();
+    return { status: response.status, personas: data.personas.length, turns: data.source.scenarioCount, json: JSON.stringify(data) };
+  });
+  expect(available).toMatchObject({ status: 200, personas: 20, turns: 200 });
+  expect(available.json).not.toMatch(/customerMessage|simulatedAttachment|expectedAnswer|sourceHash/i);
+
+  await page.getByRole('tab', { name: /Scenario Explorer/ }).click();
+  await inspectAccessibility('Scenario Explorer');
+  await page.locator('#scenario-persona').selectOption('P01');
+  await page.getByRole('button', { name: 'Load scenarios' }).click();
+  await expect(page.locator('#scenario-results tbody tr')).toHaveCount(10);
+  await page.locator('#scenario-search').fill('scenario-01-03');
+  await expect(page.locator('#scenario-results tbody tr')).toHaveCount(1);
+  await expect(page.locator('#scenario-results')).toContainText('scenario-01-03');
+  await page.locator('#scenario-search').fill('');
+  const classification = await page.locator('#scenario-filter option').nth(1).getAttribute('value');
+  if (classification) {
+    await page.locator('#scenario-filter').selectOption(classification);
+    await expect(page.locator('#scenario-results tbody tr').first()).toBeVisible();
+  }
+  await page.locator('#scenario-filter').selectOption('');
+  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-scenario-explorer.png`), fullPage: true, caret: 'initial' });
+
+  await page.getByRole('tab', { name: /Evidence Inspector/ }).click();
+  await inspectAccessibility('Evidence Inspector');
+  await page.locator('#evidence-id').fill('targeted-price-a');
+  await page.getByRole('button', { name: 'Inspect evidence' }).click();
+  await expect(page.locator('#evidence-results')).toContainText('ANSWERABLE');
+  await expect(page.locator('#evidence-results')).toContainText('fixture-shop-a');
+  await expect(page.locator('#evidence-results')).toContainText('900');
+  await page.locator('#evidence-id').fill('targeted-unknown');
+  await page.getByRole('button', { name: 'Inspect evidence' }).click();
+  await expect(page.locator('#evidence-results')).toContainText('NOT_ANSWERABLE');
+  await expect(page.locator('#evidence-results')).toContainText('SAFE_FALLBACK_OR_HANDOFF');
+
+  await page.getByRole('tab', { name: /Overview/ }).click();
+  await page.locator('#run-persona').selectOption('P01');
+  await page.locator('#run-mode').selectOption('candidate');
+  const candidateId = await startUiRun(page, 'Run selected persona');
+  expect(candidateId).toBeTruthy();
+  await expect(page.locator('#replay-results .turn-card')).toHaveCount(10);
+  await expect(page.locator('#replay-results')).toContainText('scenario-01-01');
+  await expect(page.locator('#replay-results')).toContainText('scenario-01-10');
+  const candidateReceipt = await page.evaluate(async id => {
+    const token = document.querySelector<HTMLMetaElement>('meta[name="lab-token"]')?.content;
+    const response = await fetch(`/__lab/api/runs/${id}`, { headers: { 'X-Lab-Token': token || '' } });
+    return response.json();
+  }, candidateId);
+  expect(candidateReceipt).toMatchObject({ scope: 'persona', personaId: 'P01', mode: 'candidate', status: 'completed' });
+  expect(candidateReceipt.dataset.executedTurns).toBe(10);
+  expect(candidateReceipt.turns[0].scenarioId).toBe('scenario-01-01');
+  expect(candidateReceipt.turns[9].scenarioId).toBe('scenario-01-10');
+  expect(candidateReceipt.turns.map((turn: { scenarioId: string }) => turn.scenarioId)).toEqual(
+    Array.from({ length: 10 }, (_, index) => `scenario-01-${String(index + 1).padStart(2, '0')}`),
+  );
+  expect(candidateReceipt.turns.every((turn: { scenarioId: string; traceId: string }) => turn.traceId === turn.scenarioId)).toBe(true);
+  expect(new Set(candidateReceipt.turns.map((turn: { traceId: string }) => turn.traceId)).size).toBe(10);
+  expect(candidateReceipt.turns.every((turn: { responseTextStored?: boolean }) => turn.responseTextStored === false)).toBe(true);
+  expect(JSON.stringify(candidateReceipt)).not.toMatch(/responsePreview|responseDigest|customerMessage|sourceHash/i);
+  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-conversation-replay.png`), fullPage: true, caret: 'initial' });
+
+  await page.getByRole('tab', { name: /Overview/ }).click();
+  await page.locator('#run-mode').selectOption('baseline');
+  const baselineId = await startUiRun(page, 'Run selected persona');
+  expect(baselineId).toBeTruthy();
+  expect(baselineId).not.toBe(candidateId);
+  await page.getByRole('tab', { name: /Baseline vs Candidate/ }).click();
+  await inspectAccessibility('Baseline vs Candidate');
+  await selectComparisonRuns(page, baselineId, candidateId);
+  await page.getByRole('button', { name: 'Compare runs' }).click();
+  await expect(page.locator('#comparison-results')).toContainText('Baseline selection');
+  await expect(page.locator('#comparison-results')).toContainText('Candidate selection');
+  await expect(page.locator('#comparison-results')).toContainText(candidateId);
+  await expect(page.locator('#comparison-results')).toContainText(baselineId);
+  await expect(page.locator('#comparison-results')).toContainText('same dataset source hash');
+
+  await page.getByRole('tab', { name: /Overview/ }).click();
+  await page.locator('#run-mode').selectOption('baseline');
+  const fullBaselineId = await startUiRun(page, 'Run full dataset', 300_000);
+  expect(fullBaselineId).toBeTruthy();
+  const fullBaselineReceipt = await page.evaluate(async id => {
+    const response = await fetch(`/__lab/api/runs/${id}`);
+    return response.json();
+  }, fullBaselineId);
+  expect(fullBaselineReceipt).toMatchObject({ scope: 'full', mode: 'baseline', status: 'completed', dataset: { sourceTurns: 200, sourcePersonas: 20, executedTurns: 200, completeDatasetExecuted: true, rawSourceMessagesPersisted: false } });
+  expect(fullBaselineReceipt.engineSourceRevision).toContain('957bb991a18db1949369a6f805822b8c8b69889b+backend-src-sha256:');
+  expect(fullBaselineReceipt.engineSourceRevision).toContain(fullBaselineReceipt.engineSourceSha256);
+  expect(fullBaselineReceipt.engineSourceSha256).toMatch(/^[a-f0-9]{64}$/i);
+
+  await page.getByRole('tab', { name: /Overview/ }).click();
+  await page.locator('#run-mode').selectOption('candidate');
+  const fullCandidateId = await startUiRun(page, 'Run full dataset', 300_000);
+  expect(fullCandidateId).toBeTruthy();
+  const fullReceipt = await page.evaluate(async id => {
+    const response = await fetch(`/__lab/api/runs/${id}`);
+    return response.json();
+  }, fullCandidateId);
+  expect(fullReceipt).toMatchObject({ scope: 'full', status: 'completed', dataset: { sourceTurns: 200, sourcePersonas: 20, executedTurns: 200, completeDatasetExecuted: true, rawSourceMessagesPersisted: false } });
+  expect(fullReceipt.mode).toBe('candidate');
+  expect(fullReceipt.turns).toHaveLength(200);
+  expect(new Set(fullReceipt.turns.map((turn: { scenarioId: string }) => turn.scenarioId)).size).toBe(200);
+  expect(fullReceipt.turns.every((turn: { scenarioId: string; traceId: string; responseTextStored: boolean }) =>
+    turn.traceId === turn.scenarioId && turn.responseTextStored === false)).toBe(true);
+  expect(new Set(fullReceipt.turns.map((turn: { traceId: string }) => turn.traceId)).size).toBe(200);
+  expect(fullReceipt.summary.presentationContractsValid).toBe(200);
+  expect(fullReceipt.summary).toMatchObject({ businessMutations: 0, messengerSends: 0 });
+  expect(fullReceipt.provenance).toMatchObject({ realProvider: false, realVision: false, realMeta: false, outboundNetworkCalls: 0 });
+  expect(fullReceipt.dataset.sha256).toBe(fullBaselineReceipt.dataset.sha256);
+  expect(fullReceipt.engineSourceSha256).not.toBe(fullBaselineReceipt.engineSourceSha256);
+  const routeSummary = (receipt: typeof fullReceipt) => ({
+    runId: receipt.runId,
+    scope: receipt.scope,
+    mode: receipt.mode,
+    status: receipt.status,
+    sourceRevision: receipt.sourceRevision,
+    engineSourceRevision: receipt.engineSourceRevision,
+    engineSourceSha256: receipt.engineSourceSha256,
+    runnerRevision: receipt.runnerRevision,
+    runnerSourceSha256: receipt.runnerSourceSha256,
+    dataset: receipt.dataset,
+    summary: receipt.summary,
+    performance: receipt.performance,
+    provenance: receipt.provenance,
+  });
+  const comparisonPath = resolve(artifactBase, `runs/local-route-comparison-${testInfo.project.name}.json`);
+  mkdirSync(resolve(comparisonPath, '..'), { recursive: true });
+  const comparisonReceipt = {
+    schemaVersion: 1,
+    measuredAt: new Date().toISOString(),
+    datasetSha256: fullReceipt.dataset.sha256,
+    baseline: routeSummary(fullBaselineReceipt),
+    candidate: routeSummary(fullReceipt),
+  };
+  writeFileSync(comparisonPath, `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
+  if (testInfo.project.name === 'chromium') {
+    writeFileSync(resolve(artifactBase, 'runs/local-route-comparison.json'), `${JSON.stringify(comparisonReceipt, null, 2)}\n`);
+  }
+
+  await page.getByRole('tab', { name: /Baseline vs Candidate/ }).click();
+  await selectComparisonRuns(page, fullBaselineId, fullCandidateId);
+  await page.getByRole('button', { name: 'Compare runs' }).click();
+  await expect(page.locator('#comparison-results')).toContainText('Baseline selection');
+  await expect(page.locator('#comparison-results')).toContainText('Candidate selection');
+  await expect(page.locator('#comparison-results')).toContainText('same dataset source hash');
+
+  await page.getByRole('tab', { name: /Cost & Latency/ }).click();
+  await inspectAccessibility('Cost & Latency');
+  await expect(page.locator('#cost-results')).toContainText('mock');
+  await expect(page.locator('#cost-results')).toContainText('Unavailable when not measured');
+  await page.getByRole('tab', { name: /Failure Triage/ }).click();
+  await inspectAccessibility('Failure Triage');
+  await expect(page.locator('#triage-results')).toContainText('unsafe-price-claim');
+  await expect(page.locator('#triage-results')).toContainText('P1');
+  const triageRerunResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/__lab/api/triage/unsafe-price-claim/rerun',
+  );
+  await page.getByRole('button', { name: 'Rerun fixture' }).click();
+  const triageRerun = await triageRerunResponse;
+  expect(triageRerun.status()).toBe(200);
+  const triageRerunReceipt = await triageRerun.json();
+  expect(triageRerunReceipt).toMatchObject({
+    fixtureId: 'unsafe-price-claim',
+    status: 'completed',
+    candidate: { status: 'BLOCKED_BY_GROUNDING', blocked: true, externalCalls: 0 },
+  });
+  await expect(page.locator('#triage-results')).toContainText(`Rerun receipt ${triageRerunReceipt.runId}`);
+  await page.getByRole('tab', { name: /Run History/ }).click();
+  await inspectAccessibility('Run History');
+  await expect(page.locator('#history-results')).toContainText(fullCandidateId);
+
+  const realRunId = process.env.LAB_REAL_GEMINI_RUN_ID;
+  if (realRunId) {
+    const realReceipt = await page.evaluate(async id => {
+      const response = await fetch(`/__lab/api/runs/${id}`);
+      return response.json();
+    }, realRunId);
+    expect(realReceipt).toMatchObject({ runId: realRunId, mode: 'real-gemini', status: 'completed', evaluationBudget: { model: 'gemini-3.1-flash-lite' } });
+    const realTurn = realReceipt.turns.find((turn: { provider?: { calls?: number } }) => (turn.provider?.calls || 0) > 0);
+    expect(realTurn).toBeTruthy();
+    expect(typeof realTurn.inputRedacted).toBe('string');
+    expect(typeof realTurn.modelCandidateRedacted).toBe('string');
+    expect(typeof realTurn.finalReplyRedacted).toBe('string');
+    expect(typeof realTurn.scenarioId).toBe('string');
+    const realRow = page.getByRole('row').filter({ hasText: realRunId });
+    await expect(realRow).toHaveCount(1);
+    await realRow.getByRole('button', { name: 'Open run' }).click();
+    const realTurnCard = page.locator('#replay-results .turn-card').filter({
+      has: page.getByRole('heading', { name: realTurn.scenarioId, exact: true }),
+    });
+    await expect(realTurnCard).toHaveCount(1);
+    const tracePanel = realTurnCard.locator('details').filter({ hasText: 'Inspect redacted conversation trace' });
+    await expect(tracePanel).toBeVisible();
+    await tracePanel.locator('summary').click();
+    await expect(tracePanel).toContainText(realTurn.inputRedacted);
+    await expect(tracePanel).toContainText(realTurn.modelCandidateRedacted);
+    await expect(tracePanel).toContainText(realTurn.finalReplyRedacted);
+    await expect(page.locator('#replay-run-bar')).toContainText(realRunId);
+    await tracePanel.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-live-gemini-trace.png`), caret: 'initial' });
+    await page.getByRole('tab', { name: /Cost & Latency/ }).click();
+    expect(realReceipt.performance.estimatedProviderChargeUsd).not.toBeNull();
+    const spend = String(realReceipt.performance.estimatedProviderChargeUsd);
+    const callCount = String(realReceipt.evaluationBudget.requestCount);
+    const unpricedCalls = Number(realReceipt.performance.unpricedProviderCalls) || 0;
+    await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Estimated provider charge (USD)' })).toContainText(spend);
+    await expect(page.locator('#cost-results .stat-card').filter({ hasText: 'Provider calls' })).toContainText(callCount);
+    if (unpricedCalls > 0) {
+      const unpricedNote = `${unpricedCalls} provider call${unpricedCalls === 1 ? ' is' : 's are'} unpriced`;
+      await expect(page.locator('#cost-results')).toContainText(unpricedNote);
+    }
+    await expect(page.locator('#cost-results')).toContainText('real-gemini-evaluation');
+  }
+
+  const exportDir = resolve(screenshotRoot, '../exports');
+  mkdirSync(exportDir, { recursive: true });
+  await page.getByRole('tab', { name: /Run History/ }).click();
+  const exportRunRow = page.getByRole('row').filter({ hasText: fullCandidateId });
+  await expect(exportRunRow).toHaveCount(1);
+  await exportRunRow.getByRole('button', { name: 'Open run' }).click();
+  await expect(page.locator('#replay-run-bar')).toContainText(fullCandidateId);
+  await page.getByRole('tab', { name: /Conversation Replay/ }).click();
+  await inspectAccessibility('Conversation Replay');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Export JSON' }).click();
+  const download = await downloadPromise;
+  const exportPath = resolve(exportDir, `${fullCandidateId}.json`);
+  await download.saveAs(exportPath);
+  const exported = JSON.parse(await (await import('node:fs/promises')).readFile(exportPath, 'utf8'));
+  expect(exported.runId).toBe(fullCandidateId);
+  expect(exported.turns).toHaveLength(200);
+  expect(JSON.stringify(exported)).not.toMatch(/sourceHash|customerMessage|simulatedAttachment|expectedAnswer/i);
+
+  await page.getByRole('tab', { name: /Playground/ }).click();
+  await inspectAccessibility('Playground');
+  const playgroundButtonLabels = await page.getByRole('button').allTextContents();
+  expect(playgroundButtonLabels.join(' ')).not.toMatch(/\b(?:purchase|place order|checkout|pay now|confirm order)\b/i);
+  await page.locator('#tenant-id').fill('merchant-a');
+  await page.locator('#session-id').fill('session-e2e-lab');
+  await page.locator('#playground-message').fill('Test Everyday T-Shirt er dam koto?');
+  await page.getByRole('button', { name: 'Run test turn' }).click();
+  await expect(page.locator('#playground-results')).toContainText('900', { timeout: 120_000 });
+  await page.locator('#playground-message').fill('Eta ki stock e ache?');
+  await page.getByRole('button', { name: 'Run test turn' }).click();
+  await expect(page.locator('#playground-results')).toContainText('fixture-shop-a-cotton-tee', { timeout: 120_000 });
+  await page.locator('#playground-message').fill('Show me the Cargo Pant.');
+  await page.getByRole('button', { name: 'Run test turn' }).click();
+  await expect(page.locator('#playground-results')).toContainText('fixture-shop-a-cargo-pant', { timeout: 120_000 });
+  await page.locator('#tenant-id').fill('merchant-b');
+  await page.locator('#playground-message').fill('Test Everyday T-Shirt er dam koto?');
+  await page.getByRole('button', { name: 'Run test turn' }).click();
+  await expect(page.locator('#playground-results')).toContainText('1050', { timeout: 120_000 });
+  await expect(page.locator('#playground-results')).toContainText('Tenant context reset');
+  await expect(page.locator('#playground-results')).toContainText('true');
+  await page.locator('#image-fixture').fill('fixture-shirt-front');
+  await page.locator('#playground-message').fill('Ei chobite ki product ache?');
+  const previousImageResults = await page.locator('#playground-results').innerText();
+  const imageResponsePromise = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/__lab/api/playground',
+  );
+  await page.getByRole('button', { name: 'Run test turn' }).click();
+  const imageResponse = await imageResponsePromise;
+  expect(imageResponse.status()).toBe(200);
+  const imageResult = await imageResponse.json();
+  expect(imageResult).toMatchObject({ status: 'completed', provider: { actualProviderUsage: false }, provenance: { externalCalls: 0, vision: 'disabled' } });
+  await expect(page.locator('#playground-results')).not.toHaveText(previousImageResults);
+  const safeImageText = await page.locator('#playground-results').innerText();
+  expect(safeImageText).not.toMatch(/identified from (the )?image|vision matched/i);
+  await page.getByRole('button', { name: 'Reset session' }).click();
+  await expect(page.locator('#playground-results')).toContainText('Session reset');
+  await page.reload();
+  await page.getByRole('tab', { name: /Run History/ }).click();
+  await expect(page.locator('#history-results')).toContainText(fullCandidateId);
+
+  const inputLabels = await page.locator('input, textarea, select').evaluateAll(elements => elements.map(element => {
+    const id = element.id;
+    return Boolean(id && document.querySelector(`label[for="${CSS.escape(id)}"]`));
+  }));
+  expect(inputLabels.every(Boolean)).toBe(true);
+  await page.getByRole('tab', { name: /Overview/ }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: /Scenario Explorer/ })).toHaveAttribute('aria-selected', 'true');
+
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.getByRole('tab', { name: /Overview/ }).click();
+    await expect(page.locator('#service-status')).toContainText('ready');
+    const metrics = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
+    expect(metrics.document).toBeLessThanOrEqual(metrics.viewport + 1);
+    expect(metrics.body).toBeLessThanOrEqual(metrics.viewport + 1);
+  }
+
+  expect(page.locator('#service-status')).toContainText('ready');
+  const accessibilityReport = {
+    schemaVersion: 1,
+    status: accessibilitySections.some(section => section.violations.some(violation => ['critical', 'serious'].includes(violation.impact || '')))
+      ? 'FAIL_CRITICAL_OR_SERIOUS'
+      : 'PASS_NO_CRITICAL_OR_SERIOUS',
+    browser: testInfo.project.name,
+    scannedSections: accessibilitySections,
+    criticalOrSeriousViolationCount: accessibilitySections.reduce((count, section) =>
+      count + section.violations.filter(violation => ['critical', 'serious'].includes(violation.impact || '')).length, 0),
+  };
+  const axeReportBase = process.env.LAB_AXE_REPORT_PATH
+    ? resolve(process.env.LAB_AXE_REPORT_PATH)
+    : resolve(screenshotRoot, '../axe-accessibility-report.json');
+  const axeReportPath = axeReportBase.replace(/\.json$/i, `-${testInfo.project.name}.json`);
+  writeFileSync(axeReportPath, `${JSON.stringify(accessibilityReport, null, 2)}\n`);
+  browserObservation.write();
+  expect(browserObservation.observations.pageErrors).toEqual([]);
+  expect(browserObservation.observations.consoleErrors).toEqual([]);
+  expect(browserObservation.observations.failedRequests).toEqual([]);
+  expect(accessibilityReport.criticalOrSeriousViolationCount).toBe(0);
+});
+
+test('loads the real Lab shell on every installed browser engine', async ({ page }, testInfo) => {
+  const browserObservation = observeBrowser(page, `${testInfo.project.name}-shell`);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Make every answer inspectable.' })).toBeVisible();
+  await expect(page.locator('#service-status')).toContainText('ready');
+  await expect(page.getByRole('tablist', { name: 'Test Lab sections' }).getByRole('tab')).toHaveCount(9);
+  await page.screenshot({ path: resolve(screenshotRoot, `${testInfo.project.name}-startup.png`), fullPage: true, caret: 'initial' });
+  browserObservation.write();
+  expect(browserObservation.observations.pageErrors).toEqual([]);
+  expect(browserObservation.observations.consoleErrors).toEqual([]);
+  expect(browserObservation.observations.failedRequests).toEqual([]);
+});

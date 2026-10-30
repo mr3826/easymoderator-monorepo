@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-20T17:52:50.380464Z",
+  "datasetSha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+  "sourceRows": 200,
+  "uniquePersonas": 20,
+  "distinctSimulatorMessageAndTruthValuesChecked": 397,
+  "distinctLongCsvCellValuesChecked": 616,
+  "minimumCharacterLength": 12,
+  "jsonArtifacts": 341,
+  "jsonParseErrors": 0,
+  "deniedPropertyKeys": 0,
+  "exactSourceTextMatchesInJson": 0,
+  "playwrightZipArchives": 13,
+  "exactSourceTextMatchesInPlaywrightArchives": 0
+}

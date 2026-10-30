@@ -36,6 +36,13 @@ jest.mock('../../../utils/database/database-setup', () => ({
 jest.mock('../../../utils/structured-logger', () => ({
     createLogger: jest.fn(() => mockLogger),
 }));
+jest.mock('../../../utils/sse-manager', () => ({
+    emit: jest.fn(),
+    register: jest.fn(),
+    unregister: jest.fn(),
+    disconnectUser: jest.fn(),
+    attachToRequest: jest.fn(),
+}));
 
 const { Conversation, Message } = require('../../entities');
 const subscriptionService = require('../../subscription/subscription.service');
@@ -176,6 +183,89 @@ describe('message projection turn scoping', () => {
         expect(Message.findAll).toHaveBeenCalledWith(expect.objectContaining({
             limit: expect.any(Number),
             order: [['created_at', 'DESC'], ['id', 'DESC']],
+        }));
+    });
+});
+
+// P+03: ownership is server-authoritative. A second staff member cannot
+// silently overwrite (or resolve) an assigned, open handoff; owner/admin may
+// force; a takeover claims ownership explicitly.
+describe('handoff ownership enforcement (P+03)', () => {
+    const assignedOpen = (over = {}) => ({
+        id: 'conversation-1',
+        shop_id: 'shop-1',
+        status: 'active',
+        hitl: true,
+        assignee_id: 'staff-owner',
+        metadata: { handoff_reason: 'customer_choice_support', handoff_at: '2026-10-24T09:00:00Z' },
+        update: jest.fn().mockResolvedValue(undefined),
+        ...over,
+    });
+
+    beforeEach(() => {
+        // Held-candidate scan must resolve empty for these ownership tests.
+        Message.findAll = jest.fn().mockResolvedValue([]);
+        shopService.getShopAiSettings.mockResolvedValue({ automation_mode: 'AUTO' });
+    });
+
+    it('rejects a silent second takeover with 409 HUMAN_TAKEOVER_CONFLICT', async () => {
+        Conversation.findOne = jest.fn().mockResolvedValue(assignedOpen());
+        await expect(conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: true },
+            { actor: { userId: 'staff-other', role: 'staff' } },
+        )).rejects.toMatchObject({ code: 'HUMAN_TAKEOVER_CONFLICT', statusCode: 409 });
+    });
+
+    it('rejects a non-owner staff resolving another owner\'s open handoff', async () => {
+        Conversation.findOne = jest.fn().mockResolvedValue(assignedOpen());
+        await expect(conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: false },
+            { actor: { userId: 'staff-other', role: 'staff' } },
+        )).rejects.toMatchObject({ code: 'HANDOFF_RESOLUTION_CONFLICT', statusCode: 409 });
+    });
+
+    it('the assigned owner can resume their own handoff', async () => {
+        const row = assignedOpen();
+        Conversation.findOne = jest.fn().mockResolvedValue(row);
+        shopService.getShopAiSettings.mockResolvedValue({ automation_mode: 'AUTO' });
+        await conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: false },
+            { actor: { userId: 'staff-owner', role: 'staff' } },
+        );
+        expect(row.update).toHaveBeenCalledWith(expect.objectContaining({ hitl: false }));
+    });
+
+    it('an owner/admin may force over, and a takeover claims ownership', async () => {
+        const row = assignedOpen();
+        Conversation.findOne = jest.fn().mockResolvedValue(row);
+        await conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: true },
+            { actor: { userId: 'boss-1', role: 'owner' } },
+        );
+        expect(row.update).toHaveBeenCalledWith(expect.objectContaining({
+            hitl: true,
+            assignee_id: 'boss-1',
+        }));
+    });
+
+    it('a staff force flag is IGNORED — force is privileged-only', async () => {
+        Conversation.findOne = jest.fn().mockResolvedValue(assignedOpen());
+        await expect(conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: true },
+            { actor: { userId: 'staff-other', role: 'staff' }, force: true },
+        )).rejects.toMatchObject({ code: 'HUMAN_TAKEOVER_CONFLICT', statusCode: 409 });
+    });
+
+    it('a fresh (unassigned) handoff takeover simply claims it', async () => {
+        const row = assignedOpen({ hitl: false, assignee_id: null });
+        Conversation.findOne = jest.fn().mockResolvedValue(row);
+        await conversationService.updateConversation(
+            'conversation-1', 'shop-1', { hitl: true },
+            { actor: { userId: 'staff-first', role: 'staff' } },
+        );
+        expect(row.update).toHaveBeenCalledWith(expect.objectContaining({
+            hitl: true,
+            assignee_id: 'staff-first',
         }));
     });
 });

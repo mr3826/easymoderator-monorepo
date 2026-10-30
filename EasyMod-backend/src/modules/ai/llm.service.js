@@ -10,7 +10,8 @@
  * For forced OpenAI, pass preferredProvider: 'openai'.
  *
  * Environment variables:
- *   GEMINI_API_KEY               — Google Gemini (required for providers 1 & 2)
+ *   EM-GEMINI-KEY                — Google Gemini (primary credential name)
+ *   GEMINI_API_KEY               — Legacy compatibility fallback
  *   OPENAI_API_KEY               — OpenAI (required for provider 3)
  *   LLM_GEMINI_LITE_MODEL        (default: gemini-3.1-flash-lite)
  *   LLM_GEMINI_PRO_MODEL         (default: gemini-3.1-pro-preview)
@@ -31,6 +32,70 @@ const GEMINI_PRO_MODEL  = process.env.LLM_GEMINI_PRO_MODEL  || 'gemini-3.1-pro-p
 const OPENAI_MODEL      = process.env.LLM_OPENAI_MODEL      || 'gpt-4.1-mini';
 const MAX_TOKENS        = parseInt(process.env.LLM_MAX_TOKENS  || '1024', 10);
 const TEMPERATURE       = parseFloat(process.env.LLM_TEMPERATURE || '0.3');
+
+const getGeminiApiKey = () => process.env['EM-GEMINI-KEY'] || process.env.GEMINI_API_KEY;
+const responseHeader = (response, names) => {
+    for (const name of names) {
+        const value = response?.headers?.get?.(name);
+        if (typeof value === 'string' && value.length <= 128) return value;
+    }
+    return null;
+};
+const requestSignal = (timeoutMs, parentSignal) => {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    if (!parentSignal) return timeoutSignal;
+    if (typeof AbortSignal.any === 'function') return AbortSignal.any([parentSignal, timeoutSignal]);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (parentSignal.aborted) abort();
+    else parentSignal.addEventListener('abort', abort, { once: true });
+    timeoutSignal.addEventListener('abort', abort, { once: true });
+    return controller.signal;
+};
+const numericUsage = (usage, fields) => Object.fromEntries(fields
+    .map(field => [field, Number(usage?.[field])])
+    .filter(([, value]) => Number.isSafeInteger(value) && value >= 0));
+const geminiUsage = (usage) => numericUsage(usage, [
+    'promptTokenCount', 'candidatesTokenCount', 'totalTokenCount',
+    'thoughtsTokenCount', 'cachedContentTokenCount', 'toolUsePromptTokenCount',
+]);
+const openAiUsage = (usage) => numericUsage(usage, [
+    'prompt_tokens', 'completion_tokens', 'total_tokens',
+]);
+
+const geminiTextOrThrow = (data) => {
+    const blockReason = data?.promptFeedback?.blockReason;
+    const candidate = data?.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+    if (blockReason && blockReason !== 'BLOCK_REASON_UNSPECIFIED') {
+        throw new Error('Gemini response was blocked by safety policy');
+    }
+    if (['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'].includes(String(finishReason || '').toUpperCase())) {
+        throw new Error('Gemini response was blocked by safety policy');
+    }
+    const text = (Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [])
+        .map(part => typeof part?.text === 'string' ? part.text : '')
+        .filter(Boolean)
+        .join('')
+        .trim();
+    if (!text) throw new Error('Gemini response contained no usable text');
+    return text;
+};
+
+const openAiTextOrThrow = (data) => {
+    const choice = data?.choices?.[0];
+    if (choice?.finish_reason === 'content_filter' || choice?.message?.refusal) {
+        throw new Error('OpenAI response was blocked by safety policy');
+    }
+    const content = choice?.message?.content;
+    const text = typeof content === 'string'
+        ? content.trim()
+        : Array.isArray(content)
+            ? content.filter(part => typeof part?.text === 'string').map(part => part.text).join('').trim()
+            : '';
+    if (!text) throw new Error('OpenAI response contained no usable text');
+    return text;
+};
 
 // ---------------------------------------------------------------------------
 // Vision helpers
@@ -78,12 +143,14 @@ const toGeminiParts = async (content) => {
 // Provider implementations
 // ---------------------------------------------------------------------------
 
-const callOpenAI = async ({ systemPrompt, messages, maxTokens, usageContext, fallbackSequence }) => {
+const callOpenAI = async ({ systemPrompt, messages, maxTokens, usageContext, fallbackSequence, returnMetadata, timeoutMs: requestedTimeoutMs, signal }) => {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
     const startedAt = Date.now();
-    const timeoutMs = parseInt(process.env.LLM_OPENAI_TIMEOUT_MS) || 30000;
+    const timeoutMs = Number.isSafeInteger(requestedTimeoutMs) && requestedTimeoutMs > 0
+        ? requestedTimeoutMs
+        : (parseInt(process.env.LLM_OPENAI_TIMEOUT_MS) || 30000);
     const oaiMessages = [];
     if (systemPrompt) oaiMessages.push({ role: 'system', content: systemPrompt });
     oaiMessages.push(...await Promise.all(
@@ -105,12 +172,11 @@ const callOpenAI = async ({ systemPrompt, messages, maxTokens, usageContext, fal
             max_tokens: maxTokens || MAX_TOKENS,
             temperature: TEMPERATURE
         }),
-        signal: AbortSignal.timeout(timeoutMs)
+        signal: requestSignal(timeoutMs, signal)
     });
 
     if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`OpenAI error ${response.status}: ${err}`);
+        throw new Error(`OpenAI error ${response.status || 'unknown'}`);
     }
 
     const data = await response.json();
@@ -123,19 +189,29 @@ const callOpenAI = async ({ systemPrompt, messages, maxTokens, usageContext, fal
         latencyMs: Date.now() - startedAt,
         imageCount: countImages(messages),
     });
-    return data?.choices?.[0]?.message?.content || '';
+    const text = openAiTextOrThrow(data);
+    if (!returnMetadata) return text;
+    return {
+        text,
+        model: OPENAI_MODEL,
+        requestId: responseHeader(response, ['x-request-id', 'request-id']),
+        latencyMs: Date.now() - startedAt,
+        usage: openAiUsage(data?.usage),
+    };
 };
 
 /**
  * Shared Gemini caller. `geminiModel` selects lite vs pro.
  * When `cachedContentName` is set, the system prompt is already server-cached.
  */
-const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName, usageContext, fallbackSequence }, geminiModel) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName, usageContext, fallbackSequence, returnMetadata, timeoutMs: requestedTimeoutMs, signal, evaluationEgressAuthorization }, geminiModel) => {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('EM-GEMINI-KEY not set');
 
     const startedAt = Date.now();
-    const timeoutMs = parseInt(process.env.LLM_GEMINI_TIMEOUT_MS) || 30000;
+    const timeoutMs = Number.isSafeInteger(requestedTimeoutMs) && requestedTimeoutMs > 0
+        ? requestedTimeoutMs
+        : (parseInt(process.env.LLM_GEMINI_TIMEOUT_MS) || 30000);
     const contents = await Promise.all(messages.map(async (m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: await toGeminiParts(m.content)
@@ -155,17 +231,25 @@ const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName
         body.systemInstruction = { parts: [{ text: systemPrompt }] };
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
+    const request = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs)
-    });
+        redirect: 'error',
+        signal: requestSignal(timeoutMs, signal)
+    };
+    if (evaluationEgressAuthorization !== undefined
+        && (typeof evaluationEgressAuthorization !== 'function'
+            || evaluationEgressAuthorization({ url, ...request }) !== true)) {
+        throw new Error('Gemini evaluation permit rejected');
+    }
+    const response = await fetch(url, request);
 
     if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`Gemini (${geminiModel}) error ${response.status}: ${err}`);
+        const error = new Error(`Gemini (${geminiModel}) error ${response.status || 'unknown'}`);
+        if (response.status === 429) error.code = 'GEMINI_RATE_LIMIT';
+        throw error;
     }
 
     const data = await response.json();
@@ -178,7 +262,15 @@ const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName
         latencyMs: Date.now() - startedAt,
         imageCount: countImages(messages),
     });
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const text = geminiTextOrThrow(data);
+    if (!returnMetadata) return text;
+    return {
+        text,
+        model: geminiModel,
+        requestId: responseHeader(response, ['x-goog-request-id', 'x-request-id', 'request-id']),
+        latencyMs: Date.now() - startedAt,
+        usage: geminiUsage(data?.usageMetadata),
+    };
 };
 
 /** Count image blocks across a messages array (for the cost ledger only). */
@@ -248,16 +340,34 @@ const chat = async (params) => {
     }
 
     const errors = [];
+    let soleGeminiRateLimit = false;
     for (const [fallbackSequence, { name, fn }] of providers.entries()) {
         try {
-            const text = await circuitBreaker.callWithBreaker(name, () => fn({ ...params, fallbackSequence }));
-            return { text, provider: name };
+            const response = await circuitBreaker.callWithBreaker(name, () => fn({ ...params, fallbackSequence }));
+            const details = response && typeof response === 'object' ? response : null;
+            const text = details ? details.text : response;
+            if (typeof text !== 'string' || !text.trim()) throw new Error('Provider returned no usable text');
+            return params.returnMetadata
+                ? {
+                    text,
+                    provider: name,
+                    model: details?.model || null,
+                    requestId: details?.requestId || null,
+                    latencyMs: details?.latencyMs ?? null,
+                    usage: details?.usage || {},
+                }
+                : { text, provider: name };
         } catch (err) {
+            if (providers.length === 1 && name === 'gemini-lite' && err?.code === 'GEMINI_RATE_LIMIT') {
+                soleGeminiRateLimit = true;
+            }
             errors.push(`${name}: ${err.message}`);
         }
     }
 
-    throw new Error(`All LLM providers failed:\n${errors.join('\n')}`);
+    const error = new Error(`All LLM providers failed:\n${errors.join('\n')}`);
+    if (soleGeminiRateLimit) error.code = 'GEMINI_RATE_LIMIT';
+    throw error;
 };
 
 /**

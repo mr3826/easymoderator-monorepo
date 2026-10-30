@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "runId": "66fccba3-8813-43ec-8d71-8dedebabbdac",
+  "status": "FAIL",
+  "startedAt": "2026-10-20T14:21:13.078Z",
+  "completedAt": "2026-10-20T14:22:21.057Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-33524-4d13b1",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": false,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 9046,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 9047,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 2681
+  },
+  "testPaths": {
+    "selectedIntegration": [
+      "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+      "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+      "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+    ],
+    "webhookPipelineE2E": "tests/meta-e2e/meta-e2e.test.js"
+  },
+  "jest": {
+    "status": "FAIL",
+    "selectedIntegration": {
+      "exitCode": 0,
+      "timedOut": false,
+      "suites": "3 passed, 3 total",
+      "tests": "12 passed, 12 total",
+      "duration": "14.105 s, estimated 15 s",
+      "structured": {
+        "passedSuites": 3,
+        "failedSuites": 0,
+        "passedTests": 12,
+        "failedTests": 0,
+        "failedSuiteDiagnostics": []
+      }
+    },
+    "webhookPipelineE2E": {
+      "exitCode": 1,
+      "timedOut": false,
+      "suites": "1 failed, 1 total",
+      "tests": "19 failed, 24 passed, 43 total",
+      "duration": "35.709 s",
+      "structured": {
+        "passedSuites": 0,
+        "failedSuites": 1,
+        "passedTests": 24,
+        "failedTests": 19,
+        "failedSuiteDiagnostics": [
+          {
+            "suite": "tests/meta-e2e/meta-e2e.test.js",
+            "errorType": "UNCLASSIFIED",
+            "kinds": [
+              "ASSERTION"
+            ],
+            "locations": [
+              "tests/meta-e2e/meta-e2e.test.js:101:29",
+              "tests/meta-e2e/meta-e2e.test.js:113:36",
+              "tests/meta-e2e/meta-e2e.test.js:247:38",
+              "tests/meta-e2e/meta-e2e.test.js:310:35",
+              "tests/meta-e2e/meta-e2e.test.js:345:67",
+              "tests/meta-e2e/meta-e2e.test.js:366:30",
+              "tests/meta-e2e/meta-e2e.test.js:376:42",
+              "tests/meta-e2e/meta-e2e.test.js:419:30"
+            ],
+            "failedAssertions": [
+              {
+                "title": "the webhook boundary itself a signed payload awaits a real BullMQ handoff with exact receipt and Page binding",
+                "location": null
+              },
+              {
+                "title": "the webhook boundary itself a redelivered message id is deduplicated, not answered twice",
+                "location": null
+              },
+              {
+                "title": "META-E2E-003 — a product this shop really sells the verified price, attribute and photo all reach Meta",
+                "location": null
+              },
+              {
+                "title": "META-E2E-004 — an attribute the catalog does not record a fabric asserted for a product with material = NULL is withdrawn",
+                "location": null
+              },
+              {
+                "title": "META-E2E-004 — an attribute the catalog does not record \"eta chiffon?\" with nothing grounded is answered by asking which product",
+                "location": null
+              },
+              {
+                "title": "META-E2E-005 — a verified product with no stored photo the reply says the photo is unavailable and attaches nothing",
+                "location": null
+              },
+              {
+                "title": "META-E2E-005 — a verified product with no stored photo no substitute media is allowed to stand in for the missing photo",
+                "location": null
+              },
+              {
+                "title": "META-E2E-006 — a Page that does not own the product Shop B still answers from its own catalog",
+                "location": null
+              },
+              {
+                "title": "META-E2E-REPLY-MODE — one business mode controls every automatic send AUTO sends exactly one automatic reply",
+                "location": null
+              },
+              {
+                "title": "META-E2E-REPLY-MODE — one business mode controls every automatic send mode changes are isolated by shop",
+                "location": null
+              },
+              {
+                "title": "META-E2E-REPLY-MODE — one business mode controls every automatic send one business mode converges across both connected Pages",
+                "location": null
+              },
+              {
+                "title": "META-E2E-008 — merchant policy the shop never supplied a figure the merchant DID supply is quotable, and is attributed",
+                "location": null
+              },
+              {
+                "title": "META-E2E-009 — media provenance another product of this shop is never sent in place of the verified photo",
+                "location": null
+              },
+              {
+                "title": "META-E2E-009 — media provenance a product of another shop is never sent in place of the verified photo",
+                "location": null
+              },
+              {
+                "title": "META-E2E-009 — media provenance a generic URL is never sent in place of the verified photo",
+                "location": null
+              },
+              {
+                "title": "META-E2E-009 — media provenance the shop Facebook Page is never sent in place of the verified photo",
+                "location": null
+              },
+              {
+                "title": "META-E2E-009 — media provenance only the verified product URL survives attachment provenance",
+                "location": null
+              },
+              {
+                "title": "META-E2E-010 — the fallback provider a primary-provider outage fails over, and the reply still passes the gate",
+                "location": null
+              },
+              {
+                "title": "META-E2E-012 — unusable model output an empty completion for a product question is replaced by written copy",
+                "location": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "egress": {
+    "mode": "Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch",
+    "guard": "PASS",
+    "blockedNonLoopbackAttempts": 0,
+    "externalProvidersConfigured": false
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 2681,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 0,
+      "durationMs": 14738,
+      "timedOut": false
+    },
+    {
+      "stage": "webhook_pipeline_e2e_jest",
+      "exitCode": 1,
+      "durationMs": 36408,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-33524-4d13b1"
+    }
+  ],
+  "failure": "The real webhook-to-worker-to-outbound Meta-shaped suite failed.",
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

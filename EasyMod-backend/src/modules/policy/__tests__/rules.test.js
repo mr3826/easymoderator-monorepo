@@ -179,27 +179,80 @@ describe('messengerOptedOut.rule', () => {
 
 describe('twentyFourHourWindow.rule', () => {
     const rule = require('src/modules/policy/rules/twentyFourHourWindow.rule');
-    test('defaults to POST_PURCHASE_UPDATE when outside window and no caller tag', async () => {
-        const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
-        expect(r.allow).toBe(true);
-        expect(r.augment.within_window).toBe(false);
-        expect(r.augment.message_tag).toBe('POST_PURCHASE_UPDATE');
-    });
-    test('honours a valid caller-provided messageTag outside window', async () => {
+    // Meta 2026 retirement: CONFIRMED_EVENT_UPDATE / POST_PURCHASE_UPDATE /
+    // ACCOUNT_UPDATE return error 100 since 2026-04-27 (deprecated 2026-02-09).
+    // The window rule must never invent a tag; outside-window sends without a
+    // currently-valid, explicitly-approved tag must reach templateRequired's
+    // DENY so the worker holds the message instead of firing a doomed request.
+    test.each([
+        'POST_PURCHASE_UPDATE',
+        'ACCOUNT_UPDATE',
+        'CONFIRMED_EVENT_UPDATE',
+    ])('drops retired caller tag %s — no tag is augmented', async (tag) => {
         const r = await rule.evaluate(
-            { policy: { messageTag: 'ACCOUNT_UPDATE' } },
+            { policy: { messageTag: tag } },
             { customer: { id: 'c1' }, platform: 'facebook' },
         );
         expect(r.allow).toBe(true);
-        expect(r.augment.message_tag).toBe('ACCOUNT_UPDATE');
         expect(r.augment.within_window).toBe(false);
+        expect(r.augment.message_tag).toBeUndefined();
     });
-    test('falls back to default tag when caller messageTag is not a real Meta tag', async () => {
+    test('augments no default tag when outside window and no caller tag', async () => {
+        const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
+        expect(r.allow).toBe(true);
+        expect(r.augment.within_window).toBe(false);
+        expect(r.augment.message_tag).toBeUndefined();
+    });
+    test('ignores a caller messageTag that is not a real Meta tag', async () => {
         const r = await rule.evaluate(
             { policy: { messageTag: 'NOT_A_REAL_TAG' } },
             { customer: { id: 'c1' }, platform: 'facebook' },
         );
-        expect(r.augment.message_tag).toBe('POST_PURCHASE_UPDATE');
+        expect(r.augment.message_tag).toBeUndefined();
+    });
+    test('HUMAN_AGENT is augmented only when the app actually holds the permission', async () => {
+        consentService.getLastInboundAt.mockReturnValue(new Date(Date.now() - 26 * 3600 * 1000));
+        const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+        try {
+            process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+            const on = await rule.evaluate(
+                { policy: { messageTag: 'HUMAN_AGENT' } },
+                { customer: { id: 'c1' }, platform: 'facebook' },
+            );
+            expect(on.augment.message_tag).toBe('HUMAN_AGENT');
+        } finally {
+            if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+        }
+        const off = await rule.evaluate(
+            { policy: { messageTag: 'HUMAN_AGENT' } },
+            { customer: { id: 'c1' }, platform: 'facebook' },
+        );
+        expect(off.augment.message_tag).toBeUndefined();
+    });
+    test('HUMAN_AGENT eligibility uses verified event evidence — 7-day clock from last inbound', async () => {
+        const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+        process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+        try {
+            consentService.getLastInboundAt.mockReturnValue(new Date(Date.now() - 8 * 24 * 3600 * 1000));
+            const expired = await rule.evaluate(
+                { policy: { messageTag: 'HUMAN_AGENT' } },
+                { customer: { id: 'c1' }, platform: 'facebook' },
+            );
+            expect(expired.augment.human_agent_window_expired).toBe(true);
+            expect(expired.augment.message_tag).toBeUndefined();
+
+            consentService.getLastInboundAt.mockReturnValue(new Date(Date.now() - 26 * 3600 * 1000));
+            const fresh = await rule.evaluate(
+                { policy: { messageTag: 'HUMAN_AGENT' } },
+                { customer: { id: 'c1' }, platform: 'facebook' },
+            );
+            expect(fresh.augment.message_tag).toBe('HUMAN_AGENT');
+            expect(fresh.augment.human_agent_window_expired).toBeUndefined();
+        } finally {
+            if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+        }
     });
     test('does not set message_tag when within window', async () => {
         consentService.getLastInboundAt.mockReturnValue(new Date(Date.now() - 2 * 3600 * 1000));
@@ -230,12 +283,20 @@ describe('templateRequired.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
-    test('allows outside window with a valid Meta message tag', async () => {
+    test('denies outside-window send tagged POST_PURCHASE_UPDATE (retired at Meta 2026-04-27)', async () => {
         const r = await rule.evaluate({}, {
             runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
         });
-        expect(r.allow).toBe(true);
-        expect(r.reason).toBe('OUTSIDE_WINDOW_TAGGED');
+        expect(r.allow).toBe(false);
+        expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
+    });
+    test('denies outside-window sends tagged with the other retired tags', async () => {
+        for (const tag of ['ACCOUNT_UPDATE', 'CONFIRMED_EVENT_UPDATE']) {
+            const r = await rule.evaluate({}, {
+                runningAugment: { within_window: false, message_tag: tag },
+            });
+            expect(r.allow).toBe(false);
+        }
     });
     test('denies with un-approved tag', async () => {
         const r = await rule.evaluate({}, {
@@ -244,12 +305,26 @@ describe('templateRequired.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
-    test('blocks a human-agent reply outside the window even with a valid tag', async () => {
+    test('blocks a human-agent reply outside the window even with a tag (permission flag off)', async () => {
         const r = await rule.evaluate({ senderRole: 'agent' }, {
-            runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
+            runningAugment: { within_window: false, message_tag: 'HUMAN_AGENT' },
         });
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('HUMAN_AGENT_OUTSIDE_WINDOW_BLOCKED');
+    });
+    test('allows a human-agent reply tagged HUMAN_AGENT when the permission flag is on', async () => {
+        const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+        process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+        try {
+            const r = await rule.evaluate({ senderRole: 'agent' }, {
+                runningAugment: { within_window: false, message_tag: 'HUMAN_AGENT' },
+            });
+            expect(r.allow).toBe(true);
+            expect(r.reason).toBe('OUTSIDE_WINDOW_TAGGED');
+        } finally {
+            if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+        }
     });
     test('allows a human-agent reply within the window', async () => {
         const r = await rule.evaluate({ senderRole: 'agent' }, {
@@ -258,12 +333,40 @@ describe('templateRequired.rule', () => {
         expect(r.allow).toBe(true);
         expect(r.reason).toBe('WITHIN_WINDOW');
     });
-    test('AI/system sends outside the window are unaffected — still tagged POST_PURCHASE_UPDATE', async () => {
+    test('AI/system sends outside the window are NOT auto-tagged — denied and held', async () => {
         const r = await rule.evaluate({ senderRole: 'ai' }, {
             runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
         });
-        expect(r.allow).toBe(true);
-        expect(r.reason).toBe('OUTSIDE_WINDOW_TAGGED');
+        expect(r.allow).toBe(false);
+        expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
+    });
+    test('automated (ai) send may NOT use HUMAN_AGENT even when the permission flag is on', async () => {
+        // Meta: HUMAN_AGENT is for business representatives replying manually;
+        // automated messages are an explicitly disallowed usage.
+        const prev = process.env.META_HUMAN_AGENT_TAG_ENABLED;
+        try {
+            process.env.META_HUMAN_AGENT_TAG_ENABLED = 'true';
+            const r = await rule.evaluate({ senderRole: 'ai' }, {
+                runningAugment: { within_window: false, message_tag: 'HUMAN_AGENT' },
+            });
+            expect(r.allow).toBe(false);
+            expect(r.reason).toBe('HUMAN_AGENT_AUTOMATED_SEND_BLOCKED');
+        } finally {
+            if (prev === undefined) delete process.env.META_HUMAN_AGENT_TAG_ENABLED;
+            else process.env.META_HUMAN_AGENT_TAG_ENABLED = prev;
+        }
+    });
+    test('no automated tag is allowed by default and retired tags are classified retired', async () => {
+        const mod = require('src/modules/policy/rules/templateRequired.rule');
+        expect(mod.isAllowedMessageTag('POST_PURCHASE_UPDATE')).toBe(false);
+        expect(mod.isAllowedMessageTag('ACCOUNT_UPDATE')).toBe(false);
+        expect(mod.isAllowedMessageTag('CONFIRMED_EVENT_UPDATE')).toBe(false);
+        expect(mod.isAllowedMessageTag('HUMAN_AGENT')).toBe(false); // flag default off
+        expect(mod.isAllowedMessageTag(undefined)).toBe(false);
+        expect(mod.RETIRED_TAGS).toEqual(
+            new Set(['POST_PURCHASE_UPDATE', 'ACCOUNT_UPDATE', 'CONFIRMED_EVENT_UPDATE']),
+        );
+        expect(mod.DEFAULT_TAG).toBeUndefined();
     });
 });
 

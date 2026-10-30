@@ -3,9 +3,10 @@
  * Extracted from UnifiedInbox.tsx (D2 split).
  */
 import { motion } from "motion/react";
-import { Search, UserCheck, CheckCircle2, Loader2, MessageCircle } from "lucide-react";
+import { Search, UserCheck, CheckCircle2, Loader2, MessageCircle, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Conversation } from "@/api/types/conversation";
 import { Badge } from "@/app/components/ui/badge";
+import { strengthStyles } from "../customers/customerDisplay";
 import { useTranslation } from "react-i18next";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
@@ -18,9 +19,16 @@ interface InboxThreadListProps {
   filterTab: "all" | "needs_review" | "closed";
   needsReviewCount: number;
   closedCount: number;
+  loadError: string | null;
+  currentPage: number;
+  pageSize: number;
+  totalConversations: number;
+  totalPages: number;
   mobilePanelOpen: boolean;
   onSearchChange: (q: string) => void;
   onFilterChange: (tab: "all" | "needs_review" | "closed") => void;
+  onPageChange: (page: number) => void;
+  onRetry: () => void;
   onSelectConversation: (conv: Conversation) => void;
 }
 
@@ -64,18 +72,36 @@ export function InboxThreadList({
   filterTab,
   needsReviewCount,
   closedCount,
+  loadError,
+  currentPage,
+  pageSize,
+  totalConversations,
+  totalPages,
   mobilePanelOpen,
   onSearchChange,
   onFilterChange,
+  onPageChange,
+  onRetry,
   onSelectConversation,
 }: InboxThreadListProps) {
   const { t } = useTranslation();
+  const rangeStart = totalConversations === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, totalConversations);
+  const emptyMessageKey = searchQuery && filterTab === "needs_review"
+    ? "inbox.empty.searchAndFilter"
+    : searchQuery
+      ? "inbox.empty.search"
+      : filterTab !== "all"
+        ? "inbox.empty.filter"
+        : totalConversations > 0
+          ? "inbox.empty.page"
+          : "inbox.noConversations";
 
   return (
     <div
-      className={`bg-white border-r border-gray-200 overflow-y-auto flex flex-col w-full md:w-80 ${
+      className={`bg-white border-r border-gray-200 overflow-y-auto flex flex-col w-full lg:w-80 ${
         mobilePanelOpen ? "hidden" : "flex"
-      } md:flex`}
+      } lg:flex`}
     >
       <div className="p-4 border-b border-gray-200 space-y-2">
         <div className="relative">
@@ -83,6 +109,7 @@ export function InboxThreadList({
           <input
             type="text"
             placeholder={t("inbox.searchPlaceholder")}
+            aria-label={t("inbox.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -93,6 +120,7 @@ export function InboxThreadList({
             <button
               key={tab}
               onClick={() => onFilterChange(tab)}
+              aria-pressed={filterTab === tab}
               className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center justify-center gap-1 ${
                 filterTab === tab
                   ? tab === "needs_review"
@@ -129,6 +157,15 @@ export function InboxThreadList({
         </div>
       </div>
 
+      {loadError && (
+        <div role="alert" className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-bn">{loadError}</p>
+          <button type="button" onClick={onRetry} className="mt-2 min-h-10 font-semibold underline">
+            {t("inbox.tryAgain")}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
@@ -136,9 +173,12 @@ export function InboxThreadList({
       ) : filteredConversations.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-3 p-6">
           <MessageCircle className="w-10 h-10 text-gray-300" />
-          <p className="text-sm text-center font-bn">
-            {searchQuery ? t("inbox.noResults") : t("inbox.noConversations")}
+          <p role="status" aria-live="polite" className="text-sm text-center font-bn">
+            {t(emptyMessageKey)}
           </p>
+          {(searchQuery || filterTab !== "all") && (
+            <p className="text-xs text-center text-gray-500 font-bn">{t("inbox.empty.currentPageOnly")}</p>
+          )}
         </div>
       ) : (
         <motion.div
@@ -157,8 +197,17 @@ export function InboxThreadList({
                 key={conversation.id}
                 variants={fadeUp}
                 onClick={() => onSelectConversation(conversation)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectConversation(conversation);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-pressed={selectedConversationId === conversation.id}
                 className={[
-                  "p-4 cursor-pointer hover:bg-gray-50 transition-colors relative",
+                  "p-4 cursor-pointer hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 transition-colors relative",
                   selectedConversationId === conversation.id ? "bg-blue-50" : "",
                   isHITL ? "border-l-4 border-destructive" : "",
                 ].join(" ")}
@@ -187,6 +236,16 @@ export function InboxThreadList({
                         {conversation.status === "closed" && (
                           <span title={t("inbox.resolved")} className="inline-flex">
                             <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                          </span>
+                        )}
+                        {conversation.open_opportunity && (
+                          <span
+                            data-testid="lead-chip"
+                            title={t(`customer360.strength.${conversation.open_opportunity.strength}`)}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ${strengthStyles[conversation.open_opportunity.strength]}`}
+                          >
+                            <Sparkles className="w-2.5 h-2.5" aria-hidden="true" />
+                            {t(`customer360.strength.${conversation.open_opportunity.strength}`)}
                           </span>
                         )}
                       </div>
@@ -233,6 +292,39 @@ export function InboxThreadList({
             );
           })}
         </motion.div>
+      )}
+
+      {totalConversations > pageSize && (
+        <nav aria-label={t("inbox.pagination.label")} className="mt-auto border-t border-gray-200 bg-white p-3">
+          <p className="mb-2 text-center text-xs text-gray-600" aria-live="polite">
+            {t("inbox.pagination.range", { start: rangeStart, end: rangeEnd, total: totalConversations })}
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              aria-label={t("inbox.pagination.previousPage")}
+              disabled={currentPage <= 1 || loading}
+              onClick={() => onPageChange(currentPage - 1)}
+              className="inline-flex min-h-10 items-center gap-1 rounded-md border border-gray-300 px-2 text-sm disabled:opacity-50"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              {t("inbox.pagination.previousPage")}
+            </button>
+            <span className="text-xs font-medium text-gray-700" aria-current="page">
+              {t("inbox.pagination.page", { current: currentPage, total: totalPages })}
+            </span>
+            <button
+              type="button"
+              aria-label={t("inbox.pagination.nextPage")}
+              disabled={currentPage >= totalPages || loading}
+              onClick={() => onPageChange(currentPage + 1)}
+              className="inline-flex min-h-10 items-center gap-1 rounded-md border border-gray-300 px-2 text-sm disabled:opacity-50"
+            >
+              {t("inbox.pagination.nextPage")}
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        </nav>
       )}
     </div>
   );

@@ -281,9 +281,10 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         // Robust error handling
         throw new AppError('Payment config update failed: ' + err.message, 500);
     }
-    // Sync self-mfs credentials into shop.settings.bd so the chatbot can read them
+    // Sync self-mfs state into shop.settings.bd so the chatbot reads the SAME
+    // truth the checkout gates on (P0-3 single authority).
     const credentialsForSync = validatedIncomingCredentials || (gateway === 'self-mfs' ? paymentConfig.credentials : null);
-    if (gateway === 'self-mfs' && credentialsForSync?.mfs_number) {
+    if (gateway === 'self-mfs' && paymentConfig.is_enabled && credentialsForSync?.mfs_number) {
         try {
             const { updateBdSettings } = require('../shop/shop-bd-settings');
             await updateBdSettings(shopId, {
@@ -292,6 +293,13 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
                 mfs_mode: credentialsForSync.mfs_mode || 'self'
             });
         } catch (_) { /* non-fatal — chatbot will degrade to manual payment */ }
+    } else if (gateway === 'self-mfs' && !paymentConfig.is_enabled) {
+        // Disable must not leave a stale number behind for the AI to advertise.
+        try {
+            const { clearSelfMfs } = require('../shop/shop-bd-settings');
+            await clearSelfMfs(shopId);
+        } catch (_) { /* non-fatal — config row is already saved disabled; AI
+                        context re-checks is_enabled independently (P0-3) */ }
     }
 
     return paymentConfig;
@@ -338,6 +346,15 @@ async function deletePaymentConfig(shopId, userId, gateway) {
     }
 
     await paymentConfig.destroy();
+
+    // P0-3: deleting self-mfs must also remove the payment number the AI could
+    // otherwise keep advertising from stale shop.settings.bd state.
+    if (gateway === 'self-mfs') {
+        try {
+            const { clearSelfMfs } = require('../shop/shop-bd-settings');
+            await clearSelfMfs(shopId);
+        } catch (_) { /* non-fatal — row is deleted; AI re-checks is_enabled */ }
+    }
 
     return {
         success: true,

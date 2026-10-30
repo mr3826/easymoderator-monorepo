@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "runId": "8f35ad4f-78de-4a99-9bed-52f4bc0d58c5",
+  "status": "FAIL",
+  "startedAt": "2026-10-20T14:15:54.789Z",
+  "completedAt": "2026-10-20T14:17:33.965Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-37344-c595ef",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": false,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 12840,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 12841,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "exitCode": 0,
+    "durationMs": 2747
+  },
+  "testPaths": {
+    "selectedIntegration": [
+      "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+      "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+      "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+    ],
+    "webhookPipelineE2E": "tests/meta-e2e/meta-e2e.test.js"
+  },
+  "jest": {
+    "status": "FAIL",
+    "selectedIntegration": {
+      "exitCode": 0,
+      "timedOut": false,
+      "suites": "3 passed, 3 total",
+      "tests": "12 passed, 12 total",
+      "duration": "17.906 s",
+      "structured": {
+        "passedSuites": 3,
+        "failedSuites": 0,
+        "passedTests": 12,
+        "failedTests": 0,
+        "failedSuiteDiagnostics": []
+      }
+    },
+    "webhookPipelineE2E": {
+      "exitCode": 1,
+      "timedOut": false,
+      "suites": "1 failed, 1 total",
+      "tests": "28 failed, 15 passed, 43 total",
+      "duration": "36.001 s",
+      "structured": {
+        "passedSuites": 0,
+        "failedSuites": 1,
+        "passedTests": 15,
+        "failedTests": 28,
+        "failedSuiteDiagnostics": [
+          {
+            "suite": "tests/meta-e2e/meta-e2e.test.js",
+            "errorType": "UNCLASSIFIED",
+            "kinds": [
+              "ASSERTION"
+            ],
+            "locations": [
+              "src/modules/shop/shop-bd-settings.js:43:29",
+              "src/modules/ai/shop-operating-context.service.js:72:22",
+              "src/jobs/message-worker.js:146:38",
+              "src/jobs/message-worker.js:3189:47",
+              "tests/meta-e2e/harness.js:167:26",
+              "tests/meta-e2e/meta-e2e.test.js:100:26",
+              "src/modules/shop/shop-bd-settings.js:43:29",
+              "src/modules/ai/shop-operating-context.service.js:72:22"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "egress": {
+    "mode": "Docker bridge uses a reserved non-overlapping subnet with IP masquerading disabled; service ports publish only on 127.0.0.1; host Node guard allows loopback IPs/localhost, blocks DNS resolver APIs and custom lookup/agent/dispatcher paths, and blocks non-loopback TCP/UDP/HTTP/fetch",
+    "guard": "PASS",
+    "blockedNonLoopbackAttempts": 0,
+    "externalProvidersConfigured": false
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "migrations",
+      "exitCode": 0,
+      "durationMs": 2747,
+      "timedOut": false
+    },
+    {
+      "stage": "integration_jest",
+      "exitCode": 0,
+      "durationMs": 18502,
+      "timedOut": false
+    },
+    {
+      "stage": "webhook_pipeline_e2e_jest",
+      "exitCode": 1,
+      "durationMs": 42072,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-37344-c595ef"
+    }
+  ],
+  "failure": "The real webhook-to-worker-to-outbound Meta-shaped suite failed.",
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

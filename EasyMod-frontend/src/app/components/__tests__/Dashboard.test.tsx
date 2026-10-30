@@ -15,6 +15,7 @@ vi.mock('@/api', () => ({
     getDashboardMetrics: vi.fn(),
     getDashboardQueue: vi.fn(),
     getOrders: vi.fn(),
+    getConversations: vi.fn(),
   },
 }));
 
@@ -86,6 +87,12 @@ describe('Dashboard — cash position section', () => {
     vi.mocked(apiClient.getSetupStatus).mockResolvedValue(completeSetupStatus as never);
     vi.mocked(apiClient.getDashboardQueue).mockResolvedValue(baseQueue as never);
     vi.mocked(apiClient.getOrders).mockResolvedValue([] as never);
+    vi.mocked(apiClient.getConversations).mockResolvedValue({
+      data: [], total: 0, page: 1, pageSize: 100, ai_reply_mode: 'MANUAL',
+    } as never);
+    vi.mocked(apiClient.getConversations).mockResolvedValue({
+      data: [], total: 0, page: 1, pageSize: 100, ai_reply_mode: 'MANUAL',
+    } as never);
   });
 
   it('renders both cash-position cards when backend returns cashPosition', async () => {
@@ -117,9 +124,9 @@ describe('Dashboard — cash position section', () => {
     // "at risk / returns incoming" card label
     expect(screen.getByText(/cashPosition\.atRisk\b/)).toBeInTheDocument();
 
-    // Order counts visible as plain digits
-    expect(screen.getByText(/\b7\b/)).toBeInTheDocument();
-    expect(screen.getByText(/\b2\b/)).toBeInTheDocument();
+    // Count values are scoped to their respective cash-position cards.
+    expect(screen.getByText('dashboard.pulse.cashPosition.inTransit').closest('section')).toHaveTextContent(/\b7\b/);
+    expect(screen.getByText('dashboard.pulse.cashPosition.atRisk').closest('section')).toHaveTextContent(/\b2\b/);
   });
 
   it('renders first-time setup instead of loading pulse data while setup is incomplete', async () => {
@@ -154,9 +161,10 @@ describe('Dashboard — cash position section', () => {
     expect(apiClient.getDashboardMetrics).not.toHaveBeenCalled();
     expect(apiClient.getDashboardQueue).not.toHaveBeenCalled();
     expect(apiClient.getOrders).not.toHaveBeenCalled();
+    expect(apiClient.getConversations).not.toHaveBeenCalled();
   });
 
-  it('renders zero-state placeholders when backend omits cashPosition (backwards compat)', async () => {
+  it('renders unavailable cash when backend omits cashPosition instead of inventing zero', async () => {
     vi.mocked(apiClient.getDashboardMetrics).mockResolvedValue({
       metrics: {
         totalMessages: 0,
@@ -174,9 +182,10 @@ describe('Dashboard — cash position section', () => {
 
     renderDashboard();
 
-    // Section should still render (with zero amounts) without throwing.
+    // Section remains visible, but missing backend values are not reported as zero cash.
     await waitFor(() => {
       expect(screen.getByText(/cashPosition\.inTransit\b/)).toBeInTheDocument();
     });
+    expect(screen.getAllByText('dashboard.pulse.cashPosition.unavailable')).toHaveLength(2);
   });
 });

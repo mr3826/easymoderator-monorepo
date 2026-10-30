@@ -8,10 +8,12 @@ const conversationController = require('../conversation/conversation.controller'
 const { Message, AuditLog } = require('../entities');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
+const { isAllowedMessageTag } = require('../policy/rules/templateRequired.rule');
 
 const MAX_PAGE_SIZE = 50;
 const SUPPORTED_CHANNELS = new Set(['facebook', 'messenger', 'web', 'webchat', 'telegram']);
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+const HUMAN_AGENT_CLOCK_MS = 7 * TWENTY_FOUR_HOURS_MS;
 
 function positiveInteger(value, fallback, maximum) {
     const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -88,8 +90,14 @@ const replyConversation = asyncHandler(async (req, res) => {
         throw new AppError('Message exceeds maximum length of 2000 characters', 400, 'MESSAGE_TOO_LONG');
     }
 
-    // Meta 24-hour messaging policy check for Facebook / Messenger channels
+    // Meta 24-hour messaging policy check for Facebook / Messenger channels.
+    // A supplied message_tag only counts if templateRequired.rule currently
+    // allows it (retired Meta tags are rejected, HUMAN_AGENT needs the
+    // permission flag and a verified event inside its 7-day clock); an
+    // invalid tag supplied on an in-window reply is a client error, not
+    // something to silently ignore.
     const isMeta = ['facebook', 'messenger'].includes(String(conversation.channel || '').toLowerCase());
+    let validTag = null;
     if (isMeta) {
         let lastCustomerAt = NaN;
         if (conversation.last_customer_message_at) {
@@ -105,10 +113,28 @@ const replyConversation = asyncHandler(async (req, res) => {
             }
         }
 
-        const tag = req.body?.message_tag;
-        if (Number.isFinite(lastCustomerAt) && (Date.now() - lastCustomerAt > TWENTY_FOUR_HOURS_MS) && !tag) {
-            throw new AppError('Cannot reply: Outside Meta 24-hour messaging window. Customer must message first.', 422, 'OUTSIDE_24H_WINDOW');
+        const requestedTag = req.body?.message_tag;
+        validTag = requestedTag && isAllowedMessageTag(String(requestedTag))
+            ? String(requestedTag)
+            : null;
+        const outside24h = Number.isFinite(lastCustomerAt)
+            ? Date.now() - lastCustomerAt > TWENTY_FOUR_HOURS_MS
+            : true;
+
+        if (outside24h) {
+            if (!validTag) {
+                throw new AppError('Cannot reply: Outside Meta 24-hour messaging window. Customer must message first.', 422, 'OUTSIDE_24H_WINDOW');
+            }
+            const withinAgentClock = Number.isFinite(lastCustomerAt)
+                && Date.now() - lastCustomerAt <= HUMAN_AGENT_CLOCK_MS;
+            if (!withinAgentClock) {
+                throw new AppError('Cannot reply: outside the verified 7-day human-agent window.', 422, 'OUTSIDE_24H_WINDOW');
+            }
+        } else if (requestedTag && !validTag) {
+            throw new AppError('message_tag is not an allowed Meta message tag for this app', 422, 'MESSAGE_TAG_NOT_ALLOWED');
         }
+    } else if (req.body?.message_tag) {
+        throw new AppError('message_tag is only valid for Meta channels', 422, 'MESSAGE_TAG_NOT_ALLOWED');
     }
 
     const idempotencyKey = req.get('X-Idempotency-Key') || req.body?.idempotencyKey || null;
@@ -130,8 +156,8 @@ const replyConversation = asyncHandler(async (req, res) => {
             user_id: req.user?.id || req.user?.userId || null,
         },
     };
-    if (req.body?.message_tag) {
-        messageData.message_tag = String(req.body.message_tag);
+    if (validTag) {
+        messageData.message_tag = validTag;
     }
 
     const message = await conversationService.createMessage(conversationId, shopId, messageData);
@@ -149,26 +175,60 @@ const replyConversation = asyncHandler(async (req, res) => {
         });
     }
 
+    const messageRecord = typeof message?.toJSON === 'function' ? message.toJSON() : message;
+    const deliverySent = delivery?.sent === true;
+    const deliveryState = messageRecord?.delivery_state
+        || messageRecord?.metadata?.delivery_state
+        || (deliverySent ? 'SENT' : 'SEND_PENDING');
+    const providerMessageId = messageRecord?.provider_message_id
+        || messageRecord?.metadata?.provider_message_id
+        || delivery?.provider_message_id
+        || null;
+    const responseMessage = {
+        ...messageRecord,
+        delivery_state: deliveryState,
+        provider_message_id: providerMessageId,
+    };
+
     if (AuditLog && typeof AuditLog.create === 'function' && !idempotencyReplay) {
         const auditHash = crypto.createHash('sha256')
-            .update(['INBOX_MESSAGE_SENT', shopId, conversationId, message?.id || 'msg', req.user?.id || 'mobile'].join('|'))
+            .update(['INBOX_MESSAGE_DELIVERY', shopId, conversationId, message?.id || 'msg', req.user?.id || 'mobile'].join('|'))
             .digest('hex');
+        const auditAction = deliverySent
+            ? 'INBOX_MESSAGE_SENT'
+            : deliveryState === 'FAILED'
+                ? 'INBOX_MESSAGE_DELIVERY_FAILED'
+                : deliveryState === 'HELD'
+                    ? 'INBOX_MESSAGE_HELD'
+                    : 'INBOX_MESSAGE_QUEUED';
         await AuditLog.create({
             user_id: req.user?.id || req.user?.userId || null,
             shop_id: shopId,
-            action: 'INBOX_MESSAGE_SENT',
+            action: auditAction,
             resource_type: 'conversation_message',
             resource_id: message?.id || null,
             idempotency_key: auditHash,
             metadata: {
                 conversation_id: conversationId,
                 source: 'MOBILE',
-                delivery_sent: delivery?.sent ?? null,
+                delivery_sent: deliverySent,
+                delivery_state: deliveryState,
+                provider_confirmed: deliverySent && Boolean(providerMessageId),
+                delivery_reason_code: delivery?.reason_code || delivery?.reasonCode || null,
             },
         }).catch((err) => console.warn('Mobile inbox audit log failed:', err.message));
     }
 
-    sendSuccess(res, { message }, 201);
+    sendSuccess(res, {
+        message: responseMessage,
+        delivery: {
+            persisted: true,
+            sent: deliverySent,
+            state: deliveryState,
+            provider_confirmed: deliverySent && Boolean(providerMessageId),
+            provider_message_id: providerMessageId,
+        },
+    }, 201);
 });
 
 /**
@@ -189,17 +249,66 @@ const setAiMode = asyncHandler(async (req, res) => {
         throw new AppError('Mode must be "pause" or "resume"', 400, 'VALIDATION_ERROR');
     }
 
+    const pauseKey = `ai:pause:${conversationId}`;
     if (mode === 'pause') {
-        if (cacheRedis && typeof cacheRedis.setex === 'function') {
-            await Promise.resolve(cacheRedis.setex(`ai:pause:${conversationId}`, 1800, '1')).catch(() => {});
-        }
-        if (typeof conversationService.holdPendingAiCandidates === 'function') {
-            await Promise.resolve(conversationService.holdPendingAiCandidates(conversationId, shopId, 'human_paused')).catch(() => {});
+        try {
+            if (!cacheRedis || typeof cacheRedis.setex !== 'function') throw new Error('Pause storage unavailable');
+            const result = await cacheRedis.setex(pauseKey, 1800, '1');
+            if (result !== 'OK') throw new Error('Pause state was not persisted');
+            if (typeof conversationService.holdPendingAiCandidates !== 'function') {
+                throw new Error('Pending AI candidate hold is unavailable');
+            }
+            await conversationService.holdPendingAiCandidates(conversationId, shopId, 'human_paused');
+        } catch {
+            throw new AppError('Unable to safely pause AI for this conversation', 503, 'AI_MODE_UNAVAILABLE');
         }
     } else {
-        if (cacheRedis && typeof cacheRedis.del === 'function') {
-            await Promise.resolve(cacheRedis.del(`ai:pause:${conversationId}`)).catch(() => {});
+        try {
+            if (!cacheRedis || typeof cacheRedis.del !== 'function') throw new Error('Pause storage unavailable');
+            await cacheRedis.del(pauseKey);
+        } catch {
+            throw new AppError('Unable to safely resume AI for this conversation', 503, 'AI_MODE_UNAVAILABLE');
         }
+    }
+
+    if (AuditLog && typeof AuditLog.create === 'function') {
+        const auditHash = crypto.createHash('sha256')
+            .update(['AI_MODE_TOGGLED', shopId, conversationId, mode, Date.now()].join('|'))
+            .digest('hex');
+        try {
+            await AuditLog.create({
+                user_id: req.user?.id || req.user?.userId || null,
+                shop_id: shopId,
+                action: mode === 'pause' ? 'AI_PAUSED' : 'AI_RESUMED',
+                resource_type: 'conversation',
+                resource_id: conversationId,
+                idempotency_key: auditHash,
+                metadata: {
+                    conversation_id: conversationId,
+                    source: 'MOBILE',
+                    ai_mode: mode === 'pause' ? 'paused' : 'ai_active',
+                },
+            });
+        } catch {
+            if (mode === 'resume' && cacheRedis && typeof cacheRedis.setex === 'function') {
+                await Promise.resolve(cacheRedis.setex(pauseKey, 1800, '1')).catch(() => {});
+            }
+            // IC-V1 review F9: symmetric rollback — a pause whose audit failed
+            // must not leave AI silently paused while the merchant was told it
+            // could not be. Cleared state is re-assertable by pausing again.
+            if (mode === 'pause' && cacheRedis && typeof cacheRedis.del === 'function') {
+                await Promise.resolve(cacheRedis.del(pauseKey)).catch(() => {});
+            }
+            throw new AppError('Unable to audit the AI mode change', 503, 'AI_MODE_AUDIT_UNAVAILABLE');
+        }
+    } else {
+        if (mode === 'resume' && cacheRedis && typeof cacheRedis.setex === 'function') {
+            await Promise.resolve(cacheRedis.setex(pauseKey, 1800, '1')).catch(() => {});
+        }
+        if (mode === 'pause' && cacheRedis && typeof cacheRedis.del === 'function') {
+            await Promise.resolve(cacheRedis.del(pauseKey)).catch(() => {});
+        }
+        throw new AppError('AI mode audit storage is unavailable', 503, 'AI_MODE_AUDIT_UNAVAILABLE');
     }
 
     if (sseManager && typeof sseManager.emit === 'function') {
@@ -207,25 +316,6 @@ const setAiMode = asyncHandler(async (req, res) => {
             conversation_id: conversationId,
             ai_paused: mode === 'pause',
         });
-    }
-
-    if (AuditLog && typeof AuditLog.create === 'function') {
-        const auditHash = crypto.createHash('sha256')
-            .update(['AI_MODE_TOGGLED', shopId, conversationId, mode, Date.now()].join('|'))
-            .digest('hex');
-        await AuditLog.create({
-            user_id: req.user?.id || req.user?.userId || null,
-            shop_id: shopId,
-            action: mode === 'pause' ? 'AI_PAUSED' : 'AI_RESUMED',
-            resource_type: 'conversation',
-            resource_id: conversationId,
-            idempotency_key: auditHash,
-            metadata: {
-                conversation_id: conversationId,
-                source: 'MOBILE',
-                ai_mode: mode === 'pause' ? 'paused' : 'ai_active',
-            },
-        }).catch((err) => console.warn('Mobile AI mode audit log failed:', err.message));
     }
 
     sendSuccess(res, {

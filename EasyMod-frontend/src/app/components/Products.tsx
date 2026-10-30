@@ -15,6 +15,15 @@ interface Category {
   name: string;
 }
 
+const isLowStockProduct = (product: Product) => (
+  product.track_quantity === true
+  && typeof product.quantity === 'number'
+  && Number.isFinite(product.quantity)
+  && typeof product.low_stock_threshold === 'number'
+  && Number.isFinite(product.low_stock_threshold)
+  && product.quantity <= product.low_stock_threshold
+);
+
 export default function Products() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -35,6 +44,7 @@ export default function Products() {
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [filters, setFilters] = useState({
     category_id: '',
     is_active: '',
@@ -132,7 +142,10 @@ export default function Products() {
   const categoriesList = useMemo(() => categoriesData.map((c: Category) => c.name), [categoriesData]);
 
   // Client-side pagination logic
-  const filteredProducts = allProducts; // In future, this could be filtered further if needed before pagination
+  const filteredProducts = useMemo(
+    () => lowStockOnly ? allProducts.filter(isLowStockProduct) : allProducts,
+    [allProducts, lowStockOnly],
+  );
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
   const products = filteredProducts.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
@@ -380,6 +393,8 @@ export default function Products() {
       maxPrice: '',
     });
     setSearchQuery('');
+    setLowStockOnly(false);
+    setPage(1);
     setAppliedFilters({
       category_id: '',
       is_active: '',
@@ -487,6 +502,19 @@ export default function Products() {
               />
             </div>
 
+            <label className="flex min-h-11 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={lowStockOnly}
+                onChange={(event) => {
+                  setLowStockOnly(event.target.checked);
+                  setPage(1);
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {t('products.lowStockOnly')}
+            </label>
+
             {/* Filter Button */}
             <div className="relative">
               <button
@@ -495,7 +523,7 @@ export default function Products() {
               >
                 <Filter className="w-5 h-5" />
                 {t('products.filter')}
-                {(appliedFilters.category_id || appliedFilters.is_active || appliedFilters.source || appliedFilters.minPrice || appliedFilters.maxPrice) && (
+                {(lowStockOnly || appliedFilters.category_id || appliedFilters.is_active || appliedFilters.source || appliedFilters.minPrice || appliedFilters.maxPrice) && (
                   <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
                 )}
               </button>

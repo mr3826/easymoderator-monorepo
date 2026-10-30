@@ -42,11 +42,27 @@ const {
 });
 
 // ── Re-export for assertions ──────────────────────────────────────────────
-const mockProducts = [
+type ProductFixture = {
+  id: string;
+  name: string;
+  price: number;
+  sku: string;
+  category: string;
+  is_active: boolean;
+  status: string;
+  ai_generated: boolean;
+  confidence: number | null;
+  track_quantity?: boolean;
+  quantity?: number;
+  low_stock_threshold?: number;
+};
+
+const mockProducts: ProductFixture[] = [
   { id: 'prod-1', name: 'Test T-Shirt',   price: 299, sku: 'SKU-001', category: 'Clothing', is_active: true,  status: 'active',   ai_generated: false, confidence: null },
   { id: 'prod-2', name: 'Blue Jeans',     price: 799, sku: 'SKU-002', category: 'Clothing', is_active: false, status: 'inactive', ai_generated: false, confidence: null },
   { id: 'prod-3', name: 'Cotton Kurti',   price: 450, sku: 'SKU-003', category: 'Women',    is_active: true,  status: 'active',   ai_generated: true,  confidence: 0.82 },
 ];
+const baselineMockProducts = [...mockProducts];
 
 // ── Mock react-i18next ────────────────────────────────────────────────────
 vi.mock('react-i18next', () => ({
@@ -148,6 +164,7 @@ const renderComponent = async () => {
 
 describe('Products', () => {
   beforeEach(() => {
+    mockProducts.splice(0, mockProducts.length, ...baselineMockProducts);
     mockGetProducts.mockReset().mockResolvedValue(mockProducts);
     mockDeleteProduct.mockReset().mockResolvedValue({ success: true });
     mockGetCategories.mockReset().mockResolvedValue([
@@ -237,6 +254,31 @@ describe('Products', () => {
                         document.querySelector('input[type="text"]') ||
                         document.querySelector('input[type="search"]');
     expect(searchInput).toBeTruthy();
+  });
+
+  it('filters only tracked stock at or below a finite threshold and restores products when cleared', async () => {
+    mockProducts.splice(0, mockProducts.length,
+      { ...baselineMockProducts[0], id: 'tracked-low', name: 'Tracked at threshold', track_quantity: true, quantity: 3, low_stock_threshold: 3 },
+      { ...baselineMockProducts[0], id: 'tracked-below', name: 'Tracked below threshold', track_quantity: true, quantity: 1, low_stock_threshold: 4 },
+      { ...baselineMockProducts[0], id: 'tracked-above', name: 'Tracked above threshold', track_quantity: true, quantity: 5, low_stock_threshold: 4 },
+      { ...baselineMockProducts[0], id: 'untracked-low', name: 'Untracked quantity', track_quantity: false, quantity: 0, low_stock_threshold: 2 },
+      { ...baselineMockProducts[0], id: 'missing-threshold', name: 'Missing threshold', track_quantity: true, quantity: 0 },
+    );
+    await renderComponent();
+
+    const lowStockFilter = screen.getByRole('checkbox', { name: 'products.lowStockOnly' });
+    fireEvent.click(lowStockFilter);
+
+    await waitFor(() => {
+      expect(screen.getByText('Tracked at threshold')).toBeInTheDocument();
+      expect(screen.getByText('Tracked below threshold')).toBeInTheDocument();
+      expect(screen.queryByText('Tracked above threshold')).not.toBeInTheDocument();
+      expect(screen.queryByText('Untracked quantity')).not.toBeInTheDocument();
+      expect(screen.queryByText('Missing threshold')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(lowStockFilter);
+    await waitFor(() => expect(screen.getByText('Tracked above threshold')).toBeInTheDocument());
   });
 
   it('debounces search input (does not query immediately on keystroke)', async () => {

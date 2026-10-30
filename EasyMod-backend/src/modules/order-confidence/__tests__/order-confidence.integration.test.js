@@ -49,6 +49,11 @@ const reload = (order) => Order.findByPk(order.id);
 const confidenceRow = (order) => OrderConfidence.findOne({ where: { order_id: order.id } });
 const dispatchRows = (order) => CourierDispatch.findAll({ where: { order_id: order.id } });
 const auth = (user, shop) => ({ Authorization: `Bearer ${fx.tokenFor(user, shop.id)}` });
+const bookForTest = (order, options = {}) => orderService.bookForOrder(order, {
+    shopId: order.shop_id,
+    ...options,
+    mutationAuthority: { kind: 'test' },
+});
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -71,14 +76,25 @@ describe('READY orders', () => {
             return { provider: 'pathao', consignment_id: 'CN-RACE', tracking_code: 'TRK-RACE', status: 'pending' };
         });
 
-        const attempts = Array.from({ length: 5 }, () => orderService.bookForOrder(order, { shopId: shop.id }));
+        const attempts = Array.from({ length: 5 }, () => bookForTest(order));
         await new Promise((resolve) => setTimeout(resolve, 300));
         releaseProvider();
         const results = await Promise.all(attempts);
 
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
-        expect(results.filter((r) => r?.tracking_code === 'TRK-RACE')).toHaveLength(1);
-        expect(await dispatchRows(order)).toHaveLength(1);
+        const reconciledResults = results.filter((r) => r?.tracking_code);
+        expect(reconciledResults.length).toBeGreaterThan(0);
+        expect(reconciledResults.every((r) => (
+            r.consignment_id === 'CN-RACE' && r.tracking_code === 'TRK-RACE'
+        ))).toBe(true);
+        expect(results.every((r) => r?.blocked === true || r?.tracking_code === 'TRK-RACE')).toBe(true);
+        const dispatches = await dispatchRows(order);
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0]).toMatchObject({
+            status: 'COMMITTED',
+            consignment_id: 'CN-RACE',
+            tracking_code: 'TRK-RACE',
+        });
         const row = await confidenceRow(order);
         expect(row.decision).toBe('READY');
         expect(row.released_decision).toMatchObject({ decision: 'READY' });
@@ -92,7 +108,7 @@ describe('READY orders', () => {
             customer_phone: phone, order_status: 'cancelled', delivery_status: 'returned', delivery_consignment_id: `R-${uuidv4()}`,
         });
         const order = await fx.makeOrder(shop, { customer_phone: phone });
-        await orderService.bookForOrder(order, { shopId: shop.id });
+        await bookForTest(order);
         const before = await confidenceRow(order);
         expect(before.decision).toBe('VERIFY');
         expect(before.reasons.map((r) => r.code)).toContain('PRIOR_RETURN');
@@ -124,7 +140,7 @@ describe('VERIFY orders', () => {
         const staff = await fx.makeMember(shop, 'staff');
         const order = await fx.makeOrder(shop, { customer_phone: '01710000003', delivery_address: 'Mirpur 10' });
 
-        const held = await orderService.bookForOrder(order, { shopId: shop.id });
+        const held = await bookForTest(order);
         expect(held).toMatchObject({ blocked: true, status: 'confidence_hold', decision: 'VERIFY', reasons: ['ADDRESS_TOO_SHORT'] });
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
         expect(await dispatchRows(order)).toHaveLength(0);
@@ -163,7 +179,7 @@ describe('VERIFY orders', () => {
         expect(audit.user_id).toBe(staff.id);
         expect(audit.new_values).toMatchObject({ resolution: 'VERIFIED', method: 'PHONE_CALL', note: 'Confirmed house number' });
 
-        const booked = await orderService.bookForOrder(await reload(order), { shopId: shop.id });
+        const booked = await bookForTest(await reload(order));
         expect(booked.tracking_code).toBeTruthy();
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
         expect((await confidenceRow(order)).released_decision).toMatchObject({ decision: 'VERIFY', resolution: 'VERIFIED' });
@@ -201,7 +217,7 @@ describe('MANUAL_REVIEW orders', () => {
         const owner = await fx.makeMember(shop, 'owner');
         const order = await repeatedReturnsOrder(shop, '01710000005');
 
-        expect(await orderService.bookForOrder(order, { shopId: shop.id }))
+        expect(await bookForTest(order))
             .toMatchObject({ status: 'confidence_hold', decision: 'MANUAL_REVIEW', reasons: expect.arrayContaining(['REPEATED_RETURNS']) });
         const { body: { data: decision } } = await request(app)
             .get(`/api/order-confidence/orders/${order.id}`).set(auth(owner, shop));
@@ -220,7 +236,7 @@ describe('MANUAL_REVIEW orders', () => {
         expect(staffVerify.status).toBe(409);
         expect(staffVerify.body.error.code).toBe('APPROVAL_REQUIRED');
 
-        expect(await orderService.bookForOrder(order, { shopId: shop.id })).toMatchObject({ status: 'confidence_hold' });
+        expect(await bookForTest(order)).toMatchObject({ status: 'confidence_hold' });
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
 
         const approved = await request(app)
@@ -236,7 +252,7 @@ describe('MANUAL_REVIEW orders', () => {
         expect(audit.new_values).toMatchObject({ resolution: 'APPROVED', note: 'Known customer, called and confirmed' });
         expect(audit.new_values.fingerprint).toMatch(/^[0-9a-f]{64}$/);
 
-        expect((await orderService.bookForOrder(await reload(order), { shopId: shop.id })).tracking_code).toBeTruthy();
+        expect((await bookForTest(await reload(order))).tracking_code).toBeTruthy();
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
     });
 
@@ -245,7 +261,7 @@ describe('MANUAL_REVIEW orders', () => {
         const owner = await fx.makeMember(shop, 'owner');
         const admin = await fx.makeMember(shop, 'admin');
         const order = await repeatedReturnsOrder(shop, '01710000006');
-        await orderService.bookForOrder(order, { shopId: shop.id });
+        await bookForTest(order);
         const version = (await confidenceRow(order)).version;
 
         const [a, b] = await Promise.all([
@@ -262,14 +278,14 @@ describe('MANUAL_REVIEW orders', () => {
         const shop = await fx.makeShop();
         const owner = await fx.makeMember(shop, 'owner');
         const order = await repeatedReturnsOrder(shop, '01710000007');
-        await orderService.bookForOrder(order, { shopId: shop.id });
+        await bookForTest(order);
         await request(app).post(`/api/order-confidence/orders/${order.id}/approve`).set(auth(owner, shop))
             .send({ decision_version: (await confidenceRow(order)).version, note: 'approved before edit' })
             .expect(200);
 
         await orderService.updateOrder(order.id, owner.id, shop.id, { delivery_address: 'House 99, Road 1, Uttara, Dhaka' });
 
-        const held = await orderService.bookForOrder(await reload(order), { shopId: shop.id });
+        const held = await bookForTest(await reload(order));
         expect(held).toMatchObject({ status: 'confidence_hold', decision: 'MANUAL_REVIEW' });
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
         const row = await confidenceRow(order);
@@ -284,13 +300,13 @@ describe('MANUAL_REVIEW orders', () => {
         const shop = await fx.makeShop();
         const owner = await fx.makeMember(shop, 'owner');
         const order = await repeatedReturnsOrder(shop, '01710000008');
-        await orderService.bookForOrder(order, { shopId: shop.id });
+        await bookForTest(order);
         await request(app).post(`/api/order-confidence/orders/${order.id}/approve`).set(auth(owner, shop))
             .send({ decision_version: (await confidenceRow(order)).version, note: 'approved then cancelled' })
             .expect(200);
         await orderService.cancelOrder(owner.id, shop.id, order.id, 'customer changed mind');
 
-        expect(await orderService.bookForOrder(await reload(order), { shopId: shop.id }))
+        expect(await bookForTest(await reload(order)))
             .toMatchObject({ status: 'confidence_hold', reasons: expect.arrayContaining(['ORDER_CANCELLED']) });
         expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
         const again = await request(app).post(`/api/order-confidence/orders/${order.id}/approve`).set(auth(owner, shop))
@@ -306,11 +322,11 @@ describe('provider failure and retries', () => {
         const order = await fx.makeOrder(shop, { customer_phone: '01710000009' });
         deliveryService.createDeliveryOrder.mockRejectedValueOnce(Object.assign(new Error('socket timeout'), { code: 'ECONNRESET' }));
 
-        await expect(orderService.bookForOrder(order, { shopId: shop.id })).rejects.toThrow('socket timeout');
+        await expect(bookForTest(order)).rejects.toThrow('socket timeout');
         const [claim] = await dispatchRows(order);
         expect(claim.status).toBe('INDETERMINATE');
 
-        const retry = await orderService.bookForOrder(await reload(order), { shopId: shop.id });
+        const retry = await bookForTest(await reload(order));
         expect(retry).toMatchObject({ blocked: true, reason: 'existing_courier_dispatch_claim' });
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
         expect(await dispatchRows(order)).toHaveLength(1);
@@ -320,9 +336,9 @@ describe('provider failure and retries', () => {
         const shop = await fx.makeShop();
         const owner = await fx.makeMember(shop, 'owner');
         const order = await fx.makeOrder(shop, { customer_phone: '01710000010' });
-        const first = await orderService.bookForOrder(order, { shopId: shop.id });
+        const first = await bookForTest(order);
         await orderService.updateOrder(order.id, owner.id, shop.id, { note: 'late note after booking' });
-        const again = await orderService.bookForOrder(await reload(order), { shopId: shop.id });
+        const again = await bookForTest(await reload(order));
         expect(again.tracking_code).toBe(first.tracking_code);
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
     });
@@ -332,7 +348,7 @@ describe('outcome feedback', () => {
     test('a delivered outcome is recorded once even when the courier webhook is replayed concurrently', async () => {
         const shop = await fx.makeShop();
         const order = await fx.makeOrder(shop, { customer_phone: '01710000011' });
-        const booked = await orderService.bookForOrder(order, { shopId: shop.id });
+        const booked = await bookForTest(order);
 
         await Promise.all([
             deliveryTrackingService.handleDeliveryWebhook('pathao', booked.tracking_code, { status: 'delivered' }),
@@ -351,7 +367,7 @@ describe('modes and tenancy', () => {
     test('shadow mode never blocks, but records what it would have held', async () => {
         const shop = await fx.makeShop({ orderConfidenceMode: 'shadow' });
         const order = await fx.makeOrder(shop, { customer_phone: '01710000012', delivery_address: 'Mirpur' });
-        const result = await orderService.bookForOrder(order, { shopId: shop.id });
+        const result = await bookForTest(order);
         expect(result.tracking_code).toBeTruthy();
         const row = await confidenceRow(order);
         expect(row).toMatchObject({ decision: 'VERIFY', last_gate_result: 'SHADOW_WOULD_HOLD', mode: 'shadow' });
@@ -360,7 +376,7 @@ describe('modes and tenancy', () => {
     test('mode off writes nothing and books exactly as before', async () => {
         const shop = await fx.makeShop({ orderConfidenceMode: 'off' });
         const order = await fx.makeOrder(shop, { customer_phone: '01710000013', delivery_address: 'Mirpur' });
-        expect((await orderService.bookForOrder(order, { shopId: shop.id })).tracking_code).toBeTruthy();
+        expect((await bookForTest(order)).tracking_code).toBeTruthy();
         expect(await confidenceRow(order)).toBeNull();
     });
 
@@ -369,7 +385,7 @@ describe('modes and tenancy', () => {
         const shopB = await fx.makeShop();
         const ownerB = await fx.makeMember(shopB, 'owner');
         const orderA = await fx.makeOrder(shopA, { customer_phone: '01710000014', delivery_address: 'Mirpur' });
-        await orderService.bookForOrder(orderA, { shopId: shopA.id });
+        await bookForTest(orderA, { shopId: shopA.id });
 
         const read = await request(app).get(`/api/order-confidence/orders/${orderA.id}`).set(auth(ownerB, shopB));
         expect(read.status).toBe(404);
@@ -393,8 +409,8 @@ describe('modes and tenancy', () => {
         const shop = await fx.makeShop();
         const owner = await fx.makeMember(shop, 'owner');
         const staff = await fx.makeMember(shop, 'staff');
-        await orderService.bookForOrder(await fx.makeOrder(shop, { customer_phone: '01710000015' }), { shopId: shop.id });
-        await orderService.bookForOrder(await fx.makeOrder(shop, { customer_phone: '01710000016', delivery_address: 'Mirpur' }), { shopId: shop.id });
+        await bookForTest(await fx.makeOrder(shop, { customer_phone: '01710000015' }));
+        await bookForTest(await fx.makeOrder(shop, { customer_phone: '01710000016', delivery_address: 'Mirpur' }));
         expect((await request(app).get('/api/order-confidence/summary').set(auth(staff, shop))).status).toBe(403);
         const { body } = await request(app).get('/api/order-confidence/summary').set(auth(owner, shop));
         expect(body.data).toMatchObject({ evaluated_orders: 2, by_decision: { READY: 1, VERIFY: 1 }, held_orders: 1 });

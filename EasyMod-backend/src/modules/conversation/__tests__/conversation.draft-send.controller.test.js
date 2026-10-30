@@ -91,7 +91,8 @@ describe('draft approval controller boundary', () => {
         expect(mockUpdateConversation).toHaveBeenCalledWith(
             'conversation-1',
             'shop-1',
-            { hitl: true, status: undefined, assignee_id: undefined, resolution_note: undefined },
+            { hitl: true, status: undefined, assignee_id: undefined, resolution_note: undefined, last_seen_message_id: undefined },
+            { actor: { userId: 'merchant-1', role: null }, force: false },
         );
         expect(mockProviderSend).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith({
@@ -176,6 +177,30 @@ describe('draft approval controller boundary', () => {
             user: { shopId: 'shop-1', userId: 'merchant-1' },
         }, res, jest.fn());
 
+        expect(mockProviderSend).not.toHaveBeenCalled();
+    });
+
+    it('preserves the explicit no-channel denial code after a draft is durably held', async () => {
+        metaChannelService.findConnectedById.mockResolvedValue(null);
+        mockMessageFindOne.mockResolvedValue({
+            ...candidate,
+            delivery_state: 'HELD',
+            provider_message_id: null,
+            metadata: { ...candidate.metadata, provider_send_attempted: false, provider_send_claimed: false },
+        });
+        const next = jest.fn();
+
+        await controller.approveAiDraft({
+            params: { conversationId: 'conversation-1', messageId: 'draft-1' },
+            body: { content: 'Approved text' },
+            user: { shopId: 'shop-1', userId: 'merchant-1' },
+        }, response(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            status: 409,
+            code: 'DRAFT_DELIVERY_NOT_CONFIRMED',
+            message: expect.stringMatching(/no active facebook channel/i),
+        }));
         expect(mockProviderSend).not.toHaveBeenCalled();
     });
 

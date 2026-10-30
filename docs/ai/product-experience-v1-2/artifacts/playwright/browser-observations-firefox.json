@@ -1,0 +1,13 @@
+{
+  "browser": "firefox",
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [
+    {
+      "origin": "http://127.0.0.1:13585",
+      "path": "/__lab/api/playground",
+      "method": "POST",
+      "failure": "NS_BINDING_ABORTED"
+    }
+  ]
+}

@@ -6,11 +6,13 @@
  *   LLM output is a candidate response, not an authoritative response.
  *   — docs/ai-cost/AI_TRUST_BOUNDARY.md
  *
- * Every scenario enters through the real signed webhook route and asserts on
+ * Pipeline scenarios enter through the real signed webhook route and assert on
  * (a) what the Graph Send API would actually have received and (b) the grounding
- * decision EasyModerator recorded for that reply. Nothing between those two
- * points is mocked; see tests/meta-e2e/transport.js for the two stubs and
- * tests/meta-e2e/README.md for where automated transport ends.
+ * decision EasyModerator recorded for that reply. The suite also includes a
+ * direct outbound-gate attachment test and retrieval-spy outage cases; those
+ * exercise narrow boundaries without entering through the webhook. The Graph
+ * and model wire transports are captured by tests/meta-e2e/transport.js, and
+ * tests/meta-e2e/README.md documents where automated transport ends.
  */
 
 const harness = require('./harness');
@@ -20,6 +22,7 @@ const grounding = require('../../src/modules/ai/grounding');
 const productSearch = require('../../src/modules/product/product-search.service');
 const {
     UsageEvent, Subscription, Customer, Conversation, Message,
+    Product,
 } = require('../../src/modules/entities');
 
 const { IDS, RUNTIME, EXPECTED, CUSTOMER_PSID, CUSTOMER_PSID_PAGE_A2 } = fixtures;
@@ -232,11 +235,9 @@ describe('META-E2E-002 — the same conversation under repeated pressure', () =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('META-E2E-003 — a product this shop really sells', () => {
-    test('the verified price, attribute and photo all reach Meta', async () => {
+    test('the verified price and tenant-owned photo reach Meta', async () => {
         const result = await harness.deliver({
             text: 'black panjabi picture den',
-            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}, `
-                + `${EXPECTED.knownProductMaterial}. Ei nin chobi ta 😊`,
         });
 
         const decision = result.decision;
@@ -247,11 +248,14 @@ describe('META-E2E-003 — a product this shop really sells', () => {
         expect(decision.mediaStatus).toBe(MediaStatus.AVAILABLE);
         expect(decision.mediaProductId).toBe(IDS.knownProduct);
         expect(decision.violations).toEqual([]);
-        expect(decision.provider).toBe('gemini-lite');
+        // Product price plus media requests take the deterministic catalog
+        // presentation path; no model candidate is needed to state these facts.
+        expect(decision.provider).toBeNull();
+        expect(transport.llmProvidersCalled()).toEqual([]);
 
         const sent = body(result);
-        expect(sent).toContain(String(EXPECTED.knownProductPrice));
-        expect(sent).toContain(EXPECTED.knownProductMaterial);
+        expect(sent).toContain('৳1,847');
+        expect(sent).not.toContain(EXPECTED.aiSuggestedProductMaterial);
 
         // Exactly one attachment, and it is this product's own stored image.
         const attachments = harness.sentAttachments(result.sends);
@@ -277,9 +281,23 @@ describe('META-E2E-003 — a product this shop really sells', () => {
         );
     });
 
+    test('AI-derived material remains uncertain in the customer reply', async () => {
+        const result = await harness.deliver({
+            text: 'black panjabi material?',
+            candidate: `${EXPECTED.knownProductName} material is ${EXPECTED.aiSuggestedProductMaterial}.`,
+        });
+
+        expect(transport.llmProvidersCalled()).toContain('gemini-lite');
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
+        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.reasonCode).toBe(ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+        expect(body(result)).not.toContain(EXPECTED.aiSuggestedProductMaterial);
+        expect(body(result)).toMatch(/catalog|record|confirm|তথ্য|নিশ্চিত/i);
+    });
+
     test('a price the catalog does not hold is replaced even for a verified product', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: `${EXPECTED.knownProductName} — ৳999 only!`,
         });
 
@@ -290,6 +308,53 @@ describe('META-E2E-003 — a product this shop really sells', () => {
         );
         expect(body(result)).not.toContain('999');
     });
+
+    test('the production BullMQ worker reads a catalog update committed while the message waits in Redis', async () => {
+        const worker = require('../../src/jobs/message-worker').startWorker();
+        const eventId = 'm_e2e_catalog_changed_while_queued';
+        const updatedPrice = 1975;
+
+        try {
+            await worker.pause();
+            const payload = harness.messagePayload({
+                pageId: IDS.pageA,
+                psid: CUSTOMER_PSID,
+                text: 'black panjabi picture den',
+                mid: eventId,
+            });
+            const response = await harness.postWebhook(payload);
+            expect(response.status).toBe(200);
+            expect(await harness.waitForJobs(1)).toHaveLength(1);
+
+            const [updatedRows] = await Product.update(
+                { price: updatedPrice },
+                { where: { id: IDS.knownProduct, shop_id: IDS.shopA } },
+            );
+            expect(updatedRows).toBe(1);
+
+            await worker.resume();
+            const deadline = Date.now() + 20_000;
+            let receipt = null;
+            do {
+                receipt = await harness.receiptForEvent(eventId);
+                if (receipt?.status === 'PROCESSED' || receipt?.status === 'DEAD_LETTERED') break;
+                await new Promise(resolve => setTimeout(resolve, 50));
+            } while (Date.now() < deadline);
+
+            expect(receipt?.status).toBe('PROCESSED');
+            expect(transport.capturedSends()).toHaveLength(2);
+            expect(harness.sentBody(transport.capturedSends())).toContain('1,975');
+            expect(harness.sentBody(transport.capturedSends())).not.toContain('1,847');
+            expect(harness.sentAttachments(transport.capturedSends())).toEqual([
+                expect.objectContaining({
+                    type: 'image',
+                    payload: expect.objectContaining({ url: EXPECTED.knownProductImage }),
+                }),
+            ]);
+        } finally {
+            await worker.close();
+        }
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,12 +364,13 @@ describe('META-E2E-003 — a product this shop really sells', () => {
 describe('META-E2E-004 — an attribute the catalog does not record', () => {
     test('a fabric asserted for a product with material = NULL is withdrawn', async () => {
         const result = await harness.deliver({
-            text: 'chiffon kurti ache?',
+            text: 'What is the fabric of the chiffon kurti?',
             candidate: `Ji, ${EXPECTED.unknownMaterialProductName} ache — `
                 + `৳${EXPECTED.unknownMaterialProductPrice}. Eta pure chiffon fabric.`,
         });
 
         const decision = result.decision;
+        expect(transport.llmProvidersCalled()).toContain('gemini-lite');
         expect(decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
         expect(decision.verifiedProductIds).toEqual([IDS.unknownMaterialProduct]);
         expect(decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
@@ -318,7 +384,7 @@ describe('META-E2E-004 — an attribute the catalog does not record', () => {
         // assistant useless — but the fabric claim does not.
         expect(sent).toContain(String(EXPECTED.unknownMaterialProductPrice));
         expect(sent).not.toMatch(/pure chiffon fabric/i);
-        expect(sent).toMatch(/nei|not (recorded|available)|নেই/i);
+        expect(sent).toMatch(/don't have|do not have|nei|not (recorded|available)|নেই/i);
     });
 
     test('"eta chiffon?" with nothing grounded is answered by asking which product', async () => {
@@ -354,8 +420,6 @@ describe('META-E2E-005 — a verified product with no stored photo', () => {
     test('the reply says the photo is unavailable and attaches nothing', async () => {
         const result = await harness.deliver({
             text: 'green kurti picture den',
-            candidate: `${EXPECTED.noImageProductName} — ৳${EXPECTED.noImageProductPrice}. `
-                + 'Ei product er chobi ekhon amader kache nei.',
         });
 
         expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
@@ -363,17 +427,22 @@ describe('META-E2E-005 — a verified product with no stored photo', () => {
         expect(result.decision.mediaStatus).toBe(MediaStatus.UNAVAILABLE);
         expect(result.decision.mediaProductId).toBeNull();
         expect(harness.sentAttachments(result.sends)).toEqual([]);
-        expect(body(result)).toContain(String(EXPECTED.noImageProductPrice));
+        expect(body(result)).toContain('৳1,250');
+        expect(transport.llmProvidersCalled()).toEqual([]);
     });
 
-    test('no substitute media is allowed to stand in for the missing photo', async () => {
+    test('the deterministic image-less path sends no substitute media', async () => {
         const result = await harness.deliver({
             text: 'green kurti picture den',
             candidate: `Chobi ei link e dekhun: ${EXPECTED.knownProductImage}`,
         });
 
         const sent = body(result);
-        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.decision).toBe(GroundingDecision.SEND);
+        expect(result.decision.reasonCode).toBe(ReasonCode.GROUNDED);
+        expect(transport.llmProvidersCalled()).toEqual([]);
+        expect(result.decision.provider).toBeNull();
+        expect(transport.llmProvidersCalled()).toEqual([]);
         expect(sent).not.toContain(EXPECTED.knownProductImage);
         expect(sent).not.toContain('http');
         expect(harness.sentAttachments(result.sends)).toEqual([]);
@@ -706,7 +775,7 @@ describe('META-E2E-007 — an earlier ungrounded assistant turn', () => {
 
         const result = await harness.deliver({
             text: 'are you sure?',
-            candidate: 'Ji sure, ager bola moto ৳2200 e chiffon saree ta ache.',
+            candidate: 'Ji sure, ager bola moto ৳2200.',
         });
 
         expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
@@ -738,8 +807,8 @@ describe('META-E2E-008 — merchant policy the shop never supplied', () => {
     test('a figure the merchant DID supply is quotable, and is attributed', async () => {
         const result = await harness.deliver({
             text: EXPECTED.faqQuery,
-            candidate: `Dhaka r vitore ${EXPECTED.faqDeliveryInsideDhaka} taka, `
-                + `Dhaka r baire ${EXPECTED.faqDeliveryOutsideDhaka} taka.`,
+            candidate: `Inside Dhaka delivery charge ${EXPECTED.faqDeliveryInsideDhaka} taka; `
+                + `outside Dhaka delivery charge ${EXPECTED.faqDeliveryOutsideDhaka} taka.`,
         });
 
         expect(result.decision.decision).toBe(GroundingDecision.SEND);
@@ -768,18 +837,20 @@ describe('META-E2E-009 — media provenance', () => {
         ['a product of another shop', () => EXPECTED.shopBProductImage],
         ['a generic URL', () => 'https://example.com/some-saree.jpg'],
         ['the shop Facebook Page', () => 'https://facebook.com/EasyModeratorE2E'],
-    ])('%s is never sent in place of the verified photo', async (_label, url) => {
+    ])('the deterministic product photo path uses only the verified image, even with %s scripted as output', async (_label, url) => {
         const result = await harness.deliver({
             text: 'black panjabi picture den',
             candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}. Chobi: ${url()}`,
         });
 
         const sent = body(result);
-        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
-        expect(result.decision.reasonCode).toBe(ReasonCode.UNSUPPORTED_URL_CLAIM);
+        expect(result.decision.decision).toBe(GroundingDecision.SEND);
+        expect(result.decision.reasonCode).toBe(ReasonCode.GROUNDED);
+        expect(result.decision.provider).toBeNull();
+        expect(transport.llmProvidersCalled()).toEqual([]);
         expect(sent).not.toContain(url());
-        // A rejected candidate forfeits its media too.
-        expect(harness.sentAttachments(result.sends)).toEqual([]);
+        // The direct route emits only the verified catalog attachment.
+        expect(harness.sentAttachmentUrls(result.sends)).toEqual([EXPECTED.knownProductImage]);
     });
 
     test('only the verified product URL survives attachment provenance', async () => {
@@ -812,29 +883,58 @@ describe('META-E2E-009 — media provenance', () => {
     });
 });
 
+describe('META-E2E-009B — model URL rejection', () => {
+    test('an unauthorized model URL is rejected before send and persisted as a grounding violation', async () => {
+        const unauthorizedUrl = 'https://example.com/unauthorized-product-photo.jpg';
+        const result = await harness.deliver({
+            text: 'chiffon kurti material?',
+            candidate: `The fabric is not recorded for this item. Details: ${unauthorizedUrl}`,
+        });
+
+        expect(transport.llmProvidersCalled()).toContain('gemini-lite');
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
+        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.reasonCode).toBe(ReasonCode.UNSUPPORTED_URL_CLAIM);
+        expect(result.decision.violations).toContain('unsupported_url:1');
+        expect(body(result)).not.toContain(unauthorizedUrl);
+        expect(harness.sentAttachments(result.sends)).toEqual([]);
+
+        const stored = await harness.lastStoredAiMessage(IDS.shopA);
+        expect(stored.content).not.toContain(unauthorizedUrl);
+        expect(stored.metadata.grounding_decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(stored.metadata.grounding_reason).toBe(ReasonCode.UNSUPPORTED_URL_CLAIM);
+        expect(stored.metadata.grounding_violations).toContain('unsupported_url:1');
+        expect(stored.metadata.grounding_attachment_urls).toEqual([]);
+    });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // META-E2E-010 — provider fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('META-E2E-010 — the fallback provider', () => {
-    test('a primary-provider outage fails over, and the reply still passes the gate', async () => {
+    test('a primary-provider outage fails over, while the gate holds an unverified material claim', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            // Keep this long question out of the sentiment LLM path so the
+            // provider-call assertion below measures this reply's failover
+            // chain alone. `thanks` is a strong keyword-positive signal.
+            text: `Thanks — what fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: {
                 'gemini-lite': new Error('503 Service Unavailable'),
-                openai: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+                openai: `${EXPECTED.knownProductName} is ${EXPECTED.aiSuggestedProductMaterial}, ৳${EXPECTED.knownProductPrice}.`,
             },
         });
 
         expect(transport.llmProvidersCalled()).toEqual(['gemini-lite', 'openai']);
         expect(result.decision.provider).toBe('openai');
-        expect(result.decision.decision).toBe(GroundingDecision.SEND);
-        expect(body(result)).toContain(String(EXPECTED.knownProductPrice));
+        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
+        expect(result.decision.reasonCode).toBe(ReasonCode.PRODUCT_ATTRIBUTE_UNKNOWN);
+        expect(body(result)).not.toMatch(/\b(?:cotton|silk|linen)\b/i);
     });
 
     test('the fallback provider is held to exactly the same boundary', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: {
                 'gemini-lite': new Error('503 Service Unavailable'),
                 openai: `${EXPECTED.knownProductName} — ৳3333, silk.`,
@@ -848,7 +948,7 @@ describe('META-E2E-010 — the fallback provider', () => {
 
     test('every provider failing sends the generic fallback and holds for a human', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: new Error('503 Service Unavailable'),
         });
 
@@ -912,32 +1012,33 @@ describe('META-E2E-011 — the catalog cannot be read', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('META-E2E-012 — unusable model output', () => {
-    test('an empty completion for a product question is replaced by written copy', async () => {
+    test('an empty provider completion cannot create a product claim and reaches the human-safe hold path', async () => {
         const result = await harness.deliver({
-            text: 'black panjabi ache?',
+            text: `What fabric is ${EXPECTED.knownProductName} made of?`,
             candidate: '   ',
         });
 
-        expect(result.decision.reasonCode).toBe(ReasonCode.MODEL_OUTPUT_INVALID);
-        expect(result.decision.violations).toContain('empty_or_non_string_candidate');
-        expect(result.decision.decision).toBe(GroundingDecision.SAFE_FALLBACK);
-
-        const sent = body(result);
-        expect(sent.trim().length).toBeGreaterThan(0);
+        // llm.service rejects blank provider completions before the router can
+        // return its product evidence. The controller falls back to generic
+        // copy with empty evidence, which is low confidence and held for an
+        // agent; the failure path must not retain or invent a product claim.
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.NONE);
+        expect(result.jobResults[0]).toMatchObject({ sent: false, reason: 'low_confidence_handoff', handoff: true });
+        expect(body(result).trim().length).toBeGreaterThan(0); // one generic holding message only
+        expect(body(result)).not.toMatch(/৳|\b\d{3,}\b/i);
         expect(harness.sentAttachments(result.sends)).toEqual([]);
     });
 
-    test('an empty completion with nothing to answer sends nothing at all', async () => {
-        // "ok" carries no product-identifying term at all, so the evidence is
-        // NONE: there is no written reply that could be true, and silence plus a
-        // human beats a guess.
+    test('an empty completion with nothing to answer sends only a generic holding message and hands off', async () => {
+        // "ok" carries no product-identifying term at all. Provider failure
+        // produces a low-confidence generic response that is held for an agent.
         const result = await harness.deliver({ text: 'ok', candidate: '' });
 
-        expect(result.decision.decision).toBe(GroundingDecision.SUPPRESS);
-        expect(result.decision.reasonCode).toBe(ReasonCode.MODEL_OUTPUT_INVALID);
-        expect(result.jobResults[0].reason).toBe('grounding_suppressed');
-        expect(result.jobResults[0].handoff).toBe(true);
-        expect(harness.sentTexts(result.sends).join('\n')).not.toContain('undefined');
+        expect(result.decision.productStatus).toBe(ProductEvidenceStatus.NONE);
+        expect(result.jobResults[0]).toMatchObject({ sent: false, reason: 'low_confidence_handoff', handoff: true });
+        expect(result.sends).toHaveLength(1);
+        expect(harness.sentTexts(result.sends).join('\n')).not.toMatch(/undefined|৳|\b\d{3,}\b/i);
+        expect(harness.sentAttachments(result.sends)).toEqual([]);
     });
 });
 

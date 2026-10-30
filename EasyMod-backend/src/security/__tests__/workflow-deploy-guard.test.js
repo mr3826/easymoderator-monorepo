@@ -22,6 +22,8 @@ const backupWorkflow = fs.readFileSync(
 );
 const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
 const compose = fs.readFileSync(composePath, 'utf8');
+const growthNginxPath = path.resolve(__dirname, '../../../../EasyMod-growth/nginx.conf');
+const growthNginx = fs.readFileSync(growthNginxPath, 'utf8');
 const backendDockerfilePath = path.resolve(__dirname, '../../../Dockerfile');
 const backendDockerfile = fs.readFileSync(backendDockerfilePath, 'utf8');
 const backendDockerignorePath = path.resolve(__dirname, '../../../.dockerignore');
@@ -756,6 +758,25 @@ describe('mobile production proof workflow', () => {
 });
 
 describe('merchant edge isolation and privileged command coverage', () => {
+    test('uses an explicit loopback address for the Growth readiness listener', () => {
+        const growthBlock = compose.match(
+            /\r?\n {2}growth-frontend:\r?\n([\s\S]*?)(?:\r?\n {2}[a-z0-9-]+:|\r?\nvolumes:)/,
+        )?.[1];
+        const readinessUrl = growthBlock?.match(/http:\/\/[^\s"']+\/health\/ready/)?.[0];
+        expect(readinessUrl).toBeTruthy();
+
+        const url = new URL(readinessUrl);
+        const listeners = Array.from(
+            growthNginx.matchAll(/^\s*listen\s+([^;]+);/gm),
+            (match) => match[1].trim(),
+        );
+        const reachesConfiguredListener = url.port === '8080'
+            && ((url.hostname === '127.0.0.1' && listeners.includes('8080'))
+                || (url.hostname === '::1' && listeners.includes('[::]:8080')));
+
+        expect(reachesConfiguredListener).toBe(true);
+    });
+
     test('the TLS edge no longer cold-depends on the internal Growth SPA', () => {
         const caddyBlock = compose.match(/\r?\n {2}caddy:\r?\n([\s\S]*?)\r?\n {2}# ── Backend/)?.[1];
         const dependsBlock = caddyBlock?.match(/\r?\n {4}depends_on:\r?\n([\s\S]*)$/)?.[1];

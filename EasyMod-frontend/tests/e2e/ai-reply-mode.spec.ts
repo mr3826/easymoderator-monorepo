@@ -178,6 +178,7 @@ function isKnownApiPath(path: string): boolean {
     '/api/conversation',
     '/api/conversation/events',
     '/api/templates',
+    '/api/inbox/actions',
     '/api/channels/meta',
     '/api/audit',
   ].includes(path) || isConversationMessagesPath(path) || isConversationReadPath(path) || isConversationPath(path);
@@ -420,6 +421,17 @@ async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<Rout
 
       if (path === '/api/templates' && method === 'GET') {
         return route.fulfill(jsonResponse([]));
+      }
+
+      // P+03 action-queue read model: mounted by the inbox strip, not part of
+      // the AI reply-mode contract under test. Empty queue renders nothing.
+      if (path === '/api/inbox/actions' && method === 'GET') {
+        return route.fulfill(jsonResponse({
+          items: [],
+          counts: { total: 0 },
+          generated_at: isoFromNow(0),
+          partial: false,
+        }));
       }
 
       if (path === '/api/channels/meta' && method === 'GET') {

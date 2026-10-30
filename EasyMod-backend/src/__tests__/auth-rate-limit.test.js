@@ -14,6 +14,7 @@ describe('app auth attempt rate limiting', () => {
             APP_URL: 'https://app.easymod.tech',
             API_URL: 'https://api.easymod.tech',
             PUBLIC_ASSET_URL: 'https://api.easymod.tech',
+            GROWTH_OS_ENABLED: 'false',
             CORS_ORIGINS: 'https://app.easymod.tech',
             DATABASE_URL: 'postgresql://user:pass@localhost:5432/easymod_test',
             REDIS_URL: 'redis://localhost:6379',

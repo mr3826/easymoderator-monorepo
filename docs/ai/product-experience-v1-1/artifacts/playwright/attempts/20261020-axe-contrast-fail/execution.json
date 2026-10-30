@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "startedAt": "2026-10-20T17:01:12.945Z",
+  "completedAt": "2026-10-20T17:03:20.899Z",
+  "localUrl": "http://127.0.0.1:2354",
+  "browsersAvailable": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "browserLimitations": [
+    "Firefox or WebKit are included only when their local browser binary is installed."
+  ],
+  "playwrightExitCode": 1,
+  "playwrightSignal": null,
+  "htmlReport": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\html-report\\index.html",
+  "traceDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\test-results",
+  "screenshotsDirectory": "D:\\easymod\\_wt-product-engine-v1-1\\docs\\ai\\product-experience-v1-1\\artifacts\\playwright\\screenshots",
+  "failure": "One or more actual Test Lab Playwright journeys failed."
+}

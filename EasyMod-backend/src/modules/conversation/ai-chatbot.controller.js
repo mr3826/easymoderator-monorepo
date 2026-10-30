@@ -14,6 +14,10 @@ const { AI_SETTINGS_CACHE_KEY } = require('../../utils/shop-settings-cache');
 const { planHasFeature } = require('../subscription/subscription.plans');
 const grounding = require('../ai/grounding');
 const {
+    buildProductPresentation,
+    renderMessengerProductPresentation,
+} = require('../ai/product-experience/product-presentation');
+const {
     AI_REPLY_MODES,
     normalizeAiReplyMode,
     isAutoSendMode,
@@ -405,6 +409,12 @@ class AIChatbotController {
             });
 
             const evidence = routerResult.grounding || grounding.emptyEvidence(shop_id);
+            const productPresentation = buildProductPresentation(evidence, {
+                message,
+                language,
+                selectedVariants: grounding.contextSelectedVariants(conversationHistory, { shopId: shop_id }),
+            });
+            const messengerPayload = renderMessengerProductPresentation(productPresentation, language);
             return {
                 response: routerResult.response,
                 confidence: routerResult.confidence,
@@ -413,11 +423,11 @@ class AIChatbotController {
                 source: routerResult.source || null,
                 provider: routerResult.provider || null,
                 humanRequired: routerResult.humanRequired === true,
-                // A product photo is attached only when a verified product of THIS
-                // shop owns it; the outbound gate re-checks provenance before send.
-                attachments: evidence.mediaStatus === grounding.MediaStatus.AVAILABLE
-                    ? [{ type: 'image', url: evidence.mediaUrl, productId: evidence.mediaProductId }]
-                    : [],
+                productPresentation,
+                // The Messenger adapter emits at most the one image already
+                // authorized by the evidence resolver; the outbound gate checks
+                // the same product and URL again before delivery.
+                attachments: messengerPayload.attachments,
             };
         } catch (llmError) {
             // LLM/router unavailable — fall through to keyword matching

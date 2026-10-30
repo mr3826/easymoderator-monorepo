@@ -170,7 +170,16 @@ async function escalateToHuman({
             throw new Error('Conversation context is unavailable');
         }
         if (conversation.hitl !== true) {
-            await conversation.update({ hitl: true });
+            await conversation.update({
+                hitl: true,
+                // P+03: record WHY the human is needed on the authoritative
+                // record itself (queue reason + evidence source), not a copy.
+                metadata: {
+                    ...(conversation.metadata && typeof conversation.metadata === 'object' ? conversation.metadata : {}),
+                    handoff_reason: reason || 'human_required',
+                    handoff_at: new Date().toISOString(),
+                },
+            });
             hitlReady = true;
             try {
                 const merchantNotificationService = require('../notification/merchant-notification.service');

@@ -89,9 +89,10 @@ describe('pilot intelligence boundaries', () => {
         const source = fs.readFileSync(src('modules', 'order', 'order.service.js'), 'utf8');
         const body = source.slice(source.indexOf('const bookForOrder = async'));
         const gateAt = body.indexOf('checkBookingGate(');
-        const claimAt = body.indexOf('claimCourierDispatchRecord(order, shopId');
+        const claimAt = body.indexOf('claimCourierDispatchRecord(latestOrder, shopId');
         const providerAt = body.indexOf('deliveryService.createDeliveryOrder(');
         expect(gateAt).toBeGreaterThan(0);
+        expect(claimAt).toBeGreaterThan(0);
         expect(gateAt).toBeLessThan(claimAt);
         expect(claimAt).toBeLessThan(providerAt);
     });

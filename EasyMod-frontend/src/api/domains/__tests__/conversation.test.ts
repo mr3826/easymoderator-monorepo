@@ -69,6 +69,32 @@ describe('Conversation Domain API', () => {
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/conversation', { params: { status: 'active', page: 2 } });
     });
+
+    // FE-08: the optional second argument must thread the AbortSignal to the
+    // HTTP layer for stale-request cancellation, and must OMIT the key entirely
+    // when no signal is supplied so single-arg callers keep their exact config.
+    it('passes an AbortSignal to the HTTP client when provided', async () => {
+      (httpClient.get as any).mockResolvedValue({ data: { data: {} } });
+      const controller = new AbortController();
+
+      await conversation.getConversations({ customer_id: 'cust-1' }, controller.signal);
+
+      expect(httpClient.get).toHaveBeenCalledWith(
+        '/api/conversation',
+        { params: { customer_id: 'cust-1' }, signal: controller.signal }
+      );
+    });
+
+    it('omits the signal key when no AbortSignal is supplied', async () => {
+      (httpClient.get as any).mockResolvedValue({ data: { data: {} } });
+
+      await conversation.getConversations({ customer_id: 'cust-1' });
+
+      expect(httpClient.get).toHaveBeenCalledWith(
+        '/api/conversation',
+        { params: { customer_id: 'cust-1' } }
+      );
+    });
   });
 
   describe('AiReplyMode normalization', () => {
@@ -121,7 +147,11 @@ describe('Conversation Domain API', () => {
 
       const result = await conversation.createMessage('c1', msg);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/api/conversation/c1/messages', msg);
+      expect(httpClient.post).toHaveBeenCalledWith(
+        '/api/conversation/c1/messages',
+        msg,
+        { __skipGlobalErrorToast: true },
+      );
       expect(result.id).toBe('m2');
     });
 
@@ -134,7 +164,7 @@ describe('Conversation Domain API', () => {
       expect(httpClient.post).toHaveBeenCalledWith(
         '/api/conversation/c1/messages',
         msg,
-        { headers: { 'Idempotency-Key': 'send-key-12345' } },
+        { headers: { 'Idempotency-Key': 'send-key-12345' }, __skipGlobalErrorToast: true },
       );
     });
   });
@@ -259,24 +289,9 @@ describe('Conversation Domain API', () => {
     });
   });
 
-  // ── Audit helper ───────────────────────────────────────────────────────────
-
-  describe('createAuditLog', () => {
-    it('should post audit log entry', async () => {
-      const log = {
-        action: 'HUMAN_TAKEOVER',
-        resource_type: 'CONVERSATION',
-        resource_id: 'c1',
-      };
-      const created = { id: 'a1', ...log };
-      (httpClient.post as any).mockResolvedValue({ data: { data: created } });
-
-      const result = await conversation.createAuditLog(log);
-
-      expect(httpClient.post).toHaveBeenCalledWith('/api/audit', log);
-      expect(result.id).toBe('a1');
-    });
-  });
+  // MW-V1: the createAuditLog describe was removed with the helper — it pinned a
+  // POST to /api/audit, a route the backend never mounted (a "test of illusion").
+  // Ownership/CRM auditing is server-side now.
 
   // ── Error propagation ──────────────────────────────────────────────────────
 

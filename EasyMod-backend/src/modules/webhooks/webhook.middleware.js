@@ -52,6 +52,9 @@ const validateBkashSignature = async (req, res, next) => {
             return res.status(401).json({ error: 'Invalid webhook signature' });
         }
 
+        req.webhookSignatureVerified = true;
+        req.webhookSignatureSource = 'bkash';
+        req.webhookEventId = String(req.body?.paymentID || req.body?.trxID || req.body?.merchantInvoiceNumber || '');
         logger.info('bKash webhook signature validated successfully');
         next();
 

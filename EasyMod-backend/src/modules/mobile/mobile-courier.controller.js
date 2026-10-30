@@ -42,6 +42,21 @@ function positiveInteger(value, fallback, maximum) {
     return Math.min(parsed, maximum);
 }
 
+const isCodPaymentMethod = (method) => {
+    const normalized = String(method || '').toLowerCase().replace(/[\s_-]/g, '');
+    return normalized === 'cod' || normalized === 'cashondelivery';
+};
+
+const expectedCodAmount = (order) => {
+    if (!order.payment_method) return null;
+    if (!isCodPaymentMethod(order.payment_method)) return 0;
+    const status = String(order.payment_status || '').toLowerCase();
+    if (['paid', 'refunded'].includes(status)) return 0;
+    if (!['pending', 'unpaid'].includes(status)) return null;
+    const total = Number(order.total);
+    return Number.isFinite(total) && total >= 0 ? total : null;
+};
+
 function orderIdFrom(req) {
     const orderId = String(req.params.orderId || '').trim();
     if (!orderId || orderId.length > 100) {
@@ -101,9 +116,10 @@ const bookCourier = asyncHandler(async (req, res) => {
 
     const result = await orderService.bookForOrder(order, {
         shopId,
+        trigger: 'MANUAL',
+        mutationAuthority: { kind: 'human', userId: req.user?.userId || req.user?.id },
         provider: provider || null,
         requireAiDefault: !provider,
-        trigger: 'MANUAL',
         overrides,
     });
 
@@ -216,7 +232,9 @@ const getProblemParcels = asyncHandler(async (req, res) => {
             'order_number',
             'customer_name',
             'customer_phone',
-            'total_amount',
+            'total',
+            'payment_method',
+            'payment_status',
             'delivery_provider',
             'delivery_consignment_id',
             'delivery_tracking_code',
@@ -237,8 +255,8 @@ const getProblemParcels = asyncHandler(async (req, res) => {
         order_number: row.order_number,
         customer_name: row.customer_name,
         customer_phone: row.customer_phone,
-        total_amount: Number(row.total_amount) || 0,
-        cod_amount: Number(row.total_amount) || 0,
+        total_amount: Number(row.total) || 0,
+        cod_amount: expectedCodAmount(row),
         delivery_provider: row.delivery_provider,
         consignment_id: row.delivery_consignment_id,
         tracking_code: row.delivery_tracking_code,
@@ -279,7 +297,9 @@ const getDeliveryTracking = asyncHandler(async (req, res) => {
             'order_number',
             'customer_name',
             'customer_phone',
-            'total_amount',
+            'total',
+            'payment_method',
+            'payment_status',
             'delivery_provider',
             'delivery_consignment_id',
             'delivery_tracking_code',
@@ -303,16 +323,7 @@ const getDeliveryTracking = asyncHandler(async (req, res) => {
         }).catch(() => null);
     }
 
-    const history = (Array.isArray(tracking?.status_history) && tracking.status_history.length > 0)
-        ? tracking.status_history
-        : [
-            {
-                status: order.delivery_status || 'booked',
-                timestamp: order.updated_at || new Date().toISOString(),
-                location: tracking?.location_info?.city || 'Processing center',
-                note: 'Current delivery status',
-            },
-        ];
+    const history = Array.isArray(tracking?.status_history) ? tracking.status_history : [];
 
     sendSuccess(res, {
         order_id: order.id,
@@ -320,7 +331,7 @@ const getDeliveryTracking = asyncHandler(async (req, res) => {
         provider: tracking?.provider || order.delivery_provider,
         tracking_number: tracking?.tracking_number || order.delivery_tracking_code || order.delivery_consignment_id,
         consignment_id: order.delivery_consignment_id,
-        current_status: tracking?.current_status || order.delivery_status || 'booked',
+        current_status: tracking?.current_status || order.delivery_status || 'not_booked',
         estimated_delivery: tracking?.estimated_delivery || null,
         actual_delivery: tracking?.actual_delivery || null,
         location_info: tracking?.location_info || null,
@@ -329,9 +340,9 @@ const getDeliveryTracking = asyncHandler(async (req, res) => {
         customer_name: order.customer_name,
         customer_phone: order.customer_phone,
         delivery_address: order.delivery_address,
-        total_amount: Number(order.total_amount) || 0,
-        cod_amount: Number(order.total_amount) || 0,
-        cod_derived_note: 'Order-derived expectation. Reconciled cash requires provider settlement.',
+        total_amount: Number(order.total) || 0,
+        cod_amount: expectedCodAmount(order),
+        cod_derived_note: 'Expected COD is shown only from the recorded payment method and pending payment state; reconciled cash requires provider settlement.',
     });
 });
 

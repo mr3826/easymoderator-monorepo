@@ -12,6 +12,7 @@ Messenger sales and order automation API for Bangladeshi f-commerce sellers. Mer
 - [Architecture](#architecture)
 - [Module / Route Map](#module--route-map)
 - [AI & RAG Pipeline](#ai--rag-pipeline)
+- [Product Evidence & Local Evaluation](#product-evidence--local-evaluation)
 - [Meta Integration & Compliance](#meta-integration--compliance)
 - [Billing Model](#billing-model)
 - [Background Jobs](#background-jobs)
@@ -173,6 +174,12 @@ Business Info updates are part of the AI knowledge path. The owner-written `sett
 
 ---
 
+## Product Evidence & Local Evaluation
+
+Product answers pass through the tenant-scoped catalog resolver and outbound grounding gate. Catalog-backed replies may quote only facts the shop's current records establish; absent prices and stock remain unknown, variant selection requires a matching catalog dimension, and model observations from images are retrieval hints rather than verified product facts. The deterministic Messenger presenter applies those same evidence and media ownership checks before a reply can be sent.
+
+The local Product Engine Test Lab, synthetic multi-tenant catalog fixtures, replay contracts, and evaluation operations are documented in [`docs/ai/product-experience-v1-2/README.md`](../docs/ai/product-experience-v1-2/README.md). CSV replay, synthetic catalog cases, mocked route comparison, and real Gemini measurements use separate denominators and must be reported separately. A real provider run is an explicit local evaluation action, not production traffic.
+
 ## Meta Integration & Compliance
 
 This product is built for **Meta App Review**. Relevant code and guarantees:
@@ -330,7 +337,9 @@ For a fully self-contained local run, set `START_EMBEDDED_WORKERS=true` to run t
 
 ## Environment Variables
 
-Copy `.env.example` (the authoritative list) to `.env`. Highlights:
+Copy `.env.example` (the authoritative list) to `.env`. In local development, the CSRF double-submit cookie is host-only and named `easymod.csrf-token` so browsers accept it on HTTP localhost. Staging and production keep the library default `__Host-psifi.x-csrf-token` name (set `NODE_ENV` explicitly — an unset value defaults to `development`). Authentication stays enabled in development; use local synthetic data for UX review, not production merchant data.
+
+Highlights:
 
 ```env
 # Core

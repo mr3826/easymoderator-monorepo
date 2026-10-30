@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "runId": "4cea78a0-0274-4da5-aa6a-8745fd9703bd",
+  "status": "PASS",
+  "sourceRevision": "bb5f2dcc63a7fc4e00559b8abba6a351802a2d27",
+  "command": "node --require scripts/product-experience/no-egress.js node_modules/jest/bin/jest.js --coverage=false --forceExit --detectOpenHandles --runInBand --silent --json",
+  "nodeVersion": "v24.19.0",
+  "redis": "redis:7-alpine; loopback 127.0.0.1:6379; tmpfs /data",
+  "startedAt": "2026-10-20T17:25:36.6910798Z",
+  "completedAt": "2026-10-20T17:27:18.2229038Z",
+  "durationSeconds": 101.532,
+  "exitCode": 0,
+  "suites": 282,
+  "passedSuites": 282,
+  "failedSuites": 0,
+  "tests": 3614,
+  "passedTests": 3614,
+  "failedTests": 0,
+  "skippedTests": 0,
+  "egressAttempts": 0,
+  "artifacts": {
+    "rawLog": "4cea78a0-0274-4da5-aa6a-8745fd9703bd.log",
+    "jestJson": "4cea78a0-0274-4da5-aa6a-8745fd9703bd.jest.json",
+    "egressAttemptLog": "4cea78a0-0274-4da5-aa6a-8745fd9703bd.egress-attempts.txt"
+  }
+}

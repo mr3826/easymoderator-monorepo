@@ -11,7 +11,12 @@ import type {
   BrandingRules,
   KnowledgeSummary,
   KnowledgeDocument,
+  KnowledgeGapSuggestion,
+  GapDismissReason,
+  GapSuggestionPublishPayload,
+  GapSuggestionStatus,
 } from '../types/knowledge';
+import { normalizeGapSuggestion } from '../types/knowledge';
 import type { AxiosResponse } from 'axios';
 
 /**
@@ -158,6 +163,98 @@ export async function deleteFaq(faqId: string): Promise<{ message: string }> {
 export async function listKnowledgeGaps(): Promise<KnowledgeGap[]> {
   const response: AxiosResponse<ApiResponse<KnowledgeGap[]>> = await httpClient.get('/api/knowledge/gaps');
   return response.data.data ?? [];
+}
+
+/**
+ * P+05 Merchant Knowledge-Gap-Suggestions
+ * Backend: EasyMod-backend knowledge gap-suggestions routes (flag `knowledge_suggestions`).
+ *
+ * The endpoint answers 409 FEATURE_DISABLED (or 404 on older deployments) while
+ * the shop flag is off, so the list call unwraps that into a first-class result
+ * shape — the section being hidden is the normal state, not an error. Review /
+ * dismiss / publish surface their 409 GAP_STATE_CONFLICT as an exception so the
+ * caller can re-fetch the server-authoritative list.
+ */
+
+export type GapSuggestionsResult =
+  | { featureDisabled: false; data: KnowledgeGapSuggestion[] }
+  | { featureDisabled: true };
+
+type MaybeApiError = {
+  // NormalizedApiError (what httpClient throws)
+  statusCode?: number;
+  code?: string;
+  // raw axios shape (defensive)
+  response?: { status?: number; data?: { error?: { code?: string } } };
+};
+
+/** Feature off, endpoint unrouted, or a 409 from the list gate — all mean "render nothing". */
+export function isGapSuggestionsDisabled(error: unknown): boolean {
+  const e = error as MaybeApiError;
+  const code = e?.code ?? e?.response?.data?.error?.code;
+  if (code === 'FEATURE_DISABLED') return true;
+  const status = e?.statusCode ?? e?.response?.status;
+  return status === 404 || status === 409;
+}
+
+/**
+ * List open gap suggestions for this shop.
+ * @returns `{ featureDisabled: true }` when the flag is off; normalized rows otherwise.
+ * @throws {Error} Any other API error.
+ */
+export async function listGapSuggestions(): Promise<GapSuggestionsResult> {
+  try {
+    const response: AxiosResponse<ApiResponse<unknown[]>> = await httpClient.get(
+      '/api/knowledge/gap-suggestions'
+    );
+    return { featureDisabled: false, data: (response.data.data ?? []).map(normalizeGapSuggestion) };
+  } catch (error) {
+    if (isGapSuggestionsDisabled(error)) return { featureDisabled: true };
+    throw error;
+  }
+}
+
+/**
+ * Claim a suggestion for authoring (OPEN -> IN_REVIEW).
+ * @throws When the row already moved on (409 GAP_STATE_CONFLICT).
+ */
+export async function reviewGapSuggestion(id: string): Promise<{ status: GapSuggestionStatus }> {
+  const response: AxiosResponse<ApiResponse<{ status: GapSuggestionStatus }>> = await httpClient.post(
+    `/api/knowledge/gap-suggestions/${id}/review`
+  );
+  return response.data.data;
+}
+
+/**
+ * Dismiss a suggestion with a merchant-chosen reason (terminal, server-authoritative).
+ * @throws When the row already moved on (409 GAP_STATE_CONFLICT).
+ */
+export async function dismissGapSuggestion(
+  id: string,
+  reason: GapDismissReason
+): Promise<{ status: string }> {
+  const response: AxiosResponse<ApiResponse<{ status: string }>> = await httpClient.post(
+    `/api/knowledge/gap-suggestions/${id}/dismiss`,
+    { reason }
+  );
+  return response.data.data;
+}
+
+/**
+ * Publish the merchant-authored answer through the existing FAQ authority.
+ * @param payload - Question/answer (plus optional category/priority/is_active).
+ * @returns The created FAQ id and PUBLISHED status.
+ * @throws When the row already moved on (409 GAP_STATE_CONFLICT).
+ */
+export async function publishGapSuggestion(
+  id: string,
+  payload: GapSuggestionPublishPayload
+): Promise<{ faq_id: string; status: string }> {
+  const response: AxiosResponse<ApiResponse<{ faq_id: string; status: string }>> = await httpClient.post(
+    `/api/knowledge/gap-suggestions/${id}/publish`,
+    payload
+  );
+  return response.data.data;
 }
 
 /**

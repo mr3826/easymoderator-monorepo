@@ -1,6 +1,19 @@
 import '@testing-library/jest-dom'
 import i18n from '../i18n'
 
+// happy-dom 21 implements Web Animations, but cancel() rejects its `finished`
+// promise with AbortError. motion-dom can cancel during React teardown, which
+// Vitest reports as an unhandled rejection even though the assertions pass.
+// Use Motion's JavaScript fallback in unit tests; the real browser E2E suite
+// covers native animation behavior.
+if (typeof globalThis.Element?.prototype?.animate === 'function') {
+	Object.defineProperty(globalThis.Element.prototype, 'animate', {
+		value: undefined,
+		configurable: true,
+		writable: true,
+	});
+}
+
 // React 18 concurrent rendering fixes
 // Disable React's concurrent mode in tests to prevent act() errors
 if (typeof globalThis !== 'undefined') {

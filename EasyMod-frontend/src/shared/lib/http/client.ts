@@ -35,6 +35,7 @@ export interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
   __retry?: boolean;
   __csrfInit?: boolean;
   __skipShopId?: boolean;
+  __skipGlobalErrorToast?: boolean;
 }
 
 /**
@@ -200,8 +201,12 @@ class HttpClient {
         // Handle CSRF token failure - clear it so it can be re-initialized
         let isCsrfFailure = false;
         if (status === 403) {
-          const responseData = error.response?.data as { error?: { message?: string } } | undefined;
-          if (responseData?.error?.message === 'invalid csrf token') {
+          const csrfErrorData = error.response?.data as {
+            message?: string;
+            error?: { message?: string };
+          } | undefined;
+          const csrfErrorMessage = csrfErrorData?.error?.message ?? csrfErrorData?.message;
+          if (typeof csrfErrorMessage === 'string' && /^invalid csrf token\b/i.test(csrfErrorMessage.trim())) {
             isCsrfFailure = true;
             this.csrfToken = null;
             // Emit custom event for CSRF error handling
@@ -278,6 +283,7 @@ class HttpClient {
         // The id dedupes: N parallel requests failing on one dead connection replace
         // each other instead of stacking N identical toasts.
         if (
+          !config.__skipGlobalErrorToast &&
           !isCsrfFailure &&
           !isAuthEndpoint &&
           !isRefreshEndpoint &&

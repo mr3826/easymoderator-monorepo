@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-10-21T12:32:17.179Z",
+  "datasetSha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+  "baseline": {
+    "runId": "d31c486f-47b5-4cbc-abe3-d8969cac905e",
+    "scope": "full",
+    "mode": "baseline",
+    "status": "completed",
+    "sourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7",
+    "engineSourceRevision": "78b6250af40039749f9c096cd3e0debe2e6cf6a7+backend-src-sha256:e425568dbf74f7da7855fcd199bf84918dfc05913dba85ccfa49df8a69ddb29b",
+    "engineSourceSha256": "e425568dbf74f7da7855fcd199bf84918dfc05913dba85ccfa49df8a69ddb29b",
+    "runnerRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+runner-sha256:3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "runnerSourceSha256": "3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "dataset": {
+      "sha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+      "sourceTurns": 200,
+      "sourcePersonas": 20,
+      "executedTurns": 200,
+      "completeDatasetIterated": true,
+      "completeDatasetExecuted": true,
+      "routeNotRunCount": 0,
+      "sequentialPerPersona": true,
+      "rawSourceMessagesPersisted": false
+    },
+    "summary": {
+      "sourceAnswerableProductTurns": 4,
+      "evaluatedAnswerableProductTurns": 4,
+      "correctVerifiedProductTurns": 3,
+      "sourceEligibleProductFactSlots": 4,
+      "evaluatedEligibleProductFactSlots": 4,
+      "correctVerifiedProductAnswers": 3,
+      "unnecessaryRefusalSlots": 0,
+      "unsupportedClaimsSent": 0,
+      "blockedMockUnsupportedCandidates": 58,
+      "safeFallbacks": 58,
+      "routeExecutedTurns": 200,
+      "routeNotRunTurns": 0,
+      "realGeminiRouteTurns": 0,
+      "realGeminiTextCalls": 0,
+      "realGeminiVisionCalls": 0,
+      "dispositions": {
+        "SEND": 142,
+        "SAFE_FALLBACK": 58
+      },
+      "routerSources": {
+        "grounding_product_presentation": 5,
+        "llm": 58,
+        "grounding_not_found": 134,
+        "grounding_needs_product": 3
+      },
+      "oracleDomains": {
+        "product": 4,
+        "image_dependent": 19,
+        "merchant_policy": 59,
+        "unknown_product_attribute": 10,
+        "product_identity_unresolved": 103,
+        "outside_product": 5
+      },
+      "oracleEligibility": {
+        "ANSWERABLE": 4,
+        "NOT_ANSWERABLE": 196
+      },
+      "presentationContractsValid": 200,
+      "tenantScopeViolations": 0,
+      "unscopedCatalogReads": 0,
+      "realModelCalls": 0,
+      "mockModelCalls": 59,
+      "realVisionCalls": 0,
+      "businessMutations": 0,
+      "messengerSends": 0
+    },
+    "performance": {
+      "measuredLayer": "in-process intent-router call only; controlled mock adapters",
+      "p50Ms": 0.705,
+      "p95Ms": 1.385,
+      "meanMs": 1.082,
+      "sampleCount": 200,
+      "wallMs": 551.69,
+      "providerP50Ms": 0,
+      "providerP95Ms": 0,
+      "estimatedSpendUsd": null,
+      "providerReportedSpendUsd": null,
+      "costStatus": "NOT_MEASURED_NO_REAL_PROVIDER_CALLS",
+      "actualProviderUsageRecords": 0
+    },
+    "provenance": {
+      "sourceAnswersUsedAsGroundTruth": false,
+      "catalogSource": "synthetic-fixture-snapshot",
+      "modelProvider": "mock-adversarial-provider",
+      "vision": "disabled; attachments are metadata-only",
+      "realPostgres": false,
+      "realRedis": false,
+      "realWorker": false,
+      "realMeta": false,
+      "realProvider": false,
+      "realVision": false,
+      "outboundNetworkCalls": 0
+    }
+  },
+  "candidate": {
+    "runId": "e9f1b90e-1036-40ed-bae0-54361382cfe7",
+    "scope": "full",
+    "mode": "candidate",
+    "status": "completed",
+    "sourceRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1",
+    "engineSourceRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+backend-src-sha256:d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
+    "engineSourceSha256": "d88b51e3f151648443a2993c90d1e8282799d7e2fd559640fa86db3a4d727ae9",
+    "runnerRevision": "dd04c079f2b752725d372e879cb1549a8459b8d1+runner-sha256:3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "runnerSourceSha256": "3e128d58b3ea2e241fd757410f62b6aaaa109035e00e335727976645b70c5fca",
+    "dataset": {
+      "sha256": "892fb83191cc5fbfab48a30551f1095faedd5fd8ee2a238ccfa44a46b38254e6",
+      "sourceTurns": 200,
+      "sourcePersonas": 20,
+      "executedTurns": 200,
+      "completeDatasetIterated": true,
+      "completeDatasetExecuted": true,
+      "routeNotRunCount": 0,
+      "sequentialPerPersona": true,
+      "rawSourceMessagesPersisted": false
+    },
+    "summary": {
+      "sourceAnswerableProductTurns": 3,
+      "evaluatedAnswerableProductTurns": 3,
+      "correctVerifiedProductTurns": 3,
+      "sourceEligibleProductFactSlots": 3,
+      "evaluatedEligibleProductFactSlots": 3,
+      "correctVerifiedProductAnswers": 3,
+      "unnecessaryRefusalSlots": 0,
+      "unsupportedClaimsSent": 0,
+      "blockedMockUnsupportedCandidates": 58,
+      "safeFallbacks": 58,
+      "routeExecutedTurns": 200,
+      "routeNotRunTurns": 0,
+      "realGeminiRouteTurns": 0,
+      "realGeminiTextCalls": 0,
+      "realGeminiVisionCalls": 0,
+      "dispositions": {
+        "SEND": 142,
+        "SAFE_FALLBACK": 58
+      },
+      "routerSources": {
+        "grounding_product_presentation": 5,
+        "llm": 58,
+        "grounding_not_found": 134,
+        "grounding_needs_product": 3
+      },
+      "oracleDomains": {
+        "product": 3,
+        "image_dependent": 19,
+        "merchant_policy": 59,
+        "product_identity_unresolved": 110,
+        "outside_product": 5,
+        "unknown_product_attribute": 4
+      },
+      "oracleEligibility": {
+        "ANSWERABLE": 3,
+        "NOT_ANSWERABLE": 197
+      },
+      "presentationContractsValid": 200,
+      "tenantScopeViolations": 0,
+      "unscopedCatalogReads": 0,
+      "realModelCalls": 0,
+      "mockModelCalls": 59,
+      "realVisionCalls": 0,
+      "businessMutations": 0,
+      "messengerSends": 0
+    },
+    "performance": {
+      "measuredLayer": "in-process intent-router call only; controlled mock adapters",
+      "p50Ms": 0.631,
+      "p95Ms": 1.33,
+      "meanMs": 0.962,
+      "sampleCount": 200,
+      "wallMs": 480.75,
+      "providerP50Ms": 0,
+      "providerP95Ms": 0,
+      "estimatedSpendUsd": null,
+      "providerReportedSpendUsd": null,
+      "costStatus": "NOT_MEASURED_NO_REAL_PROVIDER_CALLS",
+      "actualProviderUsageRecords": 0
+    },
+    "provenance": {
+      "sourceAnswersUsedAsGroundTruth": false,
+      "catalogSource": "synthetic-fixture-snapshot",
+      "modelProvider": "mock-adversarial-provider",
+      "vision": "disabled; attachments are metadata-only",
+      "realPostgres": false,
+      "realRedis": false,
+      "realWorker": false,
+      "realMeta": false,
+      "realProvider": false,
+      "realVision": false,
+      "outboundNetworkCalls": 0
+    }
+  }
+}

@@ -175,6 +175,34 @@ describe('CustomerService', () => {
         });
     });
 
+    describe('deleteCustomer', () => {
+        it('rejects a staff member before destructive customer deletion', async () => {
+            UserShop.findOne.mockResolvedValue({
+                user_id: 'user-1', shop_id: 'shop-1', is_active: true, role: 'staff',
+            });
+            cust.destroy = jest.fn();
+
+            await expect(customerService.deleteCustomer('cust-1', 'user-1', 'shop-1'))
+                .rejects.toMatchObject({ status: 403 });
+
+            expect(Customer.findOne).not.toHaveBeenCalled();
+            expect(cust.destroy).not.toHaveBeenCalled();
+        });
+
+        it('allows an owner to erase a customer and returns the existing audit snapshot', async () => {
+            UserShop.findOne.mockResolvedValue({
+                user_id: 'user-1', shop_id: 'shop-1', is_active: true, role: 'owner',
+            });
+            Customer.findOne.mockResolvedValue(cust);
+            cust.destroy = jest.fn().mockResolvedValue(true);
+
+            const result = await customerService.deleteCustomer('cust-1', 'user-1', 'shop-1');
+
+            expect(cust.destroy).toHaveBeenCalledTimes(1);
+            expect(result.deletedSnapshot).toEqual({ id: 'cust-1', channel_type: 'messenger' });
+        });
+    });
+
     // Note: campaign/marketing consent has moved to meta_channel_consent_events
     // (see consent.service.js). The old `updateCustomerConsent` / `getCustomersBySegment`
     // methods and `customer.metadata.marketing_opt_*` flags were removed in the

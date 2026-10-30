@@ -156,7 +156,7 @@ describe('real bKash webhook courier claim boundary', () => {
         await providerReady;
         const competingBookingPromise = orderService.bookForOrder(
             await Order.findByPk(order.id),
-            { shopId: shop.id },
+            { shopId: shop.id, mutationAuthority: { kind: 'test' } },
         );
         const secondResponse = await postWebhook(body);
         const competingBooking = await competingBookingPromise;
@@ -196,7 +196,10 @@ describe('real bKash webhook courier claim boundary', () => {
     });
 
     test('does not let a stale claim transition downgrade a committed webhook booking', async () => {
-        await orderService.bookForOrder(order, { shopId: shop.id });
+        await orderService.bookForOrder(order, {
+            shopId: shop.id,
+            mutationAuthority: { kind: 'test' },
+        });
         const committed = await CourierDispatch.findOne({ where: { shop_id: shop.id, order_id: order.id } });
 
         const transition = await orderService.transitionCourierDispatchRecord(

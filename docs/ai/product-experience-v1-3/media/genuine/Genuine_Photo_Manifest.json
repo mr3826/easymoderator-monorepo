@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "classification": "genuine-public-product-photographs",
+  "createdAt": "2026-10-22",
+  "sourceDatasetPhotosProvided": false,
+  "annotationMethod": "blind local visual review; only visible category and dominant color are scored",
+  "excludedLocalFilesNotAllowlisted": [
+    {
+      "file": "cotton-kurta-set.jpg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Cotton-kurta-pant-and-dupatta-set-made-in-khari-print.jpg",
+      "author": "Ankit fabcul",
+      "license": "CC BY-SA 4.0",
+      "reason": "Visible identifiable person; excluded from Gemini evaluation and allowlist."
+    },
+    {
+      "file": "side-open-kurta.jpg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Kurta_traditional_side_open_knot.jpg",
+      "author": "Fowler&fowler",
+      "license": "Public domain dedication",
+      "reason": "Visible identifiable person; excluded from Gemini evaluation and allowlist."
+    }
+  ],
+  "assets": [
+    {
+      "id": "yellow-kurta",
+      "file": "yellow-kurta.jpg",
+      "bytes": 431837,
+      "sha256": "b70e84d3d3e2df38e58ff30ed14daf04368044b0cd21afc5d5430be83497f2a9",
+      "mimeType": "image/jpeg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:A_yellow_cotton_kurta_with_traditional_design_elements_and_multicolored_lace_details.jpg",
+      "directDownloadUrl": "https://upload.wikimedia.org/wikipedia/commons/f/fe/A_yellow_cotton_kurta_with_traditional_design_elements_and_multicolored_lace_details.jpg",
+      "title": "A yellow cotton kurta with traditional design elements and multicolored lace details",
+      "author": "Papori Bora (পাপৰি বৰা)",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "localChange": "None; original file downloaded.",
+      "visibleHumanSubject": false,
+      "expectedVisible": {
+        "category": ["kurta", "tunic"],
+        "dominantColor": ["yellow", "yellow-green", "chartreuse"]
+      }
+    },
+    {
+      "id": "handloom-kurta",
+      "file": "handloom-kurta.jpg",
+      "bytes": 1022751,
+      "sha256": "9b0f7f1931950bab5b2659e0ea0baa74410a9d67445626b79fab6e5b76a27fd8",
+      "mimeType": "image/jpeg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Handloom_Cotton_Half_Kurta.jpg",
+      "directDownloadUrl": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Handloom_Cotton_Half_Kurta.jpg",
+      "title": "Handloom Cotton Half Kurta",
+      "author": "Gautam Daniel",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "localChange": "None; original file downloaded.",
+      "visibleHumanSubject": false,
+      "expectedVisible": {
+        "category": ["kurta", "tunic"],
+        "dominantColor": ["cream", "off-white", "beige"]
+      }
+    },
+    {
+      "id": "museum-kurta",
+      "file": "museum-kurta-960.jpg",
+      "bytes": 329449,
+      "sha256": "791e6783a553dd997839d019548a25a0d213014496b9e3772922d6ad3cc1fa5f",
+      "mimeType": "image/jpeg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Kurta,_India,_20th_century,_cotton_blend_-_Saint_Ignatius_Church,_San_Francisco,_CA_-_DSC02637.JPG",
+      "directDownloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ec/Kurta%2C_India%2C_20th_century%2C_cotton_blend_-_Saint_Ignatius_Church%2C_San_Francisco%2C_CA_-_DSC02637.JPG/960px-Kurta%2C_India%2C_20th_century%2C_cotton_blend_-_Saint_Ignatius_Church%2C_San_Francisco%2C_CA_-_DSC02637.JPG",
+      "title": "Kurta, India, 20th century, cotton blend (960px Commons thumbnail)",
+      "author": "Daderot",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "localChange": "Wikimedia Commons 960px thumbnail used; no further edits.",
+      "visibleHumanSubject": false,
+      "expectedVisible": {
+        "category": ["kurta", "tunic"],
+        "dominantColor": ["gold", "tan", "beige"]
+      }
+    }
+  ]
+}

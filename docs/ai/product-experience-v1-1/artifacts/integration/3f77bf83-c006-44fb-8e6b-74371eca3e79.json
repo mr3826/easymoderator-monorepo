@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "runId": "3f77bf83-c006-44fb-8e6b-74371eca3e79",
+  "status": "FAIL",
+  "startedAt": "2026-10-20T13:35:49.184Z",
+  "completedAt": "2026-10-20T13:36:46.505Z",
+  "branch": "feature/ai-product-experience-v1.1",
+  "composeProject": "easymod-product-lab-22968-c78148",
+  "serviceNetwork": {
+    "driver": "bridge",
+    "internal": true,
+    "ipMasquerading": false,
+    "subnet": "10.254.255.240/28",
+    "overlapChecked": true
+  },
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine",
+      "host": "127.0.0.1",
+      "port": 14191,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "host": "127.0.0.1",
+      "port": 14192,
+      "storage": "tmpfs",
+      "health": "compose-healthcheck"
+    }
+  ],
+  "migrations": {
+    "status": "NOT_RUN"
+  },
+  "testPaths": [
+    "src/modules/integration/__tests__/meta-webhook-durability.integration.test.js",
+    "src/jobs/__tests__/message-worker.action-gate.integration.test.js",
+    "src/jobs/__tests__/message-worker.recovery.integration.test.js"
+  ],
+  "jest": {
+    "status": "NOT_RUN"
+  },
+  "egress": {
+    "mode": "Docker services use an internal bridge without external routing; the host Node runner restricts DNS/TCP/HTTP/fetch APIs to loopback",
+    "externalProvidersConfigured": false,
+    "externalCalls": 0
+  },
+  "timeline": [
+    {
+      "stage": "compose_up",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    {
+      "stage": "compose_down",
+      "exitCode": 0,
+      "timedOut": false,
+      "scope": "easymod-product-lab-22968-c78148"
+    }
+  ],
+  "failure": "Both services must accept TCP connections through their reserved loopback ports.",
+  "cleanup": {
+    "exitCode": 0,
+    "projectScoped": true,
+    "persistentVolumesMounted": false
+  }
+}

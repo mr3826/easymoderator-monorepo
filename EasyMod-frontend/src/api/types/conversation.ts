@@ -2,6 +2,8 @@
  * Conversation and Messaging types
  */
 
+import type { Opportunity } from './customer-intelligence';
+
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type MessageType = 'text' | 'image' | 'file' | 'location';
 export type MessageDeliveryState =
@@ -65,6 +67,8 @@ export interface MessageSourceReference {
   id?: string | null;
   title?: string | null;
   score?: number | null;
+  /** Excludes related products from being reused as verified follow-up context. */
+  contextEligible?: boolean;
 }
 
 /**
@@ -172,11 +176,17 @@ export interface Conversation {
   needs_merchant_reply?: boolean;
   needs_merchant_reply_reason?: string | null;
   ai_is_replying?: boolean;
+  /**
+   * P+01 Inbox Lead Intelligence: the server-authoritative LIVE Sales
+   * Opportunity for this conversation's customer (null/absent when none, or
+   * when the shop's pilot flag is off). Never a client-computed score.
+   */
+  open_opportunity?: Opportunity | null;
   created_at: string;
   updated_at: string;
   messages?: Message[];
-  assignee_id?: string;
-  assignee?: { id: string; name: string; email?: string };
+  assignee_id?: string | null;
+  assignee?: { id: string; name: string | null; email?: string } | null;
   resolved_at?: string;
   resolution_note?: string;
 }

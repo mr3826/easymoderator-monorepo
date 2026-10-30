@@ -117,7 +117,11 @@ describe('durable conversation attachment projection on PostgreSQL', () => {
         await sequelize.query('DELETE FROM public.tenants WHERE id = :tenantId', {
             replacements: { tenantId: ids.tenant },
         });
-        await fs.rm(uploadRoot, { recursive: true, force: true });
+        // The integration runner may bind-mount uploadRoot read/write while
+        // the source tree is read-only. Remove only this test's UUID directory;
+        // deleting the mountpoint itself would fail with EROFS and can hide
+        // whether the database cleanup completed.
+        await fs.rm(path.join(uploadRoot, ids.shop), { recursive: true, force: true });
     });
 
     test('reload returns a fresh URL while leaving the message row byte-identical', async () => {

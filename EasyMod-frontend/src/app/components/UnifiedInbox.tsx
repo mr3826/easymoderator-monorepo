@@ -8,7 +8,7 @@
  * This file: state management, SSE wiring, data loading only (~250 lines).
  */
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -21,10 +21,13 @@ import {
   type Message,
   type ResponseTemplate,
 } from "@/api/types/conversation";
+import type { Opportunity } from "@/api/types/customer-intelligence";
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
 import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
+import CustomerContextPanel from "./inbox/CustomerContextPanel";
+import { ActionQueuePanel } from "./inbox/ActionQueuePanel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -196,43 +199,64 @@ const needsMerchantReply = (conversation: Conversation): boolean => (
     ?? (conversation.hitl === true || conversation.hasAiSuggestion === true)
 );
 
-// Quick-reply fallback templates. Labels (`name`) are translatable; `content`
-// is intentionally informal Banglish reply text shown to the agent as-is.
-const buildFallbackTemplates = (t: TFunc): ResponseTemplate[] => [
-  { id: "fallback-1", name: t("inbox.templates.orderConfirmed"), content: "আপনার অর্ডার confirm হয়েছে ✅ Delivery: 2-3 দিন" },
-  { id: "fallback-2", name: t("inbox.templates.needAddress"), content: "Stock আছে। Address & mobile নম্বর দিন please 🙏" },
-  { id: "fallback-3", name: t("inbox.templates.advancePayment"), content: "Advance ৳[Amount] bKash করুন: 01XXXXXXXXX" },
-  { id: "fallback-4", name: t("inbox.templates.courierUpdate"), content: "আপনার পার্সেল courier এ দেওয়া হয়েছে ✈️" },
-  { id: "fallback-5", name: t("inbox.templates.thankYou"), content: "ধন্যবাদ আপনার order এর জন্য! 😊" },
-  { id: "fallback-6", name: t("inbox.templates.outOfStock"), content: "এই product টা এখন stock এ নেই। 2-3 দিনের মধ্যে available হবে।" },
-  { id: "fallback-7", name: t("inbox.templates.deliveryCharge"), content: "Dhaka তে delivery charge ৳60, Dhaka এর বাইরে ৳120।" },
-  { id: "fallback-8", name: t("inbox.templates.returnWindow"), content: "Return/exchange এর জন্য 3 দিনের মধ্যে জানাবেন please।" },
-  { id: "fallback-9", name: t("inbox.templates.cashOnDelivery"), content: "COD available আছে। Delivery তে টাকা দিতে পারবেন।" },
-  { id: "fallback-10", name: t("inbox.templates.dispatchToday"), content: "আপনার product টি ready। আজকেই dispatch করব। 🚚" },
+// Quick-reply fallback templates. FE-01: these contain NO business facts.
+// A fallback may only (a) promise to check and follow up, or (b) ask the
+// customer for information. Order/payment/stock/courier/charge/return claims
+// must come from merchant-authored templates or authoritative reads — never
+// from code defaults, because the composer inserts them even when the
+// templates API failed to load. Invariants enforced by
+// src/test/QuickReplySafety.test.ts.
+export const buildFallbackTemplates = (t: TFunc): ResponseTemplate[] => [
+  { id: "fallback-check", name: t("inbox.templates.checkNow"), content: "আমি সঠিক তথ্যটা চেক করে নিচ্ছি 🙏" },
+  { id: "fallback-received", name: t("inbox.templates.replySoon"), content: "আপনার বার্তা পেয়েছি — খুব শীঘ্রই উত্তর দিচ্ছি।" },
+  { id: "fallback-details", name: t("inbox.templates.askDetails"), content: "একটা তথ্য দরকার ছিল, একটু বলবেন? 🙏" },
+  { id: "fallback-address", name: t("inbox.templates.needAddress"), content: "ঠিকানা আর মোবাইল নম্বরটা পাঠিয়ে দিলে সুবিধা হতো 🙏" },
+  { id: "fallback-thanks", name: t("inbox.templates.thankYou"), content: "ধন্যবাদ! 🙏" },
 ];
 
 const META_CHANNELS = ["facebook", "messenger"];
+const INBOX_CONVERSATION_PAGE_SIZE = 50;
+
+type InboxFilterTab = "all" | "needs_review" | "closed";
+
+const parseInboxPage = (value: string | null): number => {
+  const page = Number(value);
+  return Number.isSafeInteger(page) && page > 0 ? page : 1;
+};
+
+const parseInboxFilter = (value: string | null): InboxFilterTab => (
+  value === "needs_review" || value === "closed" ? value : "all"
+);
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function UnifiedInbox() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
+  const initialSearchParams = new URLSearchParams(location.search);
+  const initialPage = parseInboxPage(initialSearchParams.get("page"));
+  const initialFilter = parseInboxFilter(initialSearchParams.get("tab"));
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [totalConversations, setTotalConversations] = useState(0);
+  const [conversationPageSize, setConversationPageSize] = useState(INBOX_CONVERSATION_PAGE_SIZE);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterTab, setFilterTab] = useState<"all" | "needs_review" | "closed">("all");
+  const [filterTab, setFilterTab] = useState<InboxFilterTab>(initialFilter);
   const [togglingHITL, setTogglingHITL] = useState(false);
   const [dismissedSuggestionId, setDismissedSuggestionId] = useState<string | null>(null);
   const [messagesPage, setMessagesPage] = useState(1);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // MW-V1: customer-context panel visibility (persistent column on xl+, sheet below).
+  const [contextOpen, setContextOpen] = useState(false);
   const [templates, setTemplates] = useState<ResponseTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [resolvingConversation, setResolvingConversation] = useState(false);
@@ -244,8 +268,18 @@ export default function UnifiedInbox() {
   const [aiReplyStatuses, setAiReplyStatuses] = useState<Record<string, AiReplyStatus>>({});
   const aiReplyModeRef = useRef<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
   const aiReplyModeRevisionRef = useRef(0);
+  const locationSearchRef = useRef(location.search);
+  const currentPageRef = useRef(initialPage);
+  const filterTabRef = useRef<InboxFilterTab>(initialFilter);
+  const lastLoadedPageRef = useRef<number | null>(null);
+  const conversationRequestRef = useRef(0);
+  const failedPageRef = useRef<number | null>(null);
+  const syncPageSelectionRef = useRef(false);
+  const navigateRef = useRef(navigate);
+  const tRef = useRef(t);
   const selectedConversationRef = useRef<Conversation | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
+  const messagesRef = useRef<Message[]>([]);
   const conversationProjectionRevisionRef = useRef<Record<string, number>>({});
   const liveMessageIdsRef = useRef<Set<string>>(new Set());
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
@@ -253,14 +287,39 @@ export default function UnifiedInbox() {
   const readRequestRef = useRef<Record<string, number>>({});
   const latestInboundAtRef = useRef<Record<string, number>>({});
   const messageRequestRef = useRef(0);
+  const pendingManualMessageIdsRef = useRef(new Map<string, string>());
+  const providerConfirmedMessageIdsRef = useRef(new Set<string>());
+  const shownManualDeliveryToastIdsRef = useRef(new Set<string>());
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // P+03: the action queue is a server read model; any SSE fact it is derived
+  // from (hitl, delivery state, conversation changes) re-pulls it through the
+  // refresh function the panel registers on mount.
+  const actionQueueRefreshRef = useRef<null | (() => void)>(null);
+  const registerActionQueueRefresh = useCallback((refresh: () => void) => {
+    actionQueueRefreshRef.current = refresh;
+  }, []);
+  const refreshActionQueue = useCallback(() => { actionQueueRefreshRef.current?.(); }, []);
 
   const { features: planFeatures } = useSubscriptionFeatures();
   const PAGE_SIZE = 30;
 
   const quickReplyTemplates = templates.length > 0 ? templates : buildFallbackTemplates(t);
+
+  const updateSearchParams = useCallback((updates: Partial<Record<"tab" | "page" | "conversation", string | null>>) => {
+    const params = new URLSearchParams(locationSearchRef.current);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    });
+    const serialized = params.toString();
+    const nextSearch = serialized ? `?${serialized}` : "";
+    if (nextSearch === locationSearchRef.current) return;
+    locationSearchRef.current = nextSearch;
+    navigateRef.current({ search: nextSearch }, { replace: true });
+  }, []);
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
@@ -270,27 +329,78 @@ export default function UnifiedInbox() {
     conversationsRef.current = conversations;
   }, [conversations]);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
   // ─── Data loading ──────────────────────────────────────────────────────────
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (requestedPage = currentPageRef.current) => {
+    const page = Math.max(1, requestedPage);
+    const requestId = ++conversationRequestRef.current;
     const modeRevision = aiReplyModeRevisionRef.current;
     const requestRevisions = new Map(Object.entries(conversationProjectionRevisionRef.current));
     try {
       setLoadingConversations(true);
       setError(null);
-      const result = await apiClient.getConversations({ limit: 50 });
+      const result = await apiClient.getConversations({ page, limit: INBOX_CONVERSATION_PAGE_SIZE });
+      if (requestId !== conversationRequestRef.current) return;
+
+      const pageInfo = result as typeof result & {
+        total?: number;
+        page?: number;
+        pageSize?: number;
+        totalPages?: number;
+        pagination?: { total?: number; page?: number; pageSize?: number; totalPages?: number };
+      };
+      const pageData = Array.isArray(result.data) ? result.data : [];
+      const reportedPageSize = Number(pageInfo.pageSize ?? pageInfo.pagination?.pageSize ?? INBOX_CONVERSATION_PAGE_SIZE);
+      const effectivePageSize = Number.isSafeInteger(reportedPageSize) && reportedPageSize > 0
+        ? reportedPageSize
+        : INBOX_CONVERSATION_PAGE_SIZE;
+      const reportedTotal = Number(pageInfo.total ?? pageInfo.pagination?.total ?? pageData.length);
+      const effectiveTotal = Number.isFinite(reportedTotal) && reportedTotal >= 0 ? reportedTotal : pageData.length;
+      const reportedTotalPages = Number(pageInfo.totalPages ?? pageInfo.pagination?.totalPages);
+      const effectiveTotalPages = Math.max(1, Number.isSafeInteger(reportedTotalPages) && reportedTotalPages > 0
+        ? reportedTotalPages
+        : Math.ceil(effectiveTotal / effectivePageSize));
+      const responsePage = Number(pageInfo.page ?? pageInfo.pagination?.page ?? page);
+      const effectivePage = Math.min(
+        Number.isSafeInteger(responsePage) && responsePage > 0 ? responsePage : page,
+        effectiveTotalPages,
+      );
+
+      if (effectivePage !== page) {
+        currentPageRef.current = effectivePage;
+        updateSearchParams({ page: effectivePage > 1 ? String(effectivePage) : null });
+        await loadConversations(effectivePage);
+        return;
+      }
+
       const normalizedMode = normalizeAiReplyMode(result.ai_reply_mode);
       if (modeRevision === aiReplyModeRevisionRef.current) {
         aiReplyModeRef.current = normalizedMode;
         setAiReplyMode(normalizedMode);
       }
       const mergedConversations = mergeConversationLists(
-        result.data,
+        pageData,
         conversationsRef.current,
         conversationProjectionRevisionRef.current,
         requestRevisions,
       );
       setConversations(mergedConversations);
+      setCurrentPage(effectivePage);
+      currentPageRef.current = effectivePage;
+      setTotalConversations(effectiveTotal);
+      setConversationPageSize(effectivePageSize);
       setAiReplyStatuses((previous) => {
         const visibleIds = new Set(mergedConversations.map((conversation) => conversation.id));
         const next = Object.fromEntries(
@@ -300,23 +410,43 @@ export default function UnifiedInbox() {
           if (conversation.ai_is_replying === true && conversation.status !== "closed") {
             next[conversation.id] = "processing";
           } else {
-            delete next[conversation.id];
+            const status = selectedConversationRef.current?.id === conversation.id
+              ? getAiReplyStatus(messagesRef.current, aiReplyModeRef.current, conversation)
+              : null;
+            if (status) next[conversation.id] = status;
+            else delete next[conversation.id];
           }
         });
         return next;
       });
-      setSelectedConversation((previous) => {
-        if (!mergedConversations.length) return null;
-        if (!previous) return mergedConversations[0];
-        return mergedConversations.find((conversation) => conversation.id === previous.id) || previous;
-      });
+      const pageChanged = lastLoadedPageRef.current !== effectivePage;
+      lastLoadedPageRef.current = effectivePage;
+      const urlParams = new URLSearchParams(locationSearchRef.current);
+      const linkedConversationId = urlParams.get("conversation");
+      const selected = mergedConversations.find((conversation) => conversation.id === linkedConversationId)
+        || (!pageChanged
+          ? mergedConversations.find((conversation) => conversation.id === selectedConversationRef.current?.id)
+          : undefined)
+        || mergedConversations[0]
+        || null;
+      setSelectedConversation(selected);
+      failedPageRef.current = null;
+      if (syncPageSelectionRef.current || (effectivePage > 1 && !linkedConversationId)) {
+        syncPageSelectionRef.current = false;
+        updateSearchParams({
+          page: effectivePage > 1 ? String(effectivePage) : null,
+          conversation: selected?.id ?? null,
+        });
+      }
     } catch {
-      setError(t("inbox.errors.loadConversations"));
-      toast.error(t("inbox.errors.loadConversations"));
+      if (requestId !== conversationRequestRef.current) return;
+      failedPageRef.current = page;
+      setError(tRef.current("inbox.errors.loadConversations"));
+      toast.error(tRef.current("inbox.errors.loadConversations"));
     } finally {
-      setLoadingConversations(false);
+      if (requestId === conversationRequestRef.current) setLoadingConversations(false);
     }
-  }, [t]);
+  }, [i18n?.language, updateSearchParams]);
 
   const loadConversationsRef = useRef(loadConversations);
   useEffect(() => { loadConversationsRef.current = loadConversations; });
@@ -406,6 +536,47 @@ export default function UnifiedInbox() {
     }
   };
 
+  const showManualReplyProviderSuccess = useCallback((
+    messageId: string,
+    conversationId: string,
+    deliveryState: "SENT" | "DELIVERED",
+  ) => {
+    if (shownManualDeliveryToastIdsRef.current.has(messageId)) return;
+    shownManualDeliveryToastIdsRef.current.add(messageId);
+    if (shownManualDeliveryToastIdsRef.current.size > 100) {
+      const oldest = shownManualDeliveryToastIdsRef.current.values().next().value;
+      if (oldest) shownManualDeliveryToastIdsRef.current.delete(oldest);
+    }
+
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const nextReplyTask = conversationsRef.current.find((conversation) => {
+      if (conversation.id === conversationId
+        || conversation.status === "closed"
+        || conversation.needs_merchant_reply !== true
+        || filterTab === "closed") return false;
+      if (filterTab === "needs_review" && conversation.needs_merchant_reply !== true) return false;
+      if (!normalizedSearch) return true;
+      return [conversation.customer?.name, conversation.title, conversation.lastMessage]
+        .some((value) => typeof value === "string" && value.toLowerCase().includes(normalizedSearch));
+    });
+
+    const options = nextReplyTask ? {
+      action: {
+        label: t("inbox.openNextReplyTask"),
+        onClick: () => {
+          if (selectedConversationRef.current?.id !== nextReplyTask.id) {
+            setMessages([]);
+            setLoadingMessages(true);
+          }
+          setSelectedConversation(nextReplyTask);
+          setMobilePanelOpen(true);
+          updateSearchParams({ conversation: nextReplyTask.id });
+        },
+      },
+    } : undefined;
+    toast.success(t(deliveryState === "DELIVERED" ? "inbox.messageDelivered" : "inbox.messageAccepted"), options);
+  }, [filterTab, searchQuery, t, updateSearchParams]);
+
   // ─── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -414,8 +585,19 @@ export default function UnifiedInbox() {
   }, [loadConversations, loadTemplates]);
 
   useEffect(() => {
+    locationSearchRef.current = location.search;
     const params = new URLSearchParams(location.search);
-    if (params.get("tab") === "needs_review") setFilterTab("needs_review");
+    const nextTab = parseInboxFilter(params.get("tab"));
+    if (nextTab !== filterTabRef.current) {
+      filterTabRef.current = nextTab;
+      setFilterTab(nextTab);
+    }
+    const nextPage = parseInboxPage(params.get("page"));
+    if (nextPage !== currentPageRef.current) {
+      currentPageRef.current = nextPage;
+      syncPageSelectionRef.current = false;
+      void loadConversationsRef.current(nextPage);
+    }
   }, [location.search]);
 
   // Deep link (/inbox?conversation=<id>) from a Sales Opportunity: open that
@@ -465,7 +647,7 @@ export default function UnifiedInbox() {
 
     const markVisibleInboundRead = () => {
       if (document.visibilityState !== "visible") return;
-      if (typeof window !== "undefined" && window.innerWidth < 768 && !mobilePanelOpen) return;
+      if (typeof window !== "undefined" && window.innerWidth < 1024 && !mobilePanelOpen) return;
       const latestInbound = [...messages].reverse().find((message) => message.sender === "customer");
       if (!latestInbound || readWatermarkRef.current[conversationId] === latestInbound.id) return;
       readWatermarkRef.current[conversationId] = latestInbound.id;
@@ -607,14 +789,19 @@ export default function UnifiedInbox() {
         : previous);
     }, [aiReplyMode]),
 
-    onHitlChanged: useCallback(({ conversation_id, hitl, status, needs_merchant_reply: needsReply, needs_merchant_reply_reason: needsReason, ai_is_replying: aiIsReplying }: {
-      conversation_id: string;
-      hitl: boolean;
-      status?: Conversation["status"];
-      needs_merchant_reply?: boolean;
-      needs_merchant_reply_reason?: string | null;
-      ai_is_replying?: boolean;
-    }) => {
+      onHitlChanged: useCallback(({ conversation_id, hitl, status, needs_merchant_reply: needsReply, needs_merchant_reply_reason: needsReason, ai_is_replying: aiIsReplying, assignee_id: assigneeId, assignee: assigneeInfo }: {
+        conversation_id: string;
+        hitl: boolean;
+        status?: Conversation["status"];
+        needs_merchant_reply?: boolean;
+        needs_merchant_reply_reason?: string | null;
+        ai_is_replying?: boolean;
+        // MW-V1 D3/D4b: the ownership-carrying event source is now the service
+        // itself, so a teammate's claim/assign converges every open client.
+        assignee_id?: string | null;
+        assignee?: { id: string; name: string | null } | null;
+      }) => {
+      refreshActionQueue();
       conversationProjectionRevisionRef.current[conversation_id] =
         (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const workflow = {
@@ -623,6 +810,8 @@ export default function UnifiedInbox() {
         ...(needsReply !== undefined ? { needs_merchant_reply: needsReply } : {}),
         ...(needsReason !== undefined ? { needs_merchant_reply_reason: needsReason } : {}),
         ...(aiIsReplying !== undefined ? { ai_is_replying: aiIsReplying } : {}),
+        ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
+        ...(assigneeInfo !== undefined ? { assignee: assigneeInfo } : {}),
       };
       setConversations((prev) =>
         prev.map((conv) => conv.id === conversation_id ? { ...conv, ...workflow } : conv)
@@ -635,7 +824,7 @@ export default function UnifiedInbox() {
         delete next[conversation_id];
         return next;
       });
-    }, []),
+    }, [refreshActionQueue]),
 
     onAiPaused: useCallback(({ conversation_id, reason }: { conversation_id: string; reason?: string }) => {
       conversationProjectionRevisionRef.current[conversation_id] =
@@ -671,6 +860,7 @@ export default function UnifiedInbox() {
       content?: string | null;
       created_at?: string | null;
     }) => {
+      refreshActionQueue();
       conversationProjectionRevisionRef.current[conversation_id] =
         (conversationProjectionRevisionRef.current[conversation_id] || 0) + 1;
       const currentMessage = messages.find((message) => message.id === message_id);
@@ -701,6 +891,19 @@ export default function UnifiedInbox() {
       const mergedMessage = currentMessage
         ? mergeMessageLifecycle(currentMessage, incomingMessage)
         : null;
+      if (delivery_state === "FAILED") {
+        pendingManualMessageIdsRef.current.delete(message_id);
+      } else if (isProviderConfirmed(mergedMessage || incomingMessage)) {
+        providerConfirmedMessageIdsRef.current.add(message_id);
+        if (providerConfirmedMessageIdsRef.current.size > 100) {
+          const oldest = providerConfirmedMessageIdsRef.current.values().next().value;
+          if (oldest) providerConfirmedMessageIdsRef.current.delete(oldest);
+        }
+        if (pendingManualMessageIdsRef.current.has(message_id)) {
+          pendingManualMessageIdsRef.current.delete(message_id);
+          showManualReplyProviderSuccess(message_id, conversation_id, delivery_state === "DELIVERED" ? "DELIVERED" : "SENT");
+        }
+      }
       setMessages((prev) => {
         if (selectedConversationRef.current?.id !== conversation_id) return prev;
         return prev.map((message) => message.id === message_id
@@ -721,9 +924,10 @@ export default function UnifiedInbox() {
         else delete next[conversation_id];
         return next;
       });
-      if ((delivery_state === "SENT" || delivery_state === "FAILED") && (currentMessage?.content || content)) {
+      if ((delivery_state === "SENT" || delivery_state === "DELIVERED" || delivery_state === "FAILED")
+        && (currentMessage?.content || content)) {
         const confirmed = mergedMessage ? isProviderConfirmed(mergedMessage) : Boolean(provider_message_id);
-        const delivered = delivery_state === "SENT" && confirmed;
+        const delivered = (delivery_state === "SENT" || delivery_state === "DELIVERED") && confirmed;
         const isSystemEscalation = (mergedMessage?.delivery_source
           || delivery_source
           || mergedMessage?.metadata?.delivery_source) === "HITL_ESCALATION";
@@ -777,9 +981,10 @@ export default function UnifiedInbox() {
             : conversation);
         }
       }
-    }, [aiReplyMode, messages]),
+    }, [aiReplyMode, messages, refreshActionQueue, showManualReplyProviderSuccess]),
 
     onDeliveryFailed: useCallback(({ conversation_id, message_id, reason }: { conversation_id?: string; message_id?: string; reason: string }) => {
+      refreshActionQueue();
       const failedConversationId = conversation_id || selectedConversation?.id;
       const failedMessage = message_id ? messages.find((message) => message.id === message_id) : null;
       if (aiReplyMode === "AUTO" && failedMessage?.sender === "ai") {
@@ -806,7 +1011,7 @@ export default function UnifiedInbox() {
           : conversation);
       }
       toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
-    }, [aiReplyMode, messages, selectedConversation?.id]),
+    }, [aiReplyMode, messages, selectedConversation?.id, refreshActionQueue]),
 
     onAiReplyModeChanged: useCallback(({ mode }: { mode: AiReplyMode }) => {
       const normalizedMode = normalizeAiReplyMode(mode);
@@ -873,6 +1078,13 @@ export default function UnifiedInbox() {
         return { ...prev, customer: { ...prev.customer, name } };
       });
     }, []),
+
+    // conversation_updated is emitted by surfaces outside this hook's own
+    // mutations (e.g. the mobile app) — the action queue re-pulls rather than
+    // guessing which bucket moved.
+    onConversationUpdated: useCallback(() => {
+      refreshActionQueue();
+    }, [refreshActionQueue]),
   });
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
@@ -896,14 +1108,9 @@ export default function UnifiedInbox() {
         delete next[selectedConversation.id];
         return next;
       });
-      apiClient.createAuditLog({
-        action: newHITL ? "HUMAN_TAKEOVER" : "UPDATE",
-        resource_type: "CONVERSATION",
-        resource_id: selectedConversation.id,
-        old_values: { hitl: !newHITL },
-        new_values: { hitl: newHITL },
-        metadata: { channel: selectedConversation.channel },
-      }).catch(() => {});
+      // MW-V1 D4: the server writes the authoritative CONVERSATION_OWNERSHIP_UPDATE
+      // audit on this PATCH; the previously client-side createAuditLog call
+      // targeted a route that does not exist and is removed.
       toast.success(
         newHITL
           ? t("inbox.aiPaused")
@@ -911,12 +1118,30 @@ export default function UnifiedInbox() {
           ? t("inbox.aiReEnabled")
           : t("inbox.mode.manual")
       );
-    } catch {
-      toast.error(t("inbox.errors.updateMode"));
+    } catch (error) {
+      // P+03: surface the server's authoritative conflict reason (e.g. takeover
+      // 409 "already assigned to another team member"); only fall back to the
+      // generic label when the API gave no message. Never fabricate success.
+      const serverMessage = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message
+        || (typeof (error as Error)?.message === "string"
+          && (error as Error).message
+          && !/request failed|status code/i.test((error as Error).message)
+          ? (error as Error).message
+          : "");
+      toast.error(serverMessage || t("inbox.errors.updateMode"));
     } finally {
       setTogglingHITL(false);
     }
   };
+
+  // MW-V1: merge a panel-driven ownership change (canonical PATCH result) into
+  // both the thread list and the live conversation immediately.
+  const applyOwnershipUpdate = useCallback((updated: Conversation) => {
+    setConversations((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+    setSelectedConversation((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev));
+    refreshActionQueue();
+  }, [refreshActionQueue]);
 
   const handleResolveConversation = async () => {
     if (!selectedConversation) return;
@@ -939,21 +1164,25 @@ export default function UnifiedInbox() {
       };
       setSelectedConversation(updated);
       setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      apiClient.createAuditLog({
-        action: "CONVERSATION_RESOLVED",
-        resource_type: "CONVERSATION",
-        resource_id: selectedConversation.id,
-        old_values: { status: selectedConversation.status },
-        new_values: { status: response.status, resolution_note: resolveNote },
-        metadata: { channel: selectedConversation.channel },
-      }).catch(() => {});
+      // MW-V1 D4: ownership/resolution transitions are audited SERVER-side.
       toast.success(response.status === "closed"
         ? t("inbox.conversationResolved")
         : t("inbox.conversationKeptOpen"));
       setShowResolveDialog(false);
       setResolveNote("");
-    } catch {
-      toast.error(t("inbox.errors.resolveFailed"));
+    } catch (error) {
+      // MW-V1: mirror the takeover path — surface the authoritative conflict
+      // reason (e.g. resolving over another owner's 409, or a newer customer
+      // inbound fence), never a fabricated success. Optimistic state is NOT
+      // applied on error (it only merges on the awaited response above).
+      const serverMessage = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message
+        || (typeof (error as Error)?.message === "string"
+          && (error as Error).message
+          && !/request failed|status code/i.test((error as Error).message)
+          ? (error as Error).message
+          : "");
+      toast.error(serverMessage || t("inbox.errors.resolveFailed"));
     } finally {
       setResolvingConversation(false);
     }
@@ -975,16 +1204,30 @@ export default function UnifiedInbox() {
       return next;
     });
     const messageState = getDeliveryState(message);
-    const agentProviderPending = message.sender === "agent"
-      && (messageState === "SEND_PENDING" || message.metadata?.delivery_status === "pending");
-    const confirmedAgentReply = message.sender === "agent"
-      && !agentProviderPending
-      && (isProviderConfirmed(message) || (!messageState && message.metadata?.delivery_status !== "failed"));
-    const confirmed = message.sender === "customer"
-      || isProviderConfirmed(message)
-      || confirmedAgentReply;
+    const conversationId = message.conversation_id || selectedConversation?.id;
+    const providerConfirmed = isProviderConfirmed(message)
+      || providerConfirmedMessageIdsRef.current.has(message.id);
+    const confirmedAgentReply = message.sender === "agent" && providerConfirmed;
+    const confirmed = message.sender === "customer" || providerConfirmed;
     const clearsSuggestionProjection = confirmedAgentReply
       || (message.sender === "ai" && isProviderConfirmed(message));
+    if (message.sender === "agent" && conversationId) {
+      if (providerConfirmed) {
+        pendingManualMessageIdsRef.current.delete(message.id);
+        providerConfirmedMessageIdsRef.current.add(message.id);
+        showManualReplyProviderSuccess(
+          message.id,
+          conversationId,
+          messageState === "DELIVERED" ? "DELIVERED" : "SENT",
+        );
+      } else if (messageState !== "FAILED" && message.metadata?.delivery_status !== "failed") {
+        pendingManualMessageIdsRef.current.set(message.id, conversationId);
+        if (pendingManualMessageIdsRef.current.size > 100) {
+          const oldest = pendingManualMessageIdsRef.current.keys().next().value;
+          if (oldest) pendingManualMessageIdsRef.current.delete(oldest);
+        }
+      }
+    }
     if (confirmed) {
       setConversations((prev) =>
         prev.map((conv) =>
@@ -1027,6 +1270,26 @@ export default function UnifiedInbox() {
       delete next[selectedConversation.id];
       return next;
     });
+  };
+
+  // P+01: merchant acted on the inbox lead (contacted / dismissed / state
+  // conflict resolved server-side). Keep the projection in sync with the
+  // authoritative response; terminal states clear the chip and the strip.
+  const handleOpportunityChanged = (updated: Opportunity) => {
+    const live = updated.status === "OPEN" || updated.status === "ACTIONED";
+    const targetId = updated.conversation_id || selectedConversation?.id;
+    const apply = (conversation: Conversation | null): Conversation | null => (
+      !conversation || conversation.id !== targetId
+        ? conversation
+        : {
+            ...conversation,
+            open_opportunity: live
+              ? { ...conversation.open_opportunity, ...updated } as Opportunity
+              : null,
+          }
+    );
+    setConversations((prev) => prev.map(apply) as Conversation[]);
+    setSelectedConversation(apply);
   };
 
   const handleDismissSuggestion = async (messageId: string) => {
@@ -1072,6 +1335,42 @@ export default function UnifiedInbox() {
   };
 
   // ─── Derived values ────────────────────────────────────────────────────────
+
+  const totalPages = Math.max(1, Math.ceil(totalConversations / conversationPageSize));
+
+  const handlePageChange = (page: number) => {
+    if (loadingConversations || page < 1 || page > totalPages || page === currentPageRef.current) return;
+    currentPageRef.current = page;
+    failedPageRef.current = null;
+    syncPageSelectionRef.current = true;
+    void loadConversations(page);
+  };
+
+  const handleFilterChange = (tab: InboxFilterTab) => {
+    filterTabRef.current = tab;
+    setFilterTab(tab);
+    updateSearchParams({ tab: tab === "all" ? null : tab, conversation: null });
+    if (currentPageRef.current > 1) {
+      currentPageRef.current = 1;
+      failedPageRef.current = null;
+      syncPageSelectionRef.current = true;
+      void loadConversations(1);
+    }
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    if (currentPageRef.current > 1) {
+      currentPageRef.current = 1;
+      failedPageRef.current = null;
+      syncPageSelectionRef.current = true;
+      void loadConversations(1);
+    }
+  };
+
+  const handleRetryConversations = () => {
+    void loadConversations(failedPageRef.current ?? currentPageRef.current);
+  };
 
   const filteredConversations = conversations.filter((conv) => {
     const matchesSearch =
@@ -1123,9 +1422,6 @@ export default function UnifiedInbox() {
         >
           {t("inbox.modeLabel")}: {t(AI_REPLY_MODE_LABEL_KEYS[aiReplyMode])}
         </span>
-        {error && (
-          <span className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bn">{error}</span>
-        )}
       </div>
 
       {/* Offline banner */}
@@ -1136,7 +1432,9 @@ export default function UnifiedInbox() {
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden">
+      <ActionQueuePanel onSseRefresh={registerActionQueueRefresh} />
+
+      <div className="mw-inbox-workbench flex-1 flex overflow-hidden">
         <InboxThreadList
           conversations={conversations}
           selectedConversationId={selectedConversation?.id ?? null}
@@ -1146,12 +1444,20 @@ export default function UnifiedInbox() {
           filterTab={filterTab}
           needsReviewCount={needsReviewCount}
           closedCount={closedCount}
+          loadError={error}
+          currentPage={currentPage}
+          pageSize={conversationPageSize}
+          totalConversations={totalConversations}
+          totalPages={totalPages}
           mobilePanelOpen={mobilePanelOpen}
-          onSearchChange={setSearchQuery}
-          onFilterChange={setFilterTab}
+          onSearchChange={handleSearchChange}
+          onFilterChange={handleFilterChange}
+          onPageChange={handlePageChange}
+          onRetry={handleRetryConversations}
           onSelectConversation={(conv) => {
             const sameConversation = selectedConversationRef.current?.id === conv.id;
             setSelectedConversation(conv);
+            updateSearchParams({ conversation: conv.id });
             if (!sameConversation) {
               setMessages([]);
               setLoadingMessages(true);
@@ -1161,6 +1467,7 @@ export default function UnifiedInbox() {
         />
 
         {selectedConversation ? (
+          <>
           <InboxThreadDetail
             selectedConversation={selectedConversation}
             aiReplyMode={aiReplyMode}
@@ -1187,14 +1494,24 @@ export default function UnifiedInbox() {
             onResolve={handleResolveConversation}
             onLoadOlderMessages={loadOlderMessages}
             onDismissSuggestion={handleDismissSuggestion}
+            onOpportunityChanged={handleOpportunityChanged}
             onSetShowResolveDialog={setShowResolveDialog}
             onSetResolveNote={setResolveNote}
+            onToggleContext={() => setContextOpen((o) => !o)}
+            contextOpen={contextOpen}
             onMessageSent={handleMessageSent}
             onSendFailed={handleMessageSendFailed}
             onTemplatesChanged={loadTemplates}
           />
+          {/* MW-V1: customer context — inline column on xl+, bottom sheet below. */}
+          {contextOpen && (
+            <div className="fixed inset-x-0 bottom-0 top-14 z-40 max-h-[72vh] overflow-y-auto bg-white shadow-2xl xl:static xl:z-auto xl:max-h-none xl:w-80 xl:shrink-0 xl:shadow-none">
+              <CustomerContextPanel conversation={selectedConversation} onClose={() => setContextOpen(false)} onConversationChanged={applyOwnershipUpdate} />
+            </div>
+          )}
+          </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500 md:flex hidden">
+          <div className="flex-1 flex items-center justify-center text-gray-500 lg:flex hidden">
             <p className="font-bn">{t("inbox.selectConversation")}</p>
           </div>
         )}

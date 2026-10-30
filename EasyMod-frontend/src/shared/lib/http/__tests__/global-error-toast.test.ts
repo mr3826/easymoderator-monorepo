@@ -76,6 +76,23 @@ describe('HTTP client — global error toast', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
+  it('recognizes the backend title-cased top-level CSRF error', async () => {
+    const csrfInvalid = vi.fn();
+    window.addEventListener('csrf:invalid', csrfInvalid);
+
+    try {
+      await request('/api/protected', () => ({
+        status: 403,
+        data: { message: 'Invalid CSRF token. Please refresh the page and try again.' },
+      }));
+
+      expect(csrfInvalid).toHaveBeenCalledTimes(1);
+      expect(toastError).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('csrf:invalid', csrfInvalid);
+    }
+  });
+
   it('stays silent on 401 — the sign-in redirect already speaks for it', async () => {
     await request('/api/protected', () => ({ status: 401 }));
 

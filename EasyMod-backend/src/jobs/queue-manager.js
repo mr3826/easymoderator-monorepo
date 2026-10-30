@@ -15,12 +15,14 @@ const {
     WebhookReceiptReconcilerJob,
     InboxDeliveryReconcilerJob,
     OpportunityDetectorJob,
+    GapSuggesterJob,
 } = require('./index');
 
 class QueueManager {
     constructor() {
         this.queues = {};
         this.workers = {};
+        this.workerStarted = false;
 
         if (!config.redisUrl && !config.redisHost) {
             console.warn('⚠️  Redis not available - job queues disabled');
@@ -53,17 +55,13 @@ class QueueManager {
             ['inbox-delivery-reconciler', 'inboxDeliveryReconciler', InboxDeliveryReconcilerJob],
             // Pilot intelligence — Sales Opportunities sweep; a no-op for shops without the flag
             ['opportunity-detector', 'opportunityDetector', OpportunityDetectorJob],
+            // Pilot+ P+05 — knowledge-gap suggestion sweep; no-op without the flag
+            ['gap-suggester', 'gapSuggester', GapSuggesterJob],
         ];
 
-        for (const [queueName, key, JobClass] of billingQueues) {
+        this.workerDefinitions = billingQueues;
+        for (const [queueName, key] of billingQueues) {
             this.queues[key] = new Queue(queueName, { connection, defaultJobOptions });
-            this.workers[key] = new Worker(queueName, async (job) => {
-                const instance = new JobClass();
-                return instance.execute({
-                    dryRun: job.data.dryRun,
-                    runDate: job.data.runDate ? new Date(job.data.runDate) : new Date(),
-                });
-            }, { connection });
         }
 
         // Push notification — fire-and-forget, expired subs auto-cleaned
@@ -76,13 +74,6 @@ class QueueManager {
                 removeOnFail: { count: 100 },
             },
         });
-        this.workers.notifications = new Worker('notifications', async (job) => {
-            const { dispatchQueuedNotification } = require('../modules/notification/merchant-notification.service');
-            return dispatchQueuedNotification(job.data || {});
-        }, {
-            connection,
-            limiter: { max: 50, duration: 10000 },
-        });
 
         // Observability-only handles for the customer-facing reply pipeline.
         // The message-processing queue is the singleton created in message-queue.js
@@ -92,6 +83,33 @@ class QueueManager {
         // No worker is attached — message-dlq is intentionally a manual-drain sink.
         this.queues.messageProcessing = messageQueue;
         this.queues.messageDlq = new Queue('message-dlq', { connection });
+
+        console.log('✅ BullMQ queue handles initialized');
+    }
+
+    // Importing this module is safe for API routes and health reporting. Only
+    // the dedicated worker entrypoint (or explicit single-process mode) calls
+    // startWorkers(), so loading a controller cannot start job consumers.
+    startWorkers() {
+        if (this.workerStarted || (!config.redisUrl && !config.redisHost)) return;
+
+        for (const [queueName, key, JobClass] of this.workerDefinitions) {
+            this.workers[key] = new Worker(queueName, async (job) => {
+                const instance = new JobClass();
+                return instance.execute({
+                    dryRun: job.data.dryRun,
+                    runDate: job.data.runDate ? new Date(job.data.runDate) : new Date(),
+                });
+            }, { connection });
+        }
+
+        this.workers.notifications = new Worker('notifications', async (job) => {
+            const { dispatchQueuedNotification } = require('../modules/notification/merchant-notification.service');
+            return dispatchQueuedNotification(job.data || {});
+        }, {
+            connection,
+            limiter: { max: 50, duration: 10000 },
+        });
 
         for (const [name, worker] of Object.entries(this.workers)) {
             worker.on('completed', (job) => {
@@ -124,10 +142,16 @@ class QueueManager {
         // Start the AI message-processing worker. Must be registered AFTER the generic
         // event-listener loop above so its own detailed listeners (set inside startWorker)
         // are not overridden by the generic ones.
-        const { startWorker: startMessageProcessingWorker } = require('./message-worker');
-        this.workers.messageProcessing = startMessageProcessingWorker();
+        const { startWorker: startMessageProcessingWorker, getWorker } = require('./message-worker');
+        this.workers.messageProcessing = getWorker() || startMessageProcessingWorker();
 
-        console.log('✅ Job queues initialized with BullMQ');
+        this.workerStarted = true;
+        console.log('✅ BullMQ workers started');
+    }
+
+    async waitUntilReady() {
+        if (!this.workerStarted) return;
+        await Promise.all(Object.values(this.workers).map((worker) => worker.waitUntilReady()));
     }
 
     async scheduleJobs() {
@@ -204,6 +228,13 @@ class QueueManager {
         await this.queues.opportunityDetector.upsertJobScheduler(
             'opportunity-detector',
             { pattern: '*/10 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
+        // Pilot+ P+05 — daily deterministic knowledge-gap grouping.
+        await this.queues.gapSuggester.upsertJobScheduler(
+            'gap-suggester',
+            { pattern: '15 3 * * *', tz: 'UTC' },
             { name: 'run', data: { dryRun: false } }
         );
 

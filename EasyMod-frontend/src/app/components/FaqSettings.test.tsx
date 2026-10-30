@@ -1,8 +1,10 @@
 import "@testing-library/jest-dom";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import FaqSettings from "./FaqSettings";
 import { apiClient } from "@/api";
+import { listGapSuggestions } from "@/api/domains/knowledge";
 
 vi.mock("@/api", () => ({
   apiClient: {
@@ -11,6 +13,14 @@ vi.mock("@/api", () => ({
     createKnowledgeFaq: vi.fn(),
     deleteKnowledgeFaq: vi.fn(),
   },
+}));
+
+vi.mock("@/api/domains/knowledge", () => ({
+  listGapSuggestions: vi.fn(),
+  reviewGapSuggestion: vi.fn(),
+  dismissGapSuggestion: vi.fn(),
+  publishGapSuggestion: vi.fn(),
+  isGapSuggestionsDisabled: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -38,6 +48,7 @@ vi.mock("react-i18next", () => ({
 describe("FaqSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(listGapSuggestions).mockResolvedValue({ featureDisabled: true });
     vi.mocked(apiClient.listKnowledgeFaqs).mockResolvedValue([
       {
         id: "faq-1",
@@ -55,7 +66,11 @@ describe("FaqSettings", () => {
   });
 
   it("loads FAQ answers from the knowledge API inside shop settings", async () => {
-    render(<FaqSettings />);
+    render(
+      <MemoryRouter>
+        <FaqSettings />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(apiClient.listKnowledgeFaqs).toHaveBeenCalledTimes(1);

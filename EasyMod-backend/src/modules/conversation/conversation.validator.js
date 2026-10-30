@@ -6,7 +6,12 @@ class ConversationValidator {
             page: Joi.number().integer().min(1).default(1),
             limit: Joi.number().integer().min(1).max(100).default(20),
             status: Joi.string().valid('active', 'closed', 'archived'),
-            channel: Joi.string().valid('telegram', 'messenger', 'instagram', 'web', 'webchat')
+            channel: Joi.string().valid('telegram', 'messenger', 'instagram', 'web', 'webchat'),
+            // MW-V1: verified-association filter used by the inbox context panel
+            // and Order→Inbox link. Service applies it INSIDE the JWT shop scope
+            // (whereClause { shop_id, customer_id }); typed here because the
+            // module-level helpers validator rejects unknown query keys.
+            customer_id: Joi.string().uuid()
         })
     };
 
@@ -90,7 +95,11 @@ class ConversationValidator {
             status: Joi.string().valid('active', 'closed', 'archived'),
             assignee_id: Joi.string().uuid().allow(null),
             resolution_note: Joi.string().max(1000).allow('', null),
-            last_seen_message_id: Joi.string().uuid().allow(null)
+            last_seen_message_id: Joi.string().uuid().allow(null),
+            // MW-V1 D1: privileged manager escalation must be expressible over
+            // HTTP. The service honors force ONLY for owner/admin actors; staff
+            // sending it is inert (conversation-ownership tests pin this).
+            force: Joi.boolean()
         }).min(1)
     };
 

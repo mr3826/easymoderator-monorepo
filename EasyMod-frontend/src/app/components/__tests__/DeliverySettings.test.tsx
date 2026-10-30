@@ -264,10 +264,13 @@ describe('DeliverySettings courier setup', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('Main pickup point'), { target: { value: 'Main pickup' } });
     fireEvent.change(screen.getByPlaceholderText('01XXX-XXX-XXX'), { target: { value: '01712345678' } });
+    await screen.findByRole('option', { name: 'Dhaka' });
     fireEvent.change(screen.getByRole('combobox', { name: 'City' }), { target: { value: '1' } });
     await waitFor(() => expect(mocks.getPathaoZones).toHaveBeenCalledWith(1));
+    await screen.findByRole('option', { name: 'Gulshan' });
     fireEvent.change(screen.getByRole('combobox', { name: 'Zone' }), { target: { value: '2' } });
     await waitFor(() => expect(mocks.getPathaoAreas).toHaveBeenCalledWith(2));
+    await screen.findByRole('option', { name: 'Gulshan 1' });
     fireEvent.change(screen.getByRole('combobox', { name: 'Area' }), { target: { value: '3' } });
     fireEvent.change(screen.getByPlaceholderText('Enter the complete pickup address'), { target: { value: 'House 1, Dhaka' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save and validate' }));

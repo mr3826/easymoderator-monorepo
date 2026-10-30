@@ -104,11 +104,16 @@ class OrderValidator {
     getOrders = {
         query: Joi.object({
             search: Joi.string().trim().optional(),
+            // MW-V1: verified association for the customer-context panel.
+            customer_id: Joi.string().uuid().optional(),
             start_date: Joi.date().iso().optional().messages({
                 'date.format': 'Start date must be a valid ISO 8601 date'
             }),
             end_date: Joi.date().iso().optional().messages({
                 'date.format': 'End date must be a valid ISO 8601 date'
+            }),
+            order_status: Joi.string().valid('draft', 'confirmed', 'processing', 'completed', 'cancelled', 'delivered').optional().messages({
+                'any.only': 'Invalid order status'
             }),
             payment_status: Joi.string().valid('pending', 'paid', 'unpaid', 'refunded', 'partially_paid').optional(),
             fulfillment_status: Joi.string().valid('unfulfilled', 'fulfilled', 'cancelled', 'partially_fulfilled').optional(),

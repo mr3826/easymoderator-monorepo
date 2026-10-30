@@ -1,5 +1,12 @@
 # EasyModerator AI Cost Model — Assumptions & Evidence Register
 
+> **Current source status 2026-10-27:** Operational Gate Closure changes
+> `AI_PHOTO_MATCH_ENABLED` to opt-in with a production default of `false`.
+> The 2026-08-03 revision below describes the previous enabled scenario and
+> remains useful as a conditional cost estimate; it is not the current pilot
+> default. Effective production settings were not inspected. See
+> `docs/operational-gate-closure-v1/ai-runtime-and-model-lifecycle.md`.
+
 > **REVISION 2026-08-03.** Customer-photo matching shipped ON
 > (`AI_PHOTO_MATCH_ENABLED`, default true), so **image token cost is no longer
 > zero**. Each photo message now costs one extraction call carrying the image

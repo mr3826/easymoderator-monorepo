@@ -132,7 +132,7 @@ services:
       - internal
     # Port 8080 is internal only — Caddy proxies growth.easymod.tech to it
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/health/ready || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health/ready || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 10s

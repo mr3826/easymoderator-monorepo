@@ -35,7 +35,7 @@ const DISPOSABLE_DATABASE_NAME = /(?:^|[^a-z])(?:test|e2e)(?:[^a-z]|$)/i;
 const apiFailureCounts = new Map();
 let activeTotpSecret = null;
 
-function isDisposableDatabase(rawUrl) {
+function isDisposableDatabase(rawUrl, environment = process.env) {
     if (typeof rawUrl !== 'string' || rawUrl.length === 0) return false;
 
     let parsed;
@@ -46,7 +46,13 @@ function isDisposableDatabase(rawUrl) {
     }
 
     if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) return false;
-    if (!['localhost', '127.0.0.1'].includes(parsed.hostname)) return false;
+    const loopback = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+    // The isolated Compose integration runner addresses its PostgreSQL service
+    // by this exact DNS name. Permit that private service only in NODE_ENV=test;
+    // production and other network hosts remain rejected.
+    const isolatedComposePostgres = environment.NODE_ENV === 'test'
+        && parsed.hostname === 'postgres';
+    if (!loopback && !isolatedComposePostgres) return false;
 
     let databaseName;
     try {
@@ -67,7 +73,7 @@ function isMobileE2eFixturesEnabled(environment = process.env) {
         && environment.MOBILE_E2E_FIXTURES_ENABLED === 'true'
         && typeof environment.MOBILE_E2E_FIXTURES_TOKEN === 'string'
         && environment.MOBILE_E2E_FIXTURES_TOKEN.length >= MIN_CONTROL_TOKEN_LENGTH
-        && isDisposableDatabase(environment.DATABASE_URL);
+        && isDisposableDatabase(environment.DATABASE_URL, environment);
 }
 
 function notFound(req) {

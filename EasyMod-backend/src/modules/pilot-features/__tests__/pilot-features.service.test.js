@@ -19,6 +19,9 @@ describe('getPilotFeatures', () => {
             customerIntelligence: false,
             orderConfidenceMode: 'off',
             orderConfidenceConfig: { high_value_cod_threshold: 10000, address_min_length: 15 },
+            interactionChoices: false,
+            actionQueue: false,
+            knowledgeSuggestions: false,
         });
     });
 
@@ -27,11 +30,15 @@ describe('getPilotFeatures', () => {
             customer_intelligence: true,
             order_confidence_mode: 'enforce',
             order_confidence_config: { high_value_cod_threshold: 5000, address_min_length: 'x', extra: 1 },
+            interaction_choices: true,
         });
         expect(await service.getPilotFeatures('shop-1')).toEqual({
             customerIntelligence: true,
             orderConfidenceMode: 'enforce',
             orderConfidenceConfig: { high_value_cod_threshold: 5000, address_min_length: 15 },
+            interactionChoices: true,
+            actionQueue: false,
+            knowledgeSuggestions: false,
         });
     });
 

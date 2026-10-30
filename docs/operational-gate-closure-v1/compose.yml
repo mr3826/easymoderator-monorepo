@@ -1,0 +1,284 @@
+# Operational Gate Closure V1 — isolated synthetic rehearsal only.
+#
+# Supply --project-name easymod-operational-gate-closure-v1 and
+# --env-file <absolute-path-to-generated-CLOSURE-only-env-file>.
+# This file intentionally does not use env_file: the containers receive only
+# explicitly allowlisted values, and all external credentials are synthetic or
+# blank. The internal network has no egress. No migrations run automatically.
+# NODE_ENV remains production so the candidate keeps its Secure cookie flags
+# and production validator. Browser auth must use the separate local HTTPS
+# preview. This runtime is still not production: it uses synthetic state,
+# fake provider markers, an internal no-egress network, local alert receipt,
+# and a loopback-only backend port.
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  CLOSURE_COMPOSE_PROJECT_NAME: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}"
+  DATABASE_URL: "postgresql://${CLOSURE_DB_USER:?set CLOSURE_DB_USER}:${CLOSURE_DB_PASSWORD:?set synthetic CLOSURE_DB_PASSWORD}@postgres:5432/${CLOSURE_DB_NAME:?set CLOSURE_DB_NAME}"
+  DB_USER: "${CLOSURE_DB_USER:?set CLOSURE_DB_USER}"
+  DB_PASSWORD: "${CLOSURE_DB_PASSWORD:?set synthetic CLOSURE_DB_PASSWORD}"
+  DB_NAME: "${CLOSURE_DB_NAME:?set CLOSURE_DB_NAME}"
+  DB_SSL: "false"
+  REDIS_URL: redis://redis:6379
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ""
+  REDIS_SESSION_DB: "0"
+  REDIS_CACHE_DB: "1"
+  REDIS_RATELIMIT_DB: "2"
+  REDIS_QUEUE_DB: "3"
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_API_KEY: ""
+  QDRANT_COLLECTION: easymod_ops_closure_synthetic
+  QDRANT_VECTOR_SIZE: "384"
+  RUN_MIGRATIONS_ON_STARTUP: "false"
+  START_EMBEDDED_WORKERS: "false"
+  JWT_ACCESS_SECRET: "${CLOSURE_JWT_ACCESS_SECRET:?set generated CLOSURE_JWT_ACCESS_SECRET}"
+  JWT_REFRESH_SECRET: "${CLOSURE_JWT_REFRESH_SECRET:?set generated CLOSURE_JWT_REFRESH_SECRET}"
+  SESSION_SECRET: "${CLOSURE_SESSION_SECRET:?set generated CLOSURE_SESSION_SECRET}"
+  CSRF_SECRET: "${CLOSURE_CSRF_SECRET:?set generated CLOSURE_CSRF_SECRET}"
+  JWT_ACCESS_EXPIRES_IN: 1d
+  JWT_REFRESH_EXPIRES_IN: 30d
+  PAYMENT_ENCRYPTION_KEY: "${CLOSURE_PAYMENT_ENCRYPTION_KEY:?set generated 64-hex CLOSURE_PAYMENT_ENCRYPTION_KEY}"
+  DELIVERY_ENCRYPTION_KEY: "${CLOSURE_DELIVERY_ENCRYPTION_KEY:?set generated 64-hex CLOSURE_DELIVERY_ENCRYPTION_KEY}"
+  CHANNEL_ENCRYPTION_KEY: "${CLOSURE_CHANNEL_ENCRYPTION_KEY:?set generated 64-hex CLOSURE_CHANNEL_ENCRYPTION_KEY}"
+  PAYMENT_CALLBACK_HMAC_SECRET: "${CLOSURE_PAYMENT_CALLBACK_HMAC_SECRET:?set generated CLOSURE_PAYMENT_CALLBACK_HMAC_SECRET}"
+  AI_ACTION_GATE_SECRET: "${CLOSURE_AI_ACTION_GATE_SECRET:?set generated CLOSURE_AI_ACTION_GATE_SECRET}"
+  MARKETING_URL: https://marketing.localhost
+  APP_URL: https://app.localhost
+  API_URL: https://api.localhost
+  PUBLIC_ASSET_URL: https://api.localhost
+  FRONTEND_URL: https://app.localhost
+  BASE_URL: https://api.localhost
+  PUBLIC_BASE_URL: https://api.localhost
+  GROWTH_FRONTEND_URL: https://growth.localhost
+  # Exact credentialed origins for app.localhost and the local HTTPS E2E proxy.
+  CORS_ORIGINS: https://app.localhost,https://127.0.0.1:54680
+  META_APP_ID: "0000000000000001"
+  META_APP_SECRET: "${CLOSURE_META_APP_SECRET:?set synthetic CLOSURE_META_APP_SECRET}"
+  META_LOGIN_CONFIG_ID: "0000000000000001"
+  META_WEBHOOK_VERIFY_TOKEN: "${CLOSURE_META_WEBHOOK_VERIFY_TOKEN:?set synthetic CLOSURE_META_WEBHOOK_VERIFY_TOKEN}"
+  META_OAUTH_REDIRECT_URI: https://app.localhost/channels/oauth-callback
+  META_USER_PROFILE_ENABLED: "false"
+  # Non-credential markers satisfy production config's non-empty check.
+  # Provider attempts cannot egress; zero provider success still needs runtime
+  # evidence before the local gate can be closed.
+  OPENAI_API_KEY: LOCAL_NO_EGRESS_TEST_KEY_NOT_A_CREDENTIAL
+  GEMINI_API_KEY: LOCAL_NO_EGRESS_TEST_KEY_NOT_A_CREDENTIAL
+  GOOGLE_GEMINI_API_KEY: LOCAL_NO_EGRESS_TEST_KEY_NOT_A_CREDENTIAL
+  EMBEDDING_PROVIDER: gemini
+  GEMINI_EMBEDDING_MODEL: gemini-embedding-2
+  EMBEDDING_MODEL: text-embedding-3-small
+  LLM_AUTO_ESCALATE_TO_PRO: "false"
+  AI_PHOTO_MATCH_ENABLED: "false"
+  AI_VISION_ENABLED: "false"
+  DOMAIN_AGENT_RUNTIME_ENABLED: "false"
+  AI_ORDER_MUTATIONS_ENABLED: "false"
+  AI_COURIER_BOOKING_ENABLED: "false"
+  AI_PAYMENT_ACCEPTANCE_ENABLED: "false"
+  AI_SUPPORT_CASE_ENABLED: "false"
+  MOBILE_API_ENABLED: "false"
+  GROWTH_OS_ENABLED: "false"
+  TELEGRAM_ENABLED: "false"
+  BKASH_ENABLED: "false"
+  BKASH_SANDBOX: "false"
+  RESEND_API_KEY: LOCAL_NO_EGRESS_TEST_KEY_NOT_A_CREDENTIAL
+  EMAIL_FROM: closure@invalid.invalid
+  SENTRY_DSN: ""
+  SLACK_ALERT_WEBHOOK_URL: http://alert-sink:8081/webhook
+  OPS_ALERT_THROTTLE_MS: "0"
+  BODY_SIZE_LIMIT: 35mb
+  MEDIA_FETCH_ALLOWED_HOSTS: localhost,127.0.0.1
+  COOKIE_DOMAIN: ""
+  LEGACY_COOKIE_DOMAIN: ""
+
+networks:
+  closure-internal:
+    name: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}_internal"
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres-data:
+    name: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}_postgres_data"
+  redis-data:
+    name: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}_redis_data"
+  qdrant-data:
+    name: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}_qdrant_data"
+  postgres-restore-data:
+    name: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}_postgres_restore_data"
+  backend-uploads:
+    name: "${COMPOSE_PROJECT_NAME:-easymod-operational-gate-closure-v1}_backend_uploads"
+
+services:
+  postgres:
+    image: postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a
+    restart: "no"
+    environment:
+      POSTGRES_USER: "${CLOSURE_DB_USER:?set CLOSURE_DB_USER}"
+      POSTGRES_PASSWORD: "${CLOSURE_DB_PASSWORD:?set synthetic CLOSURE_DB_PASSWORD}"
+      POSTGRES_DB: "${CLOSURE_DB_NAME:?set CLOSURE_DB_NAME}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - closure-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Separate, disposable restore target. Its DB name and volume are distinct
+  # from the candidate database; restore commands must target only this service.
+  postgres-restore:
+    image: postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a
+    restart: "no"
+    environment:
+      POSTGRES_USER: "${CLOSURE_RESTORE_DB_USER:?set CLOSURE_RESTORE_DB_USER}"
+      POSTGRES_PASSWORD: "${CLOSURE_RESTORE_DB_PASSWORD:?set synthetic CLOSURE_RESTORE_DB_PASSWORD}"
+      POSTGRES_DB: easymod_restore_closure_v1
+    volumes:
+      - postgres-restore-data:/var/lib/postgresql/data
+    networks:
+      - closure-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: "no"
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - closure-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  qdrant:
+    image: qdrant/qdrant@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9
+    restart: "no"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - closure-internal
+
+  qdrant-probe:
+    # The pinned Qdrant image has no curl/wget client; this local Node helper
+    # probes Qdrant's /readyz endpoint without publishing a port.
+    image: easymod-backend:operational-gate-closure-v1
+    restart: "no"
+    user: node
+    environment:
+      QDRANT_PROBE_PORT: "8082"
+      QDRANT_READY_URL: http://qdrant:6333/readyz
+    command: ["node", "/opt/closure/qdrant-http-health-probe.js"]
+    volumes:
+      - ../../scripts/operational-gate-closure-v1/qdrant-http-health-probe.js:/opt/closure/qdrant-http-health-probe.js:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - closure-internal
+    depends_on:
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8082/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+
+  backend:
+    image: easymod-backend:operational-gate-closure-v1
+    build:
+      context: ../../EasyMod-backend
+      dockerfile: Dockerfile
+      args:
+        GIT_SHA: "${CLOSURE_GIT_SHA:-local-worktree}"
+        BUILD_TIME: "${CLOSURE_BUILD_TIME:-local}"
+    restart: "no"
+    init: true
+    command: ["node", "server.js"]
+    environment:
+      <<: *app-environment
+      PORT: "3000"
+    volumes:
+      - backend-uploads:/app/uploads
+    ports:
+      - "127.0.0.1:54643:3000"
+    networks:
+      - closure-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant-probe:
+        condition: service_healthy
+      alert-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health/ready', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    image: easymod-backend:operational-gate-closure-v1
+    restart: "no"
+    init: true
+    command: ["node", "src/jobs/worker.js"]
+    environment:
+      <<: *app-environment
+      PORT: "8080"
+    networks:
+      - closure-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant-probe:
+        condition: service_healthy
+      alert-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health/ready', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  alert-sink:
+    image: easymod-backend:operational-gate-closure-v1
+    restart: "no"
+    user: node
+    environment:
+      ALERT_SINK_HOST: 0.0.0.0
+      ALERT_SINK_PORT: "8081"
+    command: ["node", "/opt/closure/local-pii-free-alert-sink.js"]
+    volumes:
+      - ../../scripts/operational-gate-closure-v1/local-pii-free-alert-sink.js:/opt/closure/local-pii-free-alert-sink.js:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - closure-internal
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8081/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s

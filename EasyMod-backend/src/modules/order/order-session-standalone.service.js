@@ -8,10 +8,16 @@ const getOrderServiceImports = () => require('./order.service');
 const ShopEntity = require('../shop/shop.entity');
 const PaymentConfigEntity = require('../payment/payment-config.entity');
 const CustomerEntity = require('../customer/customer.entity');
-const { getBdSettings, hasSelfMfs } = require('../shop/shop-bd-settings');
-const { verifyPaymentScreenshot } = require('../payment/self-mfs-handler.service');
-const { isNegatedMutation } = require('../ai/intent/stage2-rules');
+// P0-2: screenshot OCR verification is no longer wired into checkout —
+// payment truth comes only from merchant confirmation or verified webhooks.
+const { isNegatedMutation, isQuestionShaped } = require('../ai/intent/stage2-rules');
+const { photoMatchEnabled } = require('../ai/vision-policy.service');
 const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
+const finiteNumberOrNull = (value) => (
+    value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+        ? Number(value)
+        : null
+);
 
 const normalizeSessionChannel = (channel) => (
     channel === 'facebook' ? 'messenger' : (channel || 'messenger')
@@ -117,7 +123,9 @@ const OrderSession = sequelize.define('OrderSession', {
         defaultValue: null
     },
     status: {
-        type: DataTypes.ENUM('ACTIVE', 'COMPLETED', 'CANCELLED', 'ABANDONED'),
+        // P+04: SUSPENDED preserves step_data (cart + collected fields) when a
+        // human handoff or order-status interruption pauses the checkout.
+        type: DataTypes.ENUM('ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELLED', 'ABANDONED'),
         allowNull: false,
         defaultValue: 'ACTIVE'
     },
@@ -161,6 +169,14 @@ const OrderSession = sequelize.define('OrderSession', {
 });
 
 // Table is managed by migrations — no sync needed here
+
+// P+04: steps whose expected answer is identity data, never a question. A
+// question-shaped answer here is routed back as a deferral (the pipeline
+// answers it) instead of being stored as the field value. NOTES/ADD_MORE are
+// intentionally NOT guarded — any text is a legitimate free-form value there.
+const QUESTION_PROTECTED_STEPS = new Set([
+    'COLLECTING_NAME', 'COLLECTING_PHONE', 'COLLECTING_ADDRESS', 'COLLECTING_ZONE',
+]);
 
 // ─── Delivery zone config ─────────────────────────────────────────────────────
 const ZONE_KEYS = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
@@ -236,6 +252,23 @@ const GATEWAY_PAYMENT_STATUS = {
 // English only when the customer clearly writes English. (Founder feedback 2026-06-12:
 // the order flow must never answer in Bengali AND English at once.)
 const pickLang = (lang, bn, en) => (lang === 'en' ? en : bn);
+
+const productInputPrompt = (lang, purpose = 'add') => {
+    const photoEnabled = photoMatchEnabled();
+    if (purpose === 'more') {
+        return photoEnabled
+            ? pickLang(lang, 'নাম লিখুন বা ছবি পাঠান', 'Send a name or photo')
+            : pickLang(lang, 'পণ্যের নাম লিখুন', 'Send a product name');
+    }
+    if (purpose === 'not-found') {
+        return photoEnabled
+            ? pickLang(lang, 'পণ্যের নাম লিখুন বা ছবি পাঠান', 'Send the product name or a photo')
+            : pickLang(lang, 'পণ্যের নাম লিখুন', 'Send the product name');
+    }
+    return photoEnabled
+        ? pickLang(lang, 'নাম লিখুন বা ছবি পাঠান', 'Send the name or a photo')
+        : pickLang(lang, 'পণ্যের নাম লিখুন', 'Send the product name');
+};
 const zoneLabel = (zone, lang) => (ZONE_LABELS[zone] ? pickLang(lang, ZONE_LABELS[zone].bn, ZONE_LABELS[zone].en) : zone);
 const gatewayLabel = (gw, lang) => (GATEWAY_LABELS[gw] ? pickLang(lang, GATEWAY_LABELS[gw].bn, GATEWAY_LABELS[gw].en) : gw);
 
@@ -517,6 +550,10 @@ class OrderSessionService {
                     ...product_info,
                     price:    stockCheck.product.price,
                     quantity: stockCheck.product.quantity,
+                    stock_snapshot: stockCheck.product.track_quantity === true
+                        ? finiteNumberOrNull(stockCheck.product.quantity)
+                        : null,
+                    track_quantity: stockCheck.product.track_quantity === true,
                     in_stock: stockCheck.product.in_stock
                 };
             }
@@ -592,6 +629,18 @@ class OrderSessionService {
         let completed = false;
         let createdOrder = null;
 
+        if (QUESTION_PROTECTED_STEPS.has(current_step) && isQuestionShaped(answer)) {
+            // Nothing is written; the bridge records awaiting_resume and the
+            // normal pipeline answers from grounded evidence, then re-asks.
+            return {
+                session_id: session.id,
+                prompt: this.generateStepPrompt(current_step, step_data, lang),
+                current_step,
+                step_data,
+                question_deferred: true,
+            };
+        }
+
         switch (current_step) {
             case 'SELECTING_PRODUCT': {
                 // Fix 14: customer picks from numbered product list
@@ -616,6 +665,10 @@ class OrderSessionService {
                         if (stockCheck.product) {
                             chosen.price    = stockCheck.product.price;
                             chosen.quantity = stockCheck.product.quantity;
+                            chosen.stock_snapshot = stockCheck.product.track_quantity === true
+                                ? finiteNumberOrNull(stockCheck.product.quantity)
+                                : null;
+                            chosen.track_quantity = stockCheck.product.track_quantity === true;
                             chosen.in_stock = stockCheck.product.in_stock;
                         }
                     }
@@ -654,23 +707,42 @@ class OrderSessionService {
                     // walk the customer through name/phone/address only to fail at order
                     // creation with a scary generic error. checkStock without a quantity
                     // defaulted to 1, so "I want 3" of a 2-in-stock item sailed through.
-                    // Fail-open: a stock-lookup error must never block a real order.
                     const prod = session.product_info || {};
+                    let quantityStockCheck = null;
                     if (prod.id) {
-                        const stock = await productSearch.checkStock(prod.id, session.shop_id, qty)
-                            .catch(() => ({ available: true }));
-                        if (!stock.available && typeof stock.quantity === 'number') {
-                            // Not enough units — tell them how many remain and re-ask. Stay on step.
+                        try {
+                            quantityStockCheck = await productSearch.checkStock(prod.id, session.shop_id, qty);
+                        } catch (_) {
                             prompt = pickLang(lang,
-                                `দুঃখিত, এই মুহূর্তে স্টকে আছে ${stock.quantity}টি। কয়টা নিতে চান?`,
-                                `Sorry, only ${stock.quantity} in stock right now. How many would you like?`);
+                                'দুঃখিত, স্টক এখন যাচাই করা যাচ্ছে না। একটু পরে আবার চেষ্টা করুন বা একজন বিক্রেতার সাহায্য নিন।',
+                                'I cannot verify stock right now. Please try again shortly or ask a shop team member.');
+                            break;
+                        }
+                        if (!quantityStockCheck.available) {
+                            // Not enough units — tell them how many remain and re-ask. Stay on step.
+                            prompt = typeof quantityStockCheck.quantity === 'number'
+                                ? pickLang(lang,
+                                    `দুঃখিত, এই মুহূর্তে স্টকে আছে ${quantityStockCheck.quantity}টি। কয়টা নিতে চান?`,
+                                    `Sorry, only ${quantityStockCheck.quantity} in stock right now. How many would you like?`)
+                                : pickLang(lang,
+                                    'দুঃখিত, এই পণ্যটি এখন অর্ডার করা যাচ্ছে না। একজন বিক্রেতার সাহায্য নিন।',
+                                    'Sorry, this product is not available to order right now. A shop team member can help.');
                             break;
                         }
                     }
                     // Quantity lives on product_info so the (last-configured) item
                     // is always available; the cart is the source of truth for the
                     // full multi-product order.
-                    const pi = { ...prod, quantity: qty };
+                    const currentStock = quantityStockCheck?.product?.quantity;
+                    const pi = {
+                        ...prod,
+                        quantity: qty,
+                        track_quantity: quantityStockCheck?.product?.track_quantity === true || prod.track_quantity === true,
+                        stock_snapshot: quantityStockCheck?.product?.track_quantity === true
+                            && finiteNumberOrNull(currentStock) !== null
+                            ? finiteNumberOrNull(currentStock)
+                            : (prod.stock_snapshot ?? null),
+                    };
                     await session.update({ product_info: pi });
                     session.product_info = pi;
 
@@ -681,6 +753,8 @@ class OrderSessionService {
                         name_bn: pi.name_bn || null,
                         price: pi.price,
                         quantity: qty,
+                        track_quantity: pi.track_quantity === true,
+                        stock_snapshot: pi.track_quantity === true ? pi.stock_snapshot ?? null : null,
                     };
                     const cartGate = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
                         orderSessionId: session.id,
@@ -725,8 +799,8 @@ class OrderSessionService {
                 if (OrderSessionService.isBareAddWord(answer)) {
                     nextStep = 'ADDING_PRODUCT';
                     prompt = pickLang(lang,
-                        'কোন পণ্যটি যোগ করতে চান? নাম লিখুন বা ছবি পাঠান।',
-                        'Which product would you like to add? Send the name or a photo.');
+                        `কোন পণ্যটি যোগ করতে চান? ${productInputPrompt(lang)}।`,
+                        `Which product would you like to add? ${productInputPrompt('en')}.`);
                     break;
                 }
                 // Treat the message as the next product(s) — one name, or several
@@ -833,27 +907,15 @@ class OrderSessionService {
                 const gateways = step_data.enabled_gateways || ['cod'];
                 const gateway = this.extractPaymentGateway(answer, gateways);
                 if (gateway) {
+                    // P0-2: a self-MFS selection is an instruction to pay the
+                    // merchant's number — never automated verification. Payment
+                    // truth comes only from merchant confirmation or a verified
+                    // gateway webhook; the OCR screenshot path is removed so no
+                    // checkout flow can tell a customer "payment confirmed" from
+                    // an image (see self-mfs-handler for merchant-side review).
                     step_data.payment_method = gateway;
-                    // For Self MFS shops, route MFS payments to screenshot verification
-                    const isMfsPayment = ['bkash', 'nagad', 'rocket'].includes(gateway.toLowerCase());
-                    if (isMfsPayment) {
-                        const bdSettings = await getBdSettings(session.shop_id);
-                        if (hasSelfMfs(bdSettings)) {
-                            step_data.expected_mfs_type = bdSettings.mfs_type;
-                            step_data.expected_mfs_number = bdSettings.mfs_number;
-                            nextStep = 'AWAITING_MFS_SCREENSHOT';
-                            const mfsLabel = bdSettings.mfs_type === 'nagad' ? 'নগদ' : bdSettings.mfs_type === 'rocket' ? 'রকেট' : 'বিকাশ';
-                            prompt = pickLang(lang,
-                                `${mfsLabel} নম্বর: ${bdSettings.mfs_number}\n\nউপরের নম্বরে ৳${step_data.total || ''} পাঠিয়ে স্ক্রিনশট দিন।`,
-                                `${mfsLabel} number: ${bdSettings.mfs_number}\n\nSend ৳${step_data.total || ''} to the number above and share the screenshot.`);
-                        } else {
-                            nextStep = 'COLLECTING_NOTES';
-                            prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
-                        }
-                    } else {
-                        nextStep = 'COLLECTING_NOTES';
-                        prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
-                    }
+                    nextStep = 'COLLECTING_NOTES';
+                    prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
                 } else {
                     prompt = OrderSessionService.buildPaymentPrompt(gateways, {
                         zone: step_data.delivery_zone,
@@ -866,40 +928,18 @@ class OrderSessionService {
             }
 
             case 'AWAITING_MFS_SCREENSHOT': {
-                if (step_data.mfs_payment_verified) {
-                    // Already verified (e.g. re-enter from summary back)
-                    nextStep = 'COLLECTING_NOTES';
-                    prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
-                    break;
-                }
-                // rawMessage carries the imageUrl when called from the chatbot controller
-                const screenshotUrl = rawMessage?.imageUrl || null;
-                if (!screenshotUrl) {
-                    const mfsLabel = step_data.expected_mfs_type === 'nagad' ? 'নগদ' : step_data.expected_mfs_type === 'rocket' ? 'রকেট' : 'বিকাশ';
-                    prompt = pickLang(lang,
-                        `${mfsLabel} স্ক্রিনশট পাঠান।`,
-                        `Please send your ${step_data.expected_mfs_type || 'MFS'} payment screenshot.`);
-                    break;
-                }
-                const verification = await verifyPaymentScreenshot({
-                    shopId: session.shop_id,
-                    orderId: session.order_id,
-                    imageUrl: screenshotUrl,
-                    expectedAmount: step_data.total || null,
-                    expectedReceiver: step_data.expected_mfs_number,
-                    mfsType: step_data.expected_mfs_type
-                });
-                if (verification.verified) {
-                    step_data.mfs_payment_verified = true;
-                    step_data.mfs_trx_id = verification.trxId;
-                    step_data.mfs_amount_paid = verification.amount;
-                    nextStep = 'COLLECTING_NOTES';
-                    prompt = pickLang(lang,
-                        `পেমেন্ট নিশ্চিত হয়েছে ✅ (TrxID: ${verification.trxId})।\nকোনো বিশেষ নির্দেশনা আছে?`,
-                        `Payment confirmed ✅ (TrxID: ${verification.trxId}). Any special instructions?`);
-                } else {
-                    prompt = `${verification.reason}\n\n` + pickLang(lang, 'আবার স্ক্রিনশট পাঠান।', 'Please resend the screenshot.');
-                }
+                // Legacy recovery (P0-2): historical sessions may still carry
+                // this step. The machine no longer verifies screenshots, so
+                // return to the payment question with no claim about payment
+                // status — nothing collected here marks anything paid.
+                nextStep = 'COLLECTING_PAYMENT';
+                prompt = OrderSessionService.buildPaymentPrompt(
+                    step_data.enabled_gateways || ['cod'],
+                    { zone: step_data.delivery_zone, charge: step_data.delivery_charge },
+                    lang
+                ) + pickLang(lang,
+                    '\n\nপেমেন্ট নিশ্চিত করতে ব্যবসায়ীর সাথে সমন্বয় করুন।',
+                    '\n\nThe merchant confirms payment before the order is marked paid.');
                 break;
             }
 
@@ -956,6 +996,7 @@ class OrderSessionService {
                     // Re-check stock for EVERY line in the cart before committing.
                     const cart = OrderSessionService.getCartItems(session, step_data);
                     let priceChanged = false;
+                    let stockChanged = false;
                     for (const item of cart) {
                         if (!item.product_id) continue;
                         const stockCheck = await productSearch.checkStock(item.product_id, session.shop_id, item.quantity || 1);
@@ -970,6 +1011,15 @@ class OrderSessionService {
                                 cancelled: true
                             };
                         }
+                        const liveQuantity = finiteNumberOrNull(stockCheck.product?.quantity ?? stockCheck.quantity);
+                        const isTracked = stockCheck.product?.track_quantity === true || item.track_quantity === true;
+                        if (isTracked) {
+                            const quotedQuantity = finiteNumberOrNull(item.stock_snapshot);
+                            if (quotedQuantity === null || liveQuantity === null || quotedQuantity !== liveQuantity) {
+                                stockChanged = true;
+                            }
+                            if (liveQuantity !== null) item.stock_snapshot = liveQuantity;
+                        }
                         if (stockCheck.product?.price != null
                             && Number(stockCheck.product.price) !== Number(item.price)) {
                             item.price = stockCheck.product.price;
@@ -977,7 +1027,7 @@ class OrderSessionService {
                         }
                     }
 
-                    if (priceChanged) step_data.cart = cart;
+                    if (priceChanged || stockChanged) step_data.cart = cart;
 
                     const {
                         createProposedAction,
@@ -989,7 +1039,7 @@ class OrderSessionService {
                     const { findOrderByIdempotencyKey } = require('./order-idempotency.service');
                     const { getMutationBudgetState } = require('../ai/cost.service');
                     const { Conversation } = require('../conversation/conversation.entity');
-                    const freshSummaryHash = priceChanged
+                    const freshSummaryHash = priceChanged || stockChanged
                         ? hashSummary(this.buildContractOrderSummary(session, step_data))
                         : confirmedSummaryHash;
                     const summaryEvidence = withEvidenceSnapshot({
@@ -1021,9 +1071,10 @@ class OrderSessionService {
                             && matchingConversation.shop_id === session.shop_id
                             && matchingConversation.customer_id === session.customer_id
                     );
-                    const materialStateRevalidated = !priceChanged;
+                    const materialStateRevalidated = !priceChanged && !stockChanged;
                     const customerConfirmationValid = Boolean(
                         !priceChanged
+                            && !stockChanged
                             && orderConfirmation
                             && confirmedSummaryHash === step_data.confirmed_summary_hash
                     );
@@ -1044,6 +1095,7 @@ class OrderSessionService {
                     });
                     const gateResult = await authorize(orderAction, {
                         traceId: traceId || conversationId || session.id,
+                        taskId: session.id,
                         tenant: {
                             shopId: session.shop_id,
                             channelId: session.channel,
@@ -1063,7 +1115,7 @@ class OrderSessionService {
                         costBudgetAvailable: budgetState.available,
                     });
                     if (!gateResult.authorized) {
-                        const confirmationInvalidated = priceChanged
+                        const confirmationInvalidated = priceChanged || stockChanged
                             || gateResult.reasonCode === 'material_state_revalidated'
                             || gateResult.reasonCode === 'customer_confirmation_valid';
                         return {
@@ -1072,10 +1124,18 @@ class OrderSessionService {
                                 pickLang(
                                     lang,
                                     confirmationInvalidated
-                                        ? 'দাম বা অর্ডারের তথ্য পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                        ? priceChanged && stockChanged
+                                            ? 'দাম ও স্টকের অবস্থা পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                            : stockChanged
+                                                ? 'স্টকের অবস্থা পরিবর্তিত হয়েছে, তবে চাওয়া পরিমাণ এখনো পাওয়া যাচ্ছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                                : 'দাম পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
                                         : 'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
                                     confirmationInvalidated
-                                        ? 'The order changed. Please confirm the new summary before placing it.'
+                                        ? priceChanged && stockChanged
+                                            ? 'Price and stock availability changed. Please confirm the updated order before placing it.'
+                                            : stockChanged
+                                                ? 'Stock availability changed, but your requested quantity is still available. Please confirm the updated order before placing it.'
+                                                : 'The price changed. Please confirm the updated order before placing it.'
                                         : 'A team member will confirm this order.'
                                 ),
                             current_step: 'ORDER_SUMMARY',
@@ -1259,6 +1319,7 @@ class OrderSessionService {
                                 ? { authorized: false, reasonCode: 'idempotency_committed' }
                                 : await authorize(courierAction, {
                                 traceId: traceId || conversationId || session.id,
+                                taskId: session.id,
                                 tenant: {
                                     shopId: session.shop_id,
                                     channelId: session.channel,
@@ -1374,6 +1435,15 @@ class OrderSessionService {
     }
 
     /**
+     * P+02: load a bound session for interaction resolution by id+shop —
+     * INCLUDING terminal states, so the resolver can honestly reject stale
+     * context instead of silently acting on it. Scoped by shop at query time.
+     */
+    static async getSessionForInteraction(sessionId, shopId) {
+        return OrderSession.findOne({ where: { id: sessionId, shop_id: shopId } });
+    }
+
+    /**
      * Get session state
      */
     static async getSessionState(sessionId, shopId) {
@@ -1398,8 +1468,10 @@ class OrderSessionService {
      * Cancel session
      */
     static async cancelSession(sessionId, shopId, mutationContext = {}) {
+        // A SUSPENDED (P+04) cart is still a live interruption and may be
+        // cancelled explicitly; it is the only way a suspended session ends.
         const session = await OrderSession.findOne({
-            where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' }
+            where: { id: sessionId, shop_id: shopId, status: { [Op.in]: ['ACTIVE', 'SUSPENDED'] } }
         });
 
         if (!session) {
@@ -1412,6 +1484,103 @@ class OrderSessionService {
         verifySessionMutationAuthorization(session, 'CANCEL_ORDER_SESSION', gateResult);
         await session.update({ status: 'CANCELLED' });
         return { success: true };
+    }
+
+    /**
+     * P+04: resumable (SUSPENDED) session lookup with the same TTL discipline
+     * as getActiveSession. Channel scope is mandatory — never cross Pages.
+     */
+    static async getResumableSession(shopId, customerChannelId, metaChannelId = null, customerId = null) {
+        const where = {
+            shop_id: shopId,
+            customer_channel_id: customerChannelId,
+            status: 'SUSPENDED',
+            ...(customerId ? { customer_id: customerId } : {}),
+            [Op.or]: [
+                { expires_at: { [Op.gt]: new Date() } },
+                { expires_at: { [Op.is]: null } },
+            ],
+        };
+        return OrderSession.findOne({
+            where: { ...where, meta_channel_id: metaChannelId || null },
+            order: [['last_activity_at', 'DESC']],
+        });
+    }
+
+    /**
+     * P+04: pause a checkout for a human handoff / sentiment interruption.
+     * Reversible state preservation (no data destroyed) — deliberately not an
+     * Action Gate mutation; the destructive sibling (cancel) remains gated.
+     */
+    static async suspendSession(sessionId, shopId, { reason = 'handoff', conversationId = null } = {}) {
+        const session = await OrderSession.findOne({
+            where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' },
+        });
+        if (!session) return { suspended: false };
+        const step_data = {
+            ...(session.step_data || {}),
+            suspended_reason: reason,
+            suspended_at: new Date().toISOString(),
+        };
+        // Conditional re-check inside the UPDATE closes the read->write race
+        // with a concurrent cancel/resume (same fence as the interaction claim).
+        const [updated] = await OrderSession.update(
+            { status: 'SUSPENDED', step_data, last_activity_at: new Date() },
+            { where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' } },
+        );
+        if (!updated) return { suspended: false };
+        return { suspended: true, current_step: session.current_step, conversation_id: conversationId };
+    }
+
+    /**
+     * P+04: resume a suspended session — customer-driven (any new reply) or an
+     * explicit resume word. Returns the preserved step's re-ask prompt.
+     */
+    static async resumeSession(sessionId, shopId, { conversationId = null } = {}) {
+        const session = await OrderSession.findOne({
+            where: { id: sessionId, shop_id: shopId, status: 'SUSPENDED' },
+        });
+        if (!session) return { resumed: false };
+        const step_data = { ...(session.step_data || {}) };
+        delete step_data.suspended_reason;
+        delete step_data.suspended_at;
+        delete step_data.awaiting_resume;
+        const [updated] = await OrderSession.update(
+            { status: 'ACTIVE', step_data, last_activity_at: new Date() },
+            { where: { id: sessionId, shop_id: shopId, status: 'SUSPENDED' } },
+        );
+        if (!updated) return { resumed: false };
+        return {
+            resumed: true,
+            current_step: session.current_step,
+            prompt: this.generateStepPrompt(session.current_step, step_data, step_data.language || 'bn'),
+        };
+    }
+
+    /**
+     * P+04: an informational question interrupted the current step. Remember
+     * exactly where the customer was and hand back a deterministic resume hint
+     * the worker appends after the grounded answer. No field is written, no
+     * status changes.
+     */
+    static async markAwaitingResume(sessionId, shopId, { step = null } = {}) {
+        const session = await OrderSession.findOne({
+            where: {
+                id: sessionId,
+                shop_id: shopId,
+                status: { [Op.in]: ['ACTIVE', 'SUSPENDED'] },
+            },
+        });
+        if (!session) return { deferred: false };
+        const resumeStep = step || session.current_step;
+        const step_data = { ...(session.step_data || {}), awaiting_resume: resumeStep };
+        await session.update({ step_data });
+        const lang = step_data.language || 'bn';
+        const reask = this.generateStepPrompt(resumeStep, step_data, lang);
+        const resume_hint = lang === 'en'
+            ? `\n\n(Once we're done with this — your order is still in progress: ${reask})`
+            : `\n\n(এই কথা শেষ হলে অর্ডার চালিয়ে নেব — এখন: ${reask})`;
+        return { deferred: true, resume_step: resumeStep, resume_hint };
     }
 
     // ─── Delivery helpers ─────────────────────────────────────────────────────
@@ -1686,7 +1855,10 @@ class OrderSessionService {
             idempotency_key: idempotencyKey,
         };
 
-        return createOrderInternal(session.shop_id, orderData, idempotencyKey);
+        return createOrderInternal(session.shop_id, orderData, idempotencyKey, {
+            authorization,
+            evidenceSnapshotHash,
+        });
     }
 
     // ─── Customer enrichment ──────────────────────────────────────────────────
@@ -2172,14 +2344,18 @@ class OrderSessionService {
             'SELECTING_PRODUCT':    pickLang(L, 'পণ্য নির্বাচন করুন (নম্বর লিখুন)', 'Select a product (enter a number)'),
             'PRODUCT_CONFIRMATION': pickLang(L, 'আপনি কি এই পণ্যটি অর্ডার করতে চান?', 'Do you want to order this item?'),
             'COLLECTING_QUANTITY':  pickLang(L, 'কয়টা নিবেন?', 'How many would you like?'),
-            'ADD_MORE':             pickLang(L, 'আরো কিছু নিতে চান? নাম/ছবি দিন, না হলে "শেষ" লিখুন', 'Add another item? Send a name/photo, or type "done"'),
-            'ADDING_PRODUCT':       pickLang(L, 'কোন পণ্যটি যোগ করতে চান? নাম লিখুন বা ছবি পাঠান', 'Which product to add? Send a name or photo'),
+            'ADD_MORE':             pickLang(L,
+                `আরো কিছু নিতে চান? ${productInputPrompt(L, 'more')}, না হলে "শেষ" লিখুন`,
+                `Add another item? ${productInputPrompt('en', 'more')}, or type "done"`),
+            'ADDING_PRODUCT':       pickLang(L,
+                `কোন পণ্যটি যোগ করতে চান? ${productInputPrompt(L)}`,
+                `Which product to add? ${productInputPrompt('en')}`),
             'COLLECTING_NAME':      pickLang(L, 'আপনার নাম কী?', "What's your name?"),
             'COLLECTING_PHONE':     pickLang(L, 'আপনার মোবাইল নম্বর কত?', "What's your mobile number?"),
             'COLLECTING_ADDRESS':   pickLang(L, 'আপনার ডেলিভারির ঠিকানা কি?', "What's your delivery address?"),
             'COLLECTING_ZONE':      pickLang(L, 'আপনার ডেলিভারি এলাকা নির্বাচন করুন', 'Select your delivery area'),
             'COLLECTING_PAYMENT':      pickLang(L, 'পেমেন্ট পদ্ধতি নির্বাচন করুন', 'Select payment method'),
-            'AWAITING_MFS_SCREENSHOT': pickLang(L, 'পেমেন্ট স্ক্রিনশট পাঠান', 'Send your payment screenshot'),
+            'AWAITING_MFS_SCREENSHOT': pickLang(L, 'পেমেন্ট পদ্ধতি নির্বাচন করুন', 'Select payment method'),
             'COLLECTING_NOTES':        pickLang(L, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions?'),
             'ORDER_SUMMARY':        pickLang(L, 'অর্ডার নিশ্চিত করুন', 'Confirm order')
         };
@@ -2244,6 +2420,8 @@ class OrderSessionService {
                 name_bn: p.name_bn || null,
                 price: p.price,
                 quantity: p.quantity || 1,
+                track_quantity: p.track_quantity === true,
+                stock_snapshot: p.track_quantity === true ? p.stock_snapshot ?? null : null,
             }];
         }
         return [];
@@ -2254,9 +2432,9 @@ class OrderSessionService {
         const count = Array.isArray(cart) ? cart.length : 0;
         return pickLang(lang,
             `"${lastItem.name}" কার্টে যোগ হয়েছে ✅ (মোট ${count}টি পণ্য)।\n\n` +
-            `আরো কিছু নিতে চান? পণ্যের নাম লিখুন বা ছবি পাঠান।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
+            `আরো কিছু নিতে চান? ${productInputPrompt(lang, 'more')}।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
             `Added "${lastItem.name}" to your cart ✅ (${count} item${count > 1 ? 's' : ''}).\n\n` +
-            `Want to add anything else? Send a product name or photo.\nIf that's all, type "done".`);
+            `Want to add anything else? ${productInputPrompt('en', 'more')}.\nIf that's all, type "done".`);
     }
 
     /** Whole-message "finish / no more items" intent at the add-more step. */
@@ -2340,9 +2518,9 @@ class OrderSessionService {
         let products = result.products || [];
         let wasFallback = !!result.wasFallback;
 
-        // The dominant F-commerce signal is a product PHOTO — match on the image
-        // when text search comes up empty.
-        if ((wasFallback || !products.length) && rawMessage?.imageUrl) {
+        // When photo matching is explicitly enabled, use the image only after
+        // text search comes up empty. The default path remains text-only.
+        if ((wasFallback || !products.length) && rawMessage?.imageUrl && photoMatchEnabled()) {
             try {
                 const { matchImageMessage } = require('../ai/image-product-matcher.service');
                 const imageMatch = await matchImageMessage({ shopId, imageUrl: rawMessage.imageUrl, text: query });
@@ -2370,14 +2548,24 @@ class OrderSessionService {
             return {
                 nextStep: 'ADDING_PRODUCT',
                 prompt: pickLang(lang,
-                    'এই নামে কোনো পণ্য খুঁজে পাইনি। পণ্যের নাম লিখুন বা ছবি পাঠান, অথবা "শেষ" লিখুন।',
-                    'Could not find that product. Send the product name or a photo, or type "done".'),
+                    `এই নামে কোনো পণ্য খুঁজে পাইনি। ${productInputPrompt(lang, 'not-found')}, অথবা "শেষ" লিখুন।`,
+                    `Could not find that product. ${productInputPrompt('en', 'not-found')}, or type "done".`),
             };
         }
 
         if (products.length === 1) {
             const p = products[0];
-            const stock = await productSearch.checkStock(p.id, session.shop_id).catch(() => ({ available: true }));
+            let stock;
+            try {
+                stock = await productSearch.checkStock(p.id, session.shop_id);
+            } catch (_) {
+                return {
+                    nextStep: 'ADDING_PRODUCT',
+                    prompt: pickLang(lang,
+                        'স্টক এখন যাচাই করা যাচ্ছে না। একটু পরে আবার চেষ্টা করুন বা একজন বিক্রেতার সাহায্য নিন।',
+                        'I cannot verify stock right now. Please try again shortly or ask a shop team member.'),
+                };
+            }
             if (!stock.available) {
                 return {
                     nextStep: 'ADDING_PRODUCT',
@@ -2390,6 +2578,10 @@ class OrderSessionService {
                 name_bn: p.name_bn || null,
                 price: stock.product?.price ?? p.price,
                 quantity: 1,
+                track_quantity: stock.product?.track_quantity === true || p.track_quantity === true,
+                stock_snapshot: stock.product?.track_quantity === true
+                    ? finiteNumberOrNull(stock.product.quantity)
+                    : (p.track_quantity === true ? finiteNumberOrNull(p.quantity) : null),
             };
             await session.update({ product_info: pi });
             session.product_info = pi;
@@ -2475,7 +2667,17 @@ class OrderSessionService {
             const { products, wasFallback } = await OrderSessionService.identifyProduct(session.shop_id, query, null);
             if (wasFallback || products.length !== 1) { unresolved.push(query); continue; }
             const p = products[0];
-            const stock = await productSearch.checkStock(p.id, session.shop_id, quantity).catch(() => ({ available: true }));
+            let stock;
+            try {
+                stock = await productSearch.checkStock(p.id, session.shop_id, quantity);
+            } catch (_) {
+                return {
+                    nextStep: 'ADD_MORE',
+                    prompt: pickLang(lang,
+                        'স্টক যাচাই করা যাচ্ছে না, তাই এই পণ্যটি কার্টে যোগ করা হয়নি। একটু পরে আবার চেষ্টা করুন।',
+                        `I could not verify stock, so "${p.name}" was not added. Please try again shortly.`),
+                };
+            }
             if (!stock.available) { unresolved.push(query); continue; }
             const item = {
                 product_id: p.id,
@@ -2483,6 +2685,10 @@ class OrderSessionService {
                 name_bn: p.name_bn || null,
                 price: stock.product?.price ?? p.price,
                 quantity,
+                track_quantity: stock.product?.track_quantity === true || p.track_quantity === true,
+                stock_snapshot: stock.product?.track_quantity === true
+                    ? finiteNumberOrNull(stock.product.quantity)
+                    : (p.track_quantity === true ? finiteNumberOrNull(p.stock_snapshot) : null),
             };
             const cartGate = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
                 orderSessionId: session.id,
@@ -2521,9 +2727,9 @@ class OrderSessionService {
             : '';
         return pickLang(lang,
             `কার্টে যোগ হয়েছে ✅: ${names} (মোট ${count}টি পণ্য)।${missing}\n\n` +
-            `আরো কিছু নিতে চান? নাম লিখুন বা ছবি পাঠান।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
+            `আরো কিছু নিতে চান? ${productInputPrompt(lang, 'more')}।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
             `Added to your cart ✅: ${names} (${count} item${count > 1 ? 's' : ''}).${missing}\n\n` +
-            `Want to add anything else? Send a product name or photo.\nIf that's all, type "done".`);
+            `Want to add anything else? ${productInputPrompt('en', 'more')}.\nIf that's all, type "done".`);
     }
 
     // ─── Per-line cart editing (at the summary) ───────────────────────────────
@@ -2599,8 +2805,8 @@ class OrderSessionService {
                 return {
                     nextStep: 'ADDING_PRODUCT',
                     prompt: pickLang(lang,
-                        'কার্ট এখন খালি। কোন পণ্যটি অর্ডার করতে চান? নাম লিখুন বা ছবি পাঠান।',
-                        'Your cart is now empty. Which product would you like to order? Send a name or photo.'),
+                        `কার্ট এখন খালি। কোন পণ্যটি অর্ডার করতে চান? ${productInputPrompt(lang)}।`,
+                        `Your cart is now empty. Which product would you like to order? ${productInputPrompt('en')}.`),
                     completed: false,
                 };
             }
@@ -2625,6 +2831,7 @@ class OrderSessionService {
             variantId: item.variant_id || null,
             quantity: item.quantity || 1,
             unitPrice: item.price || 0,
+            stockSnapshot: item.track_quantity === true ? finiteNumberOrNull(item.stock_snapshot) : null,
             lineTotal: (item.price || 0) * (item.quantity || 1),
         }));
         return {

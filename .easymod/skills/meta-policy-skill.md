@@ -43,17 +43,26 @@ Run ALL 10 checks before approving any Meta automation feature:
 
 ### Standard Messaging Window
 - **24-hour window:** After a user sends a message, you may reply for up to 24 hours
-- After 24 hours: standard messaging is prohibited without an approved Message Tag
+  (the window also re-opens on other qualifying customer actions — CTA, ads,
+  reactions, comments)
+- After 24 hours: standard messaging is prohibited; see the 2026 tag status below
 - EasyModerator's HITL detection and AI pause guard operate within this window
 
-### Approved Message Tags
-Only these tags allow messaging outside the 24-hour window:
+### Message Tags — 2026 status (updated 2026-10-24)
+Meta deprecated message tags on 2026-02-09; since 2026-04-27 the API returns
+error code 100 for the three legacy tags. They MUST NOT be emitted:
 
-| Tag | Allowed use | EasyModerator use case |
-|-----|------------|----------------------|
-| `CONFIRMED_EVENT_UPDATE` | Remind users about upcoming events they registered for | Not typical for EM |
-| `POST_PURCHASE_UPDATE` | Order status updates for a confirmed purchase | ✅ Order dispatch / delivery update |
-| `ACCOUNT_UPDATE` | Notify users about changes to their account with your app | ✅ Subscription renewal alerts |
+| Tag | Status |
+|-----|--------|
+| `CONFIRMED_EVENT_UPDATE` | ❌ DEAD at API (error 100) — never send |
+| `POST_PURCHASE_UPDATE` | ❌ DEAD at API (error 100) — never send |
+| `ACCOUNT_UPDATE` | ❌ DEAD at API (error 100) — never send |
+| `HUMAN_AGENT` | ⚠️ Survives: MANUAL representative replies only, 7-day clock from the customer's last message, requires the separate approved Human Agent permission. Gated behind `META_HUMAN_AGENT_TAG_ENABLED` (default off) in EasyModerator. |
+
+Outside-window sends with no valid, permission-held tag are HELD by the policy
+engine for merchant recovery (Pilot+ P0-1). Post-window reach options that
+require their own consent/review decisions: Utility & Marketing Messages on
+Messenger (opt-in), Sponsored Messages, private replies (7 days), OTN.
 
 **NEVER use tags for:** promotional content, discount offers, re-engagement blasts, cold follow-up.
 

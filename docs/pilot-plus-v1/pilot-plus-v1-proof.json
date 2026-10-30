@@ -1,0 +1,109 @@
+{
+  "project": "EasyModerator",
+  "milestone": "Pilot+ V1 (Merchant Momentum)",
+  "architecture": "MODULAR_MONOLITH",
+  "date_utc": "2026-10-25",
+  "branch": "feat/pilotplus-v1-merchant-momentum",
+  "worktree": "D:\\easymod\\_wt-pilotplus-v1",
+  "source": {
+    "product_v1_3_sha": "f0f04e4ebc7af9771fdb433419d1f6340c5da156",
+    "production_ancestor_sha": "2a8c1e2d0bef0f3ddc8dd767901d1228865c302c",
+    "ancestry_verified": true,
+    "candidate_verified_sha": "72b2665ccc630dcedee27ad43fa0714bd250558f",
+    "final_sha": "branch tip; behaviorally identical to candidate_verified_sha (docs/counts/comment-only commits since — 09 zero-delta guard)",
+    "post_verification_delta": "docs/counts/comment only; zero behavioral diff",
+    "commits_since_base_verified_at_candidate": 29,
+    "checkpoint_patch_imported": false
+  },
+  "capabilities": {
+    "P01_inbox_lead_intelligence": {
+      "status": "COMPLETE",
+      "class": "CONNECT_EXISTING+ADAPT",
+      "engine": "existing opportunity engine reused; no second score (ADR-0006)",
+      "flag": "customer_intelligence"
+    },
+    "P02_structured_customer_choices": {
+      "status": "COMPLETE",
+      "class": "NEW_MINIMAL_COMPONENT (customer_interactions; opaque p1: refs; registry-only options; CAS single-use; bound-context version)",
+      "transport": "quick_replies <=13/title<=20/payload<=1000; text fallback; postbacks unused",
+      "storefront_contract": "resolve kernel channel-parameterized; storefront route specified, NOT mounted",
+      "flag": "interaction_choices"
+    },
+    "P03_merchant_action_queue": {
+      "status": "COMPLETE",
+      "class": "EXTEND+CONNECT_EXISTING (request-time read model, 6 risk buckets, no task store)",
+      "handoff": "claim on takeover; 409 conflicts; force privileged-only; reason on authoritative record",
+      "flag": "action_queue"
+    },
+    "P04_context_preserving_checkout": {
+      "status": "COMPLETE",
+      "class": "ADAPT (interruption classes terminal/pause/defer/belt) + EXTEND (SUSPENDED status)",
+      "invariants": "question never writes field; reprice invalidates old confirm; committed order keeps true status",
+      "flag": "inherited (checkout path)"
+    },
+    "P05_knowledge_gap_actions": {
+      "status": "COMPLETE",
+      "class": "EXTEND(capture hygiene)+NEW_MINIMAL_COMPONENT(knowledge_gap_suggestions)+ADAPT(FaqSettings)",
+      "publish": "merchant-authored answers only, via existing FAQ is_active+RAG authority; reopen only on per-question NEW evidence",
+      "flag": "knowledge_suggestions"
+    },
+    "prerequisites": {
+      "P0_1_retired_meta_tags": "FIXED 6b9dcfbd — hold-not-tag; HUMAN_AGENT flag-gated w/ 7-day evidence clock; wire guard",
+      "P0_2_ocr_payment_claim": "FIXED 6788813a — dead misleading path removed; source+behavior invariants",
+      "P0_3_payment_authority": "FIXED 6f8e177b + 3421678b — write-time sync + clearSelfMfs; hot path baseline-latency; fail-closed",
+      "F3_order_status_truth": "FIXED 128eb934 — committed conversational orders no longer coerced to draft",
+      "repo_guidance": "FIXED 3265cead — .easymod tag rules corrected to Meta 2026 reality"
+    }
+  },
+  "verification": {
+    "backend_units": { "suites": "305/308", "tests": "4163/4169", "red_are_baseline_inherited_tooling_flakes": true, "deterministic_note": "06/A2" },
+    "integration_real_stack": { "command": "npm run test:backend:integration:docker", "suites": 29, "tests": 206, "migrations_applied": ["20261025_001_pilotplus_interactions_flags", "20261025_002_pilotplus_gap_suggestions"], "pilotplus_scenario_suite": "10/10" },
+    "meta_shaped_e2e": { "command": "npm run test:backend:meta:e2e:docker", "suites": 2, "tests": 48, "live_meta_calls": 0 },
+    "security": { "command": "npm run test:security", "tests": 802, "new_vulnerabilities_found_by_adversarial_review": 0, "tenant_source": "JWT only on all new endpoints" },
+    "frontend": { "vitest_files": 75, "vitest_tests": 628, "tsc_errors": 0, "vite_build": "success" },
+    "playwright": { "spec": "tests/e2e/pilot-plus.spec.ts", "chromium": "7/7", "firefox": "7/7", "webkit": "pre-existing harness limitation at baseline", "walkthrough": "3/3 live-lab screenshots committed" },
+    "grounding_v1_3": { "boundary_suite": "52/52 runInBand", "protections_weakened": 0 },
+    "performance": { "inbox_projection_delta_ms_median": 6.0, "action_queue_median_ms": 22.3, "tap_resolve_median_ms": 9.7, "per_turn_tap_read_ms": 1.67, "classify_per_call_us": 50, "new_queries_plan": "index scans <1ms (EXPLAIN logged)", "doc": "08" },
+    "independent_review": { "agent": "fresh-context verifier", "verdict": "IMPLEMENTATION_VERIFIED", "fit_to_freeze": true, "candidate_sha": "72b2665c", "doc": "09" },
+    "review_board": { "adversarial_diff_review_findings": 11, "closed": 11, "blocker": "tree hygiene — resolved", "majors": "#2 kill-switch tap gate, #3 per-question reopen cursor, #4 privileged force, #5 suspended-confirm reject — all fixed 98b02759", "doc": "06" }
+  },
+  "invariants_executable_evidence": {
+    "qualified_interest_ne_order": "opportunity integration + unit",
+    "choice_ne_authorized_mutation": "interactions 18 + integration concurrent",
+    "committed_order_ne_delivered_message": "delivery-state + worker grounding suites",
+    "screenshot_ne_paid": "P0-2 source+behavior invariants",
+    "courier_requested_ne_booked": "existing dispatch idempotency suites (green)",
+    "handoff_requested_ne_assigned": "ownership matrix + queue owner-state",
+    "suggestion_ne_published": "publish-authority test + inactive-exclusion suites",
+    "ai_generated_ne_received": "markSent only on provider ack; DRAFT/HELD states"
+  },
+  "verdicts": {
+    "IMPLEMENTATION_COMPLETE": "YES",
+    "AUTOMATED_QA_PASS": "PASS",
+    "REAL_STACK_INTEGRATION_VERIFIED": "YES",
+    "PRODUCT_V1_3_COMPATIBILITY_VERIFIED": "YES",
+    "META_POLICY_COMPATIBILITY_VERIFIED": "YES_OFFLINE_CONSERVATIVE",
+    "SECURITY_VERIFIED": "YES",
+    "PILOT_COHORT_READY": "YES_FLAGS_OFF_PENDING_AUTHORIZATION",
+    "PRODUCTION_RELEASE_AUTHORIZED": "NO"
+  },
+  "isolation": {
+    "other_agent_worktrees_touched": "NONE",
+    "other_agent_processes_stopped": "NONE",
+    "production_changed": "NONE",
+    "pushed": false,
+    "merged": false,
+    "deployed": false
+  },
+  "verification_commands": [
+    "cd EasyMod-backend && npx jest --coverage=false --testTimeout=30000",
+    "npm run test:backend:integration:docker",
+    "npm run test:backend:meta:e2e:docker",
+    "npm run test:security --workspace=easymod-backend",
+    "cd EasyMod-frontend && npx vitest run && npx tsc --noEmit",
+    "cd EasyMod-frontend && npx playwright test pilot-plus",
+    "powershell -File scripts\\pilotplus-lab.ps1"
+  ],
+  "paid_provider_calls_in_verification": 0,
+  "production_sends": 0
+}
