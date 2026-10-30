@@ -3,7 +3,8 @@
   "date": "2026-10-30",
   "baseCodeSha": "04b07134c265b04745d7c3add85154b66e82f132",
   "baseEvidenceSha": "4c36dffc7071e3baec217b5f7f6bbbcfaf4f1956",
-  "finalEvidenceSha": "PENDING-FREEZE-COMMIT",
+  "frozenEvidenceSha": "0bf1ae47a6361b7d477e1add1110fd9d5e1ea799",
+  "finalEvidenceSha": "recorded in the final handoff; direct child of frozenEvidenceSha (a commit cannot embed its own SHA)",
   "branch": "ops/pilot-authorization-closure-v1",
   "worktree": "D:\\easymod\\_wt-pilot-authorization-closure-v1",
   "sourceTree": "db4d3f0c01b1e75482d0291dcd145f6bd5145e8c",
@@ -23,7 +24,7 @@
     "alertChain": "D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\alert-post.json",
     "alertSinkReceipt": "a6200c447726a9c51e35a815c55c7d6f048d7237d5b2e35a58f1f7220eadbbca",
     "trivy": ["D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\trivy-backend-full.json", "D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\trivy-frontend-full.json"],
-    "priorImmutableGates": "D:\\easymod\\_operational-gate-closure-v1-independent-final (62 files; unchanged)"
+    "priorImmutableGates": "D:\\easymod\\_operational-gate-closure-v1-independent-final (147 top-level files: 91 evidence receipts; unchanged since 2026-10-28 per independent recount)"
   },
   "openFindings": {
     "highCritical": 0,
@@ -40,7 +41,7 @@
     "productionSystemsAccessed": 0,
     "otherWorktreesModified": "NONE (protected closure worktree untouched; its preserved fixture modification left unstaged)"
   },
-  "independentAttestation": "PENDING (fresh-session adversarial verifier scheduled against the frozen evidence commit)",
+  "independentAttestation": "PASS (fresh no-ownership adversarial verifier session ses_e71c0ce51ffeHzmW01Hzkvq5vu re-ran provenance, re-hashed the 2,920-file manifest, re-executed the authenticated founder walkthrough live, and attempted refutation of the preview chain; 12/12 checks PASS; 0 BLOCKER/MAJOR; 2 MINOR [F-1 self-referential SHA, F-2 file count] both corrected in the final docs-only commit; GO_RECOMMENDATION=NO_GO_WITH_EXACT_BLOCKERS)",
   "technicalPilotReadiness": "NO_GO_WITH_EXACT_BLOCKERS",
   "exactBlockers": ["D-1..D-4 + image-transfer condition unsigned", "deployed image digest unread", "production alert destination/operator unnamed", "production effective env unread", "qs disposition unsigned", "founder preview walkthrough unconfirmed"],
   "founderAuthorizationStatus": "NOT_REQUESTED_YET (package ready: docs/pilot-authorization-closure-v1/08)"
