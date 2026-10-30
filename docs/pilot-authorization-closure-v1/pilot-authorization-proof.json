@@ -1,0 +1,47 @@
+{
+  "milestone": "Pilot Authorization Closure V1",
+  "date": "2026-10-30",
+  "baseCodeSha": "04b07134c265b04745d7c3add85154b66e82f132",
+  "baseEvidenceSha": "4c36dffc7071e3baec217b5f7f6bbbcfaf4f1956",
+  "finalEvidenceSha": "PENDING-FREEZE-COMMIT",
+  "branch": "ops/pilot-authorization-closure-v1",
+  "worktree": "D:\\easymod\\_wt-pilot-authorization-closure-v1",
+  "sourceTree": "db4d3f0c01b1e75482d0291dcd145f6bd5145e8c",
+  "manifestSha256": "4799041f8bf827afc8b9196e06f133d85ccfab7700c4211fa8f517f6d99bcfc5",
+  "gates": {
+    "baseline_provenance": "PASS",
+    "founder_access": "PASS (loopback preview proven from Windows host; founder walkthrough pending as confirmatory)",
+    "artifact_and_recovery": "PARTIAL (source+local image verified; deployed digest owner-side; rollback unproven by design)",
+    "alert_and_operator_proof": "PARTIAL (isolated destination delivery receipt PASS; human ack BLOCKED-owner)",
+    "effective_configuration": "PARTIAL (fail-closed source verified incl. photo-match fix; production-effective UNKNOWN-owner)",
+    "full_security_scan": "PASS (vuln+secret+misconfig complete; 0 HIGH/CRITICAL; 1 MEDIUM qs disclosed with owner disposition pending)",
+    "founder_decision_package": "READY (D-1..D-7 + 4 supplemental items consolidated, unsigned by design)"
+  },
+  "keyReceipts": {
+    "previewWalkthrough": "D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\preview-walkthrough-20261030.json",
+    "previewBrowser": ["D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\playwright-chromium-pilot.log", "D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\playwright-firefox-pilot.log"],
+    "alertChain": "D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\alert-post.json",
+    "alertSinkReceipt": "a6200c447726a9c51e35a815c55c7d6f048d7237d5b2e35a58f1f7220eadbbca",
+    "trivy": ["D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\trivy-backend-full.json", "D:\\easymod\\_pilot-authorization-closure-v1-local\\evidence\\trivy-frontend-full.json"],
+    "priorImmutableGates": "D:\\easymod\\_operational-gate-closure-v1-independent-final (62 files; unchanged)"
+  },
+  "openFindings": {
+    "highCritical": 0,
+    "medium": [{"id": "CVE-2026-110816", "component": "qs", "installed": "6.16.0", "fixed": "6.16.1", "disposition": "owner sign-off pending; bump increment recommended"}],
+    "low": [{"scope": "jest dev-chain x5", "shipped": false}]
+  },
+  "safety": {
+    "productionChanges": "NONE",
+    "pushed": false,
+    "merged": false,
+    "deployed": false,
+    "paidInferenceCalls": 0,
+    "externalAlertContact": 0,
+    "productionSystemsAccessed": 0,
+    "otherWorktreesModified": "NONE (protected closure worktree untouched; its preserved fixture modification left unstaged)"
+  },
+  "independentAttestation": "PENDING (fresh-session adversarial verifier scheduled against the frozen evidence commit)",
+  "technicalPilotReadiness": "NO_GO_WITH_EXACT_BLOCKERS",
+  "exactBlockers": ["D-1..D-4 + image-transfer condition unsigned", "deployed image digest unread", "production alert destination/operator unnamed", "production effective env unread", "qs disposition unsigned", "founder preview walkthrough unconfirmed"],
+  "founderAuthorizationStatus": "NOT_REQUESTED_YET (package ready: docs/pilot-authorization-closure-v1/08)"
+}
