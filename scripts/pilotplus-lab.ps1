@@ -89,4 +89,3 @@ Write-Host @"
   Stop everything   : powershell -File scripts\pilotplus-lab.ps1 -Down
 
 "@ -ForegroundColor Green
-
