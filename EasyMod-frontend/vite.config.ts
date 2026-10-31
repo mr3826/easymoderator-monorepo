@@ -19,11 +19,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:3000',
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       }
     }
@@ -33,12 +33,24 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom')) return 'react-vendor';
-            if (id.includes('@mui')) return 'mui-vendor';
-            if (id.includes('recharts')) return 'charts-vendor';
-            if (id.includes('@radix-ui')) return 'radix-vendor';
-          }
+          const normalizedId = id.replace(/\\/g, '/');
+          const nodeModulesMarker = '/node_modules/';
+          const nodeModulesIndex = normalizedId.lastIndexOf(nodeModulesMarker);
+          if (nodeModulesIndex < 0) return undefined;
+
+          const packagePath = normalizedId.slice(nodeModulesIndex + nodeModulesMarker.length);
+          const packageName = packagePath.startsWith('@')
+            ? packagePath.split('/').slice(0, 2).join('/')
+            : packagePath.split('/')[0];
+
+          // Keep only the React runtime in this shared chunk. Grouping every
+          // dependency with "react" in its package name forced signup forms,
+          // Sentry, and app-only libraries onto the public landing's critical path.
+          if (['react', 'react-dom', 'scheduler', 'react-is', 'loose-envify'].includes(packageName)) return 'react-vendor';
+          if (packageName === 'react-router' || packageName === 'react-router-dom') return 'router-vendor';
+          if (packageName.startsWith('@mui/')) return 'mui-vendor';
+          if (packageName === 'recharts') return 'charts-vendor';
+          if (packageName.startsWith('@radix-ui/')) return 'radix-vendor';
           return undefined;
         }
       }

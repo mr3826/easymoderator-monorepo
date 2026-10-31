@@ -21,6 +21,7 @@ import type {
   SuggestionVisibility,
 } from "@/api/types/conversation";
 import { InboxComposer } from "./InboxComposer";
+import ContextualEntityLink from "../merchant-workspace/ContextualEntityLink";
 import OpportunityCard from "../customers/OpportunityCard";
 import type { Opportunity } from "@/api/types/customer-intelligence";
 
@@ -154,12 +155,12 @@ const MessageItem = memo(function MessageItem({
     hour: "2-digit",
     minute: "2-digit",
   });
-  const deliveryStatus = message.sender === "agent" || message.sender === "ai"
-    ? message.metadata?.delivery_status
-      || (getDeliveryState(message) === "SENT" || getDeliveryState(message) === "DELIVERED" ? "sent" : undefined)
-      || (getDeliveryState(message) === "SEND_PENDING" ? "pending" : undefined)
-      || (getDeliveryState(message) === "FAILED" ? "failed" : undefined)
-    : undefined;
+  const rawDeliveryStatus = String(message.metadata?.delivery_status || "").toLowerCase();
+  const deliveryState = getDeliveryState(message);
+  const showDeliveryStatus = message.sender === "agent" || message.sender === "ai";
+  const deliveryPending = showDeliveryStatus && (deliveryState === "SEND_PENDING" || rawDeliveryStatus === "pending");
+  const deliveryConfirmed = showDeliveryStatus && isProviderConfirmed(message);
+  const deliveryFailed = showDeliveryStatus && (deliveryState === "FAILED" || rawDeliveryStatus === "failed");
   const providerOutcomeUnknown = message.metadata?.provider_send_attempted === true
     && !message.provider_message_id
     && !message.metadata?.provider_message_id;
@@ -322,22 +323,22 @@ const MessageItem = memo(function MessageItem({
           }`}
         >
           {ts}
-          {deliveryStatus === "pending" && <span className="ml-2">Sending...</span>}
-          {deliveryStatus === "sent" && <span className="ml-2">Sent</span>}
+          {deliveryPending && <span className="ml-2">{t("inbox.deliveryStatus.pending")}</span>}
+          {deliveryConfirmed && <span className="ml-2">{t("inbox.deliveryStatus.sent")}</span>}
         </p>
-        {deliveryStatus === "failed" && (
-          <div className="mt-2 flex items-center gap-2 text-xs text-red-50">
+        {deliveryFailed && (
+          <div className={`mt-2 flex items-center gap-2 text-xs ${providerOutcomeUnknown ? "text-amber-100" : "text-red-50"}`}>
             {providerOutcomeUnknown ? (
-              <span>Provider result pending reconciliation</span>
+              <span>{t("inbox.deliveryStatus.unknown")}</span>
             ) : (
               <>
-                <span>Failed</span>
+                <span>{t("inbox.deliveryStatus.failed")}</span>
                 <button
                   onClick={() => onRetry(message)}
                   className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-1 text-white hover:bg-white/10"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  Retry
+                  {t("inbox.retry", { defaultValue: "Retry" })}
                 </button>
               </>
             )}
@@ -514,7 +515,11 @@ export function InboxThreadDetail({
       onMessageSent(message);
       setEditingSuggestion(false);
       setEditedSuggestion("");
-      toast.success(t("inbox.aiSuggestion"));
+      if (getDeliveryState(message) === "FAILED" || message.metadata?.delivery_status === "failed") {
+        toast.error(t("inbox.taskOutcome.replyFailed"));
+      } else if (!isProviderConfirmed(message)) {
+        toast.warning(t("inbox.taskOutcome.replyPending"));
+      }
     } catch (err: unknown) {
       onSendFailed();
       toast.error((err as { message?: string })?.message || "Failed to send AI suggestion");
@@ -540,7 +545,7 @@ export function InboxThreadDetail({
           : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       });
       onMessageSent(message);
-      toast.success("Retry queued");
+      if (!isProviderConfirmed(message)) toast.warning(t("inbox.taskOutcome.replyPending"));
     } catch (err: unknown) {
       onSendFailed();
       toast.error((err as { message?: string })?.message || "Retry failed");
@@ -571,6 +576,16 @@ export function InboxThreadDetail({
                 <span>•</span>
                 <span>{t("inbox.lastActive", { time: formatDate(selectedConversation.updated_at, t) })}</span>
               </div>
+              {selectedConversation.customer_id && (
+                <div className="mt-2">
+                  <ContextualEntityLink
+                    to={`/customers?customerId=${encodeURIComponent(selectedConversation.customer_id)}`}
+                    ariaLabel={t("inbox.viewCustomer")}
+                  >
+                    {t("inbox.viewCustomer")}
+                  </ContextualEntityLink>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">

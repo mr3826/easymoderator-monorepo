@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "March 18, 2026";
@@ -19,10 +18,10 @@ export default function PrivacyPolicy() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="mx-auto max-w-4xl px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600" />
             <span className="text-lg font-bold text-gray-900">{APP_NAME}</span>
-          </Link>
+          </a>
           <span className="text-sm text-gray-500">Privacy Policy</span>
         </div>
       </header>

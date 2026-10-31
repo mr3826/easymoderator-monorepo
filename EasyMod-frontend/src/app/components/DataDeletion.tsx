@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import Seo from "./Seo";
 
 const CONTACT_EMAIL = "privacy@easymod.tech";
@@ -13,10 +12,10 @@ export default function DataDeletion() {
       />
       <header className="bg-white border-b border-gray-200">
         <div className="mx-auto max-w-4xl px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600" />
             <span className="text-lg font-bold text-gray-900">EasyModerator</span>
-          </Link>
+          </a>
           <span className="text-sm text-gray-500">Data Deletion</span>
         </div>
       </header>
@@ -38,7 +37,7 @@ export default function DataDeletion() {
           </p>
         </section>
         <p className="mt-8 text-sm text-gray-600">
-          See the <Link className="text-blue-600 hover:underline" to="/privacy-policy">Privacy Policy</Link> for retention details.
+          See the <a className="text-blue-600 hover:underline" href="/privacy-policy">Privacy Policy</a> for retention details.
         </p>
       </main>
     </div>

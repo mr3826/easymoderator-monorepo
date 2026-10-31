@@ -1,14 +1,13 @@
-import { useRef, useState, useEffect, useMemo } from "react";
-import { motion, useScroll, useMotionValue, useMotionValueEvent, useInView, animate, type Variants } from "motion/react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import LanguageToggle from "./LanguageToggle";
-import BrandLogo from "./BrandLogo";
-import { subscriptionPlans } from "@/app/lib/subscriptionPlans";
-import { getSubscriptionPlans } from "@/api/domains/subscription";
+import { getCurrentPublicSubscriptionCatalog, type PublicSubscriptionCatalog } from "@/api/domains/publicSubscription";
 import { trackFunnelEvent } from "@/app/lib/funnel";
-import { buildApiUrl, buildAppUrl } from "@/app/lib/config";
+import { PublicFunnelFooter, PublicFunnelHeader } from "./PublicFunnelChrome";
+import { PlanComparison } from "./LandingPageV5Sections";
+import { CoreCapabilities, LandingClosing, LandingHero, StorySection, TrustAndFaq, WorkflowSection } from "./LandingPageV6Sections";
 import Seo from "./Seo";
+import "./public-funnel.css";
+import "./landing-v6.css";
 
 const LANDING_SCHEMA = {
   "@context": "https://schema.org",
@@ -19,667 +18,63 @@ const LANDING_SCHEMA = {
   url: "https://easymod.tech/",
 };
 
-const gradientText: React.CSSProperties = {
-  background: "linear-gradient(135deg, #34D399 0%, var(--brand) 100%)",
-  WebkitBackgroundClip: "text",
-  WebkitTextFillColor: "transparent",
-  backgroundClip: "text",
-};
-
-const heroEase = [0.22, 1, 0.36, 1] as const;
-const heroContainer: Variants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
-};
-const heroItem: Variants = {
-  hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: heroEase } },
-};
-
-function useCountUp(target: number, inView: boolean, duration = 1.8) {
-  const mv = useMotionValue(0);
-  const [display, setDisplay] = useState("0");
-  useEffect(() => {
-    if (!inView) return;
-    const ctrl = animate(mv, target, {
-      duration,
-      ease: heroEase,
-      onUpdate: (v: number) => setDisplay(Math.round(v).toString()),
-    });
-    return ctrl.stop;
-  }, [inView, target]);
-  return display;
-}
-
-function StatCounter({ raw }: { raw: string }) {
-  const match = raw.match(/^(\d+)(.*)/);
-  if (!match) return <>{raw}</>;
-  const [, numStr, suffix] = match;
-  const target = parseInt(numStr, 10);
-  const statsRef = useRef(null);
-  const inView = useInView(statsRef, { once: true });
-  const count = useCountUp(target, inView);
-  return <span ref={statsRef}>{count}{suffix}</span>;
-}
+const REQUIRED_PLAN_CODES = ["SHURU", "GROWTH", "PARTNER"] as const;
 
 export default function LandingPage() {
-  const { t, i18n } = useTranslation();
-  const formatNumber = (value: number) => value.toLocaleString(i18n.language === "bn" ? "bn-BD" : "en-US");
-  const { scrollY } = useScroll();
-  const [scrolled, setScrolled] = useState(false);
+  const { t } = useTranslation();
+  const [catalog, setCatalog] = useState<PublicSubscriptionCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-  useMotionValueEvent(scrollY, "change", (y) => setScrolled(y > 20));
-
-  const featuresRef = useRef<HTMLDivElement>(null);
-  const featuresInView = useInView(featuresRef, { once: true, margin: "-100px" });
-
-  const pricingRef = useRef<HTMLDivElement>(null);
-  const pricingInView = useInView(pricingRef, { once: true, margin: "-80px" });
-
-  const testimonialsRef = useRef<HTMLDivElement>(null);
-  const testimonialsInView = useInView(testimonialsRef, { once: true, margin: "-80px" });
-
-  // Live proof — real platform aggregates (cached server-side). Fails silently.
-  const [liveStats, setLiveStats] = useState<{
-    messages_handled: number; orders_captured: number; fake_orders_blocked: number;
-  } | null>(null);
-  const [plans, setPlans] = useState(subscriptionPlans);
   useEffect(() => {
     trackFunnelEvent("landing_view", { surface: "landing" });
-    fetch(buildApiUrl("/api/public/live-stats"), { credentials: "omit" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (j?.success && j?.data) setLiveStats(j.data); })
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    let mounted = true;
-    getSubscriptionPlans()
-      .then((serverPlans) => {
-        if (mounted && serverPlans.length > 0) setPlans(serverPlans);
+    let active = true;
+    setCatalog(null);
+    setCatalogError(false);
+
+    getCurrentPublicSubscriptionCatalog()
+      .then((result) => {
+        const publishedCodes = new Set(result.plans.map((plan) => plan.code));
+        if (result.source !== "live" || !REQUIRED_PLAN_CODES.every((code) => publishedCodes.has(code))) {
+          throw new Error("The published plan catalog is incomplete.");
+        }
+        if (active) setCatalog(result);
       })
-      .catch(() => {});
-    return () => { mounted = false; };
-  }, []);
-  // Only surface the live strip once the numbers are meaningful.
-  const showLiveProof = !!liveStats && liveStats.messages_handled >= 100;
+      .catch(() => {
+        if (active) {
+          setCatalog(null);
+          setCatalogError(true);
+        }
+      });
 
-  // ROI calculator — estimate monthly savings from the seller's order volume.
-  const [roiOrders, setRoiOrders] = useState(300);
-  const roi = useMemo(() => {
-    const hoursSaved = Math.round(roiOrders * 0.25);            // ~3 inquiries/order × 5 min
-    const fakeAvoided = Math.round(roiOrders * 0.2);            // ~20% COD RTO rate avoided
-    const moneySaved = hoursSaved * 150 + fakeAvoided * 120;    // ৳150/hr labour + ৳120/RTO
-    return { hoursSaved, fakeAvoided, moneySaved };
-  }, [roiOrders]);
-  const bn = (n: number) => n.toLocaleString();
-
-  const features = t("landing.features.items", { returnObjects: true }) as {
-    icon: string; title: string; desc: string; colorClass: string;
-  }[];
-
-  const testimonials = t("landing.testimonials.items", { returnObjects: true }) as {
-    quote: string; name: string; location: string; shop: string; avatar: string; avatarColor: string;
-  }[];
-
-  const trustItems = t("landing.trust.items", { returnObjects: true }) as {
-    icon: string; title: string; desc: string;
-  }[];
-
-  const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-  };
+    return () => { active = false; };
+  }, [retryCount]);
 
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: "'Hind Siliguri', system-ui, sans-serif" }}>
+    <div className="funnel-page landing-v6-page">
       <Seo
-        title="EasyModerator — AI Customer Support for Facebook Shops"
-        description="Automate Messenger support, orders, delivery updates, and customer follow-up for your Facebook shop."
+        title={t("publicFunnel.meta.landingTitle")}
+        description={t("publicFunnel.meta.landingDescription")}
         canonicalPath="/"
+        canonicalBase="marketing"
         structuredData={LANDING_SCHEMA}
       />
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap');
-        .hero-grid {
-          background-image: radial-gradient(circle, rgba(0,166,81,0.18) 1px, transparent 1px);
-          background-size: 30px 30px;
-        }
-      `}</style>
-
-      {/* ── Navbar ─────────────────────────────────────────────── */}
-      <nav
-        className={`sticky top-0 z-50 border-b border-gray-100 backdrop-blur-md transition-shadow duration-300 ${
-          scrolled ? "bg-white shadow-sm" : "bg-white/90"
-        }`}
-      >
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <BrandLogo size="md" variant="dark" />
-          <div className="hidden items-center gap-6 md:flex">
-            {[
-              { label: t("landing.nav.features"), id: "features" },
-              { label: t("landing.nav.pricing"),  id: "pricing"  },
-              { label: t("landing.nav.contact"),   id: "contact"  },
-            ].map((item) => (
-              <button
-                key={item.id}
-                onClick={() => scrollTo(item.id)}
-                className="text-sm font-medium text-gray-600 transition-colors hover:text-brand"
-              >
-                {item.label}
-              </button>
-            ))}
-            <LanguageToggle variant="dark" />
-          </div>
-          <a
-            href={buildAppUrl("/signup")}
-            className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-hover"
-          >
-            {t("landing.nav.getStarted")}
-          </a>
-        </div>
-      </nav>
-
-      {/* ── Hero ───────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-[#0F172A] hero-grid px-6 py-28 md:py-40">
-        <motion.div
-          className="pointer-events-none absolute -left-40 -top-20 h-[500px] w-[500px] rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(0,166,81,0.32) 0%, transparent 70%)" }}
-          animate={{ opacity: [0.4, 0.7, 0.4], scale: [1, 1.08, 1] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+      <PublicFunnelHeader page="landing" />
+      <main>
+        <LandingHero />
+        <CoreCapabilities />
+        <WorkflowSection />
+        <StorySection />
+        <PlanComparison
+          plans={catalog?.plans ?? []}
+          loading={!catalogError && catalog === null}
+          unavailable={catalogError}
+          onRetry={() => setRetryCount((count) => count + 1)}
         />
-        <motion.div
-          className="pointer-events-none absolute -bottom-20 -right-40 h-[500px] w-[500px] rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(22,163,74,0.28) 0%, transparent 70%)" }}
-          animate={{ opacity: [0.4, 0.7, 0.4], scale: [1, 1.08, 1] }}
-          transition={{ duration: 5, delay: 2.5, repeat: Infinity, ease: "easeInOut" }}
-        />
-
-        <motion.div
-          className="relative mx-auto max-w-4xl text-center"
-          variants={heroContainer}
-          initial="hidden"
-          animate="visible"
-        >
-          <motion.div variants={heroItem} className="mb-7 inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-4 py-1.5 text-sm text-green-300">
-            <motion.span
-              className="h-2 w-2 rounded-full bg-green-400"
-              animate={{ opacity: [1, 0.4, 1] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            />
-            {t("landing.hero.badge")}
-          </motion.div>
-
-          <motion.h1
-            variants={heroItem}
-            className="mb-6 text-5xl font-bold leading-tight text-white md:text-6xl lg:text-7xl"
-          >
-            {t("landing.hero.headline1")}{" "}
-            <span style={gradientText}>{t("landing.hero.headline2")}</span>
-            <br />
-            {t("landing.hero.headline3")}
-          </motion.h1>
-
-          <motion.p
-            variants={heroItem}
-            className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl"
-          >
-            {t("landing.hero.subheadline")}
-          </motion.p>
-
-          <motion.div variants={heroItem} className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <a
-              href={buildAppUrl("/signup")}
-              className="rounded-xl bg-brand px-9 py-4 text-base font-semibold text-white shadow-lg shadow-emerald-900/30 transition-all duration-200 hover:scale-105 hover:bg-brand-hover"
-            >
-              {t("landing.hero.ctaStart")}
-            </a>
-            <a
-              href={buildAppUrl("/signin")}
-              className="rounded-xl border border-white/20 bg-white/5 px-9 py-4 text-base font-semibold text-white hover:bg-white/10 hover:border-white/40 transition-all duration-200"
-            >
-              {t("landing.hero.ctaDemo")}
-            </a>
-          </motion.div>
-
-          <motion.div
-            variants={heroItem}
-            className="mt-16 flex flex-wrap items-center justify-center gap-12 border-t border-white/10 pt-10"
-          >
-            {[
-              { value: t("landing.hero.stat1Value"), label: t("landing.hero.stat1Label") },
-              { value: t("landing.hero.stat2Value"), label: t("landing.hero.stat2Label") },
-              { value: t("landing.hero.stat3Value"), label: t("landing.hero.stat3Label") },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center">
-                <div className="text-4xl font-bold text-white">
-                  <StatCounter raw={stat.value} />
-                </div>
-                <div className="mt-1 text-sm text-slate-400">{stat.label}</div>
-              </div>
-            ))}
-          </motion.div>
-        </motion.div>
-      </section>
-
-      {/* ── Trust + Live proof ─────────────────────────────────── */}
-      <section className="bg-white px-6 py-20 border-b border-gray-50">
-        <div className="mx-auto max-w-7xl">
-          <motion.div
-            className="mb-12 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-          >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
-              {t("landing.trust.label")}
-            </p>
-            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.trust.heading")}</h2>
-          </motion.div>
-
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-            {trustItems.map((item, i) => (
-              <motion.div
-                key={item.title}
-                className="rounded-2xl border border-gray-100 bg-slate-50/60 p-6 text-center"
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.45, delay: i * 0.1 }}
-              >
-                <div className="mb-3 text-3xl">{item.icon}</div>
-                <h3 className="mb-1.5 text-lg font-semibold text-gray-900">{item.title}</h3>
-                <p className="text-sm leading-relaxed text-gray-500">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-
-          {showLiveProof && liveStats && (
-            <motion.div
-              className="mt-10 flex flex-wrap items-center justify-center gap-x-12 gap-y-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-6 py-6"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-            >
-              <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-emerald-700">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                {t("landing.liveProof.label")}
-              </span>
-              {[
-                { v: liveStats.messages_handled, l: t("landing.liveProof.messagesHandled") },
-                { v: liveStats.orders_captured, l: t("landing.liveProof.ordersCaptured") },
-                { v: liveStats.fake_orders_blocked, l: t("landing.liveProof.fakeBlocked") },
-              ].map((s) => (
-                <div key={s.l} className="text-center">
-                  <div className="text-2xl font-bold text-gray-900">{bn(s.v)}</div>
-                  <div className="mt-0.5 text-xs text-gray-500">{s.l}</div>
-                </div>
-              ))}
-            </motion.div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Features ───────────────────────────────────────────── */}
-      <section id="features" className="bg-white px-6 py-24">
-        <div className="mx-auto max-w-7xl">
-          <motion.div
-            className="mb-14 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-          >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
-              {t("landing.features.label")}
-            </p>
-            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.features.heading")}</h2>
-            <p className="mt-3 text-gray-500">{t("landing.features.subheading")}</p>
-          </motion.div>
-
-          <div ref={featuresRef} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map((f, i) => (
-              <motion.div
-                key={f.title}
-                className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
-                initial={{ opacity: 0, y: 32 }}
-                animate={featuresInView ? { opacity: 1, y: 0 } : {}}
-                transition={{ duration: 0.5, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
-                whileHover={{
-                  y: -8,
-                  borderColor: "var(--brand)",
-                  boxShadow: "0 12px 32px rgba(0,166,81,0.15)",
-                  transition: { duration: 0.2 },
-                }}
-              >
-                <div className={`mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl text-2xl ${f.colorClass}`}>
-                  {f.icon}
-                </div>
-                <h3 className="mb-2 text-lg font-semibold text-gray-900">{f.title}</h3>
-                <p className="text-sm leading-relaxed text-gray-500">{f.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── ROI Calculator ─────────────────────────────────────── */}
-      <section className="bg-white px-6 py-24">
-        <div className="mx-auto max-w-4xl">
-          <motion.div
-            className="mb-12 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-          >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
-              {t("landing.roi.label")}
-            </p>
-            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.roi.heading")}</h2>
-            <p className="mt-3 text-gray-500">{t("landing.roi.subheading")}</p>
-          </motion.div>
-
-          <div className="rounded-3xl border border-gray-100 bg-slate-50 p-8 shadow-sm">
-            <div className="mb-8">
-              <div className="mb-3 flex items-baseline justify-between">
-                <label htmlFor="roi-orders" className="text-sm font-semibold text-gray-700">
-                  {t("landing.roi.ordersLabel")}
-                </label>
-                <span className="text-2xl font-bold text-brand">{bn(roiOrders)}</span>
-              </div>
-              <input
-                id="roi-orders"
-                type="range"
-                min={20}
-                max={2000}
-                step={10}
-                value={roiOrders}
-                onChange={(e) => setRoiOrders(Number(e.target.value))}
-                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-emerald-100 accent-brand"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {[
-                { value: `${bn(roi.hoursSaved)}`, label: t("landing.roi.hoursSaved") },
-                { value: `৳${bn(roi.moneySaved)}`, label: t("landing.roi.moneySaved") },
-                { value: `${bn(roi.fakeAvoided)}`, label: t("landing.roi.fakeBlocked") },
-              ].map((c) => (
-                <div key={c.label} className="rounded-2xl border border-gray-100 bg-white p-5 text-center">
-                  <div className="text-3xl font-bold text-gray-900">{c.value}</div>
-                  <div className="mt-1 text-sm text-gray-500">{c.label}</div>
-                </div>
-              ))}
-            </div>
-
-            <p className="mt-5 text-center text-xs text-gray-400">{t("landing.roi.note")}</p>
-
-            <div className="mt-7 text-center">
-              <a
-                href={buildAppUrl("/signup")}
-                className="inline-block rounded-xl bg-brand px-9 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition-all hover:bg-brand-hover"
-              >
-                {t("landing.roi.cta")}
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Pricing ────────────────────────────────────────────── */}
-      <section id="pricing" className="bg-slate-50 px-6 py-24">
-        <div className="mx-auto max-w-7xl">
-          <motion.div
-            className="mb-14 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-          >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
-              {t("landing.pricing.label")}
-            </p>
-            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.pricing.heading")}</h2>
-            <p className="mt-3 text-gray-500">{t("landing.pricing.subheading")}</p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
-              <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("landing.pricing.badge1")}</span>
-              <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("landing.pricing.badge2")}</span>
-              <Link
-                to="/pricing"
-                className="rounded-full border border-emerald-200 bg-white px-4 py-2 text-brand transition-colors hover:border-brand hover:bg-emerald-50"
-              >
-                {t("landing.pricing.details")}
-              </Link>
-            </div>
-          </motion.div>
-
-          <div ref={pricingRef} className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-3">
-            {plans.map((plan, i) => {
-              const planKey = plan.id.toLowerCase();
-              const translatedHighlights = t(`landing.pricing.plans.${planKey}.highlights`, { returnObjects: true });
-              const highlights = Array.isArray(translatedHighlights) ? translatedHighlights as string[] : plan.highlights;
-              const isPartner = plan.code === "PARTNER";
-              const isShuru = plan.code === "SHURU";
-              return (
-              <motion.div
-                key={plan.id}
-                className={`relative flex min-w-0 w-full flex-col rounded-2xl p-6 ${
-                  plan.popular
-                    ? "border-2 border-brand bg-white shadow-2xl shadow-emerald-900/15"
-                    : isPartner
-                    ? "border border-slate-200 bg-white shadow-sm"
-                    : "border border-gray-200 bg-white shadow-sm"
-                }`}
-                initial={{ opacity: 0, scale: 0.92, y: 20 }}
-                animate={pricingInView ? { opacity: 1, scale: 1, y: 0 } : {}}
-                transition={{ delay: i * 0.12, type: "spring", stiffness: 260, damping: 20 }}
-                whileHover={{ y: -6, boxShadow: "0 12px 40px rgba(0,166,81,0.12)" }}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                    <span className="rounded-full bg-brand px-4 py-1.5 text-xs font-semibold text-white shadow-md">
-                      {t("landing.pricing.mostPopular")}
-                    </span>
-                  </div>
-                )}
-                {plan.id === "partner" && (
-                  <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                    <span className="rounded-full bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white shadow-md">
-                      {t("landing.pricing.partnerBadge")}
-                    </span>
-                  </div>
-                )}
-
-                <div className="mb-5 pt-1">
-                  <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                    <div className="mt-2 flex items-end gap-1">
-                    {isPartner ? (
-                      <>
-                        <span className="text-4xl font-bold text-gray-900">৳0</span>
-                        <span className="mb-1 text-sm text-gray-400">{t("landing.pricing.partnerPriceUnit")}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-4xl font-bold text-gray-900">
-                          ৳{formatNumber(plan.monthlyPrice)}
-                        </span>
-                        <span className="mb-1 text-sm text-gray-400">{isShuru ? t("landing.pricing.freeForever") : t("landing.pricing.perMonth")}</span>
-                      </>
-                    )}
-                  </div>
-                  <p className={`mt-2 text-xs font-semibold ${isPartner ? "text-slate-700" : "text-brand"}`}>
-                    {t(`landing.pricing.plans.${planKey}.description`, plan.description)}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-gray-700">
-                    {plan.limits.conversations < 0
-                      ? t("landing.pricing.unlimitedConversations")
-                       : t("landing.pricing.conversationsPerMonth", { count: plan.limits.conversations })}
-                  </p>
-                  {isPartner && plan.partnerOrderTiers && (
-                    <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-gray-600">
-                      <p className="mb-1 font-semibold text-gray-800">{t("landing.pricing.partnerRateBands")}</p>
-                      {plan.partnerOrderTiers.map((tier) => (
-                        <p key={`${tier.minOrders}-${tier.maxOrders}`}>
-                          {t("landing.pricing.partnerRateBand", {
-                            min: formatNumber(tier.minOrders),
-                            max: tier.maxOrders ? formatNumber(tier.maxOrders) : "+",
-                            rate: formatNumber(tier.rateBdt),
-                          })}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <ul className="mb-6 flex-1 space-y-2.5">
-                  {highlights.map((feat) => (
-                    <li key={feat} className="flex items-start gap-2 text-sm text-gray-600">
-                      <span className="mt-0.5 shrink-0 text-brand">✓</span>
-                      <span>{feat}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {isPartner ? (
-                  <Link
-                    to="/pricing"
-                    className="block rounded-xl bg-slate-900 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition-all hover:bg-slate-800"
-                  >
-                      {t(`landing.pricing.plans.${planKey}.cta`)}
-                  </Link>
-                ) : (
-                  <a
-                    href={buildAppUrl("/signup")}
-                      className={`block rounded-xl py-3 text-center text-sm font-semibold transition-all ${
-                        plan.popular
-                          ? "bg-brand text-white shadow-lg shadow-emerald-900/25 hover:bg-brand-hover"
-                          : "border border-gray-200 text-gray-700 hover:border-brand hover:text-brand"
-                      }`}
-                    >
-                      {t(`landing.pricing.plans.${planKey}.cta`)}
-                    </a>
-                  )}
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Testimonials ───────────────────────────────────────── */}
-      <section className="bg-white px-6 py-24">
-        <div className="mx-auto max-w-7xl">
-          <motion.div
-            className="mb-14 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-          >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
-              {t("landing.testimonials.label")}
-            </p>
-            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.testimonials.heading")}</h2>
-          </motion.div>
-
-          <div ref={testimonialsRef} className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {testimonials.map((t_, i) => (
-              <motion.div
-                key={t_.name}
-                className="rounded-2xl border border-gray-100 bg-white p-7 shadow-sm"
-                initial={{ opacity: 0, y: 28 }}
-                animate={testimonialsInView ? { opacity: 1, y: 0 } : {}}
-                transition={{ duration: 0.5, delay: i * 0.15, ease: [0.22, 1, 0.36, 1] }}
-                whileHover={{ y: -2, boxShadow: "0 12px 40px rgba(0,166,81,0.12)" }}
-              >
-                <p className="mb-1 text-5xl font-bold leading-none text-green-100">"</p>
-                <p className="mb-6 text-gray-700 leading-relaxed">{t_.quote}</p>
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${t_.avatarColor}`}>
-                    {t_.avatar}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900">{t_.name}</div>
-                    <div className="text-xs text-gray-400">{t_.shop} · {t_.location}</div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA Banner ─────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-[#0F172A] px-6 py-28">
-        <motion.div
-          className="pointer-events-none absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(0,166,81,0.25) 0%, transparent 70%)" }}
-          animate={{ opacity: [0.5, 0.85, 0.5], scale: [1, 1.06, 1] }}
-          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <div className="relative mx-auto max-w-3xl text-center">
-          <motion.h2
-            className="mb-4 text-4xl font-bold text-white md:text-5xl"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55 }}
-          >
-            {t("landing.cta.heading1")}{" "}
-            <span style={gradientText}>{t("landing.cta.heading2")}</span>
-          </motion.h2>
-          <motion.p
-            className="mb-10 text-xl text-slate-300"
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-          >
-            {t("landing.cta.subheading")}
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <a
-              href={buildAppUrl("/signup")}
-              className="inline-block rounded-xl bg-brand px-12 py-4 text-lg font-semibold text-white shadow-xl shadow-emerald-900/30 transition-all hover:bg-brand-hover"
-            >
-              {t("landing.cta.button")}
-            </a>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Footer ─────────────────────────────────────────────── */}
-      <footer id="contact" className="border-t border-slate-800 bg-[#0F172A] px-6 py-12">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
-            <div>
-              <BrandLogo size="sm" variant="light" />
-              <p className="mt-1 text-sm text-slate-400">{t("landing.footer.tagline")}</p>
-            </div>
-            <div className="flex items-center gap-6 text-sm">
-              <LanguageToggle variant="light" />
-              <Link to="/privacy-policy" className="text-slate-400 hover:text-white transition-colors">
-                {t("common.privacyPolicy")}
-              </Link>
-              <Link to="/terms" className="text-slate-400 hover:text-white transition-colors">
-                {t("common.terms")}
-              </Link>
-              <a href={buildAppUrl("/signin")} className="text-slate-400 hover:text-white transition-colors">
-                {t("common.signIn")}
-              </a>
-            </div>
-          </div>
-          <div className="mt-8 border-t border-slate-800 pt-6 text-center text-sm text-slate-500">
-            {t("common.copyright")}
-          </div>
-        </div>
-      </footer>
+        <TrustAndFaq />
+        <LandingClosing />
+      </main>
+      <PublicFunnelFooter />
     </div>
   );
 }

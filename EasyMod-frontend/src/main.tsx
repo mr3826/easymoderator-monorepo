@@ -1,36 +1,19 @@
-
-import './i18n';
-import { createRoot } from "react-dom/client";
-import App from "./app/App.tsx";
-import { ErrorBoundary } from "./app/components/ErrorBoundary.tsx";
-import { Toaster } from "sonner";
-import "./styles/index.css";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "./app/lib/queryClient";
-import { registerServiceWorker } from "./app/lib/pushNotification";
-import { initSentry } from "./sentry";
 import { isMarketingSurface } from "./app/lib/config";
+import { readLanguageOverride, readStoredLanguage, storeLanguage } from "./i18n/language";
 
-// Initialise Sentry error tracking (no-op until VITE_SENTRY_DSN is set)
-initSentry();
-
-// The marketing site is public/acquisition-only; merchant push notifications
-// and their service worker belong exclusively to app.easymod.tech.
-if (!isMarketingSurface()) {
-  registerServiceWorker().catch(() => {});
-} else {
+if (isMarketingSurface()) {
+  // Marketing pages do not need the authenticated merchant workspace bundle.
   document.head.querySelector('link[rel="manifest"]')?.remove();
+  const languageOverride = readLanguageOverride(window.location.search);
+  if (languageOverride) storeLanguage(languageOverride);
+  const language = languageOverride || readStoredLanguage() || "bn";
+  void Promise.all([
+    import("./main-marketing"),
+    import("./i18n/publicLocale").then(({ loadPublicLocaleResources }) => loadPublicLocaleResources(language)),
+  ]).then(([marketing, resources]) => marketing.startMarketing(language, resources)).catch(() => {
+    const root = document.getElementById("root");
+    if (root) root.textContent = "EasyModerator pages could not load. Refresh to try again.";
+  });
+} else {
+  void import("./main-app");
 }
-
-createRoot(document.getElementById("root")!).render(
-  <QueryClientProvider client={queryClient}>
-    <ErrorBoundary>
-      <App />
-      {/* top-center, not bottom-*: DashboardLayout renders a `md:hidden fixed
-          bottom-0` nav, and sonner only swaps to its mobile offset at 600px
-          while that nav is visible up to 768px. Anchoring to the top avoids the
-          collision at every width, and keeps the message out from under a thumb. */}
-      <Toaster position="top-center" richColors closeButton duration={3000} />
-    </ErrorBoundary>
-  </QueryClientProvider>
-);

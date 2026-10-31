@@ -60,8 +60,20 @@ export function buildAppUrl(path = '/'): string {
   return new URL(path, `${config.appUrl}/`).toString();
 }
 
+export function buildAppUrlWithLocale(path = '/', locale: string): string {
+  const url = new URL(path, `${config.appUrl}/`);
+  if (locale === 'en' || locale === 'bn') url.searchParams.set('lang', locale);
+  return url.toString();
+}
+
 export function buildMarketingUrl(path = '/'): string {
   return new URL(path, `${config.marketingUrl}/`).toString();
+}
+
+export function buildMarketingUrlWithLocale(path = '/', locale: string): string {
+  const url = new URL(path, `${config.marketingUrl}/`);
+  if (locale === 'en' || locale === 'bn') url.searchParams.set('lang', locale);
+  return url.toString();
 }
 
 function withLeadingSlash(path: string): string {

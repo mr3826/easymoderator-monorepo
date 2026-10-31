@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
 import {
   Users,
@@ -62,6 +63,35 @@ export const normalizeLegacyCustomer = (customer: Customer): Customer => {
 
 function LegacyCustomers() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedCustomerId = searchParams.get("customerId");
+
+  // Inbox deep links carry the exact customer ID. Resolve it through the
+  // existing shop-scoped endpoint before opening the legacy detail drawer.
+  useEffect(() => {
+    if (!linkedCustomerId) return;
+    let cancelled = false;
+    apiClient.getCustomer(linkedCustomerId)
+      .then((customer) => {
+        if (!cancelled) setSelectedCustomer(normalizeLegacyCustomer(customer));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        toast.error(getErrorMessage(err, t("customers.errors.fetchFailed")));
+        const next = new URLSearchParams(searchParams);
+        next.delete("customerId");
+        setSearchParams(next, { replace: true });
+      });
+    return () => { cancelled = true; };
+  }, [linkedCustomerId, searchParams, setSearchParams, t]);
+
+  const closeCustomerDetails = () => {
+    setSelectedCustomer(null);
+    if (!searchParams.has("customerId")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("customerId");
+    setSearchParams(next, { replace: true });
+  };
 
   // Shop-wide stats (fetched once on mount, independent of filters)
   const [shopStats, setShopStats] = useState({ total: 0, channelCount: 0, manualCount: 0 });
@@ -470,7 +500,7 @@ function LegacyCustomers() {
             <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between rounded-t-2xl">
               <h2 className="text-2xl font-bold text-gray-900">{t('customers.detail.title')}</h2>
               <button
-                onClick={() => setSelectedCustomer(null)}
+                onClick={closeCustomerDetails}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -737,6 +767,9 @@ function LegacyCustomers() {
  * pilot API re-checks it. Any failure falls back to the existing page.
  */
 export default function Customers() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const linkedCustomerId = searchParams.get("customerId");
   const [mode, setMode] = useState<'loading' | 'pilot' | 'legacy'>('loading');
 
   useEffect(() => {
@@ -746,6 +779,14 @@ export default function Customers() {
       .catch(() => { if (!cancelled) setMode('legacy'); });
     return () => { cancelled = true; };
   }, []);
+
+  // Pilot mode owns a path-based detail route; convert the inbox deep-link once
+  // the mode is known so both modes resolve the exact customer.
+  useEffect(() => {
+    if (mode === 'pilot' && linkedCustomerId) {
+      navigate(`/customers/${encodeURIComponent(linkedCustomerId)}`, { replace: true });
+    }
+  }, [linkedCustomerId, mode, navigate]);
 
   if (mode === 'loading') {
     return (

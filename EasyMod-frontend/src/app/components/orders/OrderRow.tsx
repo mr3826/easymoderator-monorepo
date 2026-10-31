@@ -10,6 +10,7 @@ import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Order } from "@/api/types/order";
 import { cardHover } from "@/lib/motion";
+import { canBookCourierForOrder } from "./orderRules";
 
 // Semantic token-aligned status pill classes
 const STATUS_CLASSES: Record<string, string> = {
@@ -32,10 +33,14 @@ interface OrderRowProps {
 export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDispatch }: OrderRowProps) {
   const { t } = useTranslation();
 
-  const canDispatch =
-    !order.delivery_tracking_code &&
-    order.status !== "cancelled" &&
-    order.status !== "completed";
+  const canDispatch = canBookCourierForOrder(order);
+  const paymentLabel = order.payment_status
+    ? t(`orders.paymentStatus.${order.payment_status.toLowerCase()}`, { defaultValue: order.payment_status })
+    : t("orders.paymentStatus.unknown", { defaultValue: "—" });
+  const provider = order.delivery_provider?.trim().toLowerCase();
+  const providerLabel = order.delivery_provider
+    ? t(`orders.provider.${provider}`, { defaultValue: order.delivery_provider })
+    : t("orders.fulfillment.providerUnavailable", { defaultValue: "—" });
 
   return (
     <article className="rounded-2xl border border-border bg-card p-4">
@@ -63,7 +68,12 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="rounded-md bg-muted px-2 py-1">📍 {order.channel}</span>
+        <span className="rounded-md bg-muted px-2 py-1">{t("orders.columns.payment")}: {paymentLabel}</span>
         {order.payment_method && <span className="rounded-md bg-muted px-2 py-1">{order.payment_method}</span>}
+        <span className="rounded-md bg-muted px-2 py-1">{t("orders.columns.courier")}: {providerLabel}</span>
+        {order.delivery_tracking_code
+          ? <span className="max-w-full break-all rounded-md bg-muted px-2 py-1">{order.delivery_tracking_code}</span>
+          : <span className="rounded-md bg-muted px-2 py-1">{t("orders.fulfillment.trackingUnavailable")}</span>}
         <span className="rounded-md bg-muted px-2 py-1">🕐 {formatDate(order.createdAt)}</span>
         {order.rto_risk === "high" && (
           <span className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 font-semibold text-red-700 font-bn">
@@ -72,12 +82,12 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
         )}
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className={`mt-3 grid gap-2 ${canDispatch || order.delivery_tracking_code ? "grid-cols-2" : "grid-cols-1"}`}>
         <button
           onClick={() => onViewDetail(order)}
           className="min-h-12 rounded-xl border border-border bg-white px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors font-bn"
         >
-          {t("orders.row.viewDetail")}
+          {order.status === "draft" ? t("orders.row.reviewDraft") : t("orders.row.viewDetail")}
         </button>
         {order.delivery_tracking_code ? (
           <a

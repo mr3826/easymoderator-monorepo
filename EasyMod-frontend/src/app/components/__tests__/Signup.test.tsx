@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import Signup from '../Signup';
 
 const mockSignup = vi.fn();
@@ -14,18 +14,24 @@ vi.mock('@/app/lib/funnel', () => ({
   trackFunnelEvent: vi.fn(),
 }));
 
-function renderSignup() {
+function LocationDisplay() {
+  const location = useLocation();
+  return <output data-testid="current-location">{`${location.pathname}${location.search}`}</output>;
+}
+
+function renderSignup(initialEntry = '/signup') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Signup />
+      <LocationDisplay />
     </MemoryRouter>,
   );
 }
 
 async function fillValidFields(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText('Full Name'), 'Consent Test User');
-  await user.type(screen.getByLabelText('Email Address'), 'consent-test@example.com');
-  await user.type(screen.getByLabelText(/Mobile Number/i), '01712345678');
+  await user.type(screen.getByLabelText('Your name'), 'Consent Test User');
+  await user.type(screen.getByLabelText('Email'), 'consent-test@example.com');
+  await user.type(screen.getByLabelText(/mobile number/i), '01712345678');
   await user.type(screen.getByLabelText('Password'), 'ValidPass123!');
 }
 
@@ -42,10 +48,24 @@ describe('Signup terms consent', () => {
   it('starts with a disabled submit button and visible consent guidance', () => {
     renderSignup();
 
-    expect(screen.getByRole('button', { name: /create account and start setup/i })).toBeDisabled();
-    expect(screen.getByText(/accept the terms & conditions to create your account/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /privacy policy/i })).toHaveAttribute('href', expect.stringContaining('/privacy-policy'));
-    expect(screen.getByRole('link', { name: /terms of service/i })).toHaveAttribute('href', expect.stringContaining('/terms'));
+    expect(screen.getByLabelText('Your name')).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Password')).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByRole('checkbox', { name: /privacy policy/i })).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByRole('button', { name: /create a Shuru account/i })).toBeDisabled();
+    expect(screen.getByText(/required to create your account/i)).toBeInTheDocument();
+    expect(screen.getByText(/8 or more characters/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/first shop/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/no payment information is required to create an account/i)).toBeInTheDocument();
+    expect(screen.getByText(/after account creation, complete your shop setup from the dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/under Business information/i)).toBeInTheDocument();
+    expect(screen.getByText(/we use your name for your account and first shop/i)).toBeInTheDocument();
+    expect(screen.queryByText(/your new account starts on Shuru/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/a Shuru subscription is created with your account/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/mobile number/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/mobile number/i)).toHaveAttribute('aria-required', 'true');
+    expect(screen.getAllByRole('link', { name: /privacy policy/i }).every((link) => link.getAttribute('href')?.includes('/privacy-policy?lang=en'))).toBe(true);
+    expect(screen.getAllByRole('link', { name: /terms of service/i }).every((link) => link.getAttribute('href')?.includes('/terms?lang=en'))).toBe(true);
   });
 
   it('does not submit or enter a pending state when consent is missing', async () => {
@@ -54,7 +74,7 @@ describe('Signup terms consent', () => {
     renderSignup();
     await fillValidFields(user);
 
-    const submit = screen.getByRole('button', { name: /create account and start setup/i });
+    const submit = screen.getByRole('button', { name: /create a Shuru account/i });
     const form = submit.closest('form');
     expect(form).not.toBeNull();
     fireEvent.submit(form!);
@@ -63,7 +83,7 @@ describe('Signup terms consent', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/accept the terms/i);
     });
     expect(mockSignup).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /create account and start setup/i })).not.toHaveTextContent(/creating account/i);
+    expect(screen.getByRole('button', { name: /create a Shuru account/i })).not.toHaveTextContent(/creating account/i);
     expect(consoleError).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('checkbox', { name: /privacy policy/i }));
@@ -80,7 +100,7 @@ describe('Signup terms consent', () => {
     await fillValidFields(user);
 
     const terms = screen.getByRole('checkbox', { name: /privacy policy/i });
-    const submit = screen.getByRole('button', { name: /create account and start setup/i });
+    const submit = screen.getByRole('button', { name: /create a Shuru account/i });
     expect(submit).toBeDisabled();
     await user.click(terms);
     expect(submit).toBeEnabled();
@@ -104,13 +124,28 @@ describe('Signup terms consent', () => {
     await firstSubmit;
   });
 
+  it('continues a Growth review request to the fixed subscription path after signup', async () => {
+    const user = userEvent.setup();
+    renderSignup('/signup?lang=en&intent=growth-upgrade&returnTo=https%3A%2F%2Fevil.invalid');
+    await fillValidFields(user);
+    await user.click(screen.getByRole('checkbox', { name: /privacy policy/i }));
+    await user.click(screen.getByRole('button', { name: /create a Shuru account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-location')).toHaveTextContent(
+        '/subscription?intent=growth-upgrade&lang=en',
+      );
+    });
+    expect(screen.getByTestId('current-location')).not.toHaveTextContent('evil.invalid');
+  });
+
   it('re-enables the button and presents a normal error after signup failure', async () => {
     const user = userEvent.setup();
     mockSignup.mockRejectedValue(new Error('Email is already registered'));
     renderSignup();
     await fillValidFields(user);
     await user.click(screen.getByRole('checkbox', { name: /privacy policy/i }));
-    const submit = screen.getByRole('button', { name: /create account and start setup/i });
+    const submit = screen.getByRole('button', { name: /create a Shuru account/i });
 
     await user.click(submit);
 
@@ -128,7 +163,7 @@ describe('Signup terms consent', () => {
     await fillValidFields(user);
     await user.click(screen.getByRole('checkbox', { name: /privacy policy/i }));
 
-    const submit = screen.getByRole('button', { name: /create account and start setup/i });
+    const submit = screen.getByRole('button', { name: /create a Shuru account/i });
     const form = submit.closest('form');
     expect(form).not.toBeNull();
     form!.requestSubmit();

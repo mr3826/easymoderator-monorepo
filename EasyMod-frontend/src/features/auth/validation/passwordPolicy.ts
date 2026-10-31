@@ -53,10 +53,6 @@ export const PASSWORD_RULES: PasswordRule[] = [
   },
 ];
 
-/** Human-readable summary shown under password inputs. */
-export const PASSWORD_HINT =
-  'Use 8+ characters with uppercase, lowercase, a number, and a special character';
-
 /** Returns the first unmet rule's message, or null when the password is acceptable. */
 export function getPasswordError(value: string): string | null {
   const failed = PASSWORD_RULES.find((rule) => !rule.test(value));

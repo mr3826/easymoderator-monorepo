@@ -15,7 +15,22 @@
     "settings": "Settings",
     "subscription": "Subscription",
     "shopSettings": "Shop Settings",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "inbox": "Inbox",
+    "categories": "Categories",
+    "reports": "Reports",
+    "auditLogs": "Audit Logs",
+    "teamUsers": "Team Users",
+    "mobileHome": "Home",
+    "mobileInbox": "Inbox",
+    "mobileOrders": "Orders",
+    "mobileCustomers": "Customers",
+    "mobileProducts": "Products",
+    "dailyWork": "Daily work",
+    "workspace": "Workspace",
+    "accountMenu": "Account menu",
+    "account": "Account",
+    "expand": "Expand"
   },
   "common": {
     "privacyPolicy": "Privacy Policy",
@@ -82,7 +97,12 @@
       "switchToEnglish": "Switch to English",
       "switchToBengali": "Switch to Bengali"
     },
-    "bdPhoneInvalid": "Enter a valid Bangladeshi mobile number (01X-XXXX-XXXX)"
+    "bdPhoneInvalid": "Enter a valid Bangladeshi mobile number (01X-XXXX-XXXX)",
+    "pageErrorTitle": "This page could not load",
+    "pageNotFound": "Page not found",
+    "pageErrorMessage": "Refresh this page or return to a safe page.",
+    "returnHome": "Go to home",
+    "returnToSignIn": "Back to sign in"
   },
   "landing": {
     "nav": {
@@ -423,7 +443,8 @@
         "policy": "Use 8+ characters with uppercase, lowercase, a number, and a special character.",
         "mismatch": "Passwords do not match.",
         "failed": "Failed to reset password"
-      }
+      },
+      "redirectingNotice": "All existing sessions have been signed out. Returning to sign in shortly."
     }
   },
   "dashboard": {
@@ -442,7 +463,11 @@
         "confirmedOrdersUnit": "{{count}} Orders",
         "missedReplies": "Customers Waiting",
         "missedRepliesUnit": "{{count}} waiting",
-        "viewMissed": "View"
+        "viewMissed": "View",
+        "ordersToday": "Orders today",
+        "waitingForReply": "Unread conversations",
+        "readyToDispatch": "Ready to dispatch",
+        "unavailable": "Unavailable"
       },
       "status": {
         "confirmed": "Confirmed ✅",
@@ -453,7 +478,10 @@
         "delivered": "Delivered",
         "returned": "Returned",
         "finalized": "Finalized",
-        "unknown": "Status unavailable"
+        "unknown": "Status unavailable",
+        "completed": "Completed",
+        "pending": "Pending",
+        "failed": "Failed"
       },
       "work": {
         "title": "What needs attention",
@@ -471,7 +499,14 @@
         "openOrders": "Open orders",
         "moreInGroup": "{{count}} more in this group",
         "openNextConversation": "Open next conversation",
-        "reviewNextOrder": "Review next order"
+        "reviewNextOrder": "Review next order",
+        "sourcesUnavailable": "Some task lists are unavailable. Retry to check what still needs attention.",
+        "draftCoverageNote": "Showing up to 100 recent Draft orders. More may exist.",
+        "exceptionCoverageNote": "Showing up to 10 recent orders with delivery attempts or returns. More may exist.",
+        "exceptionStatuses": {
+          "attempted": "Delivery attempted",
+          "returned": "Returned"
+        }
       },
       "replyTasks": {
         "open": "Open conversation",
@@ -481,28 +516,55 @@
           "CUSTOMER_UNANSWERED": "Customer is waiting for a reply",
           "PROVIDER_SEND_FAILED": "The last reply did not send",
           "HITL_REQUIRED": "Human review is required",
-          "ORDER_CONFIDENCE_HOLD": "Order details need review"
-        }
+          "ORDER_CONFIDENCE_HOLD": "Order details need review",
+          "DRAFT_REVIEW_REQUIRED": "AI draft needs review",
+          "AI_FAILED": "AI reply failed",
+          "AI_PAUSED": "AI is paused"
+        },
+        "title": "Conversations needing a reply",
+        "subtitle": "Open each conversation to review its current state and respond.",
+        "noneComplete": "No conversations currently need your reply.",
+        "nonePartial": "No reply tasks were found in the loaded conversations. This list is partial.",
+        "unavailable": "Reply tasks could not be loaded.",
+        "coverageNote": "More reply tasks may be available outside this loaded list.",
+        "omittedOne": "{{count}} loaded reply task is not shown.",
+        "omittedMany": "{{count}} loaded reply tasks are not shown.",
+        "timeUnavailable": "Activity time unavailable"
       },
       "attention": {
-        "reviewOrder": "Review order"
+        "reviewOrder": "Review order",
+        "title": "Queues and activity",
+        "noItems": "No open queue items.",
+        "ordersToday": "Orders today",
+        "unansweredConversations": "Unanswered conversations",
+        "waitingForReply": "Conversations awaiting reply",
+        "pendingPayment": "Payment needs checking",
+        "readyToDispatch": "Ready to dispatch",
+        "atRisk": "Failed or returned orders",
+        "openInbox": "Open Inbox",
+        "openOrders": "Open orders"
       },
       "sourceNames": {
         "overview": "order overview",
         "actionCounts": "action counts",
         "drafts": "Draft orders",
         "replies": "reply tasks",
-        "recentOrders": "recent orders"
+        "recentOrders": "recent orders",
+        "deliveryExceptions": "delivery attempts and returns"
       },
       "overview": {
         "title": "Business overview",
         "subtitle": "Order counts and courier cash are separate measures.",
-        "ordersToday": "Orders today"
+        "ordersToday": "Orders today",
+        "openReports": "View reports"
       },
       "botActivity": {
         "title": "Reply Performance",
         "botReplied": "Replies drafted or sent today: {{count}}",
-        "needsAttention": "{{count}} customer items need review"
+        "needsAttention": "{{count}} customer items need review",
+        "subtitle": "Latest available analytics record",
+        "analyticsCalls": "AI analytics calls: {{count}}",
+        "unavailable": "AI activity data is unavailable."
       },
       "atRisk": "⚠️ {{count}} customers at risk — check now",
       "latestOrders": {
@@ -510,7 +572,8 @@
         "viewAll": "View All",
         "empty": "Recent orders will appear here when available.",
         "valueNote": "Order totals are not cash collected or settled.",
-        "noProduct": "No product specified"
+        "noProduct": "No product specified",
+        "unavailable": "Recent orders could not be loaded."
       },
       "liveUpdate": "Live update every 60 seconds",
       "lastUpdated": "· Last updated {{time}}",
@@ -523,7 +586,35 @@
         "atRiskSub": "At Risk · {{days}} days",
         "ordersUnit": "{{count}} orders",
         "unavailable": "Unavailable"
-      }
+      },
+      "courierSnapshot": {
+        "title": "Courier bookings and parcels",
+        "subtitle": "Follow saved courier bookings and parcels on the way.",
+        "loading": "Checking recent orders for courier details…",
+        "unavailable": "Courier details could not be loaded.",
+        "scope": "From up to {{count}} most recently created orders checked. Older parcels may not appear.",
+        "noCompleteRecentSample": "No complete active parcel record is shown in this recent sample. Some orders may have incomplete courier details.",
+        "aggregateUnavailable": "The all-orders courier total is unavailable, so this sample cannot confirm whether other parcels are active.",
+        "noneActive": "The all-orders total records no active courier parcels.",
+        "omitted": "{{count}} more active parcels are in this recent sample.",
+        "openOrder": "Open order",
+        "bookedAt": "Booking saved {{time}}",
+        "providers": {
+          "pathao": "Pathao",
+          "redx": "REDX",
+          "steadfast": "Steadfast"
+        },
+        "status": {
+          "booked": "Booked",
+          "picked_up": "Picked up",
+          "in_transit": "In transit",
+          "out_for_delivery": "Out for delivery"
+        }
+      },
+      "unavailable": "This data could not be loaded.",
+      "cashUnavailable": "Order delivery totals are unavailable.",
+      "lastChecked": "Task sources last checked: {{time}}",
+      "timeUnavailable": "time unavailable"
     },
     "setup": {
       "loading": "Checking shop setup...",
@@ -598,7 +689,9 @@
         "WEBHOOK_NOT_VERIFIED": "No recent webhook verification was found. Send a test message before launch.",
         "LOW_PRODUCT_COUNT": "Three or more active products are recommended before launch.",
         "AI_NOT_DRAFT": "Review first is recommended for first launch verification."
-      }
+      },
+      "stateUnavailable": "Shop setup status could not be loaded.",
+      "nextStep": "Start here"
     },
     "nav": {
       "dashboard": "Dashboard",
@@ -676,7 +769,12 @@
       "range": "Showing {{start}}–{{end}} of {{total}} conversations",
       "page": "Page {{current}} of {{total}}",
       "previousPage": "Previous page",
-      "nextPage": "Next page"
+      "nextPage": "Next page",
+      "showing": "Showing {{start}}–{{end}} of {{total}} conversations",
+      "pageOf": "Page {{page}} of {{totalPages}}",
+      "pageScope": "Search and filters apply only to conversations loaded on this page. Tab badges reflect this page.",
+      "previous": "Previous page",
+      "next": "Next page"
     },
     "agentHandling": "🙋 You're replying",
     "resumeAi": "Resume AI",
@@ -694,7 +792,10 @@
       "draftReady": "Draft ready for review",
       "humanReviewRequired": "Human review required",
       "providerBlocked": "Automatic reply blocked. Send a fresh merchant reply after checking the channel.",
-      "policyBlocked": "Blocked by messaging rules — this reply was not sent. Check the conversation facts, then reply manually if it is still appropriate."
+      "policyBlocked": "Blocked by messaging rules — this reply was not sent. Check the conversation facts, then reply manually if it is still appropriate.",
+      "active": "Open",
+      "closed": "Closed",
+      "archived": "Archived"
     },
     "upgradeForAI": "Upgrade for AI",
     "agentBanner": "You're replying yourself — AI is paused for this conversation.",
@@ -774,7 +875,15 @@
       "replySoon": "Message received",
       "askDetails": "Ask for a detail",
       "needAddress": "Need Address",
-      "thankYou": "Thank You"
+      "thankYou": "Thank You",
+      "orderConfirmed": "Order Confirmed",
+      "advancePayment": "Advance Payment",
+      "courierUpdate": "Courier Update",
+      "outOfStock": "Out of Stock",
+      "deliveryCharge": "Delivery Charge",
+      "returnWindow": "Return Window",
+      "cashOnDelivery": "Cash on Delivery",
+      "dispatchToday": "Dispatch Today"
     },
     "context": {
       "title": "Customer context",
@@ -814,7 +923,21 @@
         "assign": "Assign to…",
         "force": "Take over as manager",
         "failed": "Could not update ownership"
-      }
+      },
+      "eyebrow": "Conversation details",
+      "subtitle": "Details linked to this conversation.",
+      "show": "Show context",
+      "customer": "Customer",
+      "phoneUnavailable": "Phone not available",
+      "customerUnavailable": "A linked customer profile is not available.",
+      "conversation": "Conversation",
+      "channel": "Channel",
+      "status": "Status",
+      "replyState": "Reply task",
+      "lastActivity": "Last activity",
+      "relatedRecords": "Related records",
+      "relatedRecordsUnavailable": "This conversation does not include a linked order or product.",
+      "selectConversation": "Select a conversation to see its customer and current state."
     },
     "actions": {
       "title": "Top actions ({{total}})",
@@ -859,7 +982,42 @@
         "review_opportunity": "Review deal",
         "review_knowledge_gap": "Review question"
       }
-    }
+    },
+    "viewCustomer": "View customer profile",
+    "noSearchMatchesOnPage": "No search matches on this page. Try another page or refine your search.",
+    "noSearchAndFilterMatchesOnPage": "No conversations on this page match your search and filter. Try another page or change the search or filter.",
+    "noFilterMatchesOnPage": "No conversations on this page match this filter. Try another page or change the filter.",
+    "noConversationsOnPage": "No conversations on this page.",
+    "retryLoadConversations": "Try again",
+    "conversationState": {
+      "open": "Open",
+      "resolved": "Resolved"
+    },
+    "replyReason": {
+      "customerUnanswered": "Customer is waiting for a reply",
+      "draftReviewRequired": "AI draft needs review",
+      "humanReviewRequired": "Human review needed",
+      "aiFailed": "AI reply failed",
+      "sendFailed": "Delivery was not confirmed",
+      "aiPaused": "AI is paused",
+      "needsReply": "Merchant reply needed",
+      "noReplyNeeded": "No reply task is currently reported",
+      "unavailable": "Reply task state unavailable"
+    },
+    "deliveryStatus": {
+      "pending": "Delivery pending",
+      "sent": "Provider confirmed",
+      "failed": "Delivery failed",
+      "unknown": "Provider result pending reconciliation"
+    },
+    "taskOutcome": {
+      "replyConfirmed": "Message accepted by the provider. Delivery to the customer is not confirmed.",
+      "replyPending": "Reply is saved, but provider confirmation is still pending.",
+      "replyFailed": "The provider did not confirm the reply. Review the failure before retrying.",
+      "nextTask": "Open next reply task",
+      "returnToQueue": "Return to reply queue"
+    },
+    "retry": "Retry"
   },
   "products": {
     "title": "Products & Inventory",
@@ -1060,7 +1218,10 @@
       "approveFailed": "Failed to approve product.",
       "someInvalidPrices": "Some products have invalid prices and were skipped.",
       "approveNamedFailed": "Failed to approve {{name}}."
-    }
+    },
+    "manageCategories": "Manage categories",
+    "noLowStockMatches": "No tracked product is at or below its configured low-stock threshold.",
+    "clearLowStockFilter": "Show all products"
   },
   "categories": {
     "title": "Categories",
@@ -1175,7 +1336,9 @@
       "total": "Total",
       "channel": "Channel",
       "status": "Status",
-      "actions": "Actions"
+      "actions": "Actions",
+      "payment": "Payment",
+      "courier": "Courier / tracking"
     },
     "itemCount": "{{count}} items",
     "createModal": {
@@ -1303,8 +1466,32 @@
       "viewDetail": "View Details",
       "track": "Track",
       "dispatch": "Dispatch",
-      "viewStatus": "View Status"
-    }
+      "viewStatus": "View Status",
+      "reviewDraft": "Review draft"
+    },
+    "paymentStatus": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "unpaid": "Unpaid",
+      "failed": "Failed",
+      "refunded": "Refunded",
+      "partially_paid": "Partially paid",
+      "partial": "Partially paid",
+      "unknown": "Status unavailable"
+    },
+    "fulfillment": {
+      "trackingRecorded": "Tracking ID recorded",
+      "trackingUnavailable": "No tracking ID recorded",
+      "providerUnavailable": "Provider not recorded"
+    },
+    "provider": {
+      "pathao": "Pathao",
+      "redx": "RedX",
+      "steadfast": "Steadfast"
+    },
+    "resultsCount": "Results: {{count}}",
+    "desktopTableScrollHint": "Order actions stay beside each order. Scroll horizontally to see courier details and channel.",
+    "clearFilters": "Clear filters"
   },
   "customers": {
     "title": "Customer Management",
@@ -1360,7 +1547,16 @@
       "notAvailable": "Not available",
       "removeBlacklist": "Remove from Blacklist",
       "blacklist": "Blacklist Customer",
-      "addBlacklist": "Blacklist Customer"
+      "addBlacklist": "Blacklist Customer",
+      "dialogDescription": "Customer contact details and shop actions.",
+      "blacklistSectionTitle": "Customer safety",
+      "blacklistSectionDescription": "Changing blacklist status requires confirmation.",
+      "confirmBlacklistTitle": "Add customer to blacklist?",
+      "confirmBlacklistDescription": "This will change the blacklist status for {{name}}.",
+      "confirmBlacklistAction": "Add to blacklist",
+      "confirmUnblacklistTitle": "Remove customer from blacklist?",
+      "confirmUnblacklistDescription": "This will change the blacklist status for {{name}}.",
+      "confirmUnblacklistAction": "Remove from blacklist"
     },
     "addModal": {
       "title": "Add Customer",
@@ -1395,7 +1591,9 @@
       "updateFailed": "Failed to update customer",
       "deleteFailed": "Failed to delete customer",
       "blacklistFailed": "Failed to update blacklist status"
-    }
+    },
+    "mobileListLabel": "Customer records",
+    "desktopListLabel": "Customer records table"
   },
   "customer360": {
     "title": "Customers",
@@ -2425,10 +2623,21 @@
       "partner": "No upfront fee; pay for successfully delivered orders."
     },
     "plans": {
-      "shuru": { "name": "Shuru", "description": "Free forever for getting started with Messenger sales." },
-      "growth": { "name": "Growth", "description": "The full Messenger sales assistant for growing shops." },
-      "partner": { "name": "Partner", "description": "No upfront fee; pay for successfully delivered orders." }
-    }
+      "shuru": {
+        "name": "Shuru",
+        "description": "Free forever for getting started with Messenger sales."
+      },
+      "growth": {
+        "name": "Growth",
+        "description": "The full Messenger sales assistant for growing shops."
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "No upfront fee; pay for successfully delivered orders."
+      }
+    },
+    "growthIntentNotice": "You asked to review Growth. New accounts start on Shuru. A plan change takes effect only after a supported payment is completed.",
+    "growthIntentViewPlan": "View Growth plan"
   },
   "conversationAlert": {
     "threshold70": {

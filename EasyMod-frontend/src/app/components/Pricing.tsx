@@ -1,27 +1,21 @@
 import { useEffect, useState } from "react";
-import { Check, Zap, ArrowRight, MessageSquare, ShoppingCart, Package, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import {
-  subscriptionPlans,
-  type SubscriptionPlanDefinition,
-} from "@/app/lib/subscriptionPlans";
-import { getSubscriptionPlans } from "@/api/domains/subscription";
+import { getCurrentPublicSubscriptionCatalog, type PublicSubscriptionCatalog } from "@/api/domains/publicSubscription";
 import { publicApiPost } from "@/shared/lib/http/public-client";
-import BrandLogo from "./BrandLogo";
-import { buildAppUrl } from "@/app/lib/config";
-import Seo from "./Seo";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
+import { buildAppUrlWithLocale, isBkashEnabled } from "@/app/lib/config";
+import { GROWTH_UPGRADE_INTENT } from "@/app/lib/signupIntent";
+import type { SubscriptionPlanDefinition } from "@/app/lib/subscriptionPlans";
 import { Button } from "./ui/button";
-
-
-const FEATURE_ROWS: { labelKey: string; key: keyof SubscriptionPlanDefinition["features"] }[] = [
-  { labelKey: "pricing.features.imageUnderstanding", key: "image_understanding" },
-  { labelKey: "pricing.features.advancedAi", key: "advanced_ai" },
-  { labelKey: "pricing.features.prioritySupport", key: "priority_support" },
-  { labelKey: "pricing.features.customBranding", key: "custom_branding" },
-];
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { PublicFunnelFooter, PublicFunnelHeader } from "./PublicFunnelChrome";
+import Seo from "./Seo";
+import "./public-funnel.css";
 
 interface PartnerFormData {
   businessName: string;
@@ -29,409 +23,292 @@ interface PartnerFormData {
   pageLink: string;
 }
 
-function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
+function formatNumber(value: number, locale: string) {
+  return value.toLocaleString(locale === "bn" ? "bn-BD" : "en-US");
+}
+
+function normalizeBangladeshMobile(value: string): string | null {
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("00880")) digits = digits.slice(5);
+  else if (digits.startsWith("880")) digits = digits.slice(3);
+  if (digits.length === 10 && digits.startsWith("1")) digits = `0${digits}`;
+  return /^01[3-9]\d{8}$/.test(digits) ? digits : null;
+}
+
+function PartnerApplicationDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<PartnerFormData>({ businessName: "", phone: "", pageLink: "" });
+  const [errors, setErrors] = useState<Partial<PartnerFormData>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [errors, setErrors] = useState<Partial<PartnerFormData>>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState("");
 
-  const validate = () => {
-    const e: Partial<PartnerFormData> = {};
-    if (!form.businessName.trim()) e.businessName = t("pricing.partnerModal.errors.businessNameRequired");
-    if (!form.phone.trim()) e.phone = t("pricing.partnerModal.errors.phoneRequired");
-    if (!form.pageLink.trim()) e.pageLink = t("pricing.partnerModal.errors.pageLinkRequired");
-    setErrors(e);
-    return Object.keys(e).length === 0;
+  const update = (field: keyof PartnerFormData, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: undefined }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextErrors: Partial<PartnerFormData> = {};
+    if (!form.businessName.trim()) nextErrors.businessName = t("publicFunnel.pricing.fieldRequired");
+    const normalizedPhone = normalizeBangladeshMobile(form.phone);
+    if (!form.phone.trim()) nextErrors.phone = t("publicFunnel.pricing.fieldRequired");
+    else if (!normalizedPhone) nextErrors.phone = t("publicFunnel.pricing.phoneInvalid");
+    if (!form.pageLink.trim()) nextErrors.pageLink = t("publicFunnel.pricing.fieldRequired");
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      return;
+    }
+
     setSubmitting(true);
-    setSubmitError(null);
+    setSubmitError("");
     try {
-      await publicApiPost("/api/partner/apply", form);
+      await publicApiPost("/api/partner/apply", { ...form, phone: normalizedPhone });
       setSubmitted(true);
-    } catch (err: any) {
-      setSubmitError(err?.message || t("pricing.partnerModal.errors.submitFailed"));
+    } catch {
+      setSubmitError(t("publicFunnel.pricing.applicationError"));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const field = (name: keyof PartnerFormData, type: "text" | "tel" | "url", labelKey: string, placeholder?: string) => {
+    const id = `partner-${name}`;
+    const errorId = `${id}-error`;
+    return (
+      <div>
+        <label htmlFor={id} className="mb-1 block text-sm font-semibold text-[#17223B]">{t(labelKey)} <span aria-hidden="true">*</span></label>
+        <input
+          id={id}
+          name={name}
+          type={type}
+          value={form[name]}
+          onChange={(event) => update(name, event.target.value)}
+          placeholder={placeholder}
+          required
+          disabled={submitting}
+          aria-invalid={errors[name] ? true : undefined}
+          aria-describedby={name === "phone" ? `${id}-hint${errors[name] ? ` ${errorId}` : ""}` : errors[name] ? errorId : undefined}
+          className="min-h-11 w-full rounded-xl border border-[#17223B]/20 bg-white px-3 py-2.5 text-sm text-[#17223B] outline-none focus:border-[#7460D9]"
+        />
+        {name === "phone" && <p id={`${id}-hint`} className="mt-1 text-xs leading-5 text-[#17223B]/65">{t("publicFunnel.pricing.phoneFormatNote")}</p>}
+        {errors[name] && <p id={errorId} role="alert" className="mt-1 text-xs text-red-700">{errors[name]}</p>}
+      </div>
+    );
+  };
+
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-          aria-label={t("common.close")}
-        >
-          <X className="w-5 h-5" />
-        </button>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-[#17223B]/10 bg-[#F8F9FC] sm:rounded-3xl">
+        <DialogHeader className="pr-8 text-left">
+          <DialogTitle className="text-xl font-bold text-[#17223B]">
+            {submitted ? t("publicFunnel.pricing.applicationSuccessTitle") : t("publicFunnel.pricing.applicationTitle")}
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-6 text-[#17223B]/70">
+            {submitted ? t("publicFunnel.pricing.applicationSuccessBody") : t("publicFunnel.pricing.applicationDescription")}
+          </DialogDescription>
+        </DialogHeader>
 
         {submitted ? (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Check className="w-8 h-8 text-green-600" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">{t("pricing.partnerModal.successTitle")}</h3>
-            <p className="text-gray-500 text-sm mb-2">
-              {t("pricing.partnerModal.successMessage")}
-            </p>
-            <p className="text-gray-400 text-xs">{t("pricing.partnerModal.successMessageEn")}</p>
-           <Button
-             type="button"
-             onClick={onClose}
-             className="mt-6 bg-brand text-white hover:bg-brand-hover"
-           >
-             {t("pricing.partnerModal.ok")}
-           </Button>
-          </div>
+          <Button type="button" onClick={onClose} className="funnel-button funnel-button-primary justify-center px-5 py-3">
+            {t("publicFunnel.pricing.applicationClose")}
+          </Button>
         ) : (
-          <>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">{t("pricing.partnerModal.title")}</h2>
-            <p className="text-sm text-gray-500 mb-5">
-              {t("pricing.partnerModal.subtitle")}
-            </p>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t("pricing.partnerModal.businessNameLabel")} <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.businessName}
-                  onChange={(e) => setForm({ ...form, businessName: e.target.value })}
-                  placeholder={t("pricing.partnerModal.businessNamePlaceholder")}
-                   className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand ${errors.businessName ? "border-red-400" : "border-gray-300"}`}
-                />
-                {errors.businessName && <p className="text-xs text-red-500 mt-1">{errors.businessName}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t("pricing.partnerModal.phoneLabel")} <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="+880 1XXX-XXXXXX"
-                   className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand ${errors.phone ? "border-red-400" : "border-gray-300"}`}
-                />
-                {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t("pricing.partnerModal.pageLinkLabel")} <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="url"
-                  value={form.pageLink}
-                  onChange={(e) => setForm({ ...form, pageLink: e.target.value })}
-                  placeholder="https://facebook.com/yourpage"
-                   className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand ${errors.pageLink ? "border-red-400" : "border-gray-300"}`}
-                />
-                {errors.pageLink && <p className="text-xs text-red-500 mt-1">{errors.pageLink}</p>}
-              </div>
-              {submitError && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {submitError}
-                </p>
-              )}
-               <Button
-                 type="submit"
-                 disabled={submitting}
-                 className="w-full rounded-xl bg-brand py-2.5 text-white hover:bg-brand-hover"
-               >
-                 {submitting ? t("pricing.partnerModal.submitting") : t("pricing.partnerModal.submit")}
-               </Button>
-            </form>
-          </>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {field("businessName", "text", "publicFunnel.pricing.businessName")}
+            {field("phone", "tel", "publicFunnel.pricing.phone", "+880 1XXX-XXXXXX")}
+            {field("pageLink", "url", "publicFunnel.pricing.facebookPage", "https://facebook.com/yourpage")}
+            {submitError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{submitError}</p>}
+            <Button type="submit" disabled={submitting} className="funnel-button funnel-button-primary w-full justify-center px-5 py-3">
+              {submitting ? t("publicFunnel.pricing.applicationSending") : t("publicFunnel.pricing.applicationSubmit")}
+            </Button>
+          </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function PlanCard({
   plan,
-  onSelect,
+  locale,
+  onPartnerReview,
 }: {
   plan: SubscriptionPlanDefinition;
-  onSelect: () => void;
+  locale: string;
+  onPartnerReview: () => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const formatNumber = (value: number) => value.toLocaleString(i18n.language === "bn" ? "bn-BD" : "en-US");
-  const code = plan.code.toLowerCase();
-  const isPopular = plan.code === "GROWTH";
+  const { t } = useTranslation();
   const isPartner = plan.code === "PARTNER";
-  const translatedFeatures = t(`pricing.planFeatures.${code}`, { returnObjects: true });
-  const features = Array.isArray(translatedFeatures) ? translatedFeatures as string[] : plan.highlights;
+  const isGrowth = plan.code === "GROWTH";
+  const planName = t(`pricing.plans.${plan.code.toLowerCase()}.name`, { defaultValue: plan.name });
+  const monthlyNumber = formatNumber(plan.monthlyPrice, locale);
+  const thresholdTier = isPartner ? plan.partnerOrderTiers?.find((tier) => tier.minOrders === 300) : undefined;
+  const signupUrl = new URL(buildAppUrlWithLocale("/signup", locale));
+  if (isGrowth) signupUrl.searchParams.set("intent", GROWTH_UPGRADE_INTENT);
+  const signupHref = signupUrl.toString();
 
   return (
-    <Card className={`relative h-full overflow-visible ${isPopular ? "border-brand bg-slate-950 text-white shadow-xl shadow-emerald-900/20" : "border-gray-200 bg-white"}`}>
-      {isPopular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <Badge className="border-transparent bg-brand text-white">
-            {t("pricing.mostPopular")}
-          </Badge>
-        </div>
-      )}
-      {isPartner && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <Badge className="whitespace-nowrap border-transparent bg-slate-900 text-white">
-            {t("pricing.partnerEligibleBadge")}
-          </Badge>
-        </div>
-      )}
-
-      <CardHeader className="px-6 pt-8">
-        <CardTitle className={isPopular ? "text-white" : "text-gray-900"}>
-          {t(`pricing.plans.${code}.name`, plan.name)}
-        </CardTitle>
-        <p className={`text-sm ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
-          {t(`pricing.plans.${code}.description`, plan.description)}
+    <article aria-labelledby={`plan-${plan.code}`} className={`flex h-full flex-col rounded-3xl border p-6 shadow-sm sm:p-7 ${isGrowth ? "border-[#7460D9]/45 bg-[#F3F0FF]" : "border-[#17223B]/10 bg-white"}`}>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.15em] text-[#5D49BB]">{planName}</p>
+        <h2 id={`plan-${plan.code}`} className="mt-3 flex flex-wrap items-baseline gap-x-2 text-[#17223B]">
+          {isPartner ? (
+            <span className="text-2xl font-extrabold">{t("publicFunnel.pricing.partnerRateTitle")}</span>
+          ) : (
+            <>
+              <span className="text-4xl font-extrabold">৳{monthlyNumber}</span>
+              <span className="text-sm font-medium text-[#17223B]/60">{t("publicFunnel.pricing.perMonth")}</span>
+            </>
+          )}
+        </h2>
+        <p className="mt-3 min-h-12 text-sm leading-6 text-[#17223B]/70">
+          {isPartner ? t("publicFunnel.pricing.partnerNoMonthlyFee") : t("publicFunnel.pricing.includedLimits")}
         </p>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col px-6">
-        <div className="mb-5 mt-2">
-          <div className="flex items-end gap-1">
-            <span className={`text-4xl font-extrabold ${isPopular ? "text-white" : "text-gray-900"}`}>
-              ৳{formatNumber(plan.monthlyPrice)}
-            </span>
-            <span className={`mb-1 text-sm ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
-              {isPartner ? t("pricing.partnerPriceUnit") : t("pricing.perMonth")}
-            </span>
-          </div>
-          <p className={`mt-1 text-xs ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
-            {isPartner ? t("pricing.partnerApplyNote") : t(`pricing.plans.${code}.priceNote`)}
-          </p>
-        </div>
+      </div>
 
-        <div className={`mb-5 space-y-1.5 rounded-xl p-3 ${isPopular ? "bg-white/10" : "bg-gray-50"}`}>
-          <div className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-700"}`}>
-            <MessageSquare className="h-4 w-4 shrink-0" />
-            {plan.limits.conversations < 0
-              ? t("pricing.limits.unlimitedConversations")
-               : t("pricing.limits.conversationsPerMonth", { count: plan.limits.conversations })}
-          </div>
-          {isPartner && (
-            <div className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-700"}`}>
-              <ShoppingCart className="h-4 w-4 shrink-0" />
-              {t("pricing.limits.deliveredOrders")}
-            </div>
-          )}
-          {!isPartner && (
-            <div className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-700"}`}>
-              <Package className="h-4 w-4 shrink-0" />
-              {t("pricing.limits.manualInbox")}
+      <ul className="mt-5 space-y-3 border-t border-[#17223B]/10 pt-5 text-sm text-[#17223B]">
+        <li className="flex gap-2">
+          <span aria-hidden="true" className="text-[#5D49BB]">•</span>
+          {plan.limits.conversations < 0
+            ? t("publicFunnel.pricing.unlimitedConversations")
+            : t("publicFunnel.pricing.conversationsPerMonth", { amount: formatNumber(plan.limits.conversations, locale) })}
+        </li>
+        {plan.limits.orders < 0 && <li className="flex gap-2"><span aria-hidden="true" className="text-[#5D49BB]">•</span>{t("publicFunnel.pricing.unlimitedOrders")}</li>}
+        {plan.limits.products < 0 && <li className="flex gap-2"><span aria-hidden="true" className="text-[#5D49BB]">•</span>{t("publicFunnel.pricing.unlimitedProducts")}</li>}
+      </ul>
+
+      {isBkashEnabled() && isGrowth && (
+        <div className="mt-5 rounded-2xl border border-[#7460D9]/20 bg-white/80 p-4">
+          <p className="text-xs font-semibold leading-5 text-[#17223B]/80">{t("publicFunnel.pricing.growthMonthlyNote")}</p>
+          {plan.canPurchaseTopups && (plan.topupPacks?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-bold text-[#17223B]">{t("publicFunnel.pricing.topupsTitle")}</h3>
+              <ul className="mt-2 space-y-1 text-xs text-[#17223B]/75">
+                {plan.topupPacks!.map((pack) => (
+                  <li key={pack.code}>{t("publicFunnel.pricing.topupPack", { amount: formatNumber(pack.conversations, locale), price: formatNumber(pack.priceBdt, locale) })}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs leading-5 text-[#17223B]/65">{t("publicFunnel.pricing.topupsCaveat")}</p>
             </div>
           )}
         </div>
-        {isPartner && plan.partnerOrderTiers && (
-          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="mb-1 font-semibold">{t("pricing.partnerRateBandsTitle")}</p>
-            {plan.partnerOrderTiers.map((tier) => (
-              <p key={`${tier.minOrders}-${tier.maxOrders}`}>
-                {t("pricing.partnerRateBand", {
-                  min: formatNumber(tier.minOrders),
-                  max: tier.maxOrders ? formatNumber(tier.maxOrders) : "+",
-                  rate: formatNumber(tier.rateBdt),
-                })}
-              </p>
-            ))}
-          </div>
+      )}
+
+      {isPartner && (
+        <div className="mt-5 rounded-2xl border border-[#17223B]/10 bg-[#F8F9FC] p-4">
+          <p className="text-xs leading-5 text-[#17223B]/75">{t("publicFunnel.pricing.partnerQualification")}</p>
+          <ul className="mt-4 space-y-2 text-sm font-semibold text-[#17223B]">
+            {(plan.partnerOrderTiers ?? []).map((tier) => {
+              const range = tier.maxOrders === null
+                ? `${formatNumber(tier.minOrders, locale)}+`
+                : `${formatNumber(tier.minOrders, locale)}–${formatNumber(tier.maxOrders, locale)}`;
+              return <li key={`${tier.minOrders}-${tier.maxOrders}`} className="flex justify-between gap-2"><span>{range}</span><span>৳{formatNumber(tier.rateBdt, locale)} {t("publicFunnel.pricing.perDeliveredOrder")}</span></li>;
+            })}
+          </ul>
+          <p className="mt-4 text-xs leading-5 text-[#17223B]/70">{t("publicFunnel.pricing.partnerBillingNote")}</p>
+          {thresholdTier && (
+            <p className="mt-3 rounded-xl border border-[#7460D9]/15 bg-white px-3 py-2 text-xs font-medium leading-5 text-[#17223B]/80">
+              {t("publicFunnel.pricing.partnerThresholdExample", {
+                belowThresholdOrders: formatNumber(thresholdTier.minOrders - 1, locale),
+                orders: formatNumber(thresholdTier.minOrders, locale),
+                rate: formatNumber(thresholdTier.rateBdt, locale),
+                total: formatNumber(thresholdTier.minOrders * thresholdTier.rateBdt, locale),
+              })}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-auto pt-6">
+        {isPartner ? (
+          <>
+            <button type="button" onClick={onPartnerReview} className="funnel-button funnel-button-primary w-full justify-center px-4 py-3 text-sm">
+              {t("publicFunnel.pricing.partnerAction")}
+            </button>
+            <p className="mt-3 text-center text-xs leading-5 text-[#17223B]/65">{t("publicFunnel.pricing.partnerReviewNote")}</p>
+          </>
+        ) : (
+          <>
+            <a href={signupHref} className="funnel-button funnel-button-primary w-full justify-center px-4 py-3 text-sm">
+              {t(isGrowth ? "publicFunnel.pricing.growthAction" : "publicFunnel.pricing.shuruAction")}
+            </a>
+            {isGrowth && <p className="mt-3 text-center text-xs leading-5 text-[#17223B]/65">{t("publicFunnel.pricing.newAccountsNote")}</p>}
+          </>
         )}
-
-        <ul className="mb-6 flex-1 space-y-2">
-          {features.map((feature) => (
-            <li key={feature} className={`flex items-start gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-600"}`}>
-              <Check className={`mt-0.5 h-4 w-4 shrink-0 ${isPopular ? "text-white" : "text-brand"}`} />
-              {feature}
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-      <CardFooter className="px-6 pb-6">
-      <Button
-        type="button"
-        onClick={onSelect}
-        className={`w-full ${isPopular ? "bg-white text-brand hover:bg-emerald-50" : "bg-brand text-white hover:bg-brand-hover"}`}
-      >
-        {t(`pricing.plans.${code}.cta`)}
-        <ArrowRight className="w-4 h-4" />
-      </Button>
-      </CardFooter>
-    </Card>
+      </div>
+    </article>
   );
 }
 
 export default function Pricing() {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  const [showPartnerModal, setShowPartnerModal] = useState(false);
-  const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>(subscriptionPlans);
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language;
+  const [catalog, setCatalog] = useState<PublicSubscriptionCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [partnerOpen, setPartnerOpen] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
-    getSubscriptionPlans()
-      .then((serverPlans) => {
-        if (mounted && serverPlans.length > 0) setPlans(serverPlans);
+    let active = true;
+    setCatalogError(false);
+    getCurrentPublicSubscriptionCatalog()
+      .then((result) => {
+        if (active) setCatalog(result);
       })
-      .catch(() => {});
-    return () => { mounted = false; };
-  }, []);
-
-  const faqs = [
-    { q: t("pricing.faq.q1"), a: t("pricing.faq.a1") },
-    { q: t("pricing.faq.q2"), a: t("pricing.faq.a2", { price: plans.find((plan) => plan.code === "GROWTH")?.monthlyPrice ?? 999 }) },
-    { q: t("pricing.faq.q3"), a: t("pricing.faq.a3") },
-    { q: t("pricing.faq.q4"), a: t("pricing.faq.a4") },
-    { q: t("pricing.faq.q5"), a: t("pricing.faq.a5") },
-  ];
-  const growthPrice = plans.find((plan) => plan.code === "GROWTH")?.monthlyPrice ?? 999;
-
-  const handlePlanSelect = (planId: string) => {
-    if (planId === "partner") {
-      setShowPartnerModal(true);
-    } else {
-      window.location.assign(buildAppUrl("/signup"));
-    }
-  };
+      .catch(() => {
+        if (active) {
+          setCatalog(null);
+          setCatalogError(true);
+        }
+      });
+    return () => { active = false; };
+  }, [retryCount]);
 
   return (
-    <div className="min-h-screen bg-[#f4fbf7] font-bn">
+    <div className="funnel-page">
       <Seo
-        title="EasyModerator Pricing"
-        description="Compare EasyModerator plans for Facebook Messenger automation, order capture, and customer support."
+        title={t("publicFunnel.meta.pricingTitle")}
+        description={t("publicFunnel.meta.pricingDescription")}
         canonicalPath="/pricing"
+        canonicalBase="marketing"
       />
-      {/* Nav bar */}
-      <header className="sticky top-0 z-20 border-b border-emerald-100 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <button type="button" onClick={() => navigate("/")} className="shrink-0">
-            <BrandLogo size="sm" variant="dark" />
-          </button>
-          <div className="flex items-center gap-3">
-            <a
-              href={buildAppUrl("/signin")}
-              className="text-sm font-medium text-gray-600 hover:text-gray-900"
-            >
-              {t("common.signIn")}
-            </a>
-            <a
-              href={buildAppUrl("/signup")}
-              className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              {t("landing.nav.getStarted")}
-            </a>
-          </div>
-        </div>
-      </header>
+      <PublicFunnelHeader page="pricing" />
+      <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16">
+        <header className="mx-auto mb-10 max-w-3xl text-center sm:mb-12">
+          <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#5D49BB]">{t("publicFunnel.pricing.eyebrow")}</p>
+          <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#17223B] sm:text-5xl">{t("publicFunnel.pricing.title")}</h1>
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-[#17223B]/70">{t("publicFunnel.pricing.subtitle")}</p>
+        </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-16">
-        {/* Hero */}
-        <div className="mb-14 text-center">
-            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-brand">
-            {t("pricing.label")}
-          </p>
-          <h1 className="mb-4 text-4xl font-extrabold text-gray-900 md:text-5xl">
-            {t("pricing.hero.heading")}
-          </h1>
-          <p className="mx-auto max-w-2xl text-lg text-gray-600">
-            {t("pricing.hero.subheading")}
-          </p>
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
-            <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("pricing.hero.badge1")}</span>
-            <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("pricing.hero.badge2")}</span>
-            <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("pricing.hero.badge3")}</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {plans.map((plan) => (
-            <div key={plan.id} className="min-w-0">
-              <PlanCard
-                plan={plan}
-                onSelect={() => handlePlanSelect(plan.id)}
-              />
-            </div>
-          ))}
-        </div>
-
-        <p className="mb-16 mt-6 text-center text-sm text-gray-500">
-          {t("pricing.partnerTeaser.question")}{" "}
-          <button
-            type="button"
-            onClick={() => setShowPartnerModal(true)}
-            className="font-semibold text-brand underline hover:text-brand-hover"
-          >
-            {t("pricing.partnerTeaser.link")}
-          </button>
+        <p className="mx-auto mb-6 max-w-4xl rounded-2xl border border-[#7460D9]/15 bg-[#F3F0FF]/70 px-5 py-4 text-center text-sm leading-6 text-[#17223B]/80">
+          {t("publicFunnel.pricing.coreFeatureParity")}
         </p>
 
-        {/* Core features are shared; the cards above describe scale-specific limits. */}
-        <div className="mb-16 overflow-hidden rounded-2xl border border-emerald-100 bg-white">
-          <div className="border-b border-emerald-50 px-6 py-5">
-            <h2 className="text-xl font-bold text-gray-900">{t("pricing.included.heading")}</h2>
-             <p className="text-sm text-gray-500 mt-0.5">{t("pricing.included.subheading", { price: growthPrice.toLocaleString() })}</p>
-          </div>
-          <div className="grid grid-cols-1 gap-px bg-emerald-50 sm:grid-cols-2">
-            {FEATURE_ROWS.map(({ labelKey }) => (
-              <div key={labelKey} className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
-                 <Check className="w-5 h-5 flex-shrink-0 text-brand" />
-                {t(labelKey)}
-              </div>
+        {catalog ? (
+          <div className="grid gap-5 lg:grid-cols-3">
+            {catalog.plans.map((plan) => (
+              <PlanCard key={plan.code} plan={plan} locale={locale} onPartnerReview={() => setPartnerOpen(true)} />
             ))}
-            <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
-               <Check className="w-5 h-5 flex-shrink-0 text-brand" />
-               {t("pricing.features.facebookInbox")}
-             </div>
           </div>
-        </div>
+        ) : catalogError ? (
+          <div role="alert" className="mx-auto flex max-w-2xl flex-col items-center gap-4 rounded-2xl border border-[#17223B]/10 bg-white p-6 text-center sm:p-8">
+            <p className="text-sm leading-6 text-[#17223B]/75">{t("publicFunnel.pricing.catalogUnavailable")}</p>
+            <button type="button" onClick={() => setRetryCount((count) => count + 1)} className="funnel-button funnel-button-primary min-h-11 justify-center px-5 py-3 text-sm">{t("publicFunnel.pricing.retryCatalog")}</button>
+          </div>
+        ) : (
+          <p aria-live="polite" role="status" className="py-16 text-center text-sm text-[#17223B]/70">{t("publicFunnel.pricing.catalogLoading")}</p>
+        )}
 
-        {/* FAQ */}
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 text-center mb-8">{t("pricing.faq.heading")}</h2>
-          {faqs.map(({ q, a }) => (
-            <div key={q} className="border-b border-gray-100 py-5">
-              <p className="font-semibold text-gray-900 mb-1">{q}</p>
-              <p className="text-gray-500 text-sm">{a}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* CTA */}
-        <div className="mt-16 rounded-2xl bg-[#0F172A] p-10 text-center text-white">
-          <h2 className="text-3xl font-extrabold mb-3">{t("pricing.cta.heading")}</h2>
-          <p className="mb-6 text-emerald-100">{t("pricing.cta.subheading")}</p>
-          <a
-            href={buildAppUrl("/signup")}
-            className="inline-flex items-center gap-2 rounded-xl bg-brand px-8 py-3 font-bold text-white transition-colors hover:bg-brand-hover"
-          >
-            <Zap className="w-4 h-4" />
-            {t("pricing.cta.button")}
-          </a>
+        <div className="mx-auto mt-8 max-w-3xl space-y-2 text-center text-sm leading-6 text-[#17223B]/65">
+          <p>{t("publicFunnel.pricing.catalogUnitNote")}</p>
+          <p>{t("publicFunnel.pricing.conversationCountNote")}</p>
+          <p className="border-t border-[#17223B]/10 pt-4 font-medium text-[#17223B]/75">{t("publicFunnel.pricing.separateBoundary")}</p>
         </div>
       </main>
-
-      <footer className="mt-16 border-t border-emerald-100 py-8 text-center text-sm text-gray-400">
-        © {new Date().getFullYear()} EasyModerator &bull;{" "}
-        <button type="button" className="cursor-pointer hover:text-gray-600" onClick={() => navigate("/privacy-policy")}>
-          {t("common.privacyPolicy")}
-        </button>
-      </footer>
-
-      {showPartnerModal && (
-        <PartnerApplicationModal onClose={() => setShowPartnerModal(false)} />
-      )}
+      <PublicFunnelFooter />
+      {partnerOpen && <PartnerApplicationDialog onClose={() => setPartnerOpen(false)} />}
     </div>
   );
 }
