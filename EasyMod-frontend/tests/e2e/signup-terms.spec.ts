@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+// Selector updates only for the approved V6 public-funnel copy
+// (feat/easymoderator-v6-auth-landing @ 0a91bfa4, integrated via unified 994ddce3):
+// CTA "Create a Shuru account"; labels "Your name" / "Email" / "Mobile number";
+// guidance "Consent is required to create your account.". Every behavior assertion
+// (consent gating, zero requests until consent, single-submit, aria wiring,
+// narrow-viewport usability) is preserved verbatim.
+
 test('unchecked terms keep signup disabled without a request or browser error', async ({ page }) => {
   const signupRequests: string[] = [];
   const consoleErrors: string[] = [];
@@ -44,15 +51,15 @@ test('unchecked terms keep signup disabled without a request or browser error', 
 
   await page.goto('/signup');
 
-  const submit = page.getByRole('button', { name: /create account and start setup/i });
+  const submit = page.getByRole('button', { name: /create a shuru account/i });
   const terms = page.getByRole('checkbox', { name: /privacy policy/i });
   await expect(submit).toBeDisabled();
   await expect(terms).not.toBeChecked();
-  await expect(page.getByText(/accept the terms & conditions to create your account/i)).toBeVisible();
+  await expect(page.getByText(/consent is required to create your account/i)).toBeVisible();
 
-  await page.getByLabel('Full Name').fill('Consent Browser User');
-  await page.getByLabel('Email Address').fill('consent-browser@example.com');
-  await page.getByLabel('Mobile Number').fill('01712345678');
+  await page.getByLabel('Your name').fill('Consent Browser User');
+  await page.getByLabel('Email').fill('consent-browser@example.com');
+  await page.getByLabel('Mobile number').fill('01712345678');
   await page.getByLabel('Password').fill('ValidPass123!');
   await expect(submit).toBeDisabled();
 
@@ -68,8 +75,8 @@ test('unchecked terms keep signup disabled without a request or browser error', 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
 
-  await expect(page.getByRole('link', { name: /privacy policy/i })).toHaveAttribute('href', /privacy-policy/);
-  await expect(page.getByRole('link', { name: /terms of service/i })).toHaveAttribute('href', /terms/);
+  await expect(page.getByRole('link', { name: /privacy policy/i }).first()).toHaveAttribute('href', /privacy-policy/);
+  await expect(page.getByRole('link', { name: /terms of service/i }).first()).toHaveAttribute('href', /terms/);
 
   await terms.focus();
   await page.keyboard.press('Space');
@@ -101,8 +108,8 @@ test('signup consent control remains usable on a narrow viewport', async ({ page
   await page.goto('/signup');
 
   await expect(page.getByRole('checkbox', { name: /privacy policy/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /privacy policy/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /terms of service/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /privacy policy/i }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: /terms of service/i }).first()).toBeVisible();
   await expect(page.locator('body')).toHaveCSS('overflow-x', 'visible');
 });
 
@@ -139,9 +146,9 @@ test('accepted signup sends one consented request under rapid submission', async
   });
 
   await page.goto('/signup');
-  await page.getByLabel('Full Name').fill('Rapid Consent User');
-  await page.getByLabel('Email Address').fill('rapid-consent@example.com');
-  await page.getByLabel('Mobile Number').fill('01712345678');
+  await page.getByLabel('Your name').fill('Rapid Consent User');
+  await page.getByLabel('Email').fill('rapid-consent@example.com');
+  await page.getByLabel('Mobile number').fill('01712345678');
   await page.getByLabel('Password').fill('ValidPass123!');
   await page.getByRole('checkbox', { name: /privacy policy/i }).check();
 
