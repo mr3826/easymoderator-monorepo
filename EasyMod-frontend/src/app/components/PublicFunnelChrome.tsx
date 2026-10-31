@@ -6,6 +6,15 @@ import { buildAppUrlWithLocale, buildMarketingUrlWithLocale } from "@/app/lib/co
 
 type PublicPage = "landing" | "pricing";
 
+export function PublicFunnelSkipLink() {
+  const { t } = useTranslation();
+  return (
+    <a className="funnel-skip-link" href="#public-funnel-main">
+      {t("publicFunnel.nav.skipToContent")}
+    </a>
+  );
+}
+
 export function PublicFunnelHeader({ page }: { page: PublicPage }) {
   const { t, i18n } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -63,8 +72,7 @@ export function PublicFunnelHeader({ page }: { page: PublicPage }) {
         </button>
       </div>
 
-      {menuOpen && (
-        <nav id="public-funnel-navigation" aria-label={t("publicFunnel.nav.primary")} className="grid gap-1 border-t border-[#17223B]/10 bg-white px-4 py-3 lg:hidden">
+      <nav id="public-funnel-navigation" hidden={!menuOpen} aria-label={t("publicFunnel.nav.primary")} className="grid gap-1 border-t border-[#17223B]/10 bg-white px-4 py-3 lg:hidden">
           <a href={solutionsHref} onClick={() => setMenuOpen(false)} className="funnel-mobile-link">{t("publicFunnel.nav.solutions")}</a>
           <a href={workflowHref} onClick={() => setMenuOpen(false)} className="funnel-mobile-link">{t("publicFunnel.nav.workflow")}</a>
           <a href={plansHref} onClick={() => setMenuOpen(false)} className="funnel-mobile-link">{t("publicFunnel.nav.plans")}</a>
@@ -73,8 +81,7 @@ export function PublicFunnelHeader({ page }: { page: PublicPage }) {
             {t("publicFunnel.nav.createAccount")}
           </a>
           <div className="mt-2"><LanguageToggle variant="public" /></div>
-        </nav>
-      )}
+      </nav>
     </header>
   );
 }

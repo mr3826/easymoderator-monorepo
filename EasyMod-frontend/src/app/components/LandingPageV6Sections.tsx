@@ -71,7 +71,7 @@ export function CoreCapabilities() {
   const capabilities = ["support", "replies", "orders"] as const;
 
   return (
-    <section id="capabilities" aria-labelledby="capabilities-title" className="landing-v6-capabilities">
+    <section id="capabilities" aria-labelledby="capabilities-title" className="landing-v6-capabilities scroll-mt-20">
       <div className="landing-v6-section-heading">
         <p className="landing-v6-eyebrow">{t("publicFunnel.landingV6.capabilityEyebrow")}</p>
         <h2 id="capabilities-title">{t("publicFunnel.landingV6.capabilityTitle")}</h2>
@@ -95,7 +95,7 @@ export function WorkflowSection() {
   const steps = ["inquiry", "context", "review"] as const;
 
   return (
-    <section id="workflow" aria-labelledby="workflow-title" className="landing-v6-workflow">
+    <section id="workflow" aria-labelledby="workflow-title" className="landing-v6-workflow scroll-mt-20">
       <div className="landing-v6-workflow-intro">
         <p className="landing-v6-eyebrow landing-v6-eyebrow-light">{t("publicFunnel.landingV6.workflowEyebrow")}</p>
         <h2 id="workflow-title">{t("publicFunnel.landingV6.workflowTitle")}</h2>
@@ -170,7 +170,7 @@ export function StorySection() {
 
 export function TrustAndFaq() {
   const { t } = useTranslation();
-  const faqs = ["channel", "replies", "plans", "separate"] as const;
+  const faqs = ["channel", "connection", "replies", "plans", "separate"] as const;
   return (
     <section className="landing-v6-trust" aria-labelledby="trust-title">
       <div className="landing-v6-trust-intro">

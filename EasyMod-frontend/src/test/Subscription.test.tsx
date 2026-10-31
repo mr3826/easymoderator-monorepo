@@ -130,7 +130,7 @@ describe('Subscription', () => {
     await waitFor(() => {
       expect(apiClient.cancelInvoicePayment).toHaveBeenCalledWith('inv-1', 'PAY-1');
     });
-    expect(screen.getByText('subscription.paymentCancelled')).toBeInTheDocument();
+    expect(await screen.findByText('subscription.paymentCancelled')).toBeInTheDocument();
     expect(sessionStorage.getItem('easymod_pay_ctx')).toBeNull();
 
     window.history.replaceState({}, '', '/subscription');

@@ -346,6 +346,10 @@ jobs:
           PLAYWRIGHT_PORT: '4273'
         run: npm run test:e2e -- tests/e2e/ai-reply-mode.spec.ts tests/e2e/shared-inbox.spec.ts tests/e2e/signup-terms.spec.ts tests/e2e/meta-oauth-contract.spec.ts tests/e2e/customer-intelligence.spec.ts --workers=1
 
+      - name: Run V7 public funnel browser proof (synthetic API only)
+        working-directory: ./EasyMod-frontend
+        run: npm run test:e2e:public
+
       - name: Upload frontend Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -355,6 +359,15 @@ jobs:
             EasyMod-frontend/playwright-report/
             EasyMod-frontend/test-results/
           if-no-files-found: ignore
+
+      - name: Upload V7 public-funnel screenshots
+        if: always() && needs.changes.outputs.frontend == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v7-public-funnel-screenshots-${{ github.run_id }}
+          path: EasyMod-frontend/test-results/v7-public-funnel/*.png
+          if-no-files-found: ignore
+          retention-days: 30
 
   # ── 2b. Meta-shaped E2E — the AI trust boundary, asserted at the send ───────
   # Enters through the REAL signed Meta webhook route and runs the real queue,
@@ -665,7 +678,25 @@ jobs:
                fi'
             ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
               "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -e PROBE_SCHEMA_MODE=$schema_probe_mode -e PROBE_INBOUND_TRACE=\"$PROBE_INBOUND_TRACE\" -e TRACE_FROM=$trace_from_arg -e TRACE_TO=$trace_to_arg -e TRACE_MARKER=$trace_marker_arg -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_id\" node /app/scripts/production-db-auth-probe.js"
-          fi
+
+            # Report only safe configuration states and immutable running image
+            # references. Never emit credential values from the live process.
+            ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
+              'set -eu
+               for service in backend frontend; do
+                 image=$(docker inspect -f "{{.Config.Image}}" "easymod-${service}-1")
+                 case "$image" in *@sha256:*) ;; *) echo "ERROR: $service image is not digest-pinned" >&2; exit 1 ;; esac
+                 printf "running_%s_image=%s\n" "$service" "$image"
+               done
+               docker exec easymod-backend-1 node -e "
+                 const names = [\"GEMINI_API_KEY\", \"OPENAI_API_KEY\", \"BKASH_ENABLED\", \"OPS_ESCALATION_WEBHOOK_URL\", \"SLACK_ALERT_WEBHOOK_URL\", \"SENTRY_DSN\"];
+                 for (const name of names) {
+                   const value = process.env[name];
+                   const state = name === \"BKASH_ENABLED\" ? (value === \"true\" ? \"enabled\" : \"disabled\") : (value ? \"configured\" : \"not configured\");
+                   console.log(name + \"=\" + state);
+                 }
+               "'
+           fi
 
   # ── 2d. Non-publishing Docker build validation ────────────────────────────
   # Build the exact current source on every branch, including pull requests,

@@ -1318,6 +1318,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     })
     renderWith({ ...baseConversation, ai_reply_mode: 'AUTO' }, [customerMsg])
 
+    await screen.findByText(customerMsg.content)
     fireEvent.click(await screen.findByRole('button', { name: /^Resolve$/i }))
     expect(screen.getByText('AI will resume for the next eligible customer message.')).toBeInTheDocument()
 

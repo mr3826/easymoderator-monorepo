@@ -20,17 +20,23 @@ vi.mock("@/app/lib/config", async (importOriginal) => {
 vi.mock("@/api/domains/publicSubscription", () => ({ getCurrentPublicSubscriptionCatalog: mockCatalog }));
 vi.mock("@/app/lib/funnel", () => ({ trackFunnelEvent: vi.fn() }));
 
-describe("V6 LandingPage", () => {
+describe("V7-enhanced V6 LandingPage", () => {
   beforeEach(() => {
     mockCatalog.mockReset().mockResolvedValue({ plans: mockPlans, source: "live" });
     mockConfig.checkoutEnabled = false;
   });
 
-  it("explains the supported Messenger workflow in the first screen and provides real account routes", async () => {
+  it("leads with the Moderator job, explains the supported Messenger workflow, and provides real account routes", async () => {
     render(<MemoryRouter><LandingPage /></MemoryRouter>);
 
     expect(await screen.findByText(/100 Messenger conversations each month/i)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: /customer support.*order details/i })).toBeInTheDocument();
+    const heroHeading = screen.getByRole("heading", { level: 1, name: /focus on selling/i });
+    expect(heroHeading).toBeInTheDocument();
+    expect(heroHeading).toHaveTextContent(/Moderator help with customer questions/i);
+    expect(screen.getByText(/EasyModerator supports Facebook Page Messenger only/i)).toBeInTheDocument();
+    expect(screen.getByText(/conversation limits count customer conversations.*not each message or AI reply/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /skip to content/i })).toHaveAttribute("href", "#public-funnel-main");
+    expect(document.getElementById("public-funnel-main")).toHaveAttribute("tabindex", "-1");
     const signupLinks = screen.getAllByRole("link", { name: /create your shuru account/i });
     expect(signupLinks).toHaveLength(2);
     expect(signupLinks.every((link) => link.getAttribute("href")?.match(/\/signup\?lang=en$/))).toBe(true);
@@ -38,7 +44,17 @@ describe("V6 LandingPage", () => {
     expect(screen.getByRole("link", { name: /customer support/i })).toHaveAttribute("href", "#capabilities");
     expect(screen.getByRole("link", { name: /plans/i })).toHaveAttribute("href", "#plans");
     expect(screen.getAllByRole("link", { name: /sign in/i }).every((link) => link.getAttribute("href")?.includes("/signin?lang=en"))).toBe(true);
-    expect(screen.getByText(/Your business, our technology/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your Business\. Our Technology\. Forward, Together/i)).toBeInTheDocument();
+  });
+
+  it("explains Page selection and permission boundaries without claiming universal Meta access", async () => {
+    render(<MemoryRouter><LandingPage /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByText(/what happens when I connect a Facebook Page/i));
+    expect(screen.getByText(/pages_messaging.*selected Page/i)).toBeInTheDocument();
+    expect(screen.getByText(/pages_manage_metadata.*subscribe the Page to message webhooks/i)).toBeInTheDocument();
+    expect(screen.getByText(/Instagram and advertising access are not requested/i)).toBeInTheDocument();
+    expect(screen.getByText(/access varies by account and Page/i)).toBeInTheDocument();
   });
 
   it("shows the reply and order gates without inventing success states or unavailable products", async () => {
@@ -50,7 +66,8 @@ describe("V6 LandingPage", () => {
     expect(workflow).toHaveTextContent(/review required/i);
     expect(workflow).not.toHaveTextContent(/order confirmed|delivered/i);
     expect(screen.queryByText(/optional solutions|campaign measurement|customer insights|coming soon/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/WhatsApp|Instagram/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/WhatsApp/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Instagram (?:support|integration|messages)/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/If a capability is offered separately, it has separate pricing and access terms/i).length).toBeGreaterThan(0);
   });
 

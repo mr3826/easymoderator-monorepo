@@ -1,7 +1,7 @@
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "April 24, 2026";
-const LAST_UPDATED = "August 8, 2026";
+const LAST_UPDATED = "October 31, 2026";
 const COMPANY_NAME = "Hexabyte Technologies";
 const COMPANY_URL = "https://hexabyte.tech";
 const APP_NAME = "EasyModerator";
@@ -46,14 +46,15 @@ export default function TermsOfService() {
             If you do not agree to these Terms, you may not access or use the {APP_NAME} service.
           </p>
 
-          {/* Current service status — mirrors the Privacy Policy panel. Keep both in
-              step whenever an integration is switched on or off. */}
+          {/* Current service status — mirrors the Privacy Policy without asserting
+              an unverified Meta App Review state. Keep both in step. */}
           <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
             <h2 className="text-base font-semibold text-amber-950">Current service status</h2>
             <p className="mt-2 text-sm leading-relaxed text-amber-900">
-              {APP_NAME} is operating in a limited pre-general-availability phase while our Meta App Review is
-              being completed. Features, plan limits, and pricing may change during this period, and we will
-              give reasonable notice of changes that materially affect your use of the service.
+              Facebook Messenger features are available only when the Facebook account and Page can be
+              authorized in our connection flow. Available features and plan limits depend on the account,
+              selected Page and published plan. We will give reasonable notice of changes that materially
+              affect your use of the service.
             </p>
             <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-amber-900">
               <li>
@@ -61,9 +62,11 @@ export default function TermsOfService() {
                 AI-assisted replies, order capture, courier booking, and merchant analytics.
               </li>
               <li>
-                <strong>Not enabled:</strong> the bKash and Nagad online payment gateways. Orders settle by
-                cash on delivery or by merchant-verified mobile-money transfer. Nothing in these Terms should
-                be read as us currently processing card or mobile-wallet payments on your behalf.
+                <strong>Payments:</strong> Optional platform-level bKash processing may be used for {APP_NAME}
+                subscription invoices and conversation top-ups when the platform flag and required credentials
+                are set. It is not a per-shop gateway for customer orders. Per-shop payment settings support
+                cash-on-delivery and self-MFS transfer instructions. Direct bKash or Nagad transfers are
+                merchant-verified; {APP_NAME} may store submitted references or payment evidence for review.
               </li>
               <li>
                 <strong>Out of scope for this release:</strong> Facebook comment automation, comment-to-DM,
@@ -98,8 +101,10 @@ export default function TermsOfService() {
             </p>
             <p className="mb-3 leading-relaxed">
               Order fulfilment features include courier booking with Pathao, Steadfast, and RedX, and
-              cash-on-delivery risk review. Online payment gateways are not currently enabled — see the
-              service status note above.
+              cash-on-delivery risk review. Per-shop payment settings support cash-on-delivery and self-MFS
+              instructions, where enabled. Optional platform-level bKash processing is for {APP_NAME} subscription
+              invoices and conversation top-ups, not merchant customer orders. Direct bKash and Nagad transfers
+              are merchant-verified.
             </p>
             <p className="leading-relaxed">
               We reserve the right to modify, suspend, or discontinue any part of the service at any time
@@ -190,10 +195,14 @@ export default function TermsOfService() {
 
             <h3 className="text-base font-semibold text-gray-800 mb-2">Cross-Border Data Transfers</h3>
             <p className="text-sm leading-relaxed">
-              To provide the {APP_NAME} service, your data may be processed on servers located outside
-              Bangladesh (including DigitalOcean cloud hosting, and AI providers such as Google (Gemini)
-              and OpenAI in the United States). By using {APP_NAME}, you acknowledge and consent to this transfer.
-              We ensure all third-party providers maintain appropriate data protection standards.
+              Some {APP_NAME} data may be processed outside Bangladesh, including on DigitalOcean cloud
+              infrastructure. Depending on the feature used and runtime configuration, AI request content may be
+              sent to Google or OpenAI only when the provider is configured and a request reaches it. Operational
+              alert details may be sent to Slack or Sentry when those sinks are configured. Which providers
+              receive data and the countries where it is processed depend on the configured integrations and
+              request path. By using {APP_NAME}, you acknowledge and consent to these transfers when the relevant
+              feature or integration is used. We require third-party providers to maintain appropriate data
+              protection standards.
             </p>
           </section>
 

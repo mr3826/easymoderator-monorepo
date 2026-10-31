@@ -19,9 +19,10 @@ vi.mock("@/app/lib/config", async (importOriginal) => {
   return { ...actual, isBkashEnabled: vi.fn(() => mockConfig.checkoutEnabled) };
 });
 
-vi.mock("@/api/domains/publicSubscription", () => ({
-  getCurrentPublicSubscriptionCatalog: mockCatalog,
-}));
+vi.mock("@/api/domains/publicSubscription", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/domains/publicSubscription")>();
+  return { ...actual, getCurrentPublicSubscriptionCatalog: mockCatalog };
+});
 vi.mock("@/shared/lib/http/public-client", () => ({ publicApiPost: mockPost }));
 
 describe("Pricing", () => {
@@ -149,5 +150,17 @@ describe("Pricing", () => {
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
 
     expect(await screen.findByText("Shuru")).toBeInTheDocument();
+  });
+
+  it("fails closed when the live catalog omits a required plan", async () => {
+    mockCatalog.mockResolvedValueOnce({
+      plans: mockPlans.filter((plan) => plan.code !== "PARTNER"),
+      source: "live",
+    });
+
+    render(<MemoryRouter><Pricing /></MemoryRouter>);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/current plan details are unavailable/i);
+    expect(screen.queryByText("৳999")).not.toBeInTheDocument();
   });
 });

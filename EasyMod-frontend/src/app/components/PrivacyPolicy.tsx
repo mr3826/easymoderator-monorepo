@@ -1,7 +1,7 @@
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "March 18, 2026";
-const LAST_UPDATED = "September 13, 2026";
+const LAST_UPDATED = "October 31, 2026";
 const CONTACT_EMAIL = "privacy@easymod.tech";
 const APP_NAME = "EasyModerator";
 const COMPANY_NAME = "Hexabyte Technologies";
@@ -48,15 +48,16 @@ export default function PrivacyPolicy() {
             customers are informed about how their data is handled through your use of our platform.
           </p>
 
-          {/* Current service status — this policy describes what is actually running
-              today, not the full roadmap. Integrations that are not yet switched on
-              process no data at all, so they are called out explicitly. */}
+          {/* Describe current availability without asserting unverified Meta or
+              production integration configuration. */}
           <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
             <h2 className="text-base font-semibold text-amber-950">Current service status</h2>
             <p className="mt-2 text-sm leading-relaxed text-amber-900">
-              {APP_NAME} is operating in a limited pre-general-availability phase while our Meta App Review
-              is being completed. This policy describes the data handling that is <strong>active today</strong>.
-              Where an integration is not yet enabled, it processes no data and is marked below.
+              Facebook Messenger features are available only when the Facebook account and Page can be
+              authorized in our connection flow. Available Pages and permissions may vary by account and Page.
+              This policy describes the data handling <strong>active today</strong>. Integrations that are not
+              configured and enabled for a shop do not process that shop's data; conditional integrations are
+              identified below.
             </p>
             <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-amber-900">
               <li>
@@ -64,14 +65,17 @@ export default function PrivacyPolicy() {
                 capture, courier booking (Pathao, Steadfast, RedX), and merchant analytics.
               </li>
               <li>
-                <strong>Not enabled:</strong> the bKash and Nagad online payment gateways. No payment-gateway
-                credentials are configured and no customer data is sent to those providers. Orders currently
-                settle by cash on delivery or by merchant-verified mobile-money transfer, where the transaction
-                reference stays inside {APP_NAME}.
+                <strong>EasyModerator subscription payments:</strong> An optional platform-level bKash integration
+                may process {APP_NAME} subscription invoices and conversation top-ups when the platform flag and
+                required credentials are set. If used, payer and invoice details are sent to bKash. This is not a
+                per-shop gateway for customer orders. Per-shop settings support cash-on-delivery and self-MFS
+                transfer instructions. Direct bKash or Nagad transfers are verified by the merchant; {APP_NAME}
+                may store submitted references and payment evidence for review.
               </li>
               <li>
-                <strong>Retired:</strong> the Make.com and n8n event-forwarding integrations. {APP_NAME} no
-                longer forwards event data to external workflow automation tools.
+                <strong>Retired:</strong> the legacy Make.com and n8n event-forwarding integrations. Separately,
+                a configured operations-alert webhook may receive limited guardrail-escalation metadata, but not
+                customer messages or AI responses; see section 6.
               </li>
             </ul>
             <p className="mt-3 text-sm leading-relaxed text-amber-900">
@@ -123,7 +127,7 @@ export default function PrivacyPolicy() {
               <li>Business name, timezone, and operating hours</li>
               <li>Hashed passwords (we never store plain-text passwords)</li>
               <li>Meta platform access tokens (encrypted at rest using AES-256-GCM)</li>
-              <li>Payment gateway credentials, encrypted at rest — collected only if and when the bKash gateway is enabled for your shop, which is not currently the case</li>
+              <li>Payment gateway credentials, encrypted at rest if provided for a supported gateway enabled for your shop</li>
               <li>Delivery provider credentials (Pathao, Steadfast, RedX — encrypted at rest)</li>
               <li>IP address and browser/device information (for security audit logs)</li>
               <li>Session tokens stored as httpOnly, secure cookies</li>
@@ -136,7 +140,7 @@ export default function PrivacyPolicy() {
             </p>
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>Name, phone number, and email address</li>
-              <li>Messages sent and received through Facebook Messenger or web chat</li>
+              <li>Messages sent and received through connected Facebook Messenger Pages</li>
               <li>Platform-specific user identifiers (e.g., Facebook Page-scoped user ID)</li>
               <li>Order details: items, quantities, prices, delivery address, and payment method</li>
               <li>Language preference and last active timestamp</li>
@@ -312,12 +316,13 @@ export default function PrivacyPolicy() {
 
             <h3 className="text-base font-semibold text-gray-800 mb-2">Cross-Border Data Transfers</h3>
             <p className="mb-3 text-sm leading-relaxed">
-              To provide the {APP_NAME} service, your data is processed on servers and systems located outside
-              Bangladesh — including DigitalOcean (cloud hosting), and Google and OpenAI in the United States —
-              and other countries where our service providers operate. By creating an account and using {APP_NAME}, you
-              explicitly acknowledge and consent to the transfer and processing of your data in these
-              jurisdictions. We ensure that all third-party providers maintain appropriate data protection
-              standards equivalent to those required under applicable Bangladesh law.
+              Some {APP_NAME} data is processed outside Bangladesh, including on DigitalOcean cloud infrastructure.
+              Depending on the feature used and runtime configuration, AI request content may also be sent to
+              Google or OpenAI, and operational alert details may be sent to Slack or Sentry. Which providers
+              receive data and the countries where it is processed depend on the configured integrations and
+              request path. By creating an account and using {APP_NAME}, you acknowledge and consent to these
+              transfers when the relevant feature or integration is used. We require third-party providers to
+              maintain appropriate data protection standards under applicable Bangladesh law.
             </p>
 
             <h3 className="text-base font-semibold text-gray-800 mb-2">Data Breach Notification</h3>
@@ -333,8 +338,10 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">6. Third-Party Service Providers</h2>
             <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-950">
               Most merchants only need to know this: we use Meta for Messenger, secure cloud hosting for the app,
-              courier providers when you enable them, and reply providers only to prepare customer replies.
-              Customer conversation data is not used to train provider models.
+              courier providers when you enable them, AI providers to prepare replies, and operational alert sinks
+              when configured. If payment-evidence OCR is used, the screenshot may be sent to Google Gemini when
+              available and to OpenAI if the configured provider chain reaches it. Customer conversation data is
+              not used to train provider models.
             </div>
             <p className="mb-4 leading-relaxed">
               To operate {APP_NAME}, we share data with the following categories of third-party service
@@ -361,17 +368,17 @@ export default function PrivacyPolicy() {
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Google (Gemini)</td>
-                    <td className="px-4 py-3 text-gray-600">Reply provider</td>
-                    <td className="px-4 py-3 text-gray-600">Conversation text (not used for training)</td>
-                    <td className="px-4 py-3 text-gray-600">Primary reply generation</td>
-                    <td className="px-4 py-3 text-emerald-700">Active</td>
+                    <td className="px-4 py-3 text-gray-600">AI provider</td>
+                    <td className="px-4 py-3 text-gray-600">Conversation text for reply generation; submitted payment screenshots for OCR if Gemini is configured and reached (not used for training)</td>
+                    <td className="px-4 py-3 text-gray-600">Reply generation and conditional payment-evidence OCR for merchant review</td>
+                    <td className="px-4 py-3 text-gray-500">Only if configured and used</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">OpenAI</td>
                     <td className="px-4 py-3 text-gray-600">Reply provider</td>
-                    <td className="px-4 py-3 text-gray-600">Conversation text and private search signals (not used for training)</td>
-                    <td className="px-4 py-3 text-gray-600">Fallback reply generation and FAQ search</td>
-                    <td className="px-4 py-3 text-emerald-700">Active</td>
+                    <td className="px-4 py-3 text-gray-600">Conversation text and private search signals; submitted payment screenshots if OCR fallback reaches OpenAI, including when Gemini is unavailable (not used for training)</td>
+                    <td className="px-4 py-3 text-gray-600">Fallback reply generation, FAQ search, and conditional payment-evidence OCR</td>
+                    <td className="px-4 py-3 text-gray-500">Only if configured and used</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Qdrant (self-hosted)</td>
@@ -416,21 +423,42 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr className="bg-gray-50/60">
-                    <td className="px-4 py-3 font-medium text-gray-900">bKash / Nagad</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">bKash subscription billing</td>
                     <td className="px-4 py-3 text-gray-600">Payment Gateway</td>
-                    <td className="px-4 py-3 text-gray-600">Customer phone number, order amount</td>
-                    <td className="px-4 py-3 text-gray-600">Mobile payment processing</td>
-                    <td className="px-4 py-3 text-gray-500">Not enabled — no data shared</td>
+                    <td className="px-4 py-3 text-gray-600">Payer name and phone, shop ID, invoice number, and payment amount</td>
+                    <td className="px-4 py-3 text-gray-600">EasyModerator subscription invoices and conversation top-ups</td>
+                    <td className="px-4 py-3 text-gray-500">Only if platform billing is enabled</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-gray-900">Configured operations-alert webhook</td>
+                    <td className="px-4 py-3 text-gray-600">Operations alerting</td>
+                    <td className="px-4 py-3 text-gray-600">Escalation type, conversation and shop IDs, priority, and violation categories; no customer message or AI response content</td>
+                    <td className="px-4 py-3 text-gray-600">Route guardrail escalations for human review</td>
+                    <td className="px-4 py-3 text-gray-500">Only if configured</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-gray-900">Configured Slack webhook / Sentry</td>
+                    <td className="px-4 py-3 text-gray-600">Operational alerting and error monitoring</td>
+                    <td className="px-4 py-3 text-gray-600">Alert titles, diagnostic details, and context; may include shop, Page, conversation, order, message, job, or receipt IDs, status, administrator ID for test alerts, and error text</td>
+                    <td className="px-4 py-3 text-gray-600">Reliability monitoring and incident response</td>
+                    <td className="px-4 py-3 text-gray-500">Only where configured</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <p className="mt-3 text-sm text-gray-600 leading-relaxed">
-              Reply providers receive conversation text only to prepare customer service replies.
+              AI providers receive content needed for the requested task: conversation text for reply generation,
+              and, if the payment-evidence OCR path is used, the screenshot may be sent to whichever configured
+              provider the fallback chain reaches. Google Gemini may process it first; OpenAI may also receive it
+              if that provider is configured and reached. Provider configuration and request outcomes determine
+              which providers receive the screenshot. Extracted transaction details may be stored for merchant
+              review.
               <strong> We do not permit any provider to use your data for training their models.</strong>
               We isolate each business's private search data so one business cannot retrieve another
-              business's information. {APP_NAME} no longer forwards event data to external workflow
-              automation tools such as Make.com or n8n; that integration has been retired.
+              business's information. The legacy Make.com/n8n event-forwarding integrations are retired. A
+              configured operations-alert webhook is separate and may receive only the guardrail-escalation
+              metadata listed above, not customer messages or AI responses. Separately, general alert titles,
+              diagnostic details, and context may be sent to configured Slack or Sentry sinks as described above.
             </p>
           </section>
 
