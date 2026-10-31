@@ -120,6 +120,22 @@ describe('Subscription', () => {
     expect(screen.queryByRole('button', { name: /Pay with bKash/i })).not.toBeInTheDocument();
   });
 
+  it('releases a cancelled invoice checkout before showing the cancellation state', async () => {
+    vi.mocked(apiClient.cancelInvoicePayment).mockClear();
+    window.history.pushState({}, '', '/subscription?paymentID=PAY-1&status=cancel');
+    sessionStorage.setItem('easymod_pay_ctx', JSON.stringify({ kind: 'invoice', ref: 'inv-1' }));
+
+    renderWithRouter();
+
+    await waitFor(() => {
+      expect(apiClient.cancelInvoicePayment).toHaveBeenCalledWith('inv-1', 'PAY-1');
+    });
+    expect(screen.getByText('subscription.paymentCancelled')).toBeInTheDocument();
+    expect(sessionStorage.getItem('easymod_pay_ctx')).toBeNull();
+
+    window.history.replaceState({}, '', '/subscription');
+  });
+
   it('shows the fixed Growth review notice while keeping the plan change gated', async () => {
     vi.mocked(apiClient.getSubscriptionPlans).mockResolvedValue([{
       id: 'growth',
@@ -141,21 +157,5 @@ describe('Subscription', () => {
 
     window.history.replaceState({}, '', '/subscription');
     vi.mocked(apiClient.getSubscriptionPlans).mockResolvedValue([]);
-  });
-
-  it('releases a cancelled invoice checkout before showing the cancellation state', async () => {
-    vi.mocked(apiClient.cancelInvoicePayment).mockClear();
-    window.history.pushState({}, '', '/subscription?paymentID=PAY-1&status=cancel');
-    sessionStorage.setItem('easymod_pay_ctx', JSON.stringify({ kind: 'invoice', ref: 'inv-1' }));
-
-    renderWithRouter();
-
-    await waitFor(() => {
-      expect(apiClient.cancelInvoicePayment).toHaveBeenCalledWith('inv-1', 'PAY-1');
-    });
-    expect(screen.getByText('subscription.paymentCancelled')).toBeInTheDocument();
-    expect(sessionStorage.getItem('easymod_pay_ctx')).toBeNull();
-
-    window.history.replaceState({}, '', '/subscription');
   });
 });
