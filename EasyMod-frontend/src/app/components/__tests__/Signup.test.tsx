@@ -57,7 +57,8 @@ describe('Signup terms consent', () => {
     expect(screen.getByText(/8 or more characters/i)).toBeInTheDocument();
     expect(screen.getAllByText(/first shop/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/no payment information is required to create an account/i)).toBeInTheDocument();
-    expect(screen.getByText(/after account creation, complete your shop setup from the dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/after account creation, finish shop setup from the dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/to connect Messenger, go to Settings → Chat, complete Facebook Login, then choose an eligible Page/i)).toBeInTheDocument();
     expect(screen.getByText(/under Business information/i)).toBeInTheDocument();
     expect(screen.getByText(/we use your name for your account and first shop/i)).toBeInTheDocument();
     expect(screen.queryByText(/your new account starts on Shuru/i)).not.toBeInTheDocument();

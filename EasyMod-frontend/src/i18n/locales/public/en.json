@@ -17,8 +17,8 @@
     },
     "landingV6": {
       "heroEyebrow": "Customer support through Facebook Messenger",
-      "heroTitle": "Clear customer support. Order details ready for review.",
-      "heroBody": "Bring supported Messenger conversations together with product information and order review, so your team can respond and check details before the next step.",
+      "heroTitle": "Focus on selling. Let your Moderator help with customer questions and order work.",
+      "heroBody": "EasyModerator supports Facebook Page Messenger only. Product details saved for your shop can inform replies; a draft stays unsent until an authorized person sends it, and an order request is not a confirmed order.",
       "primaryCta": "Create your Shuru account",
       "secondaryCta": "See how it works",
       "sampleLabel": "Illustrative Messenger reply and order review workflow",
@@ -37,7 +37,7 @@
       "orderReviewBody": "Check the request details before confirming or taking another action.",
       "orderNotConfirmed": "A request is not a confirmed order or delivery.",
       "illustrationCaption": "Illustration only · sample interface, not a customer account or product screenshot.",
-      "founderPromise": "Your business, our technology. We move forward together.",
+      "founderPromise": "Your Business. Our Technology. Forward, Together.",
       "capabilityEyebrow": "The core work, in one place",
       "capabilityTitle": "Support customers and keep order decisions clear.",
       "capabilityBody": "EasyModerator connects supported Facebook Messenger customer support with saved product information and order review. It is useful whether one person handles the inbox or a team shares the work.",
@@ -88,9 +88,13 @@
           "question": "Which customer channel is supported here?",
           "answer": "Facebook Messenger is the supported customer channel for this offer."
         },
+        "connection": {
+          "question": "What happens when I connect a Facebook Page?",
+          "answer": "In Settings → Chat, sign in with Facebook and choose a Page you manage. EasyModerator lists Pages available to that login and handles Messenger only for the Page you select and connect. Permissions: `pages_show_list` (list Pages), `pages_messaging` (receive and send direct messages for the selected Page), and `pages_manage_metadata` (subscribe the Page to message webhooks). Instagram and advertising access are not requested. If your Page is missing, check the Facebook login and Page assignment; finish other setup and try again later. Access varies by account and Page."
+        },
         "replies": {
-          "question": "Does an AI reply send without review?",
-          "answer": "Reply behavior follows the shop's configured mode. A draft is not sent until the merchant chooses to send it."
+          "question": "How do I control replies?",
+          "answer": "You choose Manual, Draft, or Auto. A Draft stays unsent until an authorized merchant or team member sends it. Auto sends only when the reply passes the shop's safety checks and Meta's messaging rules; otherwise it can be held for review. Meta's messaging window still applies."
         },
         "plans": {
           "question": "Which plan does a new account get?",
@@ -114,7 +118,8 @@
       "createAccount": "Create account",
       "openNavigation": "Open navigation",
       "closeNavigation": "Close navigation",
-      "backToSite": "Back to EasyModerator"
+      "backToSite": "Back to EasyModerator",
+      "skipToContent": "Skip to content"
     },
     "footer": {
       "privacy": "Privacy policy",
@@ -488,7 +493,7 @@
       "signUpSubtitle": "Use your name, email and password. Your name is also used for your first shop.",
       "signUpTitle": "Create your EasyModerator account",
       "signingIn": "Signing in…",
-      "signupNextStep": "After account creation, complete your shop setup from the dashboard.",
+      "signupNextStep": "After account creation, finish shop setup from the dashboard. To connect Messenger, go to Settings → Chat, complete Facebook Login, then choose an eligible Page in the in-app Page picker.",
       "termsJoin": "and",
       "termsOfService": "Terms of service",
       "termsPrefix": "I agree to the",

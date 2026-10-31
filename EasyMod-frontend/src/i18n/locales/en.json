@@ -1971,7 +1971,7 @@
       "pagesShowList": "see your Page list",
       "pagesMessaging": "read and send Messenger messages",
       "pagesManageMetadata": "subscribe to realtime webhooks",
-      "note": "EasyModerator uses these permissions only for customer messages."
+      "note": "EasyModerator uses these permissions to list Pages you manage, receive and send direct Messenger messages for a selected Page, and subscribe that Page to message webhooks. Instagram and advertising permissions are not requested."
     },
     "disconnectModal": {
       "title": "Disconnect {{name}}?",

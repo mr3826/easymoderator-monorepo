@@ -1971,7 +1971,7 @@
       "pagesShowList": "আপনার Page list দেখা",
       "pagesMessaging": "Messenger বার্তা পড়া ও পাঠানো",
       "pagesManageMetadata": "Realtime webhook subscribe",
-      "note": "EasyModerator শুধু customer message-এর জন্য এই permission ব্যবহার করে।"
+      "note": "EasyModerator আপনার পরিচালিত Page তালিকাভুক্ত করতে, নির্বাচিত Page-এর সরাসরি Messenger বার্তা গ্রহণ ও পাঠাতে এবং সেই Page-কে messages webhook-এ subscribe করতে এই permission ব্যবহার করে। Instagram বা বিজ্ঞাপনের permission চাওয়া হয় না।"
     },
     "disconnectModal": {
       "title": "{{name}} সংযোগ বিচ্ছিন্ন করবেন?",

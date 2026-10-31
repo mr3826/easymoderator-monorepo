@@ -51,7 +51,7 @@ export default function LanguageToggle({ variant = 'dark' }: LanguageToggleProps
     : variant === 'public' || variant === 'workspace'
       ? 'bg-[#5D49BB] text-white'
       : 'bg-emerald-600 text-white';
-  const inactiveSegment = 'opacity-60';
+  const inactiveSegment = variant === 'public' ? 'text-[#46506A]' : 'opacity-60';
 
   return (
     <button

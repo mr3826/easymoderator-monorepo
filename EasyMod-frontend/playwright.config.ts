@@ -34,5 +34,13 @@ export default defineConfig({
     url: PW_BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: {
+      VITE_API_BASE_URL: '/api',
+      VITE_APP_URL: PW_BASE_URL,
+      VITE_MARKETING_URL: PW_BASE_URL,
+      VITE_BKASH_ENABLED: 'false',
+      VITE_BKASH_SANDBOX: 'false',
+      VITE_ENV: 'development',
+    },
   },
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getCurrentPublicSubscriptionCatalog, type PublicSubscriptionCatalog } from "@/api/domains/publicSubscription";
+import { getCurrentPublicSubscriptionCatalog, hasRequiredPublicPlans, type PublicSubscriptionCatalog } from "@/api/domains/publicSubscription";
 import { publicApiPost } from "@/shared/lib/http/public-client";
 import { buildAppUrlWithLocale, isBkashEnabled } from "@/app/lib/config";
 import { GROWTH_UPGRADE_INTENT } from "@/app/lib/signupIntent";
@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-import { PublicFunnelFooter, PublicFunnelHeader } from "./PublicFunnelChrome";
+import { PublicFunnelFooter, PublicFunnelHeader, PublicFunnelSkipLink } from "./PublicFunnelChrome";
 import Seo from "./Seo";
 import "./public-funnel.css";
 
@@ -159,7 +159,7 @@ function PlanCard({
           ) : (
             <>
               <span className="text-4xl font-extrabold">৳{monthlyNumber}</span>
-              <span className="text-sm font-medium text-[#17223B]/60">{t("publicFunnel.pricing.perMonth")}</span>
+              <span className="text-sm font-medium text-[#46506A]">{t("publicFunnel.pricing.perMonth")}</span>
             </>
           )}
         </h2>
@@ -255,6 +255,13 @@ export default function Pricing() {
     setCatalogError(false);
     getCurrentPublicSubscriptionCatalog()
       .then((result) => {
+        if (!hasRequiredPublicPlans(result.plans)) {
+          if (active) {
+            setCatalog(null);
+            setCatalogError(true);
+          }
+          return;
+        }
         if (active) setCatalog(result);
       })
       .catch(() => {
@@ -274,8 +281,9 @@ export default function Pricing() {
         canonicalPath="/pricing"
         canonicalBase="marketing"
       />
+      <PublicFunnelSkipLink />
       <PublicFunnelHeader page="pricing" />
-      <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16">
+      <main id="public-funnel-main" tabIndex={-1} className="scroll-mt-20 mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16">
         <header className="mx-auto mb-10 max-w-3xl text-center sm:mb-12">
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#5D49BB]">{t("publicFunnel.pricing.eyebrow")}</p>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#17223B] sm:text-5xl">{t("publicFunnel.pricing.title")}</h1>

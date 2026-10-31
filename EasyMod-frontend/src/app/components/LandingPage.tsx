@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentPublicSubscriptionCatalog, type PublicSubscriptionCatalog } from "@/api/domains/publicSubscription";
 import { trackFunnelEvent } from "@/app/lib/funnel";
-import { PublicFunnelFooter, PublicFunnelHeader } from "./PublicFunnelChrome";
+import { PublicFunnelFooter, PublicFunnelHeader, PublicFunnelSkipLink } from "./PublicFunnelChrome";
 import { PlanComparison } from "./LandingPageV5Sections";
 import { CoreCapabilities, LandingClosing, LandingHero, StorySection, TrustAndFaq, WorkflowSection } from "./LandingPageV6Sections";
 import Seo from "./Seo";
@@ -59,19 +59,20 @@ export default function LandingPage() {
         canonicalBase="marketing"
         structuredData={LANDING_SCHEMA}
       />
+      <PublicFunnelSkipLink />
       <PublicFunnelHeader page="landing" />
-      <main>
+      <main id="public-funnel-main" tabIndex={-1} className="scroll-mt-20">
         <LandingHero />
-        <CoreCapabilities />
         <WorkflowSection />
+        <CoreCapabilities />
         <StorySection />
+        <TrustAndFaq />
         <PlanComparison
           plans={catalog?.plans ?? []}
           loading={!catalogError && catalog === null}
           unavailable={catalogError}
           onRetry={() => setRetryCount((count) => count + 1)}
         />
-        <TrustAndFaq />
         <LandingClosing />
       </main>
       <PublicFunnelFooter />
