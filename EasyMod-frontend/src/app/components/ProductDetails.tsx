@@ -8,6 +8,7 @@ import type { Product } from "@/api/types/product";
 import { authService } from "../lib/auth";
 import AddProduct from "./AddProduct";
 import { getErrorMessage } from "@shared/lib/http/errors";
+import ContextualEntityLink from "./merchant-workspace/ContextualEntityLink";
 
 export default function ProductDetails() {
   const { t } = useTranslation();
@@ -172,6 +173,19 @@ export default function ProductDetails() {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('common.description')}</h3>
             <p className="text-gray-700">{product.description || t('products.detail.noDescription')}</p>
           </div>
+
+          {(product.category || product.category_id) && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('nav.categories')}</h3>
+              {product.category_id ? (
+                <ContextualEntityLink to={`/categories/${encodeURIComponent(product.category_id)}`}>
+                  {product.category || t('categories.title')}
+                </ContextualEntityLink>
+              ) : (
+                <p className="text-gray-700">{product.category}</p>
+              )}
+            </div>
+          )}
 
           {/* Specifications */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">

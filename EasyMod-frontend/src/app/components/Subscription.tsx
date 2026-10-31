@@ -11,6 +11,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
@@ -30,6 +31,7 @@ import {
   usageThresholdSeverity,
 } from "@/app/lib/usageThresholds";
 import { buildApiUrl, isBkashEnabled } from "@/app/lib/config";
+import { isGrowthUpgradeIntent } from "@/app/lib/signupIntent";
 import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface InvoiceRow {
@@ -67,9 +69,11 @@ const initialUsage: {
 };
 
 export default function Subscription() {
+  const location = useLocation();
   const { t, i18n } = useTranslation();
   const formatNumber = (value: number) => value.toLocaleString(i18n.language === "bn" ? "bn-BD" : "en-US");
   const bkashEnabled = isBkashEnabled();
+  const growthIntent = isGrowthUpgradeIntent(new URLSearchParams(location.search));
   const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>(subscriptionPlans);
   const [conversationPacks, setConversationPacks] = useState(
     subscriptionPlans.find((plan) => plan.code === "GROWTH")?.topupPacks || [],
@@ -440,6 +444,15 @@ export default function Subscription() {
       {error && <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
       {success && <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{success}</div>}
 
+      {growthIntent && (
+        <div role="status" className="mb-6 flex flex-col gap-2 rounded-xl border border-brand/20 bg-emerald-50 p-4 text-sm text-gray-700 sm:flex-row sm:items-center sm:justify-between">
+          <p>{t("subscription.growthIntentNotice")}</p>
+          <a href="#growth-plan" className="shrink-0 font-semibold text-brand underline underline-offset-2">
+            {t("subscription.growthIntentViewPlan")}
+          </a>
+        </div>
+      )}
+
       <Card className="mb-6 overflow-hidden border-emerald-100 bg-gradient-to-br from-white to-emerald-50/60">
         <CardContent className="grid gap-6 p-6 md:grid-cols-[1fr_auto_auto] md:items-center">
           <div>
@@ -482,7 +495,7 @@ export default function Subscription() {
             const translatedHighlights = t(`pricing.planFeatures.${plan.id}`, { returnObjects: true });
             const highlights = Array.isArray(translatedHighlights) ? translatedHighlights as string[] : plan.highlights;
             return (
-              <Card key={plan.id} className={`flex h-full flex-col ${plan.code === "GROWTH" ? "border-brand shadow-lg shadow-emerald-900/10" : ""}`}>
+              <Card id={plan.code === "GROWTH" ? "growth-plan" : undefined} key={plan.id} className={`flex h-full flex-col ${plan.code === "GROWTH" ? "border-brand shadow-lg shadow-emerald-900/10" : ""}`}>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
                     <CardTitle>{plan.name}</CardTitle>

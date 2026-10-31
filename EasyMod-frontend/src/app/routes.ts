@@ -2,6 +2,8 @@ import { lazy, createElement, Suspense, type ComponentType, type LazyExoticCompo
 import { createBrowserRouter, redirect } from "react-router-dom";
 import { authService } from "./lib/auth";
 import { hasSeparateProductOrigins, isMarketingSurface } from "./lib/config";
+import { getSignupSuccessPath } from "./lib/signupIntent";
+import { readStoredLanguage } from "@/i18n/language";
 import { AdminRoute } from "@/shared/components/guards";
 import { PlatformAdminRoute } from "@/shared/components/guards/PlatformAdminRoute";
 import PageLoader from "./components/PageLoader";
@@ -67,6 +69,13 @@ async function publicLoader() {
 		return redirect("/dashboard");
 	}
 	return null;
+}
+
+async function signupLoader({ request }: { request: Request }) {
+	await authService.ensureInitialized();
+	if (!authService.isAuthenticated()) return null;
+
+	return redirect(getSignupSuccessPath(new URL(request.url).searchParams, readStoredLanguage() ?? "bn"));
 }
 
 async function rootLoader() {
@@ -153,7 +162,7 @@ export const router = createBrowserRouter([
 	{
 		path: "/signup",
 		Component: withSuspense(Signup),
-		loader: publicLoader,
+		loader: signupLoader,
 		errorElement: createElement(RouteError),
 	},
 	{
@@ -199,6 +208,7 @@ export const router = createBrowserRouter([
 			{ path: "/reports", Component: withSuspense(Reports) },
 			{ path: "/audit-logs", Component: withSuspense(AuditLogs) },
 			{ path: "/subscription", Component: withSuspense(Subscription) },
+			{ path: "/more", loader: () => redirect("/dashboard") },
 			{
 				path: "/team/users",
 				Component: withSuspense((props: Record<string, never>) =>

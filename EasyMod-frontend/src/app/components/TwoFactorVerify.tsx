@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/app/components/ui/button';
 import { useAuth } from '@/features/auth/AuthProvider';
 import BrandLogo from './BrandLogo';
+import LanguageToggle from './LanguageToggle';
+import Seo from './Seo';
 import { getErrorMessage } from '@shared/lib/http/errors';
+import './public-funnel.css';
 
 /**
  * Two-factor authentication verification screen.
@@ -14,6 +18,7 @@ import { getErrorMessage } from '@shared/lib/http/errors';
  */
 export default function TwoFactorVerify() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { pendingTwoFactor, verifyTwoFactor } = useAuth();
 
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -80,7 +85,7 @@ export default function TwoFactorVerify() {
       await verifyTwoFactor(code);
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
-      setError(getErrorMessage(err, 'Invalid code. Please try again.'));
+      setError(getErrorMessage(err, t('publicFunnel.auth.twoFactorInvalidCode')));
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {
@@ -92,35 +97,39 @@ export default function TwoFactorVerify() {
     e.preventDefault();
     const code = digits.join('');
     if (code.length < 6) {
-      setError('Please enter all 6 digits.');
+      setError(t('publicFunnel.auth.twoFactorEnterAllDigits'));
       return;
     }
     submitCode(code);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <BrandLogo size="md" variant="dark" />
-          <p className="mt-4 text-gray-500 text-sm">Two-factor authentication</p>
-        </div>
+    <div className="funnel-page flex flex-col">
+      <Seo title={t('publicFunnel.auth.twoFactorTitle')} description={t('publicFunnel.auth.twoFactorDescription')} canonicalPath="/2fa-verify" canonicalBase="app" noIndex />
+      <header className="flex items-center justify-end border-b border-[#17223B]/10 bg-white px-4 py-3 sm:px-6">
+        <LanguageToggle variant="public" />
+      </header>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
-          <h1 className="text-xl font-bold text-gray-900 mb-1 text-center">Verify your identity</h1>
-          <p className="text-sm text-gray-500 text-center mb-6">
-            Enter the 6-digit code from your authenticator app.
+      <main className="flex flex-1 items-center justify-center p-4 sm:p-6">
+       <div className="w-full max-w-sm">
+        <div className="rounded-3xl border border-[#17223B]/10 bg-white p-5 shadow-sm sm:p-8">
+          <div className="mb-6 text-center">
+            <BrandLogo size="md" variant="dark" />
+          </div>
+          <h1 className="mb-1 text-center text-xl font-bold text-[#17223B]">{t('publicFunnel.auth.twoFactorHeading')}</h1>
+          <p className="mb-6 text-center text-sm text-[#17223B]/70">
+            {t('publicFunnel.auth.twoFactorDescription')}
           </p>
 
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+            <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit}>
             {/* 6-digit OTP input */}
-            <div className="flex gap-2 justify-center mb-6" onPaste={handlePaste}>
+            <div className="mb-6 flex justify-center gap-1.5 sm:gap-2" onPaste={handlePaste}>
               {digits.map((digit, i) => (
                 <input
                   key={i}
@@ -133,19 +142,18 @@ export default function TwoFactorVerify() {
                   onKeyDown={(e) => handleKeyDown(i, e)}
                   disabled={isSubmitting}
                   autoFocus={i === 0}
-                  className="w-11 h-13 text-center text-xl font-semibold rounded-xl border border-gray-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all disabled:opacity-50"
-                  aria-label={`Digit ${i + 1}`}
+                  className="h-12 w-9 rounded-xl border border-[#17223B]/20 text-center text-xl font-semibold text-[#17223B] outline-none transition-all focus:border-[#7460D9] focus:ring-2 focus:ring-[#7460D9]/20 disabled:opacity-50 sm:w-11"
+                  aria-label={t('publicFunnel.auth.twoFactorDigit', { count: i + 1 })}
                 />
               ))}
             </div>
 
             <Button
               type="submit"
-              className="w-full h-12 rounded-xl text-white font-semibold text-base"
-              style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
+              className="funnel-button funnel-button-primary h-12 w-full justify-center text-base"
               disabled={isSubmitting || digits.join('').length < 6}
             >
-              {isSubmitting ? 'Verifying…' : 'Verify'}
+              {isSubmitting ? t('publicFunnel.auth.twoFactorVerifying') : t('publicFunnel.auth.twoFactorVerify')}
             </Button>
           </form>
 
@@ -153,13 +161,14 @@ export default function TwoFactorVerify() {
             <button
               type="button"
               onClick={() => navigate('/signin', { replace: true })}
-              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              className="text-sm font-semibold text-[#5D49BB] hover:underline"
             >
-              Back to sign in
+              {t('publicFunnel.auth.twoFactorBack')}
             </button>
           </div>
         </div>
-      </div>
+       </div>
+      </main>
     </div>
   );
 }

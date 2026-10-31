@@ -13,12 +13,14 @@ describe("canonical frontend origins", () => {
     const {
       buildApiUrl,
       buildAppUrl,
+      buildAppUrlWithLocale,
       buildMarketingUrl,
       hasSeparateProductOrigins,
       toApiRequestPath,
     } = await import("./config");
 
     expect(buildAppUrl("/signin")).toBe("https://app.easymod.tech/signin");
+    expect(buildAppUrlWithLocale("/signup", "bn")).toBe("https://app.easymod.tech/signup?lang=bn");
     expect(buildMarketingUrl("/pricing")).toBe("https://easymod.tech/pricing");
     expect(buildApiUrl("/api/orders")).toBe("https://api.easymod.tech/orders");
     expect(buildApiUrl("/webhooks/meta")).toBe("https://api.easymod.tech/webhooks/meta");
@@ -35,5 +37,10 @@ describe("canonical frontend origins", () => {
     expect(toApiRequestPath("/auth/me")).toBe("/api/auth/me");
     expect(toApiRequestPath("/api/auth/me")).toBe("/api/auth/me");
     expect(hasSeparateProductOrigins()).toBe(false);
+  });
+
+  it("does not add an unrecognized locale to app links", async () => {
+    const { buildAppUrlWithLocale } = await import("./config");
+    expect(buildAppUrlWithLocale("/signup", "fr" as "en")).toBe("http://localhost:5173/signup");
   });
 });

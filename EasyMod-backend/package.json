@@ -29,8 +29,8 @@
     "seed:admin": "node src/scripts/seed-admin.js",
     "seed:initial-growth-admin": "node src/scripts/seed-initial-growth-admin.js",
     "seed:meta-review-merchant": "node src/scripts/seed-meta-review-merchant.js",
-        "seed:conversations": "node src/scripts/seed-conversations.js",
-        "seed:pilotplus-lab": "node scripts/pilotplus-seed-lab.js",
+    "seed:conversations": "node src/scripts/seed-conversations.js",
+    "seed:pilotplus-lab": "node scripts/pilotplus-seed-lab.js",
     "reindex:qdrant": "node src/scripts/reindex-qdrant.js",
     "ai:backfill-products": "node scripts/backfill-product-attributes.js",
     "schema:audit": "node scripts/schema-drift-audit.js",
@@ -80,7 +80,7 @@
     "fs-extra": "^11.3.4",
     "helmet": "^8.1.0",
     "ioredis": "^5.3.2",
-    "joi": "^18.2.9",
+    "joi": "^18.3.1",
     "jsonwebtoken": "^9.0.3",
     "module-alias": "^2.2.3",
     "morgan": "1.12.1",
@@ -108,7 +108,8 @@
     "proxy-addr": "2.0.8",
     "qs": "6.16.2",
     "uuid": "11.1.1",
-    "moment": "2.31.0"
+    "moment": "2.31.0",
+    "follow-redirects": "1.16.2"
   },
   "_moduleAliases": {
     "src": "./src"

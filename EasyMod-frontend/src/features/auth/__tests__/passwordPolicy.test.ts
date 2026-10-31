@@ -22,6 +22,13 @@ const buildSignup = (password: string) => ({
 });
 
 describe('password policy', () => {
+  it('requires a Bangladeshi mobile number (production data-capture contract)', () => {
+    expect(signupSchema.safeParse(buildSignup(VALID)).success).toBe(true);
+    const { phone: _phone, ...withoutPhone } = buildSignup(VALID);
+    expect(signupSchema.safeParse(withoutPhone).success).toBe(false);
+    expect(signupSchema.safeParse({ ...buildSignup(VALID), phone: '+880171234567' }).success).toBe(false);
+  });
+
   it('accepts a password that satisfies every rule', () => {
     expect(getPasswordError(VALID)).toBeNull();
     expect(signupSchema.safeParse(buildSignup(VALID)).success).toBe(true);

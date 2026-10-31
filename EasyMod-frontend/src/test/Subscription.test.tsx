@@ -18,6 +18,9 @@ vi.mock('react-i18next', () => ({
         'subscription.currentPlan': 'Current plan',
         'subscription.plansTitle': 'Plans',
         'subscription.plansSubtitle': 'Choose a plan',
+        'subscription.growthIntentNotice': 'You asked to review Growth.',
+        'subscription.growthIntentViewPlan': 'View Growth plan',
+        'subscription.bkashUnavailable': 'bKash unavailable',
         'subscription.usageTitle': 'This period usage',
         'subscription.usageSubtitle': 'Usage',
         'subscription.conversationsUsed': 'Customer conversations',
@@ -131,5 +134,28 @@ describe('Subscription', () => {
     expect(sessionStorage.getItem('easymod_pay_ctx')).toBeNull();
 
     window.history.replaceState({}, '', '/subscription');
+  });
+
+  it('shows the fixed Growth review notice while keeping the plan change gated', async () => {
+    vi.mocked(apiClient.getSubscriptionPlans).mockResolvedValue([{
+      id: 'growth',
+      code: 'GROWTH',
+      name: 'Growth',
+      description: 'Growth plan',
+      monthlyPrice: 999,
+      yearlyPrice: 9990,
+      limits: { conversations: 500, orders: -1, products: -1 },
+      features: {},
+      highlights: [],
+    }] as any);
+    window.history.pushState({}, '', '/subscription?intent=growth-upgrade&lang=en');
+    renderWithRouter();
+
+    expect(await screen.findByRole('status')).toHaveTextContent('You asked to review Growth.');
+    expect(screen.getByRole('link', { name: 'View Growth plan' })).toHaveAttribute('href', '#growth-plan');
+    expect(await screen.findByRole('button', { name: 'bKash unavailable' })).toBeDisabled();
+
+    window.history.replaceState({}, '', '/subscription');
+    vi.mocked(apiClient.getSubscriptionPlans).mockResolvedValue([]);
   });
 });

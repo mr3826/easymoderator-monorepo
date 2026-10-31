@@ -11,13 +11,10 @@ import type {
   Invoice,
 } from '../types/subscription';
 import type { AxiosResponse } from 'axios';
-import { publicApiGet } from '@/shared/lib/http/public-client';
-import {
-  subscriptionPlans,
-  publicPlanToDefinition,
-  type PublicSubscriptionPlanPayload,
-  type SubscriptionPlanDefinition,
-} from '@/app/lib/subscriptionPlans';
+import { getPublicSubscriptionCatalog } from './publicSubscription';
+import type { SubscriptionPlanDefinition } from '@/app/lib/subscriptionPlans';
+
+export { getCurrentPublicSubscriptionCatalog, getPublicSubscriptionCatalog } from './publicSubscription';
 
 /**
  * Get current subscription details
@@ -44,20 +41,8 @@ export async function getSubscription(): Promise<SubscriptionData> {
  * console.log('Available plans:', plans.length);
  * ```
  */
-const fallbackPlan = (plan: SubscriptionPlanDefinition): SubscriptionPlanDefinition => plan;
-
 export async function getSubscriptionPlans(): Promise<SubscriptionPlanDefinition[]> {
-  try {
-    const response = await publicApiGet<ApiResponse<PublicSubscriptionPlanPayload[]>>(
-      '/api/subscription/plans',
-    );
-    if (Array.isArray(response.data) && response.data.length > 0) {
-      return response.data.map(publicPlanToDefinition);
-    }
-  } catch {
-    // The static values are deliberately small and pinned to the backend model.
-  }
-  return subscriptionPlans.map(fallbackPlan);
+  return (await getPublicSubscriptionCatalog()).plans;
 }
 
 /**

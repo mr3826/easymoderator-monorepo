@@ -1,86 +1,114 @@
-import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { BrowserRouter } from 'react-router-dom'
-import SignIn from '@/app/components/SignIn'
+import React from "react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import SignIn from "@/app/components/SignIn";
 
-// Input component doesn't use forwardRef, so react-hook-form can't attach its
-// ref and read DOM values at submit time. Mock it with a proper forwardRef wrapper.
-vi.mock('@/app/components/ui/input', () => ({
-  Input: React.forwardRef((props: any, ref: any) => <input ref={ref} {...props} />),
-}))
+vi.mock("@/app/components/ui/input", () => ({
+  Input: React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((props, ref) => <input ref={ref} {...props} />),
+}));
 
-vi.mock('react-i18next', () => ({
+const mockSignin = vi.fn();
+vi.mock("@/features/auth/AuthProvider", () => ({ useAuth: () => ({ signin: mockSignin }) }));
+vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: any) => {
-      if (options?.returnObjects) return []
-      const map: Record<string, string> = {
-        'auth.signin.emailLabel': 'Email',
-        'auth.signin.emailPlaceholder': 'Enter your email',
-        'auth.signin.passwordLabel': 'Password',
-        'auth.signin.passwordPlaceholder': 'Enter your password',
-        'auth.signin.signInButton': 'Sign In',
-        'auth.signin.signingIn': 'Signing in...',
-        'auth.signin.forgotPassword': 'Forgot password?',
-        'auth.signin.rememberMe': 'Remember me',
-        'auth.signin.noAccount': "Don't have an account?",
-        'auth.signin.tagline': 'EasyModerator',
-        'auth.signin.heading': 'AI-Powered Commerce',
-        'auth.signin.subheading': 'Automate your business',
-        'auth.signin.welcomeBack': 'Welcome back',
-        'auth.signin.loginPrompt': 'Sign in to your account',
-        'auth.signin.testimonialQuote': 'Great product',
-        'auth.signin.testimonialName': 'John',
-        'auth.signin.testimonialShop': 'Test Shop',
-        'auth.signin.errors.invalidCredentials': 'Invalid credentials',
-      }
-      return map[key] ?? key
-    },
-    i18n: { language: 'en', changeLanguage: vi.fn() },
+    t: (key: string) => ({
+      "publicFunnel.nav.backToSite": "Back to EasyModerator",
+      "publicFunnel.nav.signIn": "Sign in",
+      "publicFunnel.nav.createAccount": "Create account",
+      "publicFunnel.auth.signInTitle": "Sign in to EasyModerator",
+      "publicFunnel.auth.signInSubtitle": "Use your account email to continue.",
+      "publicFunnel.auth.email": "Email",
+      "publicFunnel.auth.emailPlaceholder": "you@example.com",
+      "publicFunnel.auth.password": "Password",
+      "publicFunnel.auth.passwordPlaceholder": "Enter your password",
+      "publicFunnel.auth.showPassword": "Show characters",
+      "publicFunnel.auth.hidePassword": "Hide characters",
+      "publicFunnel.auth.forgotPassword": "Forgot password?",
+      "publicFunnel.auth.signInButton": "Sign in",
+      "publicFunnel.auth.signingIn": "Signing in…",
+      "publicFunnel.auth.noAccount": "New to EasyModerator?",
+      "publicFunnel.auth.createAccount": "Create a Shuru account",
+      "common.language.switchToEnglish": "Switch to English",
+      "common.language.switchToBengali": "Switch to Bengali",
+      "auth.signin.errors.invalidCredentials": "Invalid credentials",
+    } as Record<string, string>)[key] ?? key,
+    i18n: { language: "en", resolvedLanguage: "en", changeLanguage: vi.fn() },
   }),
-}))
+}));
 
-const mockSignin = vi.fn().mockResolvedValue({})
-
-// SignIn relies on AuthProvider context via useAuth().
-vi.mock('@/features/auth/AuthProvider', () => ({
-  useAuth: () => ({
-    signin: mockSignin,
-  }),
-}))
-
-const renderWithRouter = (component: React.ReactElement) => {
-  return render(<BrowserRouter>{component}</BrowserRouter>)
+function LocationDisplay() {
+  const location = useLocation();
+  return <output data-testid="current-location">{location.pathname}</output>;
 }
 
-describe('SignIn', () => {
-  it('renders signin form', () => {
-    renderWithRouter(<SignIn />)
+function renderSignin() {
+  return render(
+    <MemoryRouter initialEntries={["/signin"]}>
+      <Routes>
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/dashboard" element={<LocationDisplay />} />
+        <Route path="/2fa-verify" element={<LocationDisplay />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
-    expect(screen.getByLabelText(/email|mobile/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
-  })
+describe("SignIn", () => {
+  beforeEach(() => {
+    mockSignin.mockReset().mockResolvedValue({});
+  });
 
-  it('handles form submission', async () => {
-    renderWithRouter(<SignIn />)
+  it("keeps the return flow focused, labeled and linked to recovery and signup", () => {
+    renderSignin();
 
-    const emailInput = screen.getByLabelText(/email|mobile/i)
-    const passwordInput = screen.getByLabelText(/password/i)
-    const submitButton = screen.getByRole('button', { name: /sign in/i })
+    expect(screen.getByRole("heading", { name: "Sign in to EasyModerator" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveAttribute("autocomplete", "email");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "current-password");
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute("href", "/forgot-password");
+    expect(screen.getAllByRole("link", { name: "Create a Shuru account" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Create a Shuru account" }).every((link) => link.getAttribute("href") === "/signup")).toBe(true);
+    expect(screen.getByRole("button", { name: "Show characters" })).toHaveAttribute("aria-pressed", "false");
+  });
 
-    // userEvent fires real keystroke events so react-hook-form tracks values
-    // via onChange even when the Input component lacks forwardRef
-    await userEvent.type(emailInput, 'test@example.com')
-    await userEvent.type(passwordInput, 'password123')
-    await userEvent.click(submitButton)
+  it("toggles password visibility and submits a normalized account email", async () => {
+    const user = userEvent.setup();
+    renderSignin();
 
-    await waitFor(() => {
-      expect(mockSignin).toHaveBeenCalledWith({
-        email: 'test@example.com',
-        password: 'password123',
-      })
-    })
-  })
-})
+    const password = screen.getByLabelText("Password");
+    await user.type(screen.getByLabelText("Email"), " MERCHANT@EXAMPLE.COM ");
+    await user.type(password, "ValidPass123!");
+    await user.click(screen.getByRole("button", { name: "Show characters" }));
+    expect(password).toHaveAttribute("type", "text");
+    await user.click(screen.getByRole("button", { name: "Hide characters" }));
+    expect(password).toHaveAttribute("type", "password");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(mockSignin).toHaveBeenCalledWith({ email: "merchant@example.com", password: "ValidPass123!" }));
+    await waitFor(() => expect(screen.getByTestId("current-location")).toHaveTextContent("/dashboard"));
+  });
+
+  it("shows an actionable authentication error without leaving the form", async () => {
+    const user = userEvent.setup();
+    mockSignin.mockRejectedValue(new Error("Email or password is incorrect"));
+    renderSignin();
+    await user.type(screen.getByLabelText("Email"), "merchant@example.com");
+    await user.type(screen.getByLabelText("Password"), "incorrect");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Email or password is incorrect");
+    expect(screen.getByRole("heading", { name: "Sign in to EasyModerator" })).toBeInTheDocument();
+  });
+
+  it("preserves the existing required two-factor route", async () => {
+    const user = userEvent.setup();
+    mockSignin.mockRejectedValue({ code: "REQUIRES_2FA" });
+    renderSignin();
+    await user.type(screen.getByLabelText("Email"), "merchant@example.com");
+    await user.type(screen.getByLabelText("Password"), "ValidPass123!");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(screen.getByTestId("current-location")).toHaveTextContent("/2fa-verify"));
+  });
+});

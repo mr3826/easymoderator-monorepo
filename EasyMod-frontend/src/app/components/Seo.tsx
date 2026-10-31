@@ -1,14 +1,23 @@
 import { useEffect } from "react";
+import { buildAppUrl, buildMarketingUrl } from "@/app/lib/config";
+
+type CanonicalBase = "app" | "marketing";
 
 type SeoProps = {
   title: string;
   description: string;
   canonicalPath: string;
+  canonicalBase?: CanonicalBase;
+  noIndex?: boolean;
   structuredData?: Record<string, unknown>;
 };
 
 function upsertMeta(selector: string, attributes: Record<string, string>, content: string) {
-  let element = document.head.querySelector<HTMLMetaElement>(selector);
+  const matches = document.head.querySelectorAll<HTMLMetaElement>(selector);
+  let element = matches[0];
+  matches.forEach((duplicate, index) => {
+    if (index > 0) duplicate.remove();
+  });
   if (!element) {
     element = document.createElement("meta");
     Object.entries(attributes).forEach(([name, value]) => element!.setAttribute(name, value));
@@ -17,9 +26,9 @@ function upsertMeta(selector: string, attributes: Record<string, string>, conten
   element.content = content;
 }
 
-export default function Seo({ title, description, canonicalPath, structuredData }: SeoProps) {
+export default function Seo({ title, description, canonicalPath, canonicalBase = "marketing", noIndex = false, structuredData }: SeoProps) {
   useEffect(() => {
-    const canonical = `https://easymod.tech${canonicalPath}`;
+    const canonical = canonicalBase === "app" ? buildAppUrl(canonicalPath) : buildMarketingUrl(canonicalPath);
     document.title = title;
     upsertMeta('meta[name="description"]', { name: "description" }, description);
     upsertMeta('meta[property="og:title"]', { property: "og:title" }, title);
@@ -27,8 +36,13 @@ export default function Seo({ title, description, canonicalPath, structuredData 
     upsertMeta('meta[property="og:url"]', { property: "og:url" }, canonical);
     upsertMeta('meta[name="twitter:title"]', { name: "twitter:title" }, title);
     upsertMeta('meta[name="twitter:description"]', { name: "twitter:description" }, description);
+    upsertMeta('meta[name="robots"]', { name: "robots" }, noIndex ? "noindex,nofollow" : "index,follow");
 
-    let link = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const links = document.head.querySelectorAll<HTMLLinkElement>('link[rel="canonical"]');
+    let link = links[0];
+    links.forEach((duplicate, index) => {
+      if (index > 0) duplicate.remove();
+    });
     if (!link) {
       link = document.createElement("link");
       link.rel = "canonical";
@@ -45,7 +59,7 @@ export default function Seo({ title, description, canonicalPath, structuredData 
       script.text = JSON.stringify(structuredData);
       document.head.appendChild(script);
     }
-  }, [canonicalPath, description, structuredData, title]);
+  }, [canonicalBase, canonicalPath, description, noIndex, structuredData, title]);
 
   return null;
 }

@@ -5,6 +5,7 @@ import {
   Store, LogOut, Users,
   CreditCard, Bell, ChevronLeft, ChevronRight,
   ChevronDown, Building2, MessageSquare, Truck, BookOpen,
+  FileClock, ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -12,6 +13,8 @@ import InstallPrompt from "./InstallPrompt";
 import BrandLogo from "./BrandLogo";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
+import { UserRole } from "@/shared/lib/rbac/types";
+import { useUserPermissions } from "@/shared/lib/rbac/useUserPermissions";
 import LanguageToggle from "./LanguageToggle";
 import InAppNotificationCenter from "./InAppNotificationCenter";
 import { buildMarketingUrl } from "@/app/lib/config";
@@ -43,6 +46,8 @@ export default function DashboardLayout() {
   const mobileNavigation = navigation;
 
   const { user, currentShop, logout } = useAuth();
+  const { hasRole } = useUserPermissions();
+  const isAdmin = hasRole(UserRole.ADMIN);
 
   const [collapsed, setCollapsed] = useState(false);
   const [showShopPanel, setShowShopPanel] = useState(false);
@@ -227,19 +232,40 @@ export default function DashboardLayout() {
           <InAppNotificationCenter />
 
           {/* Account menu */}
-          <div className="relative">
+          <div
+            className="relative"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setShowShopPanel(false);
+            }}
+          >
             <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={showShopPanel}
+              aria-controls="merchant-account-menu"
+              aria-label={`${t('nav.accountMenu', { defaultValue: 'Account menu' })}: ${activeShopName || user?.full_name || user?.email || t('common.activeShop', { defaultValue: 'Active shop' })}`}
+              title={activeShopName || user?.full_name || user?.email || 'Shop'}
               onClick={() => setShowShopPanel(p => !p)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
             >
               <span className="font-medium truncate max-w-[140px]">{activeShopName || user?.full_name || user?.email || 'Shop'}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" aria-hidden="true" />
             </button>
 
             {showShopPanel && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowShopPanel(false)} />
-                <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
+                <button
+                  type="button"
+                  className="fixed inset-0 z-40 cursor-default bg-transparent"
+                  aria-label={t('common.close', { defaultValue: 'Close' })}
+                  onClick={() => setShowShopPanel(false)}
+                />
+                <div
+                  id="merchant-account-menu"
+
+                  aria-label={t('nav.accountMenu', { defaultValue: 'Account menu' })}
+                  className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden"
+                >
                   {/* User info header */}
                   <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
                     <p className="text-xs font-semibold text-gray-900 truncate">{user?.full_name || user?.email || 'Account'}</p>
@@ -247,21 +273,28 @@ export default function DashboardLayout() {
                   </div>
                   {/* Navigation links */}
                   <div className="py-1">
-                    <button
-                      onClick={() => { setShowShopPanel(false); navigate('/manage-shop'); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <Store className="w-4 h-4 text-gray-400" />
+                    <button type="button" onClick={() => { setShowShopPanel(false); navigate("/manage-shop"); }} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <Store className="w-4 h-4 text-gray-400" aria-hidden="true" />
                       {t('nav.shopSettings')}
-                    </button>
+                    </button><button type="button" onClick={() => { setShowShopPanel(false); navigate("/subscription"); }} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <CreditCard className="w-4 h-4 text-gray-400" aria-hidden="true" />
+                      {t('nav.subscription')}
+                    </button><button type="button" onClick={() => { setShowShopPanel(false); navigate("/audit-logs"); }} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <FileClock className="w-4 h-4 text-gray-400" aria-hidden="true" />
+                      {t('nav.auditLogs', { defaultValue: 'Audit logs' })}
+                    </button>{isAdmin && (<button type="button" onClick={() => { setShowShopPanel(false); navigate("/team/users"); }} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <ShieldCheck className="w-4 h-4 text-gray-400" aria-hidden="true" />
+                        {t('nav.teamUsers', { defaultValue: 'Team users' })}
+                      </button>)}
                   </div>
                   {/* Logout */}
                   <div className="border-t border-gray-100 py-1">
                     <button
+                      type="button"
                       onClick={() => { setShowShopPanel(false); handleLogout(); }}
                       className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LogOut className="w-4 h-4" aria-hidden="true" />
                       {t('dashboard.logoutTitle')}
                     </button>
                   </div>

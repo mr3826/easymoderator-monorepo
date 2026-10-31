@@ -1,91 +1,67 @@
-import { useEffect, useMemo, useRef, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { motion, AnimatePresence, type Variants } from "motion/react";
-import { CheckCircle2, MessageCircle, ShieldCheck, Truck } from "lucide-react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
-import { useAuth } from "../../features/auth/AuthProvider";
-import { subscriptionPlans } from "../lib/subscriptionPlans";
-import LanguageToggle from "./LanguageToggle";
-import BrandLogo from "./BrandLogo";
-import { signupSchema, type SignupFormData } from '../../features/auth/validation/schemas';
-import { PasswordStrengthMeter } from '../../features/auth/components/PasswordStrengthMeter';
-import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
+import { useAuth } from "@/features/auth/AuthProvider";
+import { BDPhoneInput } from "@/shared/components/BDPhoneInput";
+import { PublicFunnelAuthLayout } from "./PublicFunnelAuthLayout";
+import { createSignupSchema, type SignupFormData } from "@/features/auth/validation/schemas";
+import { PasswordStrengthMeter } from "@/features/auth/components/PasswordStrengthMeter";
 import { trackFunnelEvent } from "@/app/lib/funnel";
-import { getErrorMessage } from '@shared/lib/http/errors';
-import { buildMarketingUrl } from '@/app/lib/config';
-
-const smoothEase = [0.22, 1, 0.36, 1] as const;
-
-const heroVariants: Variants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.1 } },
-};
-const heroChild: Variants = {
-  hidden: { opacity: 0, y: 18 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: smoothEase } },
-};
-
-const featureStripVariants: Variants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.5 } },
-};
-const featureChild: Variants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: smoothEase } },
-};
-
-function stringList(value: unknown, fallback: string[]) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : fallback;
-}
+import { getErrorMessage } from "@shared/lib/http/errors";
+import { buildMarketingUrlWithLocale } from "@/app/lib/config";
+import { getSignupSuccessPath, isGrowthUpgradeIntent } from "@/app/lib/signupIntent";
+import Seo from "./Seo";
+import "./public-funnel.css";
+import "./landing-v6.css";
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
+  const { t, i18n } = useTranslation();
   const { signup } = useAuth();
+  const locale = i18n.resolvedLanguage || i18n.language;
+  const growthIntent = isGrowthUpgradeIntent(searchParams);
+  const [showPassword, setShowPassword] = useState(false);
+  const signupInFlight = useRef(false);
+  const schema = useMemo(() => createSignupSchema({
+    nameMin: t("publicFunnel.validation.nameMin"),
+    nameMax: t("publicFunnel.validation.nameMax"),
+    emailRequired: t("publicFunnel.validation.emailRequired"),
+    emailInvalid: t("publicFunnel.validation.emailInvalid"),
+    phoneRequired: t("publicFunnel.validation.phoneRequired"),
+    phoneInvalid: t("publicFunnel.validation.phoneInvalid"),
+    passwordRequired: t("publicFunnel.validation.passwordRequired"),
+    passwordMin: t("publicFunnel.validation.passwordMin"),
+    passwordUppercase: t("publicFunnel.validation.passwordUppercase"),
+    passwordLowercase: t("publicFunnel.validation.passwordLowercase"),
+    passwordDigit: t("publicFunnel.validation.passwordDigit"),
+    passwordSpecial: t("publicFunnel.validation.passwordSpecial"),
+    termsRequired: t("publicFunnel.validation.termsRequired"),
+  }), [t]);
 
   const form = useForm<SignupFormData>({
-    resolver: zodResolver(signupSchema),
-    defaultValues: {
-      fullName: '',
-      email: '',
-      phone: '',
-      password: '',
-      acceptedTerms: false,
-    },
+    resolver: zodResolver(schema),
+    defaultValues: { fullName: "", email: "", phone: "", password: "", acceptedTerms: false },
   });
-
   const { register, handleSubmit, setError, clearErrors, watch, control, formState: { errors, isSubmitting } } = form;
-  const signupInFlight = useRef(false);
-
-  const passwordValue = watch('password');
-  const acceptedTerms = watch('acceptedTerms');
+  const passwordValue = watch("password");
+  const acceptedTerms = watch("acceptedTerms");
 
   useEffect(() => {
     trackFunnelEvent("signup_started", { surface: "signup" }, { onceKey: "signup_started" });
   }, []);
 
-  const selectedPlan = useMemo(
-    () => subscriptionPlans.find((plan) => plan.id === "shuru") ?? subscriptionPlans[0],
-    [],
-  );
-  const shuruBenefits = stringList(t('auth.signup.shuruBenefits', { returnObjects: true }), selectedPlan.highlights);
-
   const onSubmit = async (data: SignupFormData) => {
-    // Keep the mutation boundary defensive if the form schema or submit path changes.
     if (!data.acceptedTerms) {
-      signupInFlight.current = false;
-      setError('acceptedTerms', {
-        type: 'validate',
-        message: t('auth.signup.errors.acceptTerms'),
-      });
+      setError("acceptedTerms", { type: "validate", message: t("publicFunnel.validation.termsRequired") });
       return;
     }
-
     signupInFlight.current = true;
     try {
       await signup({
@@ -95,12 +71,9 @@ export default function Signup() {
         phone: data.phone.trim(),
         accepted_terms: true,
       });
-
-      navigate("/dashboard");
-    } catch (err: any) {
-      setError('root', {
-        message: getErrorMessage(err, t('auth.signup.errors.unableToCreate')),
-      });
+      navigate(getSignupSuccessPath(searchParams, locale));
+    } catch (error: unknown) {
+      setError("root", { message: getErrorMessage(error, t("publicFunnel.auth.signUpError")) });
     } finally {
       signupInFlight.current = false;
     }
@@ -108,345 +81,168 @@ export default function Signup() {
 
   const onInvalid = () => {
     signupInFlight.current = false;
-    if (!form.getValues('acceptedTerms')) {
-      setError('acceptedTerms', {
-        type: 'validate',
-        message: t('auth.signup.errors.acceptTerms'),
-      });
+    if (!form.getValues("acceptedTerms")) {
+      setError("acceptedTerms", { type: "validate", message: t("publicFunnel.validation.termsRequired") });
     }
   };
 
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.getValues('acceptedTerms')) {
-      setError('acceptedTerms', {
-        type: 'validate',
-        message: t('auth.signup.errors.acceptTerms'),
-      });
-      return;
-    }
     if (signupInFlight.current) return;
     signupInFlight.current = true;
-    void handleSubmit(onSubmit, onInvalid)(event).catch(() => {
-      signupInFlight.current = false;
-      setError('root', {
-        message: t('auth.signup.errors.unableToCreate'),
-      });
-    });
+    void handleSubmit(onSubmit, onInvalid)(event).catch(() => { signupInFlight.current = false; });
   };
 
-  const signupFeatures = [
-    { icon: ShieldCheck, title: t('auth.signup.features.rtoShield.title'), desc: t('auth.signup.features.rtoShield.desc') },
-    { icon: Truck, title: t('auth.signup.features.delivery.title'), desc: t('auth.signup.features.delivery.desc') },
-    { icon: MessageCircle, title: t('auth.signup.features.chatbot.title'), desc: t('auth.signup.features.chatbot.desc') },
-  ];
-
   return (
-    <div className="min-h-screen bg-[#F9FAF8] font-bn">
-      {/* Top bar */}
-      <motion.header
-        className="bg-white border-b border-gray-100 px-6 py-4"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+    <>
+      <Seo
+        title={t("publicFunnel.meta.authTitle")}
+        description={t("publicFunnel.meta.authDescription")}
+        canonicalPath="/signup"
+        canonicalBase="app"
+        noIndex
+      />
+      <PublicFunnelAuthLayout
+        mode="signup"
+        title={t("publicFunnel.auth.signUpTitle")}
+        description={t("publicFunnel.auth.signUpSubtitle")}
+        panelTitle={t("publicFunnel.auth.signUpPanelTitle")}
+        panelBody={t("publicFunnel.auth.signUpPanelBody")}
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <BrandLogo size="sm" variant="dark" />
-          <div className="flex items-center gap-4">
-            <LanguageToggle variant="dark" />
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              {/* The prompt pushes this row 10px past a 360px viewport (and
-                  further in Bengali). Drop the sentence on narrow screens and
-                  keep the link, which is the part that has to stay reachable. */}
-              <span className="hidden sm:inline">{t('auth.signup.alreadyHaveAccount')}</span>
-               <Link to="/signin" className="font-semibold text-brand transition-colors">
-                {t('auth.signup.signIn')}
-              </Link>
-            </div>
-          </div>
-        </div>
-      </motion.header>
-
-      <div className="max-w-7xl mx-auto px-4 py-10">
-        <motion.div
-          className="text-center mb-10"
-          variants={heroVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <motion.div
-            variants={heroChild}
-            className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-sm text-emerald-700 font-medium mb-4"
-          >
-            {t('auth.signup.badge')}
-          </motion.div>
-          <motion.h1 variants={heroChild} className="text-4xl font-extrabold text-gray-900">
-            {t('auth.signup.heading')}
-          </motion.h1>
-          <motion.p variants={heroChild} className="mt-2 text-gray-500 text-base max-w-md mx-auto">
-            {t('auth.signup.subheading')}
-          </motion.p>
-        </motion.div>
-
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-           {/* Left — Shuru value */}
-          <div className="order-2 flex-1 min-w-0 lg:order-1">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                <p className="text-sm font-bold uppercase tracking-normal text-emerald-700">
-                   {t('auth.signup.shuruEyebrow')}
-                </p>
-                 <h2 className="mt-2 text-3xl font-black text-gray-900">{t('auth.signup.shuruTitle')}</h2>
-                 <p className="mt-2 max-w-xl text-sm leading-6 text-gray-600">{t('auth.signup.shuruSubtitle')}</p>
-                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                   {shuruBenefits.slice(0, 3).map((benefit) => (
-                    <div key={benefit} className="flex items-start gap-2 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-gray-700 shadow-sm">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>{benefit}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                 {selectedPlan.highlights.map((feature, i) => (
-                  <motion.div
-                    key={feature}
-                    className="flex min-h-[88px] items-start gap-3 rounded-2xl border border-gray-100 bg-white p-4"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 + i * 0.08, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-                    <span className="text-sm font-semibold leading-6 text-gray-700">{feature}</span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
-            {/* BD features strip */}
-            <motion.div
-              className="mt-4 grid grid-cols-3 gap-3"
-              variants={featureStripVariants}
-              initial="hidden"
-              animate="visible"
-            >
-              {signupFeatures.map(({ icon: Icon, title, desc }) => (
-                <motion.div
-                  key={title}
-                  variants={featureChild}
-                  className="bg-white rounded-xl border border-gray-100 p-3 flex items-start gap-2.5"
-                >
-                  <Icon className="h-5 w-5 shrink-0 text-emerald-700" />
-                  <div>
-                    <p className="text-xs font-semibold text-gray-800">{title}</p>
-                    <p className="text-xs text-gray-400">{desc}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </motion.div>
+        <section className="auth-v6-form-card" aria-labelledby="signup-form-title">
+          <h2 id="signup-form-title">{t("publicFunnel.auth.createAccountHeading")}</h2>
+          <div className="auth-v6-shuru-summary">
+            <strong>{t("publicFunnel.auth.shuruPlanLabel")}</strong>
+            <span>{growthIntent ? t("publicFunnel.auth.growthReviewOnShuru") : t("publicFunnel.auth.newAccountsStartOnShuru")}</span>
+            <span>{t("publicFunnel.auth.noPaidSubscriptionOnSignup")}</span>
+            <span>{t("publicFunnel.auth.signupNextStep")}</span>
+            <a href={buildMarketingUrlWithLocale("/pricing", locale)} className="mt-1 inline-flex w-fit text-sm font-bold text-[#4C3DA8] underline underline-offset-4">
+              {t("publicFunnel.landing.viewPricing")}
+            </a>
           </div>
 
-          {/* Right — account form */}
-          <motion.div
-            className="order-1 w-full shrink-0 lg:order-2 lg:w-[400px]"
-            initial={{ opacity: 0, x: 32 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.55, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-1">{t('auth.signup.createAccountHeading')}</h2>
-              <p className="text-sm text-gray-500 mb-5">
-                 <span className="font-medium text-brand">{selectedPlan.name}</span>{' '}
-                 {t('auth.signup.activateFreePlan')}
-              </p>
+          {errors.root && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{errors.root.message}</div>}
 
-              <AnimatePresence>
-                {errors.root && (
-                  <motion.div
-                    key="signup-error"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.25 }}
-                    role="alert"
-                    className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2 overflow-hidden"
-                  >
-                    <span>⚠️</span><span>{errors.root.message}</span>
-                  </motion.div>
+          <form onSubmit={onFormSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="fullName" className="mb-1.5 block text-sm font-semibold text-[#17223B]">{t("publicFunnel.auth.yourName")}</label>
+              <Input
+                {...register("fullName")}
+                id="fullName"
+                autoComplete="name"
+                disabled={isSubmitting}
+                aria-required="true"
+                aria-invalid={errors.fullName ? true : undefined}
+                aria-describedby={errors.fullName ? "name-error" : "name-guidance"}
+                placeholder={t("publicFunnel.auth.yourNamePlaceholder")}
+                className="h-12 rounded-xl border-[#17223B]/20 focus-visible:ring-[#7460D9]"
+              />
+              <p id="name-guidance" className="auth-v6-helper-note">{t("publicFunnel.auth.nameHelper")}</p>
+              {errors.fullName && <p id="name-error" role="alert" className="mt-1.5 text-xs text-red-700">{errors.fullName.message}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-[#17223B]">{t("publicFunnel.auth.email")}</label>
+              <Input
+                {...register("email")}
+                id="email"
+                type="email"
+                autoComplete="email"
+                disabled={isSubmitting}
+                aria-required="true"
+                aria-invalid={errors.email ? true : undefined}
+                aria-describedby={errors.email ? "email-error" : undefined}
+                placeholder={t("publicFunnel.auth.emailPlaceholder")}
+                className="h-12 rounded-xl border-[#17223B]/20 focus-visible:ring-[#7460D9]"
+              />
+              {errors.email && <p id="email-error" role="alert" className="mt-1.5 text-xs text-red-700">{errors.email.message}</p>}
+            </div>
+
+            <div>
+              <Controller
+                name="phone"
+                control={control}
+                render={({ field }) => (
+                  <BDPhoneInput
+                    id="phone"
+                    label={t("publicFunnel.auth.phone")}
+                    required
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    disabled={isSubmitting}
+                    error={errors.phone?.message}
+                    placeholder={t("publicFunnel.auth.phonePlaceholder")}
+                    className="[&_div]:h-12 [&_div]:rounded-xl [&_label]:mb-1.5 [&_label]:block [&_label]:text-sm [&_label]:font-semibold [&_label]:text-[#17223B]"
+                  />
                 )}
-              </AnimatePresence>
-
-              <form onSubmit={onFormSubmit} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-gray-700" htmlFor="fullName">
-                    {t('auth.signup.fullName')}
-                  </label>
-                  <Input
-                    {...register('fullName')}
-                    id="fullName"
-                    aria-invalid={errors.fullName ? true : undefined}
-                    aria-describedby={errors.fullName ? "fullName-error" : undefined}
-                    placeholder={t('auth.signup.fullNamePlaceholder')}
-                    autoComplete="name"
-                    disabled={isSubmitting}
-                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.fullName ? 'border-red-500' : ''}`}
-                  />
-                  {errors.fullName && <p id="fullName-error" role="alert" className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-gray-700" htmlFor="email">
-                    {t('auth.signup.email')}
-                  </label>
-                  <Input
-                    {...register('email')}
-                    id="email"
-                    type="email"
-                    aria-invalid={errors.email ? true : undefined}
-                    aria-describedby={errors.email ? "email-error" : undefined}
-                    placeholder={t('auth.signup.emailPlaceholder')}
-                    autoComplete="email"
-                    disabled={isSubmitting}
-                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.email ? 'border-red-500' : ''}`}
-                  />
-                  {errors.email && <p id="email-error" role="alert" className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
-                </div>
-
-                <div className="space-y-1.5">
-                  <Controller
-                    name="phone"
-                    control={control}
-                    defaultValue=""
-                    render={({ field }) => (
-                      <BDPhoneInput
-                        id="phone"
-                        label={t('auth.signup.phone')}
-                        required
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        disabled={isSubmitting}
-                        error={errors.phone?.message}
-                        placeholder="01XXX-XXX-XXX"
-                        className="[&_div]:h-11 [&_div]:rounded-xl"
-                      />
-                    )}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-gray-700" htmlFor="password">
-                    {t('auth.signup.password')}
-                  </label>
-                  <Input
-                    {...register('password')}
-                    id="password"
-                    type="password"
-                    aria-invalid={errors.password ? true : undefined}
-                    aria-describedby={errors.password ? "password-error" : undefined}
-                    placeholder={t('auth.signup.passwordPlaceholder')}
-                    autoComplete="new-password"
-                    disabled={isSubmitting}
-                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.password ? 'border-red-500' : ''}`}
-                  />
-                  {errors.password && <p id="password-error" role="alert" className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
-                  <PasswordStrengthMeter password={passwordValue || ''} />
-                </div>
-
-                 <div className="flex items-start gap-2.5 rounded-xl border border-dashed border-emerald-200 bg-emerald-50 p-4">
-                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
-                   <div>
-                     <p className="text-xs font-semibold text-emerald-800">{t('auth.signup.freeForever')}</p>
-                     <p className="mt-0.5 text-xs text-emerald-600">{t('auth.signup.upgradeAnytime')}</p>
-                   </div>
-                 </div>
-
-                {/* Terms */}
-                <div className="flex items-start gap-2.5">
-                  <Controller
-                    control={control}
-                    name="acceptedTerms"
-                    render={({ field }) => (
-                      <Checkbox
-                        id="terms"
-                        checked={field.value}
-                        onCheckedChange={(v) => {
-                          const accepted = v === true;
-                          field.onChange(accepted);
-                          if (accepted) clearErrors('acceptedTerms');
-                        }}
-                        disabled={isSubmitting}
-                        aria-invalid={errors.acceptedTerms ? true : undefined}
-                        aria-describedby={errors.acceptedTerms ? "terms-guidance terms-error" : "terms-guidance"}
-                        className="mt-0.5 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
-                      />
-                    )}
-                  />
-                  <label htmlFor="terms" className="text-xs text-gray-600 leading-relaxed">
-                    {t('auth.signup.agreePrefix')}{' '}
-                    <a href={buildMarketingUrl("/privacy-policy")} target="_blank" rel="noopener noreferrer" className="font-medium text-brand underline">
-                      {t('auth.signup.privacyPolicy')}
-                    </a>{' '}
-                    {t('auth.signup.agreeSuffix')}{' '}
-                    <a href={buildMarketingUrl("/terms")} target="_blank" rel="noopener noreferrer" className="font-medium text-brand underline">
-                      {t('auth.signup.termsOfService')}
-                    </a>
-                  </label>
-                </div>
-                <p id="terms-guidance" className="text-xs text-gray-500">
-                  {t('auth.signup.termsRequired')}
-                </p>
-                {errors.acceptedTerms && <p id="terms-error" role="alert" className="text-red-500 text-xs">{errors.acceptedTerms.message}</p>}
-
-                {/* Order summary */}
-                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 text-sm">
-                  <div className="flex justify-between text-gray-600">
-                    <span>{t('auth.signup.plan')}</span>
-                    <span className="font-semibold text-gray-900">{selectedPlan.name}</span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>{t('auth.signup.billing')}</span>
-                    <span className="font-semibold text-gray-900">
-                      {t('auth.signup.monthly')}
-                    </span>
-                  </div>
-                  <div className="border-t border-gray-200 pt-2 flex justify-between">
-                    <span className="text-gray-700 font-medium">{t('auth.signup.payToday')}</span>
-                    <span className="font-bold text-emerald-600">
-                       {t('auth.signup.freeAmount')}
-                    </span>
-                  </div>
-                </div>
-
-                <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.1 }}>
-                  <Button
-                    type="submit"
-                    className="h-12 w-full rounded-xl bg-brand text-base font-bold text-white shadow-md transition-all hover:bg-brand-hover hover:shadow-lg disabled:opacity-60"
-                    disabled={isSubmitting || !acceptedTerms}
-                    aria-busy={isSubmitting}
-                  >
-                    {isSubmitting ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                        </svg>
-                        {t('auth.signup.creating')}
-                      </span>
-                    ) : (
-                       t('auth.signup.startFreeButton')
-                    )}
-                  </Button>
-                </motion.div>
-              </form>
-
-              <div className="mt-4 text-center text-xs text-gray-400">
-                {t('auth.signup.secure')}
-              </div>
+              />
             </div>
-          </motion.div>
-        </div>
-      </div>
-    </div>
+
+            <div>
+              <label htmlFor="password" className="mb-1.5 block text-sm font-semibold text-[#17223B]">{t("publicFunnel.auth.password")}</label>
+              <div className="relative">
+                <Input
+                  {...register("password")}
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  disabled={isSubmitting}
+                  aria-required="true"
+                  aria-invalid={errors.password ? true : undefined}
+                  aria-describedby={errors.password ? "password-rules password-error" : "password-rules"}
+                  placeholder={t("publicFunnel.auth.passwordPlaceholder")}
+                  className="h-12 rounded-xl border-[#17223B]/20 pr-12 focus-visible:ring-[#7460D9]"
+                />
+                <button type="button" className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-[#39445F] hover:bg-[#E8E4FF]" onClick={() => setShowPassword((visible) => !visible)} aria-label={t(showPassword ? "publicFunnel.auth.hidePassword" : "publicFunnel.auth.showPassword")} aria-pressed={showPassword}>
+                  {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                </button>
+              </div>
+              <p id="password-rules" className="auth-v6-helper-note"><strong>{t("publicFunnel.auth.passwordRulesTitle")}:</strong> {t("publicFunnel.auth.passwordRules")}</p>
+              {errors.password && <p id="password-error" role="alert" className="mt-1.5 text-xs text-red-700">{errors.password.message}</p>}
+              <PasswordStrengthMeter password={passwordValue || ""} />
+            </div>
+
+            <div>
+              <div className="flex items-start gap-3">
+                <Controller
+                  control={control}
+                  name="acceptedTerms"
+                  render={({ field }) => (
+                    <Checkbox
+                      id="acceptedTerms"
+                      checked={field.value}
+                      onCheckedChange={(value) => {
+                        const accepted = value === true;
+                        field.onChange(accepted);
+                        if (accepted) clearErrors("acceptedTerms");
+                      }}
+                      disabled={isSubmitting}
+                      aria-required="true"
+                      aria-invalid={errors.acceptedTerms ? true : undefined}
+                      aria-describedby={errors.acceptedTerms ? "terms-guidance terms-error" : "terms-guidance"}
+                      className="mt-0.5"
+                    />
+                  )}
+                />
+                <label htmlFor="acceptedTerms" className="text-xs leading-5 text-[#17223B]/75">
+                  {t("publicFunnel.auth.termsPrefix")} {" "}
+                  <a href={buildMarketingUrlWithLocale("/privacy-policy", locale)} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#4C3DA8] underline">{t("publicFunnel.auth.privacyPolicy")}</a> {" "}
+                  {t("publicFunnel.auth.termsJoin")} {" "}
+                  <a href={buildMarketingUrlWithLocale("/terms", locale)} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#4C3DA8] underline">{t("publicFunnel.auth.termsOfService")}</a>
+                  {t("publicFunnel.auth.termsSuffix") && <> {t("publicFunnel.auth.termsSuffix")}</>}{t("publicFunnel.auth.termsSentenceEnd")}
+                </label>
+              </div>
+              <p id="terms-guidance" className="ml-8 mt-1.5 text-xs leading-5 text-[#17223B]/70">{t("publicFunnel.auth.termsRequired")}</p>
+              {errors.acceptedTerms && <p id="terms-error" role="alert" className="ml-8 mt-1 text-xs text-red-700">{errors.acceptedTerms.message}</p>}
+            </div>
+
+            <Button type="submit" disabled={isSubmitting || !acceptedTerms} aria-busy={isSubmitting} className="funnel-button funnel-button-primary h-12 w-full justify-center text-base">
+              {isSubmitting ? t("publicFunnel.auth.creatingAccount") : t("publicFunnel.auth.createShuruButton")}
+            </Button>
+          </form>
+          <p className="auth-v6-switch-inline">{t("publicFunnel.auth.haveAccount")} <Link to="/signin">{t("publicFunnel.nav.signIn")}</Link></p>
+        </section>
+      </PublicFunnelAuthLayout>
+    </>
   );
 }

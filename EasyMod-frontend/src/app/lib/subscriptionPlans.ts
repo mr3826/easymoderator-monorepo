@@ -39,7 +39,7 @@ export interface SubscriptionPlanDefinition {
   highlights: string[];
   topupPacks?: TopupPackDefinition[];
   partnerOrderTiers?: PartnerOrderTier[];
-  popular?: boolean;
+  /** No popularity marker is published by the live catalog. */
 }
 
 export interface PublicSubscriptionPlanPayload {
@@ -65,7 +65,7 @@ const SHARED_FEATURES = {
   image_understanding: true,
   advanced_ai: true,
   priority_support: true,
-  custom_branding: true,
+  custom_branding: false,
   messenger_dm_only: true,
 };
 
@@ -105,13 +105,12 @@ export function publicPlanToDefinition(
       image_understanding: features.image_understanding === true,
       advanced_ai: features.advanced_ai === true,
       priority_support: features.priority_support === true,
-      custom_branding: features.custom_branding !== false,
+      custom_branding: features.custom_branding === true,
       messenger_dm_only: true,
     },
     highlights: fallback?.highlights || [],
     topupPacks: plan.topup_packs,
     partnerOrderTiers: plan.partner_order_tiers,
-    popular: plan.code === "GROWTH",
   };
 }
 
@@ -125,7 +124,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     id: "shuru",
     code: "SHURU",
     name: "Shuru",
-    description: "Free forever for getting started with Messenger sales.",
+    description: "No monthly plan fee; core customer-support and order workflows within Shuru’s published conversation allowance.",
     billingModel: "flat_monthly",
     monthlyPrice: 0,
     yearlyPrice: 0,
@@ -143,7 +142,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     id: "growth",
     code: "GROWTH",
     name: "Growth",
-    description: "The full Messenger sales assistant for growing shops.",
+    description: "The same core features with a larger conversation allowance and optional top-ups.",
     billingModel: "flat_monthly",
     monthlyPrice: 999,
     yearlyPrice: 9990,
@@ -157,7 +156,6 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       "Top-ups when you need more conversations",
     ],
     topupPacks: TOPUP_PACK_FALLBACK,
-    popular: true,
   },
   {
     id: "partner",

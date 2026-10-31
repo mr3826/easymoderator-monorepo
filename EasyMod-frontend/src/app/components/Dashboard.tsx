@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, CheckCircle2, FileText, Loader2, MessageCircle, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, Loader2, MessageCircle, PackageCheck, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { DashboardMetrics, DashboardQueue } from "@/api/types/dashboard";
@@ -16,7 +16,9 @@ const SETUP_DASHBOARD_ENABLED = import.meta.env.VITE_ENABLE_FIRST_TIME_SETUP_DAS
 const REPLY_PAGE_SIZE = 100;
 const DRAFT_PAGE_SIZE = 100;
 const EXCEPTION_SAMPLE_LIMIT = 10;
+const COURIER_SAMPLE_LIMIT = 100;
 const WORK_ITEMS_PER_GROUP = 2;
+const ACTIVE_COURIER_STATUSES = new Set(["booked", "picked_up", "in_transit", "out_for_delivery"]);
 
 type CashPosition = NonNullable<DashboardMetrics["cashPosition"]>;
 type AtRiskOrder = DashboardQueue["at_risk_orders"][number];
@@ -88,15 +90,41 @@ const validDate = (value: string | null | undefined) => {
 
 const orderLabel = (order: Order) => order.orderNumber || order.id.slice(0, 8);
 
+const nonEmptyString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+function getCourierReference(order: Order) {
+  return nonEmptyString(order.delivery_tracking_code)
+    || nonEmptyString(order.delivery_consignment_id);
+}
+
+function isPersistedActiveCourierOrder(order: Order) {
+  const status = nonEmptyString(order.delivery_status)?.toLowerCase();
+  return Boolean(
+    nonEmptyString(order.delivery_provider)
+    && getCourierReference(order)
+    && nonEmptyString(order.delivery_dispatched_at)
+    && status
+    && ACTIVE_COURIER_STATUSES.has(status),
+  );
+}
+
+type CourierSnapshot = {
+  orders: Order[] | null;
+  isLoading: boolean;
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const [pulseData, setPulseData] = useState<PulseData | null>(null);
+  const [courierSnapshot, setCourierSnapshot] = useState<CourierSnapshot>({ orders: null, isLoading: true });
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [failedSourceNames, setFailedSourceNames] = useState<string[]>([]);
   const requestSequenceRef = useRef(0);
+  const courierRequestSequence = useRef(0);
   const setupStorageKeyPrefix = `easymod:business-setup:${authService.getCurrentShopId() || 'default'}`;
   const completionDismissedKey = `${setupStorageKeyPrefix}:complete-dismissed`;
   const [setupCompletionDismissed, setSetupCompletionDismissed] = useState(() => {
@@ -224,6 +252,25 @@ export default function Dashboard() {
     }
   }, [t]);
 
+  const refreshCourierSnapshot = useCallback(async () => {
+    const requestSequence = ++courierRequestSequence.current;
+    setCourierSnapshot({ orders: null, isLoading: true });
+    try {
+      const orders = await apiClient.getOrders({ page: 1, limit: COURIER_SAMPLE_LIMIT });
+      if (requestSequence !== courierRequestSequence.current) return;
+      setCourierSnapshot({ orders: Array.isArray(orders) ? orders : [], isLoading: false });
+    } catch (requestError) {
+      if (requestSequence !== courierRequestSequence.current) return;
+      console.error("Failed to load the recent courier order sample:", requestError);
+      setCourierSnapshot({ orders: null, isLoading: false });
+    }
+  }, []);
+
+  const refreshAll = useCallback((isInitialLoad = false) => {
+    void refreshPulse(isInitialLoad);
+    void refreshCourierSnapshot();
+  }, [refreshCourierSnapshot, refreshPulse]);
+
   useEffect(() => {
     const shouldLoadPulse = !SETUP_DASHBOARD_ENABLED || Boolean(setupError) || Boolean(setupStatus?.isComplete && setupCompletionDismissed);
     if (!shouldLoadPulse) {
@@ -231,12 +278,18 @@ export default function Dashboard() {
     }
 
     refreshPulse(true);
+    void refreshCourierSnapshot();
     const timer = window.setInterval(() => refreshPulse(false), 60000);
+    // Order rows include customer and item details. Keep this broad sample on
+    // entry/manual refresh and a slower cadence than the task sources.
+    const courierTimer = window.setInterval(() => void refreshCourierSnapshot(), 300000);
     return () => {
       window.clearInterval(timer);
+      window.clearInterval(courierTimer);
       requestSequenceRef.current += 1;
+      courierRequestSequence.current += 1;
     };
-  }, [refreshPulse, setupCompletionDismissed, setupError, setupStatus?.isComplete]);
+  }, [refreshCourierSnapshot, refreshPulse, setupCompletionDismissed, setupError, setupStatus?.isComplete]);
 
   const dismissSetupCompletion = () => {
     if (typeof window !== 'undefined') {
@@ -312,6 +365,10 @@ export default function Dashboard() {
   if (!pulseData) {
     return null;
   }
+
+  const courierOrders = courierSnapshot.orders;
+  const activeCourierOrders = (courierOrders ?? []).filter(isPersistedActiveCourierOrder);
+  const inTransitCount = pulseData.cashPosition?.inTransit?.count ?? null;
 
   const workItems: WorkItem[] = [];
   for (const conversation of pulseData.replyTasks ?? []) {
@@ -408,17 +465,26 @@ export default function Dashboard() {
           <p className="text-sm text-muted-foreground">{t("dashboard.pulse.subtitle")}</p>
         </div>
         <button
-          onClick={() => refreshPulse(false)}
+          onClick={() => refreshAll(false)}
           className="min-h-12 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground"
         >
           {t("dashboard.pulse.refresh")}
         </button>
       </div>
 
+      {SETUP_DASHBOARD_ENABLED && Boolean(setupError) && (
+        <section role="status" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <span>{t("dashboard.setup.stateUnavailable", { defaultValue: "Setup status is unavailable." })}</span>
+          <button type="button" onClick={() => void refreshSetupStatus()} className="min-h-10 font-semibold underline">
+            {t("dashboard.pulse.retry")}
+          </button>
+        </section>
+      )}
+
       {failedSourceNames.length > 0 && (
         <section role="status" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <span>{t("dashboard.pulse.partialFail", { sources: failedSourceNames.join(", ") })}</span>
-          <button type="button" onClick={() => refreshPulse(false)} className="min-h-10 font-semibold underline">
+          <button type="button" onClick={() => refreshAll(false)} className="min-h-10 font-semibold underline">
             {t("dashboard.pulse.retry")}
           </button>
         </section>
@@ -577,6 +643,81 @@ export default function Dashboard() {
           {t("dashboard.pulse.liveUpdate")}
           {formatTime ? ` ${t("dashboard.pulse.lastUpdated", { time: formatTime })}` : ""}
         </p>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-4" aria-labelledby="home-courier-heading">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 id="home-courier-heading" className="text-base font-bold text-card-foreground">{t("dashboard.pulse.courierSnapshot.title")}</h2>
+            <p className="text-xs text-muted-foreground">{t("dashboard.pulse.courierSnapshot.subtitle")}</p>
+          </div>
+          <Truck className="h-5 w-5 text-gray-500" aria-hidden="true" />
+        </div>
+        {courierSnapshot.isLoading ? (
+          <p role="status" className="rounded-xl bg-gray-50 p-4 text-sm font-medium text-gray-600">{t("dashboard.pulse.courierSnapshot.loading")}</p>
+        ) : courierOrders === null ? (
+          <div role="status" className="rounded-xl bg-amber-50 p-4">
+            <p className="text-sm text-amber-900">{t("dashboard.pulse.courierSnapshot.unavailable")}</p>
+            <button
+              type="button"
+              onClick={() => void refreshCourierSnapshot()}
+              className="mt-2 min-h-10 text-sm font-semibold text-amber-900 underline underline-offset-4"
+            >
+              {t("dashboard.pulse.retry")}
+            </button>
+          </div>
+        ) : (
+          <>
+            <p role="note" className="mb-2 text-xs text-muted-foreground">{t("dashboard.pulse.courierSnapshot.scope", { count: COURIER_SAMPLE_LIMIT })}</p>
+            {activeCourierOrders.length > 0 ? (
+              <div className="space-y-2">
+                {activeCourierOrders.slice(0, 5).map((order) => {
+                  const provider = nonEmptyString(order.delivery_provider) || "";
+                  const providerLabel = t(`dashboard.pulse.courierSnapshot.providers.${provider.toLowerCase()}`, {
+                    defaultValue: provider,
+                  });
+                  const status = nonEmptyString(order.delivery_status)?.toLowerCase() || "booked";
+                  const bookedAt = validDate(order.delivery_dispatched_at);
+                  const bookedLabel = bookedAt
+                    ? t("dashboard.pulse.courierSnapshot.bookedAt", {
+                      time: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "Asia/Dhaka" }).format(bookedAt),
+                    })
+                    : "";
+                  return (
+                    <button
+                      key={order.id}
+                      type="button"
+                      onClick={() => navigate(`/orders?orderId=${encodeURIComponent(order.id)}`)}
+                      className="w-full rounded-xl border border-border bg-card p-3 text-left hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-gray-600" aria-hidden="true" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-card-foreground">{orderLabel(order)}</p>
+                          <p className="truncate text-xs text-muted-foreground">{providerLabel} · {getCourierReference(order)}</p>
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {t(`dashboard.pulse.courierSnapshot.status.${status}`, { defaultValue: status })}
+                            {bookedLabel ? ` · ${bookedLabel}` : ""}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs font-semibold text-green-700">{t("dashboard.pulse.courierSnapshot.openOrder")}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : inTransitCount === 0 ? (
+              <p role="status" className="rounded-xl bg-gray-50 p-4 text-sm font-medium text-gray-600">{t("dashboard.pulse.courierSnapshot.noneActive")}</p>
+            ) : inTransitCount === null ? (
+              <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{t("dashboard.pulse.courierSnapshot.aggregateUnavailable")}</p>
+            ) : (
+              <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{t("dashboard.pulse.courierSnapshot.noCompleteRecentSample")}</p>
+            )}
+            {activeCourierOrders.length > 5 && (
+              <p role="note" className="mt-2 text-xs text-muted-foreground">{t("dashboard.pulse.courierSnapshot.omitted", { count: activeCourierOrders.length - 5 })}</p>
+            )}
+          </>
+        )}
       </section>
     </div>
   );

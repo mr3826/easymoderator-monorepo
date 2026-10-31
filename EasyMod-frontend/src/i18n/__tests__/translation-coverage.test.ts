@@ -2,8 +2,14 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from 'typescript';
-import en from '../locales/en.json';
-import bn from '../locales/bn.json';
+import enApp from '../locales/en.json';
+import bnApp from '../locales/bn.json';
+import enPublic from '../locales/public/en.json';
+import bnPublic from '../locales/public/bn.json';
+import { combineLocale } from '../combineLocale';
+
+const en = combineLocale(enApp, enPublic);
+const bn = combineLocale(bnApp, bnPublic);
 import i18n from '../index';
 
 /**

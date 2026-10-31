@@ -1,0 +1,647 @@
+{
+  "common": {
+    "language": {
+      "switchToEnglish": "Switch to English",
+      "switchToBengali": "Switch to Bengali",
+      "loadFailed": "Language could not be changed. Try again."
+    }
+  },
+  "publicFunnel": {
+    "meta": {
+      "landingTitle": "EasyModerator | Messenger customer support and order review",
+      "landingDescription": "Support customers through Facebook Messenger, use saved product information in replies, and review order details before the next step.",
+      "pricingTitle": "EasyModerator pricing | Shuru, Growth and Partner",
+      "pricingDescription": "Compare current EasyModerator plan prices and conversation allowances, with Partner billing details.",
+      "authTitle": "EasyModerator account access",
+      "authDescription": "Sign in or create an EasyModerator merchant account."
+    },
+    "landingV6": {
+      "heroEyebrow": "Customer support through Facebook Messenger",
+      "heroTitle": "Clear customer support. Order details ready for review.",
+      "heroBody": "Bring supported Messenger conversations together with product information and order review, so your team can respond and check details before the next step.",
+      "primaryCta": "Create your Shuru account",
+      "secondaryCta": "See how it works",
+      "sampleLabel": "Illustrative Messenger reply and order review workflow",
+      "sampleInbox": "Customer Support",
+      "sampleConversationTitle": "Customer message · example",
+      "sampleCustomerMessage": "Does this item come in another color?",
+      "contextLabel": "Shop product information",
+      "contextBody": "Use details saved for this shop",
+      "replyDraftLabel": "AI-assisted reply",
+      "draftStatus": "Draft · not sent",
+      "draftBody": "Review the suggested reply against your product information before sending.",
+      "reviewAction": "Review reply",
+      "notSent": "Merchant decides",
+      "orderReviewLabel": "Order details",
+      "orderReviewStatus": "Review required",
+      "orderReviewBody": "Check the request details before confirming or taking another action.",
+      "orderNotConfirmed": "A request is not a confirmed order or delivery.",
+      "illustrationCaption": "Illustration only · sample interface, not a customer account or product screenshot.",
+      "founderPromise": "Your business, our technology. We move forward together.",
+      "capabilityEyebrow": "The core work, in one place",
+      "capabilityTitle": "Support customers and keep order decisions clear.",
+      "capabilityBody": "EasyModerator connects supported Facebook Messenger customer support with saved product information and order review. It is useful whether one person handles the inbox or a team shares the work.",
+      "capabilities": {
+        "support": {
+          "title": "Customer Support",
+          "body": "See supported Facebook Messenger conversations in the merchant inbox and keep the customer request in view."
+        },
+        "replies": {
+          "title": "AI Replies",
+          "body": "Use the reply mode available for the shop. A draft stays unsent until a merchant takes the send action."
+        },
+        "orders": {
+          "title": "Orders",
+          "body": "Review captured order details and applicable checks before confirming an order or requesting a supported next action."
+        }
+      },
+      "workflowEyebrow": "A connected workflow",
+      "workflowTitle": "Useful context. A visible decision point.",
+      "workflowBody": "The customer conversation, shop information and next action stay connected without implying that a draft was sent or an order was completed.",
+      "steps": {
+        "inquiry": {
+          "title": "A customer asks on Messenger",
+          "body": "The merchant sees the supported conversation in the customer support inbox."
+        },
+        "context": {
+          "title": "Check the shop's product information",
+          "body": "The reply can use information saved for the shop; the merchant can choose Manual, Draft or the configured reply mode."
+        },
+        "review": {
+          "title": "Review before the next action",
+          "body": "Check the order request and applicable details. Any eligible courier request remains a separate action and result."
+        }
+      },
+      "storyEyebrow": "See the steps",
+      "storyTitle": "From a customer question to a reviewed next step.",
+      "storyBody": "A short, silent workflow illustration. It shows a draft and a review state, not a real customer, live account or completed transaction.",
+      "storyPlay": "Play workflow story",
+      "storyVideoLabel": "EasyModerator workflow story · illustrative example",
+      "storyTranscript": "Read the story outline",
+      "trustEyebrow": "Clear boundaries",
+      "trustTitle": "The merchant stays in control of the decision.",
+      "trustBody": "Reply modes and order actions follow the shop's configured behavior and the checks available in the product. The page does not promise that every inquiry becomes an order.",
+      "separateBoundary": "Shuru, Growth and Partner cover EasyModerator's core tools. A plan includes only the tools listed in its details. If a capability is offered separately, it has separate pricing and access terms.",
+      "faqTitle": "Questions merchants ask",
+      "faq": {
+        "channel": {
+          "question": "Which customer channel is supported here?",
+          "answer": "Facebook Messenger is the supported customer channel for this offer."
+        },
+        "replies": {
+          "question": "Does an AI reply send without review?",
+          "answer": "Reply behavior follows the shop's configured mode. A draft is not sent until the merchant chooses to send it."
+        },
+        "plans": {
+          "question": "Which plan does a new account get?",
+          "answer": "New accounts start on Shuru. The plan prices and allowances below load from the published subscription catalog."
+        },
+        "separate": {
+          "question": "Are other products included in the subscription?",
+          "answer": "A plan includes only the tools listed in its details. If a capability is offered separately, it has separate pricing and access terms."
+        }
+      },
+      "closingTitle": "A clearer way to handle customer support and order work.",
+      "closingBody": "Create an EasyModerator account on Shuru and continue setup from your dashboard. No payment information is required to register."
+    },
+    "nav": {
+      "primary": "Primary navigation",
+      "solutions": "Customer Support",
+      "workflow": "How it works",
+      "plans": "Plans",
+      "pricing": "Pricing",
+      "signIn": "Sign in",
+      "createAccount": "Create account",
+      "openNavigation": "Open navigation",
+      "closeNavigation": "Close navigation",
+      "backToSite": "Back to EasyModerator"
+    },
+    "footer": {
+      "privacy": "Privacy policy",
+      "terms": "Terms of service",
+      "copyright": "EasyModerator · Bangladesh"
+    },
+    "landing": {
+      "eyebrow": "Customer replies and orders, connected",
+      "title": "Bring customer replies and order work together.",
+      "body": "Manage Facebook Messenger messages, product information, order review and eligible courier handoffs in one workspace. Use AI assistance while keeping each decision visible.",
+      "primaryCta": "Create account",
+      "signupNote": "New accounts start on Shuru. You can compare plans before making a billing choice.",
+      "sampleFlowLabel": "Sample Messenger work journey",
+      "sampleFlowCaption": "One customer request, step by step",
+      "sampleFlowNote": "Illustration only · no customer data",
+      "sampleFlowChannel": "Facebook Messenger",
+      "sampleMessageLabel": "Customer question",
+      "sampleMessage": "Can you deliver this outside Dhaka?",
+      "sampleProductLabel": "Product context",
+      "sampleProduct": "Product and configured delivery details are available for the reply.",
+      "sampleDraftLabel": "AI reply draft",
+      "sampleDraftState": "Not sent",
+      "sampleDraft": "Share the delivery options, then confirm the customer's location before creating an order.",
+      "sampleOrderLabel": "Order status",
+      "sampleOrderState": "Order awaits your review",
+      "sampleHandoffLabel": "Next step",
+      "sampleHandoffState": "Courier handoff when order and provider are eligible",
+      "workflowCta": "See how it works",
+      "workflowEyebrow": "Commerce Signal · visible business states",
+      "workflowTitle": "Follow the work from message to handoff",
+      "workflowIntro": "See how a customer conversation can connect to product context and order work. The illustration above is a sample, not live customer data or a completed sale.",
+      "steps": {
+        "message": {
+          "title": "Customer inquiry",
+          "body": "Messages from a connected Facebook Page appear in the Messenger inbox."
+        },
+        "reply": {
+          "title": "Reply with control",
+          "body": "Choose Manual, Draft or Auto mode where enabled. A draft is not sent until an authorized action sends it."
+        },
+        "order": {
+          "title": "Review order details",
+          "body": "Check captured details and relevant COD signals before confirming an order."
+        },
+        "handoff": {
+          "title": "Hand off eligible orders",
+          "body": "Connect a supported courier and request booking when the order and provider requirements are met."
+        }
+      },
+      "jobsEyebrow": "One connected workspace",
+      "jobsTitle": "The work behind each customer request",
+      "jobsIntro": "Keep the useful steps together while seeing what needs your review, what has been sent and what is ready for a provider.",
+      "coreWorkflow": "Core workflow",
+      "jobs": {
+        "replies": {
+          "title": "Customer replies",
+          "body": "Work from connected Facebook Messenger conversations with Manual, Draft and Auto reply modes.",
+          "boundary": "Messenger is the supported connected customer channel."
+        },
+        "products": {
+          "title": "Product context",
+          "body": "Use your product and catalog information to support customer replies and order capture.",
+          "boundary": "Product details come from the shop's configured catalog."
+        },
+        "orders": {
+          "title": "Order review",
+          "body": "Capture order information and review COD risk signals before confirming the order.",
+          "boundary": "An inquiry or draft does not mean an order is confirmed."
+        },
+        "delivery": {
+          "title": "Courier handoff",
+          "body": "Connect a supported courier and request a booking for an eligible order.",
+          "boundary": "Booking, provider acceptance, delivery and settlement are separate states."
+        }
+      },
+      "commercialBoundary": "Compare the current Shuru, Growth and Partner plans, including their published usage limits and qualification steps.",
+      "pricingEyebrow": "Clear plan choices",
+      "pricingTitle": "Choose the plan that fits your workflow",
+      "pricingBody": "New accounts start on Shuru. Growth and Partner have different next steps; see current terms and actions in the live plan catalog.",
+      "closingTitle": "Make customer work easier to follow.",
+      "closingBody": "Create an account to enter the merchant workspace. You start on Shuru and can review plan choices before billing changes.",
+      "brandPromise": "Your initiative, our technology—moving forward together.",
+      "viewPricing": "Compare plans",
+      "catalogLoading": "Loading current plan details…",
+      "catalogUnavailable": "Current plan details are unavailable right now. Try again to load the published catalog.",
+      "retryCatalog": "Retry",
+      "faqTitle": "Questions merchants ask",
+      "faq": {
+        "channel": {
+          "question": "Which customer channel can I connect?",
+          "answer": "EasyModerator connects Facebook Pages for Messenger conversations. Other customer channels are not presented as connected here."
+        },
+        "ai": {
+          "question": "Does an AI draft get sent automatically?",
+          "answer": "No. A Draft is saved for review and is not sent. Manual, Draft and Auto modes are available where enabled; sending and order decisions follow shop permissions and applicable messaging rules."
+        },
+        "quota": {
+          "question": "How is a conversation counted?",
+          "answer": "Messages in the same Messenger thread for the same shop, customer and Page count as one conversation while the thread stays active. A new conversation starts after 24 hours with no activity in that thread."
+        },
+        "signup": {
+          "question": "What happens when I create an account?",
+          "answer": "A new account starts on Shuru. Choosing Growth from this page does not purchase or activate Growth; Partner applications are reviewed separately."
+        }
+      }
+    },
+    "pricing": {
+      "eyebrow": "Current public plan catalog",
+      "title": "Plans for your connected workflow",
+      "subtitle": "Compare published plan prices, Messenger conversation allowances and Partner terms. New accounts start on Shuru.",
+      "catalogLoading": "Loading current plan details…",
+      "catalogUnavailable": "Current plan details are unavailable right now. Try again to load the published catalog.",
+      "retryCatalog": "Retry",
+      "perMonth": "/ month",
+      "perDeliveredOrder": "per delivered order",
+      "partnerNoMonthlyFee": "No monthly subscription fee; billed by delivered order after approval.",
+      "conversationsPerMonth": "{{amount}} Messenger conversations each month",
+      "conversationCountNote": "We count one active Messenger thread for the same shop, customer, channel and Page. Messages in that thread count once until 24 hours pass with no thread activity.",
+      "unlimitedConversations": "Unlimited conversations",
+      "unlimitedOrders": "Unlimited orders",
+      "unlimitedProducts": "Unlimited products",
+      "includedLimits": "Published plan limits",
+      "shuruAction": "Create a Shuru account",
+      "growthAction": "Review Growth options",
+      "newAccountsNote": "New accounts start on Shuru. You can review Growth after signup; registration does not activate a paid plan.",
+      "growthMonthlyNote": "Growth is shown monthly. New annual selections are not available.",
+      "coreFeatureParity": "All three plans include the same core customer-support and commerce tools. They differ in conversation allowance, Partner billing and qualification.",
+      "topupsTitle": "Growth-only conversation packs",
+      "topupsCaveat": "Eligible Growth accounts only. Each pack is a separate one-time purchase, not part of the monthly plan fee. When bKash checkout is enabled, successful payment adds conversations to the balance. Unused balance carries into the next billing period. AI replies pause only after both the included allowance and top-up balance run out; manual replies remain available.",
+      "partnerQualification": "Partner applications require review. Qualification is based on at least 300 delivered orders in the rolling 30-day window.",
+      "partnerRateTitle": "Partner delivered-order billing period",
+      "partnerBillingNote": "For each Partner invoice period, 0–299 delivered orders have no per-order fee. At 300 or more, the matching rate applies to every delivered order in that period. Period dates follow your account invoice, not calendar months. Application eligibility uses a separate rolling 30-day window.",
+      "partnerThresholdExample": "At {{belowThresholdOrders}} delivered orders: ৳0 per-order fees. At {{orders}}: {{orders}} × ৳{{rate}} = ৳{{total}} for the invoice period.",
+      "partnerAction": "Request Partner review",
+      "partnerReviewNote": "Submitting an application requests review; it does not activate Partner billing.",
+      "topupPack": "{{amount}} conversations · ৳{{price}} per pack",
+      "catalogUnitNote": "Conversation allowances follow the billing period on the account. A conversation is not counted per message or per AI reply.",
+      "separateBoundary": "These plans cover EasyModerator's core customer-support and commerce tools. A plan includes only the tools listed in its details. If a capability is offered separately, it has separate pricing and access terms.",
+      "applicationTitle": "Partner application",
+      "applicationDescription": "Share your business details for review. This form sends an application and does not change your plan.",
+      "businessName": "Business name",
+      "phone": "Phone number",
+      "phoneFormatNote": "Use a Bangladesh mobile number such as 017XXXXXXXX. You can also enter +880 format.",
+      "phoneInvalid": "Enter a valid Bangladesh mobile number, such as 017XXXXXXXX.",
+      "facebookPage": "Facebook Page URL",
+      "applicationSubmit": "Send application for review",
+      "applicationSending": "Sending…",
+      "applicationSuccessTitle": "Application received",
+      "applicationSuccessBody": "Your Partner application has been recorded for review. Your current plan has not changed.",
+      "applicationClose": "Close",
+      "applicationError": "The application could not be sent. Please try again later.",
+      "fieldRequired": "This field is required."
+    },
+    "landingV5": {
+      "hero": {
+        "eyebrow": "One commerce ecosystem",
+        "title": "Bring Messenger support and order work into one workspace.",
+        "body": "Connect customer replies, product context and order review in one core workflow. Then explore the wider work of selling online, building a brand and understanding customers.",
+        "exploreCta": "Explore the ecosystem",
+        "visualTitle": "A connected commerce map",
+        "visualNote": "Customer work, products and next steps—seen together.",
+        "illustration": "Illustration",
+        "signalSupport": "Support",
+        "signalQuestion": "A customer asks about an order",
+        "signalProducts": "Products",
+        "signalOrder": "Product context stays close",
+        "signalReview": "Order awaits your review",
+        "signalNext": "Next step · check eligibility"
+      },
+      "story": {
+        "eyebrow": "One connected journey",
+        "title": "Keep each next step clear.",
+        "body": "See how a customer conversation can connect to product context, order review and a conditional courier request. The illustration below is synthetic; it does not show a completed order or a customer's data.",
+        "figureTitle": "From first question to the next conversation",
+        "illustrationNote": "Example workflow · no live customer or merchant records",
+        "playMotion": "Play sequence",
+        "pauseMotion": "Pause sequence",
+        "resumeMotion": "Resume sequence",
+        "replayMotion": "Replay sequence",
+        "reducedMotion": "Reduced motion is active; the full sequence is shown as a still illustration.",
+        "steps": {
+          "inquiry": {
+            "title": "Customer inquiry",
+            "body": "A message arrives through a connected Facebook Page."
+          },
+          "context": {
+            "title": "Product context",
+            "body": "The shop's configured catalog can inform the reply and order details."
+          },
+          "response": {
+            "title": "Reply with control",
+            "body": "An AI draft stays unsent until an authorized person sends it."
+          },
+          "review": {
+            "title": "Order review",
+            "body": "Check captured details and COD signals before confirming."
+          },
+          "delivery": {
+            "title": "Eligible delivery",
+            "body": "Request a supported courier booking when order and provider conditions are met."
+          },
+          "relationship": {
+            "title": "Customer relationship",
+            "body": "Keep useful context available to the right people, with appropriate access controls."
+          }
+        }
+      },
+      "explorer": {
+        "eyebrow": "Built around merchant needs",
+        "title": "Choose the work you want to explore.",
+        "body": "Move between the core customer and order workflow and the specialist needs that sit alongside it.",
+        "controlsLabel": "Explore merchant needs",
+        "productView": "A closer look",
+        "illustration": "Illustrative view",
+        "selectionAnnouncement": "{{label}} selected.",
+        "noMerchantData": "Illustration only. No customer data, shop records or campaign results are used here."
+      },
+      "needs": {
+        "support": {
+          "label": "Customer Support",
+          "type": "Core workflow",
+          "title": "Customer Support keeps conversations moving.",
+          "body": "Bring Facebook Messenger questions, configured product context and reply choices into one clear support flow.",
+          "boundary": "Manual, Draft and Auto reply modes are available where enabled. A draft is not sent until an authorized action sends it.",
+          "viewLabel": "Support view",
+          "viewTitle": "Customer Support keeps each conversation moving"
+        },
+        "orders": {
+          "label": "Orders & Delivery",
+          "type": "Core workflow",
+          "title": "Keep order decisions visible.",
+          "body": "Capture order details, review COD signals and request an eligible courier booking from the connected workflow.",
+          "boundary": "An inquiry is not a confirmed order. Booking, provider acceptance, delivery and settlement are separate states.",
+          "viewLabel": "Order view",
+          "viewTitle": "Details captured · order awaits review"
+        },
+        "store": {
+          "label": "Online Store",
+          "type": "Separate solution",
+          "title": "Give products a place beyond the inbox.",
+          "body": "A distinct storefront experience gives customers a place to discover products and explore an order.",
+          "boundary": "Storefront and product discovery belong to a separate solution area, apart from customer support and order operations.",
+          "viewLabel": "Store view",
+          "viewTitle": "Storefront · product page · customer order"
+        },
+        "brand": {
+          "label": "Brand & Content",
+          "type": "Separate solution",
+          "title": "Give a shop's story a consistent voice.",
+          "body": "Explore a distinct place for brand and marketing content work, separate from customer support and order operations.",
+          "boundary": "Brand and content work follows its own workflow, apart from customer replies and order operations.",
+          "viewLabel": "Brand view",
+          "viewTitle": "Brand materials · content draft · review"
+        },
+        "insights": {
+          "label": "Customer Insights",
+          "type": "Separate solution",
+          "title": "Understand the questions behind the work.",
+          "body": "Explore customer questions and shop activity as a distinct insight job, separate from campaign measurement.",
+          "boundary": "Customer and shop understanding is separate from advertising measurement and uses only appropriate, authorized data.",
+          "viewLabel": "Insights view",
+          "viewTitle": "Question themes · repeat requests · shop records"
+        },
+        "measurement": {
+          "label": "Campaign Measurement",
+          "type": "Separate solution",
+          "title": "Connect campaign activity to consented measurement.",
+          "body": "Keep ad measurement distinct from customer insights and connect it only through verified, consent-based integrations.",
+          "boundary": "Campaign measurement is separate from customer insights and depends on verified, consent-based integrations.",
+          "viewLabel": "Measurement view",
+          "viewTitle": "Campaign source · consent state · measured event"
+        }
+      },
+      "solutions": {
+        "eyebrow": "The EasyModerator solution family",
+        "title": "Core operations, plus room for specialist tools.",
+        "body": "The core platform connects support and order work. Related solution areas have their own job, so subscription plans stay easy to understand.",
+        "coreLabel": "Core platform",
+        "coreTitle": "Customer Support + Orders & Delivery",
+        "coreBody": "The verified foundation connects Messenger replies with configured products, order review and eligible courier requests.",
+        "coreSupport": "Customer Support",
+        "coreOrders": "Orders & Delivery",
+        "coreCta": "See the core workflow",
+        "optionalLabel": "Optional solutions",
+        "optionalTitle": "Optional solutions, each with a clear scope.",
+        "optionalBody": "Store, brand, customer insight and campaign measurement solve different jobs, separate from Shuru, Growth and Partner subscriptions.",
+        "detailsCta": "Explore",
+        "exploreNeed": "Explore {{name}}",
+        "scope": {
+          "store": "Storefront and product browsing",
+          "brand": "Brand and content work",
+          "insights": "Customer and shop understanding",
+          "measurement": "Campaign and ad measurement"
+        }
+      },
+      "plans": {
+        "eyebrow": "Commercial plans",
+        "title": "Plans for the way you do business.",
+        "body": "Shuru, Growth and Partner are subscriptions for EasyModerator’s core tools. Prices and conversation limits below come from the live public catalog. A plan includes only the tools listed in its details. If a capability is offered separately, it has separate pricing and access terms.",
+        "partnerBilling": "Delivered-order billing",
+        "topupBoundary": "Growth accounts only: eligible accounts can buy each pack separately as a one-time purchase when bKash checkout is enabled.",
+        "growthIntentNote": "New accounts start on Shuru. You can review Growth from your account after signup; registration does not activate a paid plan.",
+        "catalogNote": "Conversation limits count customer conversations—not each message or AI reply. Current plan data is unavailable if the live catalog cannot be loaded.",
+        "actions": {
+          "shuru": "Create a Shuru account",
+          "growth": "View the Growth path",
+          "partner": "Review Partner terms"
+        }
+      },
+      "trust": {
+        "eyebrow": "Designed for clear decisions",
+        "title": "Useful assistance. Your decisions stay visible.",
+        "points": {
+          "channel": {
+            "title": "A clear channel",
+            "body": "Facebook Messenger is the supported connected customer channel in this offer."
+          },
+          "control": {
+            "title": "Human control",
+            "body": "Drafts, sent replies and order actions have distinct states and permissions."
+          },
+          "states": {
+            "title": "Honest order states",
+            "body": "An order request, a courier booking and a delivered order are not the same result."
+          }
+        }
+      }
+    },
+    "auth": {
+      "createAccount": "Create a Shuru account",
+      "createAccountHeading": "Your account details",
+      "createShuruButton": "Create a Shuru account",
+      "creatingAccount": "Creating account…",
+      "email": "Email",
+      "emailPlaceholder": "you@example.com",
+      "forgotPassword": "Forgot password?",
+      "growthReviewOnShuru": "Your account starts on Shuru. Review the Growth plan after signup; creating an account does not activate a paid plan.",
+      "haveAccount": "Already have an EasyModerator account?",
+      "hidePassword": "Hide characters",
+      "nameHelper": "We use your name for your account and first shop. You can change the shop name later under Business information.",
+      "newAccountsStartOnShuru": "A Shuru subscription is created with your account. You can review other current plans separately.",
+      "noAccount": "New to EasyModerator?",
+      "noPaidSubscriptionOnSignup": "No payment information is required to create an account.",
+      "panelKicker": "Account access",
+      "password": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "passwordRules": "8 or more characters, with an uppercase letter, a lowercase letter, a number and a special character.",
+      "passwordRulesTitle": "Password requirements",
+      "passwordStrength": {
+        "strong": "Strong",
+        "good": "Good",
+        "fair": "Fair",
+        "weak": "Weak"
+      },
+      "phone": "Mobile number",
+      "phonePlaceholder": "01XXX-XXX-XXX",
+      "privacyPolicy": "Privacy policy",
+      "rememberMe": "Keep me signed in on this device",
+      "showPassword": "Show characters",
+      "shuruPlanLabel": "Starting plan · Shuru",
+      "signInButton": "Sign in",
+      "signInKicker": "Welcome back",
+      "signInPanelBody": "Continue your customer support, reply and order work from the EasyModerator dashboard.",
+      "signInPanelTitle": "Welcome back to your shop.",
+      "signInSubtitle": "Sign in with the email and password for your EasyModerator account.",
+      "signInTitle": "Sign in to EasyModerator",
+      "signUpError": "We could not create your account. Please try again.",
+      "signUpKicker": "Create an account",
+      "signUpPanelBody": "Create one EasyModerator account for customer support and order management.",
+      "signUpPanelTitle": "A clear start for your merchant account.",
+      "signUpSubtitle": "Use your name, email and password. Your name is also used for your first shop.",
+      "signUpTitle": "Create your EasyModerator account",
+      "signingIn": "Signing in…",
+      "signupNextStep": "After account creation, complete your shop setup from the dashboard.",
+      "termsJoin": "and",
+      "termsOfService": "Terms of service",
+      "termsPrefix": "I agree to the",
+      "termsRequired": "Consent is required to create your account.",
+      "termsSentenceEnd": ".",
+      "termsSuffix": "",
+      "twoFactorBack": "Back to sign in",
+      "twoFactorDescription": "Enter the 6-digit code from your authenticator app.",
+      "twoFactorDigit": "Digit {{count}}",
+      "twoFactorEnterAllDigits": "Please enter all 6 digits.",
+      "twoFactorHeading": "Verify your identity",
+      "twoFactorInvalidCode": "Invalid code. Please try again.",
+      "twoFactorTitle": "Two-factor authentication | EasyModerator",
+      "twoFactorVerify": "Verify",
+      "twoFactorVerifying": "Verifying…",
+      "yourName": "Your name",
+      "yourNamePlaceholder": "Your full name"
+    },
+    "validation": {
+      "emailInvalid": "Enter a valid email address.",
+      "emailRequired": "Email is required.",
+      "nameMax": "Name must be 100 characters or fewer.",
+      "nameMin": "Enter at least 2 characters.",
+      "passwordDigit": "Add at least one number.",
+      "passwordLowercase": "Add at least one lowercase letter.",
+      "passwordMin": "Use at least 8 characters.",
+      "passwordRequired": "Password is required.",
+      "passwordSpecial": "Add at least one special character.",
+      "passwordUppercase": "Add at least one uppercase letter.",
+      "phoneInvalid": "Enter a valid 11-digit mobile number (01XXXXXXXXX)",
+      "phoneRequired": "Mobile number is required",
+      "termsRequired": "You must accept the terms and conditions."
+    }
+  },
+  "pricing": {
+    "label": "Pricing",
+    "mostPopular": "Most Popular",
+    "perMonth": "/mo",
+    "partnerApplyNote": "Apply after 300+ delivered orders in 30 days",
+    "partnerPriceUnit": "upfront",
+    "partnerEligibleBadge": "300+ delivered orders",
+    "partnerRateBandsTitle": "Pay per delivered order",
+    "partnerRateBand": "{{min}}–{{max}} orders: ৳{{rate}} each",
+    "applyNow": "Apply now",
+    "limits": {
+      "unlimitedConversations": "Unlimited conversations",
+      "conversationsPerMonth": "{{count}} customer conversations each month",
+      "deliveredOrders": "300+ delivered orders in 30 days to qualify",
+      "manualInbox": "Manual replies always available",
+      "unlimitedOrders": "Unlimited orders",
+      "ordersPerMonth": "{{count}} orders/mo",
+      "unlimitedProducts": "Unlimited products",
+      "products": "{{count}} products"
+    },
+    "features": {
+      "imageUnderstanding": "Understands product photos",
+      "advancedAi": "Better reply accuracy",
+      "prioritySupport": "Priority Support",
+      "customBranding": "Custom Branding (White-label)",
+      "facebookInbox": "Facebook sales inbox"
+    },
+    "planFeatures": {
+      "shuru": [
+        "100 customer conversations each month",
+        "Facebook Messenger inbox",
+        "Order capture and COD risk checks",
+        "Manual replies always available"
+      ],
+      "growth": [
+        "500 customer conversations each month",
+        "Facebook Messenger inbox",
+        "Order capture and COD risk checks",
+        "AI replies follow your conversation allowance"
+      ],
+      "partner": [
+        "300+ delivered orders in 30 days to qualify",
+        "No monthly fee",
+        "Unlimited customer conversations",
+        "Flat rate by delivered-order band"
+      ]
+    },
+    "plans": {
+      "shuru": {
+        "name": "Shuru",
+        "description": "No monthly plan fee; core customer-support and order workflows within Shuru’s published conversation allowance.",
+        "priceNote": "Free forever",
+        "cta": "Create free account"
+      },
+      "growth": {
+        "name": "Growth",
+        "description": "The same core customer-support and commerce tools with a larger conversation allowance.",
+        "priceNote": "Simple monthly billing",
+        "cta": "Start with Growth"
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "No per-order fee for 0–299 delivered orders in an invoice period. At 300+, the period's rate applies to every delivered order.",
+        "priceNote": "Flat rate by delivered-order band",
+        "cta": "Apply for Partner"
+      }
+    },
+    "hero": {
+      "heading": "Smooth and honest pricing",
+      "subheading": "Start free with Shuru, grow with Growth, or join the Partner path.",
+      "badge1": "Messenger-only launch scope",
+      "badge2": "Free forever",
+      "badge3": "No hidden fees"
+    },
+    "partnerTeaser": {
+      "question": "Have 300+ delivered orders in 30 days?",
+      "link": "Learn about the Partner Plan →"
+    },
+    "included": {
+      "heading": "The same core features for every shop",
+      "subheading": "Choose your scale, not a restricted feature set. Growth is ৳{{price}}/month."
+    },
+    "faq": {
+      "heading": "Frequently asked questions",
+      "q1": "Is Shuru really free?",
+      "a1": "Yes — Shuru is free forever with 100 customer conversations each month. No card is required.",
+      "q2": "What is Growth?",
+      "a2": "Growth is ৳{{price}}/month with 500 customer conversations per billing period.",
+      "q3": "How many customer conversations do I get per month?",
+      "a3": "Shuru includes 100 conversations per billing period and Growth includes 500.",
+      "q4": "What happens when the conversation limit runs out?",
+      "a4": "AI replies pause after the included conversation allowance is used. Manual replies remain available.",
+      "q5": "How do I apply for the Partner plan?",
+      "a5": "Apply from the Pricing page after building 300+ delivered orders in 30 days. Partner has no monthly fee and uses flat delivered-order bands: ৳15, ৳12, or ৳10."
+    },
+    "cta": {
+      "heading": "Ready to turn more messages into orders?",
+      "subheading": "Start free with Shuru. Upgrade when your Messenger volume grows.",
+      "button": "Get started now"
+    },
+    "partnerModal": {
+      "title": "Apply to become a Partner",
+      "subtitle": "Have 300+ delivered orders in 30 days? Partner has no monthly fee and flat delivered-order bands.",
+      "businessNameLabel": "Business Name",
+      "businessNamePlaceholder": "Your shop's name",
+      "phoneLabel": "Phone Number",
+      "pageLinkLabel": "Facebook Page Link",
+      "submit": "Send application",
+      "submitting": "Sending...",
+      "successTitle": "Application sent!",
+      "successMessage": "We'll review your application and get in touch soon.",
+      "successMessageEn": "Your application has been received. We'll be in touch soon.",
+      "ok": "OK",
+      "errors": {
+        "businessNameRequired": "Business name is required",
+        "phoneRequired": "Phone number is required",
+        "pageLinkRequired": "Page link is required",
+        "submitFailed": "Could not send the application. Please try again."
+      }
+    }
+  }
+}

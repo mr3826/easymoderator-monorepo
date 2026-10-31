@@ -5,9 +5,15 @@ import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { apiClient } from '@/api';
 import { getErrorMessage } from '@shared/lib/http/errors';
+import BrandLogo from './BrandLogo';
+import LanguageToggle from './LanguageToggle';
+import Seo from './Seo';
+import { buildMarketingUrlWithLocale } from '@/app/lib/config';
+import './public-funnel.css';
 
 export default function ForgotPassword() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language;
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -36,33 +42,36 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl"></div>
-            <span className="text-3xl font-bold text-gray-900">EasyModerator</span>
-          </div>
-          <p className="text-gray-600">{t('auth.forgotPassword.subtitle')}</p>
-        </div>
+    <div className="funnel-page flex flex-col">
+      <Seo title={`${t('auth.forgotPassword.title')} | EasyModerator`} description={t('auth.forgotPassword.subtitle')} canonicalPath="/forgot-password" canonicalBase="app" noIndex />
+      <header className="flex items-center justify-between border-b border-[#17223B]/10 bg-white px-4 py-3 sm:px-6">
+        <a href={buildMarketingUrlWithLocale('/', locale)} aria-label={t('publicFunnel.nav.backToSite')} className="rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7460D9]">
+          <BrandLogo size="sm" variant="dark" />
+        </a>
+        <LanguageToggle variant="public" />
+      </header>
 
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 md:p-8">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-6">{t('auth.forgotPassword.title')}</h1>
+      <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 sm:py-14">
+       <div className="w-full max-w-md">
+          <p className="mb-5 text-sm leading-6 text-[#17223B]/70">{t('auth.forgotPassword.subtitle')}</p>
+
+        <div className="rounded-3xl border border-[#17223B]/10 bg-white p-5 shadow-sm sm:p-8">
+          <h1 className="mb-6 text-xl font-bold text-[#17223B] sm:text-2xl">{t('auth.forgotPassword.title')}</h1>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                 {error}
               </div>
             )}
             {success && (
-              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+              <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                 {success}
               </div>
             )}
 
             <div className="space-y-2">
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-semibold text-[#17223B]">
                 {t('auth.forgotPassword.emailLabel')}
               </label>
               <Input
@@ -74,12 +83,13 @@ export default function ForgotPassword() {
                 autoComplete="email"
                 autoFocus
                 disabled={isLoading}
+                className="h-12 rounded-xl border-[#17223B]/20 focus-visible:ring-[#7460D9]"
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              className="funnel-button funnel-button-primary h-12 w-full justify-center text-base"
               disabled={isLoading}
             >
               {isLoading ? t('auth.forgotPassword.sending') : t('auth.forgotPassword.sendButton')}
@@ -89,13 +99,14 @@ export default function ForgotPassword() {
           <div className="mt-6 text-center">
             <Link
               to="/signin"
-              className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
+              className="text-sm font-semibold text-[#5D49BB] hover:underline"
             >
               {t('auth.forgotPassword.backToSignIn')}
             </Link>
           </div>
         </div>
-      </div>
+       </div>
+      </main>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import CourierBookingModal from './CourierBookingModal';
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import { OrderRow } from './orders/OrderRow';
 import OrderConfidencePanel from './orders/OrderConfidencePanel';
+import ContextualEntityLink from './merchant-workspace/ContextualEntityLink';
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
 const statusColors = {
@@ -839,7 +840,13 @@ export default function Orders() {
                     {manualOrder.items.map((item, index) => (
                       <div key={index} className="p-4 flex items-center gap-4">
                         <div className="flex-1">
-                          <p className="font-medium text-gray-900">{item.productName}</p>
+                          {item.productId ? (
+                            <ContextualEntityLink to={`/products/${encodeURIComponent(item.productId)}`}>
+                              {item.productName}
+                            </ContextualEntityLink>
+                          ) : (
+                            <p className="font-medium text-gray-900">{item.productName}</p>
+                          )}
                           <p className="text-sm text-gray-500">{t('orders.labels.sku')}: {item.sku} • {formatCurrency(item.price)}</p>
                         </div>
                         <div className="flex items-center gap-2">

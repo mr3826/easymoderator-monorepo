@@ -1,4 +1,6 @@
-import { motion } from "motion/react";
+import { lazy, Suspense } from "react";
+
+const AnimatedBrandLogo = lazy(() => import("./AnimatedBrandLogo"));
 
 interface BrandLogoProps {
   size?: "sm" | "md" | "lg";
@@ -66,16 +68,10 @@ export default function BrandLogo({
     </>
   );
 
+  const staticLogo = <div className="flex items-center gap-2.5 select-none">{contents}</div>;
   return animated ? (
-    <motion.div
-      className="flex items-center gap-2.5 select-none"
-      initial={{ opacity: 0, x: -12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {contents}
-    </motion.div>
-  ) : (
-    <div className="flex items-center gap-2.5 select-none">{contents}</div>
-  );
+    <Suspense fallback={staticLogo}>
+      <AnimatedBrandLogo>{contents}</AnimatedBrandLogo>
+    </Suspense>
+  ) : staticLogo;
 }

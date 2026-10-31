@@ -228,14 +228,15 @@ export function InboxThreadList({
                         >
                           {conversation.customer?.name || t("inbox.unknownCustomer")}
                         </h3>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                          {conversation.status === "closed" && <CheckCircle2 className="h-3 w-3 text-green-600" aria-hidden="true" />}
+                          {conversation.status === "closed"
+                            ? t("inbox.conversationState.resolved")
+                            : t("inbox.conversationState.open")}
+                        </span>
                         {isHITL && (
                           <span title={t("inbox.humanTooltip")} className="inline-flex">
                             <UserCheck className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                          </span>
-                        )}
-                        {conversation.status === "closed" && (
-                          <span title={t("inbox.resolved")} className="inline-flex">
-                            <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
                           </span>
                         )}
                         {conversation.open_opportunity && (
@@ -284,6 +285,13 @@ export function InboxThreadList({
                 </p>
                 {conversation.lastMessage && (
                   <p className="text-xs text-gray-500 truncate mt-0.5">{conversation.lastMessage}</p>
+                )}
+                {needsReply && conversation.needs_merchant_reply_reason && (
+                  <p className="mt-0.5 truncate text-xs font-medium text-amber-700">
+                    {t(`inbox.replyReason.${conversation.needs_merchant_reply_reason}`, {
+                      defaultValue: t("inbox.replyReason.needsReply"),
+                    })}
+                  </p>
                 )}
                 <p className="text-xs text-gray-400 mt-1">
                   {formatDate(conversation.updated_at, t)}

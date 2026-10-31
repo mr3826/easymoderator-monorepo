@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "April 24, 2026";
@@ -20,10 +19,10 @@ export default function TermsOfService() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="mx-auto max-w-4xl px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600" />
             <span className="text-lg font-bold text-gray-900">{APP_NAME}</span>
-          </Link>
+          </a>
           <span className="text-sm text-gray-500">Terms of Service</span>
         </div>
       </header>
@@ -41,7 +40,7 @@ export default function TermsOfService() {
             </a>{" "}
             for more about the parent company. By creating an account or
             using the {APP_NAME} platform, you agree to be bound by these Terms and our{" "}
-            <Link to="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
+            <a href="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</a>.
           </p>
           <p className="mt-3 text-gray-600 leading-relaxed">
             If you do not agree to these Terms, you may not access or use the {APP_NAME} service.
@@ -158,7 +157,7 @@ export default function TermsOfService() {
             <p className="mb-3 text-sm leading-relaxed">
               We collect and process personal data only as necessary to provide the {APP_NAME} service,
               as described in our{" "}
-              <Link to="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
+              <a href="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</a>.
               We do not sell personal data to third parties.
             </p>
 

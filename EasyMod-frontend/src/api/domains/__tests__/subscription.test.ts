@@ -68,6 +68,44 @@ describe('Subscription Domain API', () => {
       expect(publicApiGet).toHaveBeenCalledWith('/api/subscription/plans');
       expect(result.map((plan) => plan.code)).toEqual(['SHURU', 'GROWTH']);
     });
+
+    it('identifies when the catalog request falls back to pinned values', async () => {
+      (publicApiGet as any).mockRejectedValue(new Error('offline'));
+
+      const result = await subscription.getPublicSubscriptionCatalog();
+
+      expect(result.source).toBe('fallback');
+      expect(result.plans.map((plan) => plan.code)).toEqual(['SHURU', 'GROWTH', 'PARTNER']);
+    });
+
+    it('marks a successful catalog response as live', async () => {
+      (publicApiGet as any).mockResolvedValue({
+        success: true,
+        data: [{
+          code: 'SHURU', name: 'Shuru', description: 'Free', billing_model: 'flat_monthly',
+          price_bdt_monthly: 0, price_bdt_yearly: 0, conversations_limit: 100,
+          orders_limit: -1, products_limit: -1, can_purchase_topups: false,
+          per_order_charge_bdt: null, features: {}, topup_packs: [], partner_order_tiers: [],
+        }],
+      });
+
+      const result = await subscription.getPublicSubscriptionCatalog();
+
+      expect(result.source).toBe('live');
+      expect(result.plans.map((plan) => plan.code)).toEqual(['SHURU']);
+    });
+
+    it('rejects unavailable live catalog data instead of returning pinned prices', async () => {
+      (publicApiGet as any).mockRejectedValue(new Error('offline'));
+
+      await expect(subscription.getCurrentPublicSubscriptionCatalog()).rejects.toThrow('offline');
+    });
+
+    it('rejects an empty live catalog rather than presenting a stale price list', async () => {
+      (publicApiGet as any).mockResolvedValue({ success: true, data: [] });
+
+      await expect(subscription.getCurrentPublicSubscriptionCatalog()).rejects.toThrow(/catalog/i);
+    });
   });
 
   describe('subscribeToPlan', () => {
