@@ -3,6 +3,7 @@ import { createBrowserRouter, redirect } from "react-router-dom";
 import { authService } from "./lib/auth";
 import { hasSeparateProductOrigins, isMarketingSurface } from "./lib/config";
 import { getSignupSuccessPath } from "./lib/signupIntent";
+import { readStoredLanguage } from "@/i18n/language";
 import { AdminRoute } from "@/shared/components/guards";
 import { PlatformAdminRoute } from "@/shared/components/guards/PlatformAdminRoute";
 import PageLoader from "./components/PageLoader";
@@ -74,7 +75,7 @@ async function signupLoader({ request }: { request: Request }) {
 	await authService.ensureInitialized();
 	if (!authService.isAuthenticated()) return null;
 
-	return redirect(getSignupSuccessPath(new URL(request.url).searchParams, "en"));
+	return redirect(getSignupSuccessPath(new URL(request.url).searchParams, readStoredLanguage() ?? "bn"));
 }
 
 async function rootLoader() {
