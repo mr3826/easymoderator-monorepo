@@ -262,7 +262,7 @@ export default function DashboardLayout() {
                 />
                 <div
                   id="merchant-account-menu"
-                  
+
                   aria-label={t('nav.accountMenu', { defaultValue: 'Account menu' })}
                   className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden"
                 >
