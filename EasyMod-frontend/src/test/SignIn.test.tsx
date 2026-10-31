@@ -23,8 +23,8 @@ vi.mock("react-i18next", () => ({
       "publicFunnel.auth.emailPlaceholder": "you@example.com",
       "publicFunnel.auth.password": "Password",
       "publicFunnel.auth.passwordPlaceholder": "Enter your password",
-      "publicFunnel.auth.showPassword": "Show password",
-      "publicFunnel.auth.hidePassword": "Hide password",
+      "publicFunnel.auth.showPassword": "Show characters",
+      "publicFunnel.auth.hidePassword": "Hide characters",
       "publicFunnel.auth.forgotPassword": "Forgot password?",
       "publicFunnel.auth.signInButton": "Sign in",
       "publicFunnel.auth.signingIn": "Signing in…",
@@ -69,7 +69,7 @@ describe("SignIn", () => {
     expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute("href", "/forgot-password");
     expect(screen.getAllByRole("link", { name: "Create a Shuru account" })).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: "Create a Shuru account" }).every((link) => link.getAttribute("href") === "/signup")).toBe(true);
-    expect(screen.getByRole("button", { name: "Show password" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Show characters" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("toggles password visibility and submits a normalized account email", async () => {
@@ -79,9 +79,9 @@ describe("SignIn", () => {
     const password = screen.getByLabelText("Password");
     await user.type(screen.getByLabelText("Email"), " MERCHANT@EXAMPLE.COM ");
     await user.type(password, "ValidPass123!");
-    await user.click(screen.getByRole("button", { name: "Show password" }));
+    await user.click(screen.getByRole("button", { name: "Show characters" }));
     expect(password).toHaveAttribute("type", "text");
-    await user.click(screen.getByRole("button", { name: "Hide password" }));
+    await user.click(screen.getByRole("button", { name: "Hide characters" }));
     expect(password).toHaveAttribute("type", "password");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
